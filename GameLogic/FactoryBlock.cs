@@ -1,0 +1,321 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+using Sandbox.Common.ObjectBuilders;
+using Sandbox.ModAPI;
+
+using VRage.Game.Components;
+using VRage.ModAPI;
+using VRage.ObjectBuilders;
+using AiEnabled.Support;
+using VRage.Game.ObjectBuilders.Definitions;
+using Sandbox.Game.Entities;
+using VRage.Game.Entity;
+using VRage.Game;
+using VRageMath;
+using VRage.Game.ModAPI;
+using AiEnabled.Bots.Roles;
+using Sandbox.Game.Entities.Character.Components;
+using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
+using AiEnabled.Ai.Support;
+using AiEnabled.Networking;
+using AiEnabled.Utilities;
+using AiEnabled.Particles;
+using AiEnabled.ConfigData;
+
+namespace AiEnabled.GameLogic
+{
+  [MyEntityComponentDescriptor(typeof(MyObjectBuilder_ConveyorSorter), false, "RoboFactory")]
+  public class Factory : MyGameLogicComponent
+  {    
+    public AiSession.BotType SelectedRole;
+    public AiSession.BotModel SelectedModel;
+    public HelperInfo SelectedHelper;
+    public StringBuilder BotName;
+    public bool ButtonPressed;
+    public bool HasHelper => _helperBot != null;
+
+    public struct BotInfo
+    {
+      public IMyCharacter Bot;
+      public long OwnerId;
+      public BotInfo(IMyCharacter bot, long ownerId)
+      {
+        Bot = bot;
+        OwnerId = ownerId;
+      }
+    }
+
+    FactoryParticleInfo _particleInfo;
+    IMyTerminalBlock _block;
+    IMyCharacter _helperBot;
+    int _controlTicks, _soundTicks;
+    bool _soundPlaying, _playBuildSound;
+    List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
+
+    public override void Init(MyObjectBuilder_EntityBase objectBuilder)
+    {
+      _block = Entity as Sandbox.ModAPI.IMyTerminalBlock;
+      NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME;
+      base.Init(objectBuilder);
+    }
+
+    public override void UpdateOnceBeforeFrame()
+    {
+      base.UpdateOnceBeforeFrame();
+      if (AiSession.Instance?.Registered != true)
+      {
+        NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
+        return;
+      }
+
+      if (_block == null)
+        return;
+
+      _block.AppendingCustomInfo += AppendingCustomInfo;
+      _block.OnMarkForClose += OnMarkForClose;
+
+      if (AiSession.Instance.FactoryControlsHooked)
+        return;
+
+      Controls.CreateControls(_block);
+      Controls.CreateActions(_block);
+      AiSession.Instance.FactoryControlsHooked = true;
+    }
+
+    public void SetHelper(IMyCharacter bot, IMyPlayer owner)
+    {
+      if (_block == null || bot == null || owner == null)
+        return;
+
+      _helperBot = bot;
+      bot.CharacterDied += OnCharacterDied;
+      bot.OnMarkForClose += Char_OnMarkForClose;
+
+      if (_particleInfo == null)
+        _particleInfo = new FactoryParticleInfo(bot, _block);
+      else
+        _particleInfo.Set(bot);
+
+      if (MyAPIGateway.Multiplayer.MultiplayerActive && AiSession.Instance.IsServer)
+      {
+        var packet = new ParticlePacket(bot.EntityId, ParticleInfoBase.ParticleType.Factory, _block.EntityId);
+        AiSession.Instance.Network.RelayToClients(packet);
+      }
+
+      AiSession.Instance.FactoryBotInfoDict[bot.EntityId] = new BotInfo(bot, owner.IdentityId);
+      _playBuildSound = true;
+    }
+
+    private void Char_OnMarkForClose(IMyEntity obj)
+    {
+      var character = obj as IMyCharacter;
+      if (character != null)
+        OnCharacterDied(character);
+    }
+
+    private void OnCharacterDied(IMyCharacter bot)
+    {
+      if (bot == null)
+        return;
+
+      bot.CharacterDied -= OnCharacterDied;
+      bot.OnMarkForClose -= Char_OnMarkForClose;
+
+      BotInfo info;
+      List<BotBase> playerHelpers;
+      if (AiSession.Instance.FactoryBotInfoDict.TryGetValue(bot.EntityId, out info)
+        && AiSession.Instance.PlayerToHelperDict.TryGetValue(info.OwnerId, out playerHelpers))
+      {
+        for (int i = playerHelpers.Count - 1; i >= 0; i--)
+        {
+          var helper = playerHelpers[i];
+          if (helper?.Character?.EntityId == bot.EntityId)
+          {
+            playerHelpers.RemoveAtFast(i);
+            break;
+          }
+        }
+      }
+
+      if (_helperBot?.EntityId == bot.EntityId)
+      {
+        if (_soundPlaying)
+        {
+          _particleInfo?.Stop();
+          _soundPlaying = false;
+        }
+
+        _helperBot = null;
+      }
+    }
+
+    public override void UpdateAfterSimulation()
+    {
+      try
+      {
+        base.UpdateAfterSimulation();
+        if (_helperBot == null)
+          return;
+
+        if (_soundPlaying)
+          _particleInfo?.Update();
+
+        if (!_playBuildSound)
+          return;
+
+        _particleInfo?.Set(_helperBot);
+        _playBuildSound = false;
+        _soundPlaying = true;
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim: {ex.Message}");
+      }
+    }
+
+    BotBase CreateBot(IMyCharacter bot, GridBase gBase, long ownerId)
+    {
+      switch (SelectedRole)
+      {
+        case AiSession.BotType.Repair:
+          return new RepairBot(bot, gBase, ownerId);
+        case AiSession.BotType.Combat:
+          //case AiSession.BotType.Medic:
+          return new CombatBot(bot, gBase, ownerId);
+          //case AiSession.BotType.Scavenger:
+          //  return new ScavengerBot(bot, gBase, ownerId);
+      }
+
+      return null;
+    }
+
+    public override void UpdateAfterSimulation10()
+    {
+      try
+      {
+        base.UpdateAfterSimulation10();
+        if (_block == null)
+          return;
+
+        if (_soundPlaying)
+        {
+          ++_soundTicks;
+          if (_soundTicks > 90)
+          {
+            _soundTicks = 0;
+            _particleInfo?.Stop();
+            _soundPlaying = false;
+
+            if (MyAPIGateway.Multiplayer.MultiplayerActive && AiSession.Instance.IsServer)
+            {
+              var packet = new ParticlePacket(_helperBot.EntityId, ParticleInfoBase.ParticleType.Factory, remove: true);
+              AiSession.Instance.Network.RelayToClients(packet);
+            }
+
+            try
+            {
+              var botInfo = AiSession.Instance.FactoryBotInfoDict[_helperBot.EntityId];
+              var ownerId = botInfo.OwnerId;
+
+              _gridList.Clear();
+              MyAPIGateway.GridGroups.GetGroup(_block.CubeGrid, GridLinkTypeEnum.Logical, _gridList);
+              MyCubeGrid grid = _block.CubeGrid as MyCubeGrid;
+
+              foreach (var g in _gridList)
+              {
+                if (g.GridSize < 1 || g.WorldAABB.Volume < grid.PositionComp.WorldAABB.Volume)
+                  continue;
+
+                grid = g as MyCubeGrid;
+              }
+
+              var gridBase = AiSession.Instance.GetGridGraph(grid, _helperBot.WorldMatrix);
+              var botChar = CreateBot(_helperBot, gridBase, ownerId);
+              AiSession.Instance.AddBot(botChar, ownerId);
+            }
+            catch (Exception ex)
+            {
+              MyAPIGateway.Utilities.ShowNotification($"Error trying to spawn bot: {ex.Message}");
+              AiSession.Instance.Logger.Log($"Error trying to spawn bot: {ex.Message}\n{ex.StackTrace}");
+            }
+
+            _helperBot = null;
+          }
+        }
+
+        if (!ButtonPressed)
+          return;
+
+        ++_controlTicks;
+        if (_controlTicks > 9)
+        {
+          _controlTicks = 0;
+          ButtonPressed = false;
+          Controls.SetContextMessage(_block, "");
+        }
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim10: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim10: {ex.Message}");
+      }
+    }
+
+    private void OnMarkForClose(IMyEntity obj)
+    {
+      try
+      {
+        if (_block != null)
+        {
+          _block.AppendingCustomInfo -= AppendingCustomInfo;
+          _block.OnMarkForClose -= OnMarkForClose;
+        }
+
+        if (_soundPlaying)
+        {
+          _particleInfo?.Stop();
+          _soundPlaying = false;
+        }
+
+        if (MyAPIGateway.Multiplayer.MultiplayerActive && AiSession.Instance.IsServer && _particleInfo?.Bot != null)
+        {
+          var packet = new ParticlePacket(_particleInfo.Bot.EntityId, _particleInfo.Type, remove: true);
+          AiSession.Instance.Network.RelayToClients(packet);
+        }
+
+        _particleInfo?.Close();
+        _particleInfo = null;
+      }
+      finally { }
+    }
+
+    private void AppendingCustomInfo(IMyTerminalBlock block, StringBuilder sb)
+    {
+      sb.Append("Bot Factory v1.0\n")
+        .Append('-', 30)
+        .Append('\n');
+
+      var functional = _block as IMyFunctionalBlock;
+      sb.Append("Status: ")
+        .Append(functional.Enabled ? "Online" : "Offline")
+        .Append('\n');
+
+      sb.Append("Selected Bot: ")
+        .Append(SelectedRole)
+        .Append('\n');
+
+      sb.Append("Price: ")
+        .Append(AiSession.Instance.BotPrices[SelectedRole].ToString("#,###,##0"))
+        .Append(" SC\n\n");
+
+      sb.Append("Description:\n")
+        .Append(AiSession.Instance.BotDescriptions[SelectedRole]);
+    }
+  }
+}
