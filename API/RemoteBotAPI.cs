@@ -10,6 +10,7 @@ using VRage.Game.ModAPI;
 
 using VRageMath;
 using ProtoBuf;
+using VRage.Utils;
 
 namespace AiEnabled.API
 {
@@ -32,7 +33,7 @@ namespace AiEnabled.API
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception trying to close remote API: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        MyLog.Default.WriteLineAndConsole($"Exception in AiEnabled.RemoteBotAPI.Close: {ex.Message}\n{ex.StackTrace}");
       }
     }
 
@@ -84,51 +85,55 @@ namespace AiEnabled.API
       [ProtoMember(7)] public bool CanUseSeats = true;
 
       /// <summary>
-      /// Whether or not the auto-despawn timer should be used.
-      /// If FALSE, the bot will persist until killed or the game unloads.
+      /// The number of Ticks before the bot auto-despawns. Set to zero to disable auto-despawn.
       /// Friendly bots do not auto-despawn.
       /// </summary>
-      [ProtoMember(8)] public bool EnableDespawnTimer = true;
+      [ProtoMember(8)] public uint DespawnTicks = 15000;
+
+      /// <summary>
+      /// The DisplayName to give the bot.
+      /// </summary>
+      [ProtoMember(9)] public string DisplayName;
 
       /// <summary>
       /// The SubtypeId of the Bot you want to Spawn. See <see cref="GetBotSubtypes"/> for valid types
       /// </summary>
-      [ProtoMember(9)] public string BotSubtype;
+      [ProtoMember(10)] public string BotSubtype;
 
       /// <summary>
       /// Which role to give the bot. See <see cref="GetFriendlyBotRoles"/>, <see cref="GetNPCBotRoles"/>, or <see cref="GetNeutralBotRoles"/> for valid roles. If not supplied, it will be determined by the <see cref="BotSubtype"/>'s default usage
       /// </summary>
-      [ProtoMember(10)] public string BotRole;
+      [ProtoMember(11)] public string BotRole;
 
       /// <summary>
       /// The color for the bot in RGB format
       /// </summary>
-      [ProtoMember(11)] public Color? Color;
+      [ProtoMember(12)] public Color? Color;
 
       /// <summary>
       /// A custom sound to use when the bot dies
       /// </summary>
-      [ProtoMember(12)] public string DeathSound;
+      [ProtoMember(13)] public string DeathSound;
 
       /// <summary>
       /// Custom sounds to use when the bot punches its target (not used in rifle attacks)
       /// </summary>
-      [ProtoMember(13)] public List<string> AttackSounds;
+      [ProtoMember(14)] public List<string> AttackSounds;
 
       /// <summary>
       /// Custom sounds to use when the bot takes damage
       /// </summary>
-      [ProtoMember(14)] public List<string> PainSounds;
+      [ProtoMember(15)] public List<string> PainSounds;
 
       /// <summary>
       /// These sounds are played randomly when the bot is pursuing a target
       /// </summary>
-      [ProtoMember(15)] public List<string> IdleSounds;
+      [ProtoMember(16)] public List<string> IdleSounds;
 
       /// <summary>
-      /// These actions (emotes) are performed randomly (Currently only used by the Nomad bot)
+      /// These actions (emotes) are performed randomly by the Nomad bot
       /// </summary>
-      [ProtoMember(16)] public List<string> Actions;
+      [ProtoMember(17)] public List<string> Actions;
     }
 
     /////////////////////////////////////////////
@@ -162,7 +167,7 @@ namespace AiEnabled.API
     /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
     /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
     /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
-    public IMyCharacter SpawnBot(string displayName, MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null) => _spawnBotCustom?.Invoke(displayName, positionAndOrientation, spawnData, grid, owner) ?? null;
+    public IMyCharacter SpawnBot(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null) => _spawnBotCustom?.Invoke(positionAndOrientation, spawnData, grid, owner) ?? null;
 
     /// <summary>
     /// Check this BEFORE attempting to spawn a bot to ensure the mod is ready
@@ -357,7 +362,7 @@ namespace AiEnabled.API
 
     private const long _botControllerModChannel = 2408831996; //This is the channel this object will receive API methods at. Sender should also use this.
     private Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, IMyCharacter> _spawnBot;
-    private Func<string, MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter> _spawnBotCustom;
+    private Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter> _spawnBotCustom;
     private Func<string[]> _getFriendlyBotRoles, _getNPCBotRoles, _getNeutralBotRoles, _getBotSubtypes;
     private Func<bool> _canSpawn;
     private Func<long, Vector3D?> _getBotOverride;
@@ -394,7 +399,7 @@ namespace AiEnabled.API
       {
 
         _spawnBot = dict["SpawnBot"] as Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, IMyCharacter>;
-        _spawnBotCustom = dict["SpawnBotCustom"] as Func<string, MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>;
+        _spawnBotCustom = dict["SpawnBotCustom"] as Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>;
         _getFriendlyBotRoles = dict["GetFriendlyRoles"] as Func<string[]>;
         _getNPCBotRoles = dict["GetNPCRoles"] as Func<string[]>;
         _getNeutralBotRoles = dict["GetNeutralRoles"] as Func<string[]>;

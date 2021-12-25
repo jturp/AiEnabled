@@ -32,10 +32,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 {
   public class CombatBot : BotBase
   {
-    uint _crouchTimer, _lineOfSightTimer;
+    uint _lineOfSightTimer;
     int _lastMovementX, _ticksSinceFirePacket;
     bool _firePacketSent;
-    List<IHitInfo> _hitList = new List<IHitInfo>();
 
     public CombatBot(IMyCharacter bot, GridBase gridBase, long ownerId) : base(bot, 3, 10, gridBase)
     {
@@ -49,43 +48,31 @@ namespace AiEnabled.Bots.Roles.Helpers
       _ticksBetweenAttacks = 150;
       _blockDamagePerSecond = 200;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
-      _requiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      _canUseSpaceNodes = false; // _requiresJetpack || hasOwner;
-      _canUseAirNodes = false; // _requiresJetpack || hasOwner;
-      _groundNodesFirst = true; // !_requiresJetpack;
-      _enableDespawnTimer = !hasOwner;
-      _canUseWaterNodes = true;
-      _waterNodesOnly = false;
-      _canUseSeats = true;
-      _canUseLadders = true;
+      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      CanUseSpaceNodes = RequiresJetpack || hasOwner;
+      CanUseAirNodes = RequiresJetpack || hasOwner;
+      GroundNodesFirst = !RequiresJetpack;
+      EnableDespawnTimer = !hasOwner;
+      CanUseWaterNodes = true;
+      WaterNodesOnly = false;
+      CanUseSeats = true;
+      CanUseLadders = true;
+      WantsTarget = true;
 
       MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
 
-      _attackSounds = new List<MySoundPair>
-      {
-        new MySoundPair("DroneLoopSmall")
-      };
+      if (!AiSession.Instance.SoundListStack.TryPop(out _attackSounds))
+        _attackSounds = new List<MySoundPair>();
+      else
+        _attackSounds.Clear();
 
-      _attackSoundStrings = new List<string>
-      {
-        "DroneLoopSmall"
-      };
-    }
+      if (!AiSession.Instance.StringListStack.TryPop(out _attackSoundStrings))
+        _attackSoundStrings = new List<string>();
+      else
+        _attackSoundStrings.Clear();
 
-    internal override void Close(bool cleanConfig = false)
-    {
-      try
-      {
-        _entities?.Clear();
-        _hitList?.Clear();
-
-        _entities = null;
-        _hitList = null;
-      }
-      finally
-      {
-        base.Close(cleanConfig);
-      }
+      _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
+      _attackSoundStrings.Add("DroneLoopSmall");
     }
 
     public override void AddWeapon()
@@ -154,7 +141,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
         return;
 
-      if (_usePathFinder)
+      if (UsePathFinder)
       {
         UsePathfinder(gotoPosition, actualPosition);
         return;
@@ -173,8 +160,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (!base.Update())
         return false;
       
-      ++_crouchTimer;
-
       if (_firePacketSent)
       {
         _ticksSinceFirePacket++;
@@ -182,13 +167,13 @@ namespace AiEnabled.Bots.Roles.Helpers
           _firePacketSent = false;
       }
 
-      if (_waitForLOSTimer)
+      if (WaitForLOSTimer)
       {
         ++_lineOfSightTimer;
         if (_lineOfSightTimer > 100)
         {
           _lineOfSightTimer = 0;
-          _waitForLOSTimer = false;
+          WaitForLOSTimer = false;
         }
       }
 
@@ -231,7 +216,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     public override void SetTarget()
     {
       var character = Owner?.Character;
-      if (character == null || !_wantsTarget)
+      if (character == null || !WantsTarget)
       {
         return;
       }
@@ -249,9 +234,31 @@ namespace AiEnabled.Bots.Roles.Helpers
           return;
       }
 
-      _hitList.Clear();
-      _entities.Clear();
-      _checkedGridIDs.Clear();
+      List<IHitInfo> hitList;
+      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
+        hitList = new List<IHitInfo>();
+      else
+        hitList.Clear();
+
+      List<MyEntity> entities;
+      if (!AiSession.Instance.EntListStack.TryPop(out entities))
+        entities = new List<MyEntity>();
+      else
+        entities.Clear();
+
+      List<MyEntity> gridTurrets;
+      if (!AiSession.Instance.EntListStack.TryPop(out gridTurrets))
+        gridTurrets = new List<MyEntity>();
+
+      List<IMyCubeGrid> gridGroups;
+      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups))
+        gridGroups = new List<IMyCubeGrid>();
+
+      HashSet<long> checkedGridIDs;
+      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs))
+        checkedGridIDs = new HashSet<long>();
+      else
+        checkedGridIDs.Clear();
 
       var ownerPos = character.WorldAABB.Center;
       var ownerHeadPos = character.GetHeadMatrix(true).Translation;
@@ -259,16 +266,16 @@ namespace AiEnabled.Bots.Roles.Helpers
       var sphere = new BoundingSphereD(ownerPos, 150);
       var blockDestroEnabled = MyAPIGateway.Session.SessionSettings.DestructibleBlocks;
       var queryType = blockDestroEnabled ? MyEntityQueryType.Both : MyEntityQueryType.Dynamic;
-      MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, _entities, queryType);
-      _entities.ShellSort(ownerPos);
+      MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entities, queryType);
+      entities.ShellSort(ownerPos);
 
       IMyEntity tgt = character;
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
 
-      for (int i = 0; i < _entities.Count; i++)
+      for (int i = 0; i < entities.Count; i++)
       {
-        var ent = _entities[i];
+        var ent = entities[i];
         if (ent?.MarkedForClose != false)
           continue;
 
@@ -305,12 +312,12 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
 
           var worldHeadPos = ch.GetHeadMatrix(true).Translation;
-          MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, _hitList, CollisionLayers.CharacterCollisionLayer);
+          MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
 
-          if (_hitList.Count > 0)
+          if (hitList.Count > 0)
           {
             bool valid = true;
-            foreach (var hit in _hitList)
+            foreach (var hit in hitList)
             {
               var hitEnt = hit.HitEntity as IMyCharacter;
               if (hitEnt != null)
@@ -346,11 +353,11 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             if (!valid)
             {
-              _hitList.Clear();
-              MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, _hitList, CollisionLayers.CharacterCollisionLayer);
+              hitList.Clear();
+              MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
 
               valid = true;
-              foreach (var hit in _hitList)
+              foreach (var hit in hitList)
               {
                 var hitEnt = hit.HitEntity as IMyCharacter;
                 if (hitEnt != null)
@@ -396,18 +403,18 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (grid.IsPreview || grid.MarkedAsTrash || grid.MarkedForClose)
             continue;
 
-          if (_checkedGridIDs.Contains(grid.EntityId))
+          if (checkedGridIDs.Contains(grid.EntityId))
           {
             continue;
           }
 
-          _gridTurrets.Clear();
-          _gridGroups1.Clear();
-          MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, _gridGroups1);
+          gridTurrets.Clear();
+          gridGroups.Clear();
+          MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroups);
 
-          foreach (var g in _gridGroups1)
+          foreach (var g in gridGroups)
           {
-            _checkedGridIDs.Add(g.EntityId);
+            checkedGridIDs.Add(g.EntityId);
 
             var myGrid = g as MyCubeGrid;
             if (myGrid.BlocksCount > grid.BlocksCount)
@@ -424,7 +431,7 @@ namespace AiEnabled.Bots.Roles.Helpers
               {
                 var turret = blocks[j] as IMyLargeTurretBase;
                 if (turret != null && !turret.MarkedForClose && turret.IsFunctional)
-                  _gridTurrets.Add(turret);
+                  gridTurrets.Add(turret as MyEntity);
               }
             }
           }
@@ -443,11 +450,11 @@ namespace AiEnabled.Bots.Roles.Helpers
           MyEntity turretEnt = null;
 
           // check for turrets only
-          for (int j = _gridTurrets.Count - 1; j >= 0; j--)
+          for (int j = gridTurrets.Count - 1; j >= 0; j--)
           {
-            var turret = _gridTurrets[j];
+            var turret = gridTurrets[j];
 
-            var d = Vector3D.DistanceSquared(turret.GetPosition(), botPosition);
+            var d = Vector3D.DistanceSquared(turret.PositionComp.GetPosition(), botPosition);
             if (d < dToTurret)
             {
               turretEnt = turret as MyEntity;
@@ -470,6 +477,18 @@ namespace AiEnabled.Bots.Roles.Helpers
           break;
         }
       }
+
+      hitList.Clear();
+      entities.Clear();
+      gridTurrets.Clear();
+      gridGroups.Clear();
+      checkedGridIDs.Clear();
+
+      AiSession.Instance.HitListStack.Push(hitList);
+      AiSession.Instance.EntListStack.Push(entities);
+      AiSession.Instance.EntListStack.Push(gridTurrets);
+      AiSession.Instance.GridGroupListStack.Push(gridGroups);
+      AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
 
       var parent = tgt is IMyCharacter ? tgt.GetTopMostParent() : tgt;
       var currentTgt = Target.Entity as IMyEntity;
@@ -582,7 +601,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
-      if (!_waitForStuckTimer && angleTwoOrLess)
+      if (!WaitForStuckTimer && angleTwoOrLess)
       {
         rotation = Vector2.Zero;
       }
@@ -606,7 +625,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             {
               movement = Vector3.Zero;
             }
-            else if (!_jetpackEnabled)
+            else if (!JetpackEnabled)
             {
               movement = Vector3.Forward;
             }
@@ -624,7 +643,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (rifleAttack || _sideNode.HasValue)
       {
-        if (_usePathFinder)
+        if (UsePathFinder)
         {
           var vecToTgt = actualPosition - botPosition;
           var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(WorldMatrix));
@@ -677,7 +696,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
               if (testNode != null)
               {
-                Vector3D? addVec = (testNode.SurfacePosition ?? _currentGraph.LocalToWorld(testNode.Position)) - botPosition;
+                Vector3D? addVec = (_currentGraph.LocalToWorld(testNode.Position) + testNode.Offset) - botPosition;
                 _sideNode += addVec;
               }
               else
@@ -713,7 +732,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
       }
-      else if (_pathFinderActive)
+      else if (PathFinderActive)
       {
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
@@ -732,7 +751,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           else 
             _moveFromLadder = false;
 
-          if (!_jetpackEnabled && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
+          if (!JetpackEnabled && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
           {
             var ch = Character as Sandbox.Game.Entities.IMyControllableEntity;
             var distanceToTarget = Vector3D.DistanceSquared(gotoPosition, botPosition);
@@ -763,7 +782,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         else
           movement = Vector3.Zero;
       }
-      else if (HasWeaponOrTool && _waitForLOSTimer)
+      else if (HasWeaponOrTool && WaitForLOSTimer)
       {
         int zMove;
         if (Math.Abs(flattenedVector.Z) < 30 && relVectorBot.Y > 5)
@@ -783,14 +802,14 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (!fistAttack && isTarget && !isOwnerTgt && !HasWeaponOrTool && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
-      if (_jetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
+      if (JetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
         AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
     }
 
     void CheckFire(bool shouldFire, bool shouldAttack, ref Vector3 movement)
     {
       var isCrouching = _botState.IsCrouching;
-      _isShooting = false;
+      IsShooting = false;
 
       if (shouldFire)
       {
@@ -802,7 +821,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())
         {
-          _isShooting = true;
+          IsShooting = true;
           _stuckTimer = 0;
           _ticksSinceFoundTarget = 0;
 

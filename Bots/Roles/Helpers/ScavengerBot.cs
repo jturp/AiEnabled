@@ -24,7 +24,6 @@ namespace AiEnabled.Bots.Roles.Helpers
 {
   public class ScavengerBot : BotBase
   {
-    List<IHitInfo> _hitList = new List<IHitInfo>();
     bool _moveFromLadder;
 
     public ScavengerBot(IMyCharacter bot, GridBase gridBase, long ownerId) : base(bot, 10, 15, gridBase)
@@ -37,42 +36,29 @@ namespace AiEnabled.Bots.Roles.Helpers
       _ticksBetweenAttacks = 150;
       _blockDamagePerSecond = 175;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
-      _requiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      _canUseSpaceNodes = _requiresJetpack || hasOwner;
-      _canUseAirNodes = _requiresJetpack || hasOwner;
-      _groundNodesFirst = !_requiresJetpack;
-      _enableDespawnTimer = !hasOwner;
-      _canUseWaterNodes = true;
-      _waterNodesOnly = false;
-      _canUseSeats = false;
-      _canUseLadders = false;
+      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      CanUseSpaceNodes = RequiresJetpack || hasOwner;
+      CanUseAirNodes = RequiresJetpack || hasOwner;
+      GroundNodesFirst = !RequiresJetpack;
+      EnableDespawnTimer = !hasOwner;
+      CanUseWaterNodes = true;
+      WaterNodesOnly = false;
+      CanUseSeats = false;
+      CanUseLadders = false;
+      WantsTarget = true;
 
-      _attackSounds = new List<MySoundPair>
-      {
-        new MySoundPair("DroneLoopSmall")
-      };
+      if (!AiSession.Instance.SoundListStack.TryPop(out _attackSounds))
+        _attackSounds = new List<MySoundPair>();
+      else
+        _attackSounds.Clear();
 
-      _attackSoundStrings = new List<string>
-      {
-        "DroneLoopSmall"
-      };
-    }
+      if (!AiSession.Instance.StringListStack.TryPop(out _attackSoundStrings))
+        _attackSoundStrings = new List<string>();
+      else
+        _attackSoundStrings.Clear();
 
-    internal override void Close(bool cleanConfig = false)
-    {
-      try
-      {
-        _hitList?.Clear();
-        _hitList = null;
-      }
-      catch (Exception ex)
-      {
-        AiSession.Instance.Logger.Log($"Exception in ScavengerBot.Close: {ex.Message}\n{ex.StackTrace}");
-      }
-      finally
-      {
-        base.Close(cleanConfig);
-      }
+      _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
+      _attackSoundStrings.Add("DroneLoopSmall");
     }
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
@@ -109,7 +95,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
         return;
 
-      if (_usePathFinder)
+      if (UsePathFinder)
       {
         UsePathfinder(gotoPosition, actualPosition);
         return;
@@ -160,7 +146,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
-      if (!_waitForStuckTimer && angleTwoOrLess)
+      if (!WaitForStuckTimer && angleTwoOrLess)
       {
         rotation = Vector2.Zero;
       }
@@ -180,7 +166,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!_jetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
             {
               movement = Vector3.Zero;
             }
@@ -196,7 +182,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         }
       }
 
-      if (_pathFinderActive)
+      if (PathFinderActive)
       {
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
@@ -215,7 +201,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           else
             _moveFromLadder = false;
 
-          if (!_jetpackEnabled && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
+          if (!JetpackEnabled && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
           {
             var ch = Character as Sandbox.Game.Entities.IMyControllableEntity;
             var distanceToTarget = Vector3D.DistanceSquared(gotoPosition, botPosition);
@@ -243,7 +229,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         else
           movement = Vector3.Zero;
       }
-      else if (HasWeaponOrTool && _waitForLOSTimer)
+      else if (HasWeaponOrTool && WaitForLOSTimer)
       {
         int zMove;
         if (Math.Abs(flattenedVector.Z) < 30 && relVectorBot.Y > 5)
@@ -268,7 +254,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     public override void SetTarget()
     {
       var character = Owner?.Character;
-      if (character == null || !_wantsTarget)
+      if (character == null || !WantsTarget)
       {
         return;
       }
@@ -278,24 +264,32 @@ namespace AiEnabled.Bots.Roles.Helpers
         Target.RemoveTarget();
       }
 
-      _hitList.Clear();
-      _entities.Clear();
-      _checkedGridIDs.Clear();
+      List<IHitInfo> hitList;
+      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
+        hitList = new List<IHitInfo>();
+      else
+        hitList.Clear();
+
+      List<MyEntity> entities;
+      if (!AiSession.Instance.EntListStack.TryPop(out entities))
+        entities = new List<MyEntity>();
+      else
+        entities.Clear();
 
       var ownerPos = character.WorldAABB.Center;
       var ownerHeadPos = character.GetHeadMatrix(true).Translation;
       var botHeadPos = Character.GetHeadMatrix(true).Translation;
       var sphere = new BoundingSphereD(ownerPos, 75);
-      MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, _entities, MyEntityQueryType.Dynamic);
-      _entities.ShellSort(ownerPos);
+      MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entities, MyEntityQueryType.Dynamic);
+      entities.ShellSort(ownerPos);
       IMyEntity tgt = character;
 
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
 
-      for (int i = 0; i < _entities.Count; i++)
+      for (int i = 0; i < entities.Count; i++)
       {
-        var ent = _entities[i];
+        var ent = entities[i];
         if (ent?.MarkedForClose != false)
           continue;
 
@@ -311,12 +305,12 @@ namespace AiEnabled.Bots.Roles.Helpers
             continue;
 
           var worldHeadPos = ch.GetHeadMatrix(true).Translation;
-          MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, _hitList, CollisionLayers.CharacterCollisionLayer);
+          MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
 
-          if (_hitList.Count > 0)
+          if (hitList.Count > 0)
           {
             bool valid = true;
-            foreach (var hit in _hitList)
+            foreach (var hit in hitList)
             {
               var hitEnt = hit.HitEntity as IMyCharacter;
               if (hitEnt != null)
@@ -352,11 +346,11 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             if (!valid)
             {
-              _hitList.Clear();
-              MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, _hitList, CollisionLayers.CharacterCollisionLayer);
+              hitList.Clear();
+              MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
 
               valid = true;
-              foreach (var hit in _hitList)
+              foreach (var hit in hitList)
               {
                 var hitEnt = hit.HitEntity as IMyCharacter;
                 if (hitEnt != null)
@@ -407,6 +401,12 @@ namespace AiEnabled.Bots.Roles.Helpers
           break;
         }
       }
+
+      hitList.Clear();
+      entities.Clear();
+
+      AiSession.Instance.HitListStack.Push(hitList);
+      AiSession.Instance.EntListStack.Push(entities);
 
       var parent = tgt is IMyCharacter ? tgt.GetTopMostParent() : tgt;
       var currentTgt = Target.Entity as IMyEntity;

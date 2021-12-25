@@ -40,7 +40,7 @@ namespace AiEnabled.API
       var dict = new Dictionary<string, Delegate>
       {
         { "SpawnBot", new Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, IMyCharacter>(SpawnBot) },
-        { "SpawnBotCustom", new Func<string, MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>(SpawnBot)},
+        { "SpawnBotCustom", new Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>(SpawnBot)},
         { "GetFriendlyRoles", new Func<string[]>(GetFriendlyBotRoles) },
         { "GetNPCRoles", new Func<string[]>(GetNPCBotRoles) },
         { "GetNeutralRoles", new Func<string[]>(GetNeutralBotRoles) },
@@ -363,7 +363,7 @@ namespace AiEnabled.API
     /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
     /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
     /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
-    public IMyCharacter SpawnBot(string displayName, MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null)
+    public IMyCharacter SpawnBot(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null)
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
@@ -379,7 +379,7 @@ namespace AiEnabled.API
       if (data == null)
         return null;
 
-      return BotFactory.SpawnBotFromAPI(displayName, positionAndOrientation, data, grid, owner);
+      return BotFactory.SpawnBotFromAPI(positionAndOrientation, data, grid, owner);
     }
 
     /// <summary>

@@ -32,7 +32,7 @@ namespace AiEnabled.Ai.Support
   {
     List<IMyUseObject> _useObjList = new List<IMyUseObject>();
     List<Vector3I> _temp = new List<Vector3I>();
-    Vector3D[] _corners = new Vector3D[8];
+    readonly Vector3D[] _corners = new Vector3D[8];
     double? _distanceToWaypointSquared = null;
 
     //public struct PathNode
@@ -156,7 +156,7 @@ namespace AiEnabled.Ai.Support
     /// <returns>True if the Bot has moved too far away (needs a new path), otherwise False</returns>
     public bool UpdateDistanceToNextNode()
     {
-      if (Bot.HasWeaponOrTool && (Bot._isShooting || Bot._sideNode.HasValue))
+      if (Bot.HasWeaponOrTool && (Bot.IsShooting || Bot._sideNode.HasValue))
       {
         _distanceToWaypointSquared = null;
         return false;
@@ -177,7 +177,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        var next = NextNode.SurfacePosition ?? Graph.LocalToWorld(NextNode.Position);
+        var next = Graph.LocalToWorld(NextNode.Position) + NextNode.Offset;
         var dSquared = Vector3D.DistanceSquared(Bot.Position, next);
 
         if (_distanceToWaypointSquared.HasValue)
@@ -260,17 +260,17 @@ namespace AiEnabled.Ai.Support
         Vector3D worldCurrent, worldResult;
 
         Node testNode;
-        if (Graph.OpenTileDict.TryGetValue(localCurrent, out testNode) && testNode?.SurfacePosition != null)
-          worldCurrent = testNode.SurfacePosition.Value;
+        if (Graph.OpenTileDict.TryGetValue(localCurrent, out testNode))
+          worldCurrent = Graph.LocalToWorld(testNode.Position) + testNode.Offset;
         else
           worldCurrent = worldCurrentNode;
 
-        if (Graph.OpenTileDict.TryGetValue(localResult, out testNode) && testNode?.SurfacePosition != null)
-          worldResult = testNode.SurfacePosition.Value;
+        if (Graph.OpenTileDict.TryGetValue(localResult, out testNode))
+          worldResult = Graph.LocalToWorld(testNode.Position) + testNode.Offset;
         else
           worldResult = worldResultNode;
 
-        if (Bot._canUseLadders)
+        if (Bot.CanUseLadders)
         {
           var slim = gridGraph.Grid.GetCubeBlock(localResult) as IMySlimBlock;
           var cube = slim?.FatBlock as MyCubeBlock;
@@ -321,13 +321,7 @@ namespace AiEnabled.Ai.Support
                     if (!okay)
                     {
                       Node next;
-                      if (!Graph.OpenTileDict.TryGetValue(localCurrent, out next))
-                      {
-                        var grid = gridGraph.Grid;
-                        var block = grid.GetCubeBlock(localCurrent) as IMySlimBlock;
-                        next = new Node(localCurrent, grid, block, Bot.Position - Graph.LocalToWorld(localCurrent));
-                      }
-
+                      Graph.OpenTileDict.TryGetValue(localCurrent, out next);
                       NextNode = next;
                       return;
                     }
@@ -344,8 +338,8 @@ namespace AiEnabled.Ai.Support
                 Bot._stuckTimer = 0;
                 Bot._stuckCounter = 0;
                 Bot._stuckTimerReset = 0;
-                Bot._waitForStuckTimer = false;
-                Bot._afterNextIsLadder = false;
+                Bot.WaitForStuckTimer = false;
+                Bot.AfterNextIsLadder = false;
 
                 try
                 {
@@ -426,20 +420,17 @@ namespace AiEnabled.Ai.Support
             var tgtPos = (_temp.Count > i + 1) ? _temp[i + 1] : localTarget;
             var vectorTo = tgtPos - point;
 
-            if (n.BlockedEdges != null && n.BlockedEdges.Contains(vectorTo))
+            if (n.IsBlocked(vectorTo))
             {
               goDirect = false;
               break;
             }
 
             Node nNext;
-            if (Graph.OpenTileDict.TryGetValue(tgtPos, out nNext) && nNext.BlockedEdges != null)
+            if (Graph.OpenTileDict.TryGetValue(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
             {
-              if (nNext.BlockedEdges.Contains(-vectorTo))
-              {
-                goDirect = false;
-                break;
-              }
+              goDirect = false;
+              break;
             }
           }
 
@@ -451,7 +442,7 @@ namespace AiEnabled.Ai.Support
             {
               var line = new LineD(worldCurrent, gotoPosition);
 
-              using (Graph.Planet.Pin())
+              //using (Graph.Planet.Pin())
               {
                 Graph.Planet.RootVoxel.GetIntersectionWithLine(ref line, out hit);
               }
@@ -461,15 +452,9 @@ namespace AiEnabled.Ai.Support
             {
               CleanUp(true);
               Node next;
-              if (!Graph.OpenTileDict.TryGetValue(localTarget, out next))
-              {
-                var grid = gridGraph.Grid;
-                var block = grid.GetCubeBlock(localTarget) as IMySlimBlock;
-                next = new Node(localTarget, grid, block, gotoPosition - worldTarget);
-              }
-
+              Graph.OpenTileDict.TryGetValue(localTarget, out next);
+              nextIsAirNode = next?.IsAirNode ?? false;
               NextNode = next;
-              nextIsAirNode = next.IsAirNode;
               return;
             }
           }
@@ -491,12 +476,12 @@ namespace AiEnabled.Ai.Support
           if (Graph.ObstacleNodes.ContainsKey(next.Position))
             break;
 
-          var worldNext = next.SurfacePosition ?? Graph.LocalToWorld(next.Position);
+          var worldNext = Graph.LocalToWorld(next.Position) + next.Offset;
           var vector = worldNext - worldCurrentNode;
           var localVector = Vector3D.Rotate(vector, botMatrixT);
           var checkY = Math.Abs(localVector.Y) < allowedDiff ? 0 : Math.Sign(localVector.Y);
 
-          if (i < 2 && checkY < 0 && Bot._canUseLadders)
+          if (i < 2 && checkY < 0 && Bot.CanUseLadders)
           {
             IMySlimBlock slim = gridGraph.Grid.GetCubeBlock(next.Position);
             if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
@@ -512,7 +497,7 @@ namespace AiEnabled.Ai.Support
           if (checkY != 0)
             break;
 
-          if (PathToTarget.Count > 1 && Bot._canUseLadders)
+          if (PathToTarget.Count > 1 && Bot.CanUseLadders)
           {
             var afterNext = PathToTarget[1].Position;
             IMySlimBlock slim = gridGraph.Grid.GetCubeBlock(afterNext);
@@ -554,23 +539,17 @@ namespace AiEnabled.Ai.Support
             var tgtPos = (_temp.Count > j + 1) ? _temp[j + 1] : next.Position;
             var vectorTo = tgtPos - point;
 
-            if (n.BlockedEdges != null)
+            if (n.IsBlocked(vectorTo))
             {
-              if (n.BlockedEdges.Contains(vectorTo))
-              {
-                goDirect = false;
-                break;
-              }
+              goDirect = false;
+              break;
             }
 
             Node nNext;
-            if (Graph.OpenTileDict.TryGetValue(tgtPos, out nNext) && nNext.BlockedEdges != null)
+            if (Graph.OpenTileDict.TryGetValue(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
             {
-              if (nNext.BlockedEdges.Contains(-vectorTo))
-              {
-                goDirect = false;
-                break;
-              }
+              goDirect = false;
+              break;
             }
           }
 
@@ -582,7 +561,7 @@ namespace AiEnabled.Ai.Support
             if (!prevPoint.HasValue)
               prevPoint = worldCurrent;
 
-            using (Graph.Planet.Pin())
+            //using (Graph.Planet.Pin())
             {
               Vector3D? hit = null;
 
@@ -639,14 +618,29 @@ namespace AiEnabled.Ai.Support
         return;
       }
 
+      Vector3D worldCurrent, worldCurrentNode, worldTarget;
       var localCurrent = Graph.WorldToLocal(current);
-      Graph.OpenTileDict.TryGetValue(localCurrent, out testNode);
-      var worldCurrentNode = Graph.LocalToWorld(localCurrent);
-      var worldCurrent = testNode?.SurfacePosition ?? worldCurrentNode;
-
       var localTarget = Graph.WorldToLocal(actualTarget);
-      Graph.OpenTileDict.TryGetValue(localTarget, out testNode);
-      var worldTarget = testNode?.SurfacePosition ?? Graph.LocalToWorld(localTarget);
+
+      if (Graph.OpenTileDict.TryGetValue(localCurrent, out testNode))
+      {
+        worldCurrentNode = Graph.LocalToWorld(testNode.Position);
+        worldCurrent = worldCurrentNode + testNode.Offset;
+      }
+      else
+      {
+        worldCurrentNode = Graph.LocalToWorld(localCurrent);
+        worldCurrent = worldCurrentNode;
+      }
+
+      if (Graph.OpenTileDict.TryGetValue(localTarget, out testNode))
+      {
+        worldTarget = Graph.LocalToWorld(testNode.Position) + testNode.Offset;
+      }
+      else
+      {
+        worldTarget = Graph.LocalToWorld(localTarget);
+      }
 
       var botMatrixT = MatrixD.Transpose(Bot.WorldMatrix);
       var transToTgt = Vector3D.Rotate(worldTarget - worldCurrentNode, botMatrixT);
@@ -679,7 +673,7 @@ namespace AiEnabled.Ai.Support
           {
             var line = new LineD(worldCurrent, worldTarget);
 
-            using (voxelGrid.Planet.Pin())
+            //using (voxelGrid.Planet.Pin())
               voxelGrid.Planet.RootVoxel.GetIntersectionWithLine(ref line, out hit);
           }
 
@@ -687,14 +681,9 @@ namespace AiEnabled.Ai.Support
           {
             CleanUp(true);
             Node next;
-            if (!voxelGrid.OpenTileDict.TryGetValue(localTarget, out next))
-            {
-              var offset = actualTarget - Graph.LocalToWorld(localTarget);
-              next = new Node(localTarget, null, null, offset);
-            }
-
+            voxelGrid.OpenTileDict.TryGetValue(localTarget, out next);
+            nextIsAirNode = next?.IsAirNode ?? false;
             NextNode = next;
-            nextIsAirNode = next.IsAirNode;
             return;
           }
         }
@@ -714,9 +703,7 @@ namespace AiEnabled.Ai.Support
           break;
 
         var nextNode = PathToTarget.Peek();
-        //var nextNode = Graph.OpenTileDict.GetValueOrDefault(next.Node, null);
-        var nextNodeWorld = nextNode.SurfacePosition ?? Graph.LocalToWorld(nextNode.Position);
-        //var worldNext = nextNode.SurfacePosition ?? nextNodeWorld;
+        var nextNodeWorld = Graph.LocalToWorld(nextNode.Position) + nextNode.Offset;
 
         var vector = nextNodeWorld - worldCurrentNode;
         var localVector = Vector3D.Rotate(vector, botMatrixT);
@@ -739,7 +726,7 @@ namespace AiEnabled.Ai.Support
           var line = new LineD(worldCurrent, nextNodeWorld);
           var testLine = new LineD(curPoint.Value, nextNodeWorld);
 
-          using (voxelGrid.Planet.Pin())
+          //using (voxelGrid.Planet.Pin())
           {
             if (voxelGrid.Planet.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
             {
@@ -882,6 +869,10 @@ namespace AiEnabled.Ai.Support
 
     public void ClearNode(bool includelast = false)
     {
+      var temp = LastNode as TempNode;
+      if (temp != null)
+        AiSession.Instance.NodeStack.Push(temp);
+
       if (includelast)
         LastNode = null;
       else
@@ -919,6 +910,17 @@ namespace AiEnabled.Ai.Support
           lock (PathToTarget)
             PathToTarget.Clear();
 
+          lock (TempPath)
+            TempPath.Clear();
+
+          var temp = NextNode as TempNode;
+          if (temp != null)
+            AiSession.Instance.NodeStack.Push(temp);
+
+          temp = LastNode as TempNode;
+          if (temp != null)
+            AiSession.Instance.NodeStack.Push(temp);
+
           NextNode = null;
           LastNode = null;
           _distanceToWaypointSquared = null;
@@ -935,12 +937,12 @@ namespace AiEnabled.Ai.Support
     public void Close()
     {
       Locked = false;
-
       CleanUp(true);
       
       _useObjList = null;
       _temp = null;
       PathToTarget = null;
+      TempPath = null;
       IntermediatePoints = null;
       CameFrom = null;
       CostSoFar = null;
@@ -1029,7 +1031,7 @@ namespace AiEnabled.Ai.Support
     }
 
     #region DebugOnly
-    HashSet<Vector3I> _tempDebug = new HashSet<Vector3I>(); // for debug only
+    readonly HashSet<Vector3I> _tempDebug = new HashSet<Vector3I>(); // for debug only
     public void DrawFreeSpace(Vector3D start, Vector3D goal)
     {
       try
@@ -1042,10 +1044,7 @@ namespace AiEnabled.Ai.Support
         var current = Graph.WorldToLocal(start);
         var end = Graph.WorldToLocal(goal);
 
-        Vector3I? transition = null;
-        if (Bot != null && Bot._transitionPoint != null)
-          transition = Bot._transitionPoint.Position;
-
+        var transition = Bot?._transitionPoint;
         var rotation = Quaternion.CreateFromRotationMatrix(Graph.WorldMatrix);
 
         var owner = Bot?.Owner?.Character;
@@ -1068,10 +1067,10 @@ namespace AiEnabled.Ai.Support
         Vector3D vec;
         Vector4 color = Color.Purple;
 
-        foreach (var node in Graph.ObstacleNodes.Keys)
+        foreach (var localVec in Graph.ObstacleNodes.Keys)
         {
-          _tempDebug.Add(node);
-          obb = new MyOrientedBoundingBoxD(Graph.LocalToWorld(node), Vector3D.One * 0.2, rotation);
+          _tempDebug.Add(localVec);
+          obb = new MyOrientedBoundingBoxD(Graph.LocalToWorld(localVec), Vector3D.One * 0.2, rotation);
           DrawOBB(obb, Color.Firebrick, raster);
         }
 
@@ -1119,7 +1118,7 @@ namespace AiEnabled.Ai.Support
             foreach (var item in PathToTarget)
             {
               _tempDebug.Add(item.Position);
-              var worldItem = item.SurfacePosition ?? Graph.LocalToWorld(item.Position);
+              var worldItem = Graph.LocalToWorld(item.Position) + item.Offset;
 
               obb = new MyOrientedBoundingBoxD(worldItem, Vector3D.One * 0.1, rotation);
               DrawOBB(obb, Color.Yellow, raster);
@@ -1137,9 +1136,14 @@ namespace AiEnabled.Ai.Support
         }
 
         color = Color.Purple.ToVector4();
-        vec = Graph.LocalToWorld(end);
-        MySimpleObjectDraw.DrawLine(start, vec, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
 
+        Node node;
+        if (Graph.OpenTileDict.TryGetValue(end, out node))
+          vec = Graph.LocalToWorld(node.Position) + node.Offset;
+        else
+          vec = Graph.LocalToWorld(end);
+  
+        MySimpleObjectDraw.DrawLine(start, vec, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
         obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
         DrawOBB(obb, Color.Red, raster);
 
@@ -1154,7 +1158,8 @@ namespace AiEnabled.Ai.Support
         color = Color.Orange.ToVector4();
         if (next != null)
         {
-          vec = next.SurfacePosition ?? Graph.LocalToWorld(next.Position);
+          MyAPIGateway.Utilities.ShowNotification($"Next.Position = {next.Position}, Next.Offset = {next.Offset}", 16);
+          vec = Graph.LocalToWorld(next.Position) + next.Offset;
           obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
           DrawOBB(obb, Color.Purple, raster);
 
@@ -1162,9 +1167,10 @@ namespace AiEnabled.Ai.Support
           MySimpleObjectDraw.DrawLine(line.From, line.To, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
         }
 
-        if (transition.HasValue)
+        if (transition != null)
         {
-          vec = Graph.LocalToWorld(transition.Value);
+          MyAPIGateway.Utilities.ShowNotification($"Transition.Position = {transition.Position}, Transition.Offset = {transition.Offset}", 16);
+          vec = Graph.LocalToWorld(transition.Position) + transition.Offset;
           obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
           DrawOBB(obb, Color.HotPink, raster);
 
@@ -1172,7 +1178,11 @@ namespace AiEnabled.Ai.Support
           MySimpleObjectDraw.DrawLine(line.From, line.To, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
         }
 
-        vec = Graph.LocalToWorld(current);
+        if (Graph.OpenTileDict.TryGetValue(current, out node))
+          vec = Graph.LocalToWorld(node.Position) + node.Offset;
+        else
+          vec = Graph.LocalToWorld(current);
+  
         obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
         DrawOBB(obb, Color.Green, raster);
 
@@ -1227,17 +1237,25 @@ namespace AiEnabled.Ai.Support
           box.IntersectWith(ref otherBox);
           var localExt = box.HalfExtents;
           center = Bot._currentGraph.LocalToWorld(box.Center);
+          MatrixD matrix;
+          Vector3 halfExt;
 
           var vector = Bot._nextGraph.OBB.Center - Bot._currentGraph.OBB.Center;
           var forward = Bot._currentGraph.WorldMatrix.GetClosestDirection(vector);
-          var upDir = forward == Base6Directions.Direction.Up ? Base6Directions.Direction.Backward : Base6Directions.Direction.Up;
-          var upVector = forward == Base6Directions.Direction.Up ? Bot._currentGraph.WorldMatrix.Backward : Bot._currentGraph.WorldMatrix.Up;
-          var fwdVector = Bot._currentGraph.WorldMatrix.GetDirectionVector(forward);
 
-          var matrix = Matrix.CreateWorld(Vector3D.Zero, fwdVector, upVector);
-          MatrixI m = new MatrixI(forward, upDir);
-          Vector3I.TransformNormal(ref localExt, ref m, out localExt);
-          var halfExt = Vector3I.Abs(localExt) * Bot._currentGraph.CellSize;
+          if (forward == Base6Directions.Direction.Up || forward == Base6Directions.Direction.Down)
+          {
+            matrix = Bot._currentGraph.WorldMatrix;
+            halfExt = localExt * Bot._currentGraph.CellSize;
+          }
+          else
+          {
+            var fwdVector = Bot._currentGraph.WorldMatrix.GetDirectionVector(forward);
+            matrix = Matrix.CreateWorld(Vector3D.Zero, fwdVector, Bot._currentGraph.WorldMatrix.Up);
+            MatrixI m = new MatrixI(forward, Base6Directions.Direction.Up);
+            Vector3I.TransformNormal(ref localExt, ref m, out localExt);
+            halfExt = Vector3I.Abs(localExt) * Bot._currentGraph.CellSize;
+          }
 
           MyAPIGateway.Utilities.ShowNotification($"LocalExt = {localExt}, HalfExt = {Vector3.Round(halfExt, 1)}", 16);
 

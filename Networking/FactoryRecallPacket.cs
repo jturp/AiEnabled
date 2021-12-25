@@ -60,7 +60,7 @@ namespace AiEnabled.Networking
           bot.SetPosition(botPos);
 
           helper.UseAPITargets = false;
-          helper._needsTransition = false;
+          helper.NeedsTransition = false;
           helper._pathCollection.CleanUp(true);
           helper.Target.RemoveTarget();
           helper.SetTarget();

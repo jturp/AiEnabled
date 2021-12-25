@@ -56,6 +56,7 @@ namespace AiEnabled.GameLogic
     int _controlTicks, _soundTicks;
     bool _soundPlaying, _playBuildSound;
     List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
+    CubeGridMap _gridGraph;
 
     public override void Init(MyObjectBuilder_EntityBase objectBuilder)
     {
@@ -78,6 +79,8 @@ namespace AiEnabled.GameLogic
 
       _block.AppendingCustomInfo += AppendingCustomInfo;
       _block.OnMarkForClose += OnMarkForClose;
+      _block.OnClosing += OnMarkForClose;
+      _block.OnClose += OnMarkForClose;
 
       if (AiSession.Instance.FactoryControlsHooked)
         return;
@@ -89,7 +92,10 @@ namespace AiEnabled.GameLogic
 
     public void SetHelper(IMyCharacter bot, IMyPlayer owner)
     {
-      if (_block == null || bot == null || owner == null)
+      if (_block == null || _block.MarkedForClose || bot == null || owner == null)
+        return;
+
+      if (_soundPlaying && _helperBot != null)
         return;
 
       _helperBot = bot;
@@ -223,20 +229,29 @@ namespace AiEnabled.GameLogic
               var botInfo = AiSession.Instance.FactoryBotInfoDict[_helperBot.EntityId];
               var ownerId = botInfo.OwnerId;
 
-              _gridList.Clear();
-              MyAPIGateway.GridGroups.GetGroup(_block.CubeGrid, GridLinkTypeEnum.Logical, _gridList);
-              MyCubeGrid grid = _block.CubeGrid as MyCubeGrid;
-
-              foreach (var g in _gridList)
+              var gridMap = _gridGraph;
+              if (gridMap == null)
               {
-                if (g.GridSize < 1 || g.WorldAABB.Volume < grid.PositionComp.WorldAABB.Volume)
-                  continue;
+                _gridList.Clear();
+                MyAPIGateway.GridGroups.GetGroup(_block.CubeGrid, GridLinkTypeEnum.Logical, _gridList);
+                MyCubeGrid grid = _block.CubeGrid as MyCubeGrid;
 
-                grid = g as MyCubeGrid;
+                foreach (var g in _gridList)
+                {
+                  if (g.GridSize < 1 || g.WorldAABB.Volume < grid.PositionComp.WorldAABB.Volume)
+                    continue;
+
+                  grid = g as MyCubeGrid;
+                }
+
+                gridMap = AiSession.Instance.GetGridGraph(grid, _helperBot.WorldMatrix);
+              }
+              else if (gridMap.LastActiveTicks > 100)
+              { 
+                gridMap.LastActiveTicks = 10;
               }
 
-              var gridBase = AiSession.Instance.GetGridGraph(grid, _helperBot.WorldMatrix);
-              var botChar = CreateBot(_helperBot, gridBase, ownerId);
+              var botChar = CreateBot(_helperBot, gridMap, ownerId);
               AiSession.Instance.AddBot(botChar, ownerId);
             }
             catch (Exception ex)
@@ -275,6 +290,8 @@ namespace AiEnabled.GameLogic
         {
           _block.AppendingCustomInfo -= AppendingCustomInfo;
           _block.OnMarkForClose -= OnMarkForClose;
+          _block.OnClosing -= OnMarkForClose;
+          _block.OnClose -= OnMarkForClose;
         }
 
         if (_soundPlaying)
@@ -289,10 +306,18 @@ namespace AiEnabled.GameLogic
           AiSession.Instance.Network.RelayToClients(packet);
         }
 
+        _gridList?.Clear();
+        _gridList = null;
+
         _particleInfo?.Close();
         _particleInfo = null;
+
+        _gridGraph = null;
       }
-      finally { }
+      catch (Exception ex)
+      {
+        AiSession.Instance?.Logger?.Log($"Exception in FactoryBlock.Close: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     private void AppendingCustomInfo(IMyTerminalBlock block, StringBuilder sb)

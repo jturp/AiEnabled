@@ -30,22 +30,31 @@ namespace AiEnabled.Bots.Roles
     {
       Behavior = new NeutralBehavior(bot);
 
-      _wantsTarget = false;
       _deathSound = new MySoundPair("PlayVocDeath");
       _deathSoundString = "PlayVocDeath";
       _blockDamagePerSecond = 50;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 
-      _requiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      _canUseSpaceNodes = _requiresJetpack;
-      _canUseAirNodes = _requiresJetpack;
-      _groundNodesFirst = !_requiresJetpack;
-      _enableDespawnTimer = true;
-      _canUseWaterNodes = true;
-      _waterNodesOnly = false;
-      _canUseSeats = true;
-      _canUseLadders = true;
+      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      CanUseSpaceNodes = RequiresJetpack;
+      CanUseAirNodes = RequiresJetpack;
+      GroundNodesFirst = !RequiresJetpack;
+      EnableDespawnTimer = true;
+      CanUseWaterNodes = true;
+      WaterNodesOnly = false;
+      CanUseSeats = true;
+      CanUseLadders = true;
+      WantsTarget = false;
 
+      if (!AiSession.Instance.SoundListStack.TryPop(out _attackSounds))
+        _attackSounds = new List<MySoundPair>();
+      else
+        _attackSounds.Clear();
+
+      if (!AiSession.Instance.StringListStack.TryPop(out _attackSoundStrings))
+        _attackSoundStrings = new List<string>();
+      else
+        _attackSoundStrings.Clear();
     }
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
@@ -99,7 +108,7 @@ namespace AiEnabled.Bots.Roles
       var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
-      if (!_waitForStuckTimer && angleTwoOrLess)
+      if (!WaitForStuckTimer && angleTwoOrLess)
       {
         rotation = Vector2.Zero;
       }
@@ -119,7 +128,7 @@ namespace AiEnabled.Bots.Roles
 
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!_jetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
             {
               movement = Vector3.Zero;
             }
@@ -135,7 +144,7 @@ namespace AiEnabled.Bots.Roles
         }
       }
 
-      if (_pathFinderActive)
+      if (PathFinderActive)
       {
         if (flattenedLengthSquared > distanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
           movement = Vector3.Forward * 1.5f;
@@ -152,7 +161,7 @@ namespace AiEnabled.Bots.Roles
       if (!fistAttack && isTarget && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
-      if (_jetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
+      if (JetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
         AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
     }
 
@@ -171,7 +180,7 @@ namespace AiEnabled.Bots.Roles
       {
         if (!UseAPITargets)
         {
-          if (_checkGraph && _currentGraph?.Ready == true)
+          if (CheckGraphNeeded && _currentGraph?.Ready == true)
           {
             var position = Position;
             StartCheckGraph(ref position);
@@ -191,7 +200,7 @@ namespace AiEnabled.Bots.Roles
       if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
         return;
 
-      if (_usePathFinder)
+      if (UsePathFinder)
       {
         UsePathfinder(gotoPosition, actualPosition);
         return;
@@ -270,7 +279,7 @@ namespace AiEnabled.Bots.Roles
 
       _ticksSinceLastAttack = 0;
       _damageTicks = 0;
-      _damagePending = true;
+      DamagePending = true;
 
       Character.TriggerCharacterAnimationEvent("emote", true);
       Character.TriggerCharacterAnimationEvent("Police_Bot_Attack", true);

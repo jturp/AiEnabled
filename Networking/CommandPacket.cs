@@ -79,7 +79,7 @@ namespace AiEnabled.Networking
           var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
           if (jetpack != null)
           {
-            if (bot._requiresJetpack)
+            if (bot.RequiresJetpack)
             {
               if (!jetpack.TurnedOn)
               {

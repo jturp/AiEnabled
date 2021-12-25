@@ -166,7 +166,7 @@ namespace AiEnabled.Projectiles
 
           if (subtype.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase) || subtype.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase))
             Damage *= 5;
-          else if (Vector3D.DistanceSquared(headPosition, hitPosition) < 0.05)
+          else if (Vector3D.DistanceSquared(headPosition, hitPosition) < 0.1)
             Damage *= _headShotMultiplier;
 
           AiSession.Instance.DamageCharacter(Owner.EntityId, character, MyDamageType.Bullet, Damage);

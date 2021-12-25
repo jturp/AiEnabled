@@ -276,13 +276,13 @@ namespace AiEnabled.Utilities
       for (int i = 0; i < array.Length; i++)
       {
         Vector3D vector = array[i] - position;
-        double dot = Vector3D.Dot(vector, direction);
-        if (!(dot < 0f))
+        var projection = VectorUtils.Project(vector, direction);
+        if (projection.Dot(direction) > 0)
         {
-          double num = (vector - dot * direction).LengthSquared();
-          if (num < distance)
+          var lengthSqd = projection.LengthSquared();
+          if (lengthSqd < distance)
           {
-            distance = num;
+            distance = lengthSqd;
           }
         }
       }
@@ -290,7 +290,7 @@ namespace AiEnabled.Utilities
       if (distance == double.MaxValue)
         return false;
 
-      distance = Math.Sqrt(distance);
+      distance = Math.Floor(Math.Sqrt(distance));
       return true;
     }
   }

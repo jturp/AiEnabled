@@ -254,30 +254,14 @@ namespace AiEnabled.GameLogic
           }
 
           list.Clear();
-
-          float num;
-          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(biggest.WorldMatrix.Translation, out num);
-          var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(biggest.WorldMatrix.Translation, num);
-          var tGrav = nGrav + aGrav;
-
-          MatrixD matrix;
-          if (tGrav.LengthSquared() > 0)
-          {
-            tGrav.Normalize();
-            Vector3D up = -tGrav;
-            Vector3D fwd = Vector3D.CalculatePerpendicularVector(up);
-            matrix = MatrixD.CreateWorld(biggest.WorldMatrix.Translation, fwd, up);
-          }
-          else
-          {
-            matrix = _block.WorldMatrix;
-            matrix.Translation = biggest.WorldMatrix.Translation;
-          }
-
-          _gridMap = AiSession.Instance.GetGridGraph(biggest, matrix);
+          _gridMap = AiSession.Instance.GetGridGraph(biggest, _block.WorldMatrix);
+        }
+        else if (_gridMap.LastActiveTicks > 100)
+        {
+          _gridMap.LastActiveTicks = 10;
         }
 
-        if (_gridMap?.Ready != true)
+        if (_gridMap == null || !_gridMap.Ready)
           return;
 
         var grid = _gridMap.Grid;

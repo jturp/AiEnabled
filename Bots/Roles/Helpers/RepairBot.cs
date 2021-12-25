@@ -36,6 +36,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 {
   public class RepairBot : BotBase
   {
+    Dictionary<IMyProjector, IMyCubeGrid> _projectedGrids = new Dictionary<IMyProjector, IMyCubeGrid>();
     Dictionary<string, int> _missingComps = new Dictionary<string, int>();
     HashSet<MyDefinitionId> _builtBlocks = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
@@ -51,15 +52,16 @@ namespace AiEnabled.Bots.Roles.Helpers
       bool hasOwner = Owner != null;
 
       _followDistanceSqd = 25;
-      _requiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      _canUseSpaceNodes = _requiresJetpack || hasOwner;
-      _canUseAirNodes = _requiresJetpack || hasOwner;
-      _groundNodesFirst = !_requiresJetpack;
-      _enableDespawnTimer = !hasOwner;
-      _canUseWaterNodes = true;
-      _waterNodesOnly = false;
-      _canUseSeats = true;
-      _canUseLadders = true;
+      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      CanUseSpaceNodes = RequiresJetpack || hasOwner;
+      CanUseAirNodes = RequiresJetpack || hasOwner;
+      GroundNodesFirst = !RequiresJetpack;
+      EnableDespawnTimer = !hasOwner;
+      CanUseWaterNodes = true;
+      WaterNodesOnly = false;
+      CanUseSeats = true;
+      CanUseLadders = true;
+      WantsTarget = true;
 
       _blockDamagePerSecond = 0;
       _blockDamagePerAttack = 0; // he's a lover, not a fighter :)
@@ -69,7 +71,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
       if (jetpack != null)
       {
-        if (_requiresJetpack)
+        if (RequiresJetpack)
         {
           if (!jetpack.TurnedOn)
           {
@@ -98,14 +100,12 @@ namespace AiEnabled.Bots.Roles.Helpers
 
         _missingComps?.Clear();
         _invItems?.Clear();
-        _entities?.Clear();
         _cubes?.Clear();
         _builtBlocks?.Clear();
 
         _missingComps = null;
         _toolInfo = null;
         _invItems = null;
-        _entities = null;
         _cubes = null;
         _builtBlocks = null;
       }
@@ -152,11 +152,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal override bool IsInRangeOfTarget() => true;
 
-    Dictionary<IMyProjector, IMyCubeGrid> _projectedGrids = new Dictionary<IMyProjector, IMyCubeGrid>();
-
     public override void SetTarget()
     {
-      if (_currentGraph == null || Target == null || !_wantsTarget)
+      if (_currentGraph == null || Target == null || !WantsTarget)
         return;
 
       var character = Owner?.Character;
@@ -336,12 +334,17 @@ namespace AiEnabled.Bots.Roles.Helpers
         var inv = Character.GetInventory() as MyInventory;
         if (inv != null && !inv.IsFull)
         {
-          _entities.Clear();
-          MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _entities, MyEntityQueryType.Dynamic);
+          List<MyEntity> entities;
+          if (!AiSession.Instance.EntListStack.TryPop(out entities))
+            entities = new List<MyEntity>();
+          else
+            entities.Clear();
 
-          for (int i = _entities.Count - 1; i >= 0; i--)
+          MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, entities, MyEntityQueryType.Dynamic);
+
+          for (int i = entities.Count - 1; i >= 0; i--)
           {
-            var ent = _entities[i];
+            var ent = entities[i];
             if (ent?.MarkedForClose != false)
               continue;
 
@@ -363,6 +366,9 @@ namespace AiEnabled.Bots.Roles.Helpers
               }
             }
           }
+
+          entities.Clear();
+          AiSession.Instance.EntListStack.Push(entities);
         }
       }
 
@@ -722,7 +728,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
         return;
 
-      if (_usePathFinder)
+      if (UsePathFinder)
       {
         UsePathfinder(gotoPosition, actualPosition);
         return;
@@ -772,7 +778,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
       var twoDeg = MathHelperD.ToRadians(2);
 
-      if (!_waitForStuckTimer && relVectorBot.Z < 0 && Math.Abs(angle) < twoDeg)
+      if (!WaitForStuckTimer && relVectorBot.Z < 0 && Math.Abs(angle) < twoDeg)
       {
         rotation = Vector2.Zero;
       }
@@ -801,7 +807,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!_jetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
             {
               movement = Vector3.Zero;
             }
@@ -819,7 +825,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var flattenedVector = new Vector3D(relVectorBot.X, 0, relVectorBot.Z);
       var flattenedLengthSquared = flattenedVector.LengthSquared();
 
-      if (_pathFinderActive)
+      if (PathFinderActive)
       {
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
           movement = Vector3.Forward * 0.5f;
@@ -831,7 +837,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       else
         movement = Vector3.Zero;
 
-      if (_jetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
+      if (JetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
       {
         bool towardBlock = isTarget && Target.IsSlimBlock;
         AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition, towardBlock);

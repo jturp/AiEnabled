@@ -27,7 +27,7 @@ namespace AiEnabled.Bots.Roles
 {
   public class SoldierBot : BotBase
   {
-    uint _crouchTimer, _lineOfSightTimer;
+    uint _lineOfSightTimer;
     int _lastMovementX, _ticksSinceFirePacket;
     bool _firePacketSent;
 
@@ -41,27 +41,31 @@ namespace AiEnabled.Bots.Roles
       _blockDamagePerSecond = 175;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 
-      _requiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      _canUseSpaceNodes = _requiresJetpack;
-      _canUseAirNodes = _requiresJetpack;
-      _groundNodesFirst = !_requiresJetpack;
-      _enableDespawnTimer = true;
-      _canUseWaterNodes = true;
-      _waterNodesOnly = false;
-      _canUseSeats = true;
-      _canUseLadders = true;
+      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      CanUseSpaceNodes = RequiresJetpack;
+      CanUseAirNodes = RequiresJetpack;
+      GroundNodesFirst = !RequiresJetpack;
+      EnableDespawnTimer = true;
+      CanUseWaterNodes = true;
+      WaterNodesOnly = false;
+      CanUseSeats = true;
+      CanUseLadders = true;
+      WantsTarget = true;
+
+      if (!AiSession.Instance.SoundListStack.TryPop(out _attackSounds))
+        _attackSounds = new List<MySoundPair>();
+      else
+        _attackSounds.Clear();
+
+      if (!AiSession.Instance.StringListStack.TryPop(out _attackSoundStrings))
+        _attackSoundStrings = new List<string>();
+      else
+        _attackSoundStrings.Clear();
+
+      _attackSounds.Add(new MySoundPair("Enemy"));
+      _attackSoundStrings.Add("Enemy");
 
       MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
-
-      _attackSounds = new List<MySoundPair>
-      {
-        new MySoundPair("Enemy")
-      };
-
-      _attackSoundStrings = new List<string>
-      {
-        "Enemy"
-      };
     }
 
     public override void AddWeapon()
@@ -118,7 +122,7 @@ namespace AiEnabled.Bots.Roles
       if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
         return;
 
-      if (_usePathFinder)
+      if (UsePathFinder)
       {
         UsePathfinder(gotoPosition, actualPosition);
         return;
@@ -137,8 +141,6 @@ namespace AiEnabled.Bots.Roles
       if (!base.Update())
         return false;
 
-      ++_crouchTimer;
-
       if (_firePacketSent)
       {
         _ticksSinceFirePacket++;
@@ -146,13 +148,13 @@ namespace AiEnabled.Bots.Roles
           _firePacketSent = false;
       }
 
-      if (_waitForLOSTimer)
+      if (WaitForLOSTimer)
       {
         ++_lineOfSightTimer;
         if (_lineOfSightTimer > 100)
         {
           _lineOfSightTimer = 0;
-          _waitForLOSTimer = false;
+          WaitForLOSTimer = false;
         }
       }
 
@@ -185,7 +187,7 @@ namespace AiEnabled.Bots.Roles
       return true;
     }
 
-    List<float> _randoms = new List<float>();
+    readonly List<float> _randoms = new List<float>();
 
     bool FireWeapon()
     {
@@ -289,7 +291,7 @@ namespace AiEnabled.Bots.Roles
       var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
-      if (!_waitForStuckTimer && angleTwoOrLess)
+      if (!WaitForStuckTimer && angleTwoOrLess)
       {
         rotation = Vector2.Zero;
       }
@@ -309,7 +311,7 @@ namespace AiEnabled.Bots.Roles
 
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!_jetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
             {
               movement = Vector3.Zero;
             }
@@ -327,7 +329,7 @@ namespace AiEnabled.Bots.Roles
 
       if (rifleAttack || _sideNode.HasValue)
       {
-        if (_usePathFinder)
+        if (UsePathFinder)
         {
           var vecToTgt = actualPosition - botPosition;
           var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(WorldMatrix));
@@ -403,7 +405,7 @@ namespace AiEnabled.Bots.Roles
 
                 if (testNode != null)
                 {
-                  Vector3D? addVec = (testNode.SurfacePosition ?? _currentGraph.LocalToWorld(testNode.Position)) - botPosition;
+                  Vector3D? addVec = (_currentGraph.LocalToWorld(testNode.Position) + testNode.Offset) - botPosition;
                   _sideNode += addVec;
                 }
                 else
@@ -440,7 +442,7 @@ namespace AiEnabled.Bots.Roles
           }
         }
       }
-      else if (_pathFinderActive)
+      else if (PathFinderActive)
       {
         if (flattenedLengthSquared > distanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
@@ -479,7 +481,7 @@ namespace AiEnabled.Bots.Roles
         else
           movement = Vector3.Zero;
       }
-      else if (HasWeaponOrTool && _waitForLOSTimer)
+      else if (HasWeaponOrTool && WaitForLOSTimer)
       {
         int zMove;
         if (Math.Abs(flattenedVector.Z) < 30 && relVectorBot.Y > 5)
@@ -499,14 +501,14 @@ namespace AiEnabled.Bots.Roles
       if (!fistAttack && isTarget && !HasWeaponOrTool && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
-      if (_jetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
+      if (JetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
         AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
     }
 
     void CheckFire(bool shouldFire, bool shouldAttack, ref Vector3 movement)
     {
       var isCrouching = _botState.IsCrouching;
-      _isShooting = false;
+      IsShooting = false;
 
       if (shouldFire)
       {
@@ -518,7 +520,7 @@ namespace AiEnabled.Bots.Roles
 
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())
         {
-          _isShooting = true;
+          IsShooting = true;
           _stuckTimer = 0;
           _ticksSinceFoundTarget = 0;
 

@@ -24,6 +24,7 @@ using Sandbox.Definitions;
 using Sandbox.Common.ObjectBuilders;
 using MyItemType = VRage.Game.ModAPI.Ingame.MyItemType;
 using MyItemInfo = VRage.Game.ModAPI.Ingame.MyItemInfo;
+using VRage.Voxels;
 
 namespace AiEnabled
 {
@@ -329,6 +330,22 @@ namespace AiEnabled
     public ConcurrentDictionary<long, CubeGridMap> GridGraphDict = new ConcurrentDictionary<long, CubeGridMap>();
     public ConcurrentDictionary<ulong, VoxelGridMap> VoxelGraphDict;
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
+    public ConcurrentStack<TempNode> NodeStack = new ConcurrentStack<TempNode>();
+    public ConcurrentStack<List<IMySlimBlock>> SlimListStack = new ConcurrentStack<List<IMySlimBlock>>();
+    public ConcurrentStack<List<IMyCubeGrid>> GridGroupListStack = new ConcurrentStack<List<IMyCubeGrid>>();
+    public ConcurrentStack<List<Vector3I>> LineListStack = new ConcurrentStack<List<Vector3I>>();
+    public ConcurrentStack<List<IHitInfo>> HitListStack = new ConcurrentStack<List<IHitInfo>>();
+    public ConcurrentStack<List<MyEntity>> EntListStack = new ConcurrentStack<List<MyEntity>>();
+    public ConcurrentStack<List<MySoundPair>> SoundListStack = new ConcurrentStack<List<MySoundPair>>();
+    public ConcurrentStack<List<string>> StringListStack = new ConcurrentStack<List<string>>();
+    public ConcurrentStack<HashSet<long>> GridCheckHashStack = new ConcurrentStack<HashSet<long>>();
+    public ConcurrentStack<List<MyLineSegmentOverlapResult<MyEntity>>> OverlapResultListStack = new ConcurrentStack<List<MyLineSegmentOverlapResult<MyEntity>>>();
+    public ConcurrentStack<List<CubeGridMap>> GridMapListStack = new ConcurrentStack<List<CubeGridMap>>();
+    public ConcurrentStack<Vector3D[]> CornerArrayStack = new ConcurrentStack<Vector3D[]>();
+    public ConcurrentStack<InventoryCache> InvCacheStack = new ConcurrentStack<InventoryCache>();
+    public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
+    public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
+
     //public Dictionary<string, int> AnimationTimeDictionary = new Dictionary<string, int>(); // TODO: Try and find a reference to the duration of animations
     public Queue<FutureBot> FutureBotQueue = new Queue<FutureBot>();
     public HashSet<long> AnalyzeHash = new HashSet<long>();

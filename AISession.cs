@@ -88,12 +88,12 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public string VERSION = "v0.7b";
+    public string VERSION = "v0.9b";
 
     public int MaxBots = 100;
     public int MaxHelpers = 2;
     public int ControllerCacheNum = 20;
-    public int GlobalSpawnTimer, GlobalSpeakTimer;
+    public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
 
     public int BotNumber => _robots?.Count ?? 0;
     public Logger Logger { get; protected set; }
@@ -113,8 +113,8 @@ namespace AiEnabled
     public NetworkHandler Network;
     public SaveData ModSaveData;
     public PlayerData PlayerData;
-    public ProjectileInfo Projectiles = new ProjectileInfo();
     public Inputs Input;
+    public ProjectileInfo Projectiles = new ProjectileInfo();
     LocalBotAPI _localBotAPI;
     IMyHudNotification _hudMsg;
     bool _isControlBot;
@@ -140,7 +140,7 @@ namespace AiEnabled
       }
 
       CubeGridMap gridBase;
-      if (!GridGraphDict.TryGetValue(grid.EntityId, out gridBase))
+      if (!GridGraphDict.TryGetValue(grid.EntityId, out gridBase) || gridBase == null || !gridBase.IsValid)
       {
         gridBase = new CubeGridMap(grid, worldMatrix);
         GridGraphDict.TryAdd(grid.EntityId, gridBase);
@@ -154,22 +154,27 @@ namespace AiEnabled
     {
       foreach (var voxelGraph in VoxelGraphDict.Values)
       {
+        if (voxelGraph == null || !voxelGraph.IsValid)
+        {
+          VoxelGridMap _;
+          VoxelGraphDict.TryRemove(voxelGraph.Key, out _);
+          continue;
+        }
+
         if (voxelGraph.OBB.Contains(ref worldPosition))
         {
-          double dSqd;
-          Vector3D.DistanceSquared(ref worldPosition, ref voxelGraph.OBB.Center, out dSqd);
+          if (forceRefresh)
+            voxelGraph.Refresh();
 
-          if (dSqd < VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize * 0.75)
-          {
-            if (forceRefresh)
-              voxelGraph.Refresh();
-
-            return voxelGraph;
-          }
+          return voxelGraph;
         }
       }
 
-      var graph = new VoxelGridMap(worldPosition);
+      var graph = new VoxelGridMap(worldPosition)
+      {
+        Key = _lastVoxelId
+      };
+
       VoxelGraphDict[_lastVoxelId] = graph;
       _lastVoxelId++;
       return graph;
@@ -255,6 +260,10 @@ namespace AiEnabled
       {
         UnloadModData();        
       }
+      catch
+      {
+        // pass
+      }
       finally
       {
         Instance = null;
@@ -281,55 +290,11 @@ namespace AiEnabled
         MyAPIGateway.Session.Factions.FactionCreated -= Factions_FactionCreated;
         MyAPIGateway.Session.Factions.FactionEdited -= Factions_FactionEdited;
         MyAPIGateway.Session.Factions.FactionStateChanged -= Factions_FactionStateChanged;
+        MyAPIGateway.Session.Factions.FactionAutoAcceptChanged -= Factions_FactionAutoAcceptChanged;
       }
 
       if (_selectedBot != null)
         MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
-
-      CommandMenu?.Close();
-      PlayerMenu?.Close();
-      Input?.Close();
-      HudAPI?.Close();
-      Network?.Unregister();
-      Projectiles?.Close();
-
-      Players?.Clear();
-      Bots?.Clear();
-      CatwalkRailDirections?.Clear();
-      CatwalkBlockDefinitions?.Clear();
-      SlopeBlockDefinitions?.Clear();
-      SlopedHalfBlockDefinitions?.Clear();
-      RampBlockDefinitions?.Clear();
-      HalfStairBlockDefinitions?.Clear();
-      HalfStairMirroredDefinitions?.Clear();
-      LadderBlockDefinitions?.Clear();
-      PassageBlockDefinitions?.Clear();
-      ArmorPanelMiscDefinitions?.Clear();
-      ArmorPanelAllDefinitions?.Clear();
-      FactoryBotInfoDict?.Clear();
-      SoundPairDict?.Clear();
-      SoundEmitters?.Clear();
-      FutureBotQueue?.Clear();
-      RobotSubtypes?.Clear();
-      UseObjectsAPI?.Clear();
-      BotToSeatRelativePosition?.Clear();
-      ComponentInfoDict?.Clear();
-
-      _tempPlayers?.Clear();
-      _tempPlayersAsync?.Clear();
-      _newPlayerIds?.Clear();
-      _robots?.Clear();
-      _cli?.Clear();
-      _controllerInfo?.ClearImmediate();
-      _pendingControllerInfo?.ClearImmediate();
-      _weaponFireList?.Clear();
-      _weaponInfoStack?.Clear();
-      _controlBotIds?.Clear();
-      _botsToClose?.Clear();
-      _botEntityIds?.Clear();
-      _useObjList?.Clear();
-      _gridSeats?.Clear();
-      _gridSeatGroupEnter?.Clear();
 
       if (ModSaveData != null)
       {
@@ -384,7 +349,6 @@ namespace AiEnabled
           if (map != null)
           {
             map.Close();
-            map.Nullify();
           }
         }
 
@@ -398,7 +362,6 @@ namespace AiEnabled
           if (graph != null)
           {
             graph.Close();
-            graph.Nullify();
           }
         }
 
@@ -413,6 +376,91 @@ namespace AiEnabled
         _pathCollections.Clear();
       }
 
+      if (InvCacheStack != null)
+      {
+        while (InvCacheStack.Count > 0)
+        {
+          InventoryCache cache;
+          InvCacheStack.TryPop(out cache);
+          cache?.Close();
+        }
+      }
+
+      CommandMenu?.Close();
+      PlayerMenu?.Close();
+      Input?.Close();
+      HudAPI?.Close();
+      Projectiles?.Close();
+      Network?.Unregister();
+
+      InvCacheStack?.Clear();
+      SlimListStack?.Clear();
+      GridMapListStack?.Clear();
+      OverlapResultListStack?.Clear();
+      GridCheckHashStack?.Clear();
+      StringListStack?.Clear();
+      SoundListStack?.Clear();
+      EntListStack?.Clear();
+      HitListStack?.Clear();
+      LineListStack?.Clear();
+      GridGroupListStack?.Clear();
+      Players?.Clear();
+      Bots?.Clear();
+      CatwalkRailDirections?.Clear();
+      CatwalkBlockDefinitions?.Clear();
+      SlopeBlockDefinitions?.Clear();
+      SlopedHalfBlockDefinitions?.Clear();
+      RampBlockDefinitions?.Clear();
+      HalfStairBlockDefinitions?.Clear();
+      HalfStairMirroredDefinitions?.Clear();
+      LadderBlockDefinitions?.Clear();
+      PassageBlockDefinitions?.Clear();
+      ArmorPanelMiscDefinitions?.Clear();
+      ArmorPanelAllDefinitions?.Clear();
+      FactoryBotInfoDict?.Clear();
+      SoundPairDict?.Clear();
+      SoundEmitters?.Clear();
+      FutureBotQueue?.Clear();
+      RobotSubtypes?.Clear();
+      UseObjectsAPI?.Clear();
+      BotToSeatRelativePosition?.Clear();
+      ComponentInfoDict?.Clear();
+      StorageStack?.Clear();
+
+      _gpsAddIDs?.Clear();
+      _gpsOwnerIDs?.Clear();
+      _gpsRemovals?.Clear();
+      _localGpsBotIds?.Clear();
+      _graphRemovals?.Clear();
+      _tempPlayers?.Clear();
+      _tempPlayersAsync?.Clear();
+      _newPlayerIds?.Clear();
+      _robots?.Clear();
+      _cli?.Clear();
+      _controllerInfo?.ClearImmediate();
+      _pendingControllerInfo?.ClearImmediate();
+      _weaponFireList?.Clear();
+      _weaponInfoStack?.Clear();
+      _controlBotIds?.Clear();
+      _botsToClose?.Clear();
+      _botEntityIds?.Clear();
+      _useObjList?.Clear();
+      _gridSeats?.Clear();
+      _gridSeatGroupEnter?.Clear();
+
+      MapInitQueue = null;
+      InvCacheStack = null;
+      CornerArrayStack = null;
+      SlimListStack = null;
+      GridMapListStack = null;
+      OverlapResultListStack = null;
+      GridCheckHashStack = null;
+      StringListStack = null;
+      SoundListStack = null;
+      EntListStack = null;
+      HitListStack = null;
+      LineListStack = null;
+      GridGroupListStack = null;
       Players = null;
       Bots = null;
       DiagonalDirections = null;
@@ -458,12 +506,18 @@ namespace AiEnabled
       PlayerMenu = null;
       BotToSeatRelativePosition = null;
       ComponentInfoDict = null;
+      StorageStack = null;
+      VoxelGraphDict = null;
+      GridGraphDict = null;
 
+      _gpsAddIDs = null;
+      _gpsOwnerIDs = null;
+      _gpsRemovals = null;
+      _localGpsBotIds = null;
+      _graphRemovals = null;
       _localBotAPI = null;
       _validSlopedBlockDefs = null;
-      VoxelGraphDict = null;
       _pathCollections = null;
-      GridGraphDict = null;
       _tempPlayers = null;
       _tempPlayersAsync = null;
       _newPlayerIds = null;
@@ -621,7 +675,7 @@ namespace AiEnabled
         {
           MyAPIGateway.Session.SessionSettings.EnableWolfs = false;
           MyAPIGateway.Session.SessionSettings.EnableSpiders = false;
-          MyAPIGateway.Session.SessionSettings.MaxFactionsCount = 64;
+          MyAPIGateway.Session.SessionSettings.MaxFactionsCount = 100;
         }
         else
           Logger.Log($"AiSession.BeforeStart: Unable to disable wolves and spiders, or adjust max factions - SessionSettings was null!", MessageType.WARNING);
@@ -656,19 +710,19 @@ namespace AiEnabled
           {
             foreach (var data in ModSaveData.PlayerHelperData)
             {
-              foreach (var helper in data.Helpers)
+              for (int i = data.Helpers.Count - 1; i >= 0; i--)
               {
+                var helper = data.Helpers[i];
                 if (!helper.IsActiveHelper)
                   continue;
 
+                data.Helpers.RemoveAtFast(i);
                 var matrix = MatrixD.CreateFromQuaternion(helper.Orientation);
                 matrix.Translation = helper.Position;
 
                 var future = new FutureBot(helper.Subtype, helper.DisplayName, data.OwnerIdentityId, helper.HelperId, helper.GridEntityId, (BotType)helper.Role, matrix);
                 FutureBotQueue.Enqueue(future);
               }
-
-              data.Helpers.Clear();
             }
           }
 
@@ -694,6 +748,21 @@ namespace AiEnabled
 
             if (!faction.AcceptHumans)
             {
+              if (!faction.AutoAcceptMember)
+                MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, 0L, true, faction.AutoAcceptPeace);
+
+              var joinRequests = faction.JoinRequests;
+              if (joinRequests.Count > 0)
+              {
+                factionMembers.Clear();
+                factionMembers.UnionWith(joinRequests.Keys);
+
+                foreach (var member in factionMembers)
+                {
+                  MyAPIGateway.Session.Factions.CancelJoinRequest(faction.FactionId, member);
+                }
+              }
+
               if (faction.Members.Count > 1)
               {
                 factionMembers.Clear();
@@ -752,6 +821,7 @@ namespace AiEnabled
           MyAPIGateway.Session.Factions.FactionCreated += Factions_FactionCreated;
           MyAPIGateway.Session.Factions.FactionEdited += Factions_FactionEdited;
           MyAPIGateway.Session.Factions.FactionStateChanged += Factions_FactionStateChanged;
+          MyAPIGateway.Session.Factions.FactionAutoAcceptChanged += Factions_FactionAutoAcceptChanged;
 
           foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
           {
@@ -1040,114 +1110,133 @@ namespace AiEnabled
       Network.SendToServer(pkt);
     }
 
-    private void Factions_FactionStateChanged(MyFactionStateChange action, long fromFactionId, long toFactionId, long playerId, long senderId)
+    private void Factions_FactionAutoAcceptChanged(long factionId, bool autoAcceptMember, bool autoAcceptPeace)
     {
-      if (action == MyFactionStateChange.RemoveFaction)
+      try
       {
-        long factionToRemove = 0;
-        foreach (var kvp in BotFactions)
+        var faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
+        if (faction != null && !faction.AcceptHumans && !faction.AutoAcceptMember)
         {
-          var faction = MyAPIGateway.Session.Factions.TryGetFactionById(kvp.Key);
-          if (faction == null)
-          {
-            factionToRemove = kvp.Key;
-            break;
-          }
-        }
-
-        if (factionToRemove > 0)
-        {
-          IMyFaction faction;
-          if (BotFactions.TryRemove(factionToRemove, out faction))
-            BotFactionTags.Add(faction.Tag);
-
-          SaveModData();
+          MyAPIGateway.Session.Factions.ChangeAutoAccept(factionId, 0L, true, faction.AutoAcceptPeace);
         }
       }
+      catch { }
+    }
+
+    private void Factions_FactionStateChanged(MyFactionStateChange action, long fromFactionId, long toFactionId, long playerId, long senderId)
+    {
+      try
+      {
+        if (action == MyFactionStateChange.RemoveFaction)
+        {
+          long factionToRemove = 0;
+          foreach (var kvp in BotFactions)
+          {
+            var faction = MyAPIGateway.Session.Factions.TryGetFactionById(kvp.Key);
+            if (faction == null)
+            {
+              factionToRemove = kvp.Key;
+              break;
+            }
+          }
+
+          if (factionToRemove > 0)
+          {
+            IMyFaction faction;
+            if (BotFactions.TryRemove(factionToRemove, out faction))
+              BotFactionTags.Add(faction.Tag);
+
+            SaveModData();
+          }
+        }
+      }
+      catch { }
     }
 
     private void Factions_FactionEdited(long factionId)
     {
-      Logger.Log($"Factions_FactionEdited: FactionId = {factionId}");
-
-      IMyFaction faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
-      Logger.Log($" -> Faction found = {faction != null}, Tag = {faction?.Tag ?? "NULL"}, ID = {faction?.FactionId ?? 0L}");
-      if (faction != null)
+      try
       {
-        if (!faction.AcceptHumans)
+        IMyFaction faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
+        if (faction != null)
         {
-          IMyFaction f;
-          if (BotFactions.TryRemove(factionId, out f))
-            BotFactionTags.Add(f.Tag);
-
-          return;
-        }
-
-        if (BotFactions.ContainsKey(factionId))
-          return;
-
-        bool good = true;
-        IMyFaction botFaction = null;
-        while (botFaction == null)
-        {
-          if (BotFactionTags.Count == 0)
+          if (!faction.AcceptHumans)
           {
-            good = false;
-            Logger.Log($"AiSession.FactionEdited: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
-            break;
+            IMyFaction f;
+            if (BotFactions.TryRemove(factionId, out f))
+              BotFactionTags.Add(f.Tag);
+
+            return;
           }
 
-          var rand = MyUtils.GetRandomInt(0, BotFactionTags.Count);
-          var botFactionTag = BotFactionTags[rand];
-          BotFactionTags.RemoveAtFast(rand);
+          if (BotFactions.ContainsKey(factionId))
+            return;
 
-          botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(botFactionTag);
+          bool good = true;
+          IMyFaction botFaction = null;
+          while (botFaction == null)
+          {
+            if (BotFactionTags.Count == 0)
+            {
+              good = false;
+              Logger.Log($"AiSession.FactionEdited: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
+              break;
+            }
+
+            var rand = MyUtils.GetRandomInt(0, BotFactionTags.Count);
+            var botFactionTag = BotFactionTags[rand];
+            BotFactionTags.RemoveAtFast(rand);
+
+            botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(botFactionTag);
+          }
+
+          if (!good)
+            return;
+
+          if (!BotFactions.TryAdd(factionId, botFaction))
+            Logger.Log($"Aisession.FactionEdited: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}", MessageType.WARNING);
+          else
+            Logger.Log($"AiSession.FactionEdited: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
         }
-
-        if (!good)
-          return;
-
-        if (!BotFactions.TryAdd(factionId, botFaction))
-          Logger.Log($"Aisession.FactionEdited: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}", MessageType.WARNING);
-        else
-          Logger.Log($"AiSession.FactionEdited: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
       }
+      catch { }
     }
 
     private void Factions_FactionCreated(long factionId)
     {
-      Logger.Log($"Factions_FactionCreated: FactionId = {factionId}");
-
-      IMyFaction faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
-      Logger.Log($" -> Faction found = {faction != null}, Tag = {faction?.Tag ?? "NULL"}, ID = {faction?.FactionId ?? 0L}");
-      if (faction != null && faction.AcceptHumans && !BotFactions.ContainsKey(factionId))
+      try
       {
-        bool good = true;
-        IMyFaction botFaction = null;
-        while (botFaction == null)
+        IMyFaction faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
+        if (faction != null && faction.AcceptHumans && !BotFactions.ContainsKey(factionId))
         {
-          if (BotFactionTags.Count == 0)
+          bool good = true;
+          IMyFaction botFaction = null;
+          while (botFaction == null)
           {
-            good = false;
-            Logger.Log($"AiSession.FactionCreated: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
-            break;
+            if (BotFactionTags.Count == 0)
+            {
+              good = false;
+              Logger.Log($"AiSession.FactionCreated: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
+              break;
+            }
+
+            var rand = MyUtils.GetRandomInt(0, BotFactionTags.Count);
+            var botFactionTag = BotFactionTags[rand];
+            BotFactionTags.RemoveAtFast(rand);
+
+            botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(botFactionTag);
           }
 
-          var rand = MyUtils.GetRandomInt(0, BotFactionTags.Count);
-          var botFactionTag = BotFactionTags[rand];
-          BotFactionTags.RemoveAtFast(rand);
+          if (!good)
+            return;
 
-          botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(botFactionTag);
+          if (!BotFactions.TryAdd(factionId, botFaction))
+            Logger.Log($"Aisession.FactionCreated: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}", MessageType.WARNING);
+          else
+            Logger.Log($"AiSession.FactionCreated: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
         }
-
-        if (!good)
-          return;
-
-        if (!BotFactions.TryAdd(factionId, botFaction))
-          Logger.Log($"Aisession.FactionCreated: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}", MessageType.WARNING);
-        else
-          Logger.Log($"AiSession.FactionCreated: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
       }
+      catch { }
     }
 
     public void ClearBotControllers()
@@ -1273,7 +1362,7 @@ namespace AiEnabled
           continue;
         }
 
-        if (!bot._canUseSeats)
+        if (!bot.CanUseSeats)
           continue;
 
         if (recallBots)
@@ -1289,7 +1378,7 @@ namespace AiEnabled
           var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
           if (jetpack != null)
           {
-            if (bot._requiresJetpack)
+            if (bot.RequiresJetpack)
             {
               if (!jetpack.TurnedOn)
               {
@@ -1450,7 +1539,7 @@ namespace AiEnabled
           continue;
         }
 
-        if (!bot._canUseSeats)
+        if (!bot.CanUseSeats)
           continue;
 
         if (_gridSeats.Count == 0)
@@ -2183,7 +2272,9 @@ namespace AiEnabled
         var posAndOr = new MyPositionAndOrientation(ref matrix);
 
         //var pet = BotFactory.SpawnHelper("Space_Wolf", "Wolfy", player.IdentityId, posAndOr, null, "Soldier");
-        var pet = BotFactory.SpawnHelper("Space_spider_black", "Spidy", player.IdentityId, posAndOr, null, "Scavenger");
+        var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag("SPID");
+        BotFactory.SpawnBotFromAPI("Space_spider_black", "SPID_1", posAndOr, null, "Creature", faction?.FounderId);
+        BotFactory.SpawnBotFromAPI("Space_spider_black", "SPID_2", posAndOr, null, "Creature", faction?.FounderId);
 
         //var packet = new SpawnPacket(position, forward, up, player.IdentityId);
         //Network.SendToServer(packet);
@@ -2478,6 +2569,7 @@ namespace AiEnabled
 
         ++GlobalSpawnTimer;
         ++GlobalSpeakTimer;
+        ++GlobalMapInitTimer;
         ++_ticks;
         _isTick10 = _ticks % 10 == 0;
         _isTick100 = _isTick10 && _ticks % 100 == 0;
@@ -2972,6 +3064,17 @@ namespace AiEnabled
       ++_tempObstacleTimer;
       bool clearObstacles = _tempObstacleTimer % 360 == 0;
 
+      ++GlobalMapInitTimer;
+      if (GlobalMapInitTimer > 6 && MapInitQueue.Count > 0)
+      {
+        GridBase map;
+        if (MapInitQueue.TryDequeue(out map))
+        {
+          GlobalMapInitTimer = 0;
+          map.Init();
+        }
+      }
+
       foreach (var kvp in GridGraphDict)
       {
         var graph = kvp.Value;
@@ -2982,11 +3085,15 @@ namespace AiEnabled
         }
 
         bool updateInventory = false;
-        graph.LastActiveTicks++;
-        if (graph.LastActiveTicks > 6)
+
+        if (graph.Ready)
         {
-          graph.IsActive = false;
-          continue;
+          graph.LastActiveTicks++;
+          if (graph.LastActiveTicks > 6)
+          {
+            graph.IsActive = false;
+            continue;
+          }
         }
 
         if (graph.Dirty)
@@ -3028,17 +3135,25 @@ namespace AiEnabled
         _graphRemovals.Clear();
       }
 
-      foreach (var graph in VoxelGraphDict.Values)
+
+      foreach (var kvp in VoxelGraphDict)
       {
-        graph.LastActiveTicks++;
-        if (graph.LastActiveTicks > 6)
+        var graph = kvp.Value;
+
+        if (graph.Ready)
         {
-          graph.IsActive = false;
-          continue;
+          graph.LastActiveTicks++;
+          if (graph.LastActiveTicks > 6)
+          {
+            graph.IsActive = false;
+            continue;
+          }
         }
 
         if (graph.Dirty)
+        {
           graph.Refresh();
+        }
         else
         {
           if (clearObstacles)
@@ -3219,10 +3334,25 @@ namespace AiEnabled
             graph.UpdateTempObstacles();
         }
 
-        foreach (var graph in VoxelGraphDict.Values)
+        bool removedGraphThisTick = false;
+
+        foreach (var kvp in VoxelGraphDict)
         {
+          var graph = kvp.Value;
           if (graph._locked || !graph.IsActive)
+          {
+            if (!graph._locked && graph.LastActiveTicks > 100 && !removedGraphThisTick)
+            {
+              removedGraphThisTick = true;
+
+              graph.Close();
+              VoxelGraphDict.TryRemove(kvp.Key, out graph);
+              //MyAPIGateway.Utilities.ShowNotification($"Removing voxel graph {kvp.Key}, {VoxelGraphDict.Count} VMs remaining");
+              //Logger.Log($"Removing voxel graph {kvp.Key} (last active = {graph.LastActiveTicks}), {VoxelGraphDict.Count} VMs remaining");
+            }
+
             continue;
+          }
 
           if (graph.NeedsVoxelUpate)
             graph.UpdateVoxels();

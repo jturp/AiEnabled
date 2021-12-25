@@ -35,7 +35,7 @@ namespace AiEnabled.Bots
   public static class BotFactory
   {
     public enum BotRoleNeutral { NOMAD };
-    public enum BotRoleEnemy { ZOMBIE, SOLDIER, BRUISER, GRINDER, GHOST };
+    public enum BotRoleEnemy { ZOMBIE, SOLDIER, BRUISER, GRINDER, GHOST, CREATURE };
     public enum BotRoleFriendly { REPAIR, COMBAT, SCAVENGER }; //, MEDIC };
 
     public static bool TrySeatBotOnGrid(BotBase bot, IMyCubeGrid grid)
@@ -107,7 +107,7 @@ namespace AiEnabled.Bots
         var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
         if (jetpack != null)
         {
-          if (bot._requiresJetpack)
+          if (bot.RequiresJetpack)
           {
             if (!jetpack.TurnedOn)
             {
@@ -152,25 +152,29 @@ namespace AiEnabled.Bots
       return false;
     }
 
-    public static IMyCharacter SpawnBotFromAPI(string displayName, MyPositionAndOrientation positionAndOrientation, RemoteBotAPI.SpawnData spawnData, MyCubeGrid grid = null, long? owner = null)
+    public static IMyCharacter SpawnBotFromAPI(MyPositionAndOrientation positionAndOrientation, RemoteBotAPI.SpawnData spawnData, MyCubeGrid grid = null, long? owner = null)
     {
       IMyCharacter botChar;
       if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
-        botChar = SpawnHelper(spawnData.BotSubtype, displayName, owner.Value, positionAndOrientation, grid, spawnData.BotRole, spawnData.Color);
+        botChar = SpawnHelper(spawnData.BotSubtype, spawnData.DisplayName, owner.Value, positionAndOrientation, grid, spawnData.BotRole, spawnData.Color);
       else
-        botChar = SpawnNPC(spawnData.BotSubtype, displayName, positionAndOrientation, grid, spawnData.BotRole, spawnData.Color, owner);
+        botChar = SpawnNPC(spawnData.BotSubtype, spawnData.DisplayName, positionAndOrientation, grid, spawnData.BotRole, spawnData.Color, owner);
 
       BotBase bot;
       if (botChar != null && AiSession.Instance.Bots.TryGetValue(botChar.EntityId, out bot))
       {
-        bot._canUseAirNodes = spawnData.CanUseAirNodes;
-        bot._canUseSpaceNodes = spawnData.CanUseSpaceNodes;
-        bot._canUseWaterNodes = spawnData.CanUseWaterNodes;
-        bot._waterNodesOnly = spawnData.WaterNodesOnly;
-        bot._groundNodesFirst = spawnData.UseGroundNodesFirst;
-        bot._enableDespawnTimer = spawnData.EnableDespawnTimer;
-        bot._canUseLadders = spawnData.CanUseLadders;
-        bot._canUseSeats = spawnData.CanUseSeats;
+        bot.CanUseAirNodes = spawnData.CanUseAirNodes;
+        bot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
+        bot.CanUseWaterNodes = spawnData.CanUseWaterNodes;
+        bot.WaterNodesOnly = spawnData.WaterNodesOnly;
+        bot.GroundNodesFirst = spawnData.UseGroundNodesFirst;
+        bot.CanUseLadders = spawnData.CanUseLadders;
+        bot.CanUseSeats = spawnData.CanUseSeats;
+
+        if (spawnData.DespawnTicks == 0)
+          bot.EnableDespawnTimer = false;
+        else
+          bot._despawnTicks = spawnData.DespawnTicks;
 
         if (!string.IsNullOrWhiteSpace(spawnData.DeathSound))
         {
@@ -315,52 +319,93 @@ namespace AiEnabled.Bots
       return bot;
     }
 
-    static List<IMyCubeGrid> _gridGroups = new List<IMyCubeGrid>();
-
     public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, Color? color = null, long? ownerId = null)
     {
       var bot = CreateBotObject(subType, displayName, positionAndOrientation, null, color);
       if (bot != null)
       {
-        grid = grid?.GetBiggestGridInGroup(); // TODO: This causes errors if a grid gets closed. Change to loop through grid groups
-        var gridMap = AiSession.Instance.GetNewGraph(grid, bot.WorldAABB.Center, bot.WorldMatrix);
-        bool needsName = string.IsNullOrWhiteSpace(displayName);
+        var biggestGrid = grid;
 
-        if (!ownerId.HasValue && grid != null)
+        if (grid != null)
         {
-          ownerId = 0;
-          if (grid.BigOwners?.Count > 0)
-            ownerId = grid.BigOwners[0];
-          else if (grid.SmallOwners?.Count > 0)
-            ownerId = grid.SmallOwners[0];
+          List<IMyCubeGrid> gridGroup;
+          if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroup))
+            gridGroup = new List<IMyCubeGrid>();
+          else
+            gridGroup.Clear();
+
+          MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroup);
+
+          for (int i = 0; i < gridGroup.Count; i++)
+          {
+            var otherGrid = gridGroup[i] as MyCubeGrid;
+            if (otherGrid != null && otherGrid.EntityId != grid.EntityId && otherGrid.GridSizeEnum == MyCubeSize.Large && otherGrid.BlocksCount > grid.BlocksCount)
+            {
+              biggestGrid = otherGrid;
+            }
+          }
+
+          gridGroup.Clear();
+          AiSession.Instance.GridGroupListStack.Push(gridGroup);
         }
 
-        if (ownerId > 0)
+        var gridMap = AiSession.Instance.GetNewGraph(biggestGrid, bot.WorldAABB.Center, bot.WorldMatrix);
+        bool needsName = string.IsNullOrWhiteSpace(displayName);
+        bool isNomad = !string.IsNullOrWhiteSpace(role) && role.ToUpperInvariant() == "NOMAD";
+        var botId = bot.ControllerInfo.ControllingIdentityId;
+
+        if (!isNomad)
         {
-          var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ownerId.Value);
-          if (faction != null)
+          if (!ownerId.HasValue && grid != null)
           {
-            if (!faction.AcceptHumans)
+            ownerId = 0;
+            if (grid.BigOwners?.Count > 0)
+              ownerId = grid.BigOwners[0];
+            else if (grid.SmallOwners?.Count > 0)
+              ownerId = grid.SmallOwners[0];
+          }
+
+          if (ownerId > 0)
+          {
+            var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ownerId.Value);
+            if (faction != null && !faction.AcceptHumans)
             {
-              MyVisualScriptLogicProvider.SetPlayersFaction(bot.ControllerInfo.ControllingIdentityId, faction.Tag);
+              if (!faction.AutoAcceptMember)
+                MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
+
+              MyVisualScriptLogicProvider.SetPlayersFaction(botId, faction.Tag);
             }
-            else if (AiSession.Instance.BotFactions.TryGetValue(faction.FactionId, out faction))
+            else if (AiSession.Instance.Players.ContainsKey(ownerId.Value))
             {
-              MyVisualScriptLogicProvider.SetPlayersFaction(bot.ControllerInfo.ControllingIdentityId, faction.Tag);
+              if (AiSession.Instance.BotFactions.TryGetValue(faction.FactionId, out faction))
+              {
+                if (!faction.AutoAcceptMember)
+                  MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
+
+                MyVisualScriptLogicProvider.SetPlayersFaction(botId, faction.Tag);
+              }
             }
           }
         }
 
         BotBase robot;
         bool runNeutral = false;
-        if (!string.IsNullOrWhiteSpace(role) && role.ToUpperInvariant() == "NOMAD")
+        if (isNomad)
         {
           if (needsName)
           {
             bot.Name = GetUniqueName("NomadBot");
           }
 
-          MyVisualScriptLogicProvider.SetPlayersFaction(bot.ControllerInfo.ControllingIdentityId, "NOMAD");
+          var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag("NOMAD");
+          if (faction != null)
+          {
+            if (!faction.AutoAcceptMember)
+              MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
+
+            MyVisualScriptLogicProvider.SetPlayersFaction(botId, "NOMAD");
+          }
+
           robot = new NomadBot(bot, gridMap);
           runNeutral = true;
         }
@@ -421,6 +466,14 @@ namespace AiEnabled.Bots
 
               robot = new GhostBot(bot, gridMap);
               break;
+            case BotRoleEnemy.CREATURE:
+              if (needsName)
+              {
+                bot.Name = GetUniqueName("CreatureBot");
+              }
+
+              robot = new CreatureBot(bot, gridMap);
+              break;
             case BotRoleEnemy.SOLDIER:
             default:
               if (needsName)
@@ -433,6 +486,19 @@ namespace AiEnabled.Bots
           }
         }
 
+        var botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
+        if (botFaction == null)
+        {
+          botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag("SPRT");
+          if (botFaction != null)
+          {
+            if (!botFaction.AutoAcceptMember)
+              MyAPIGateway.Session.Factions.ChangeAutoAccept(botFaction.FactionId, botId, true, botFaction.AutoAcceptPeace);
+
+            MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
+          }
+        }
+
         AiSession.Instance.AddBot(robot);
 
         if (runNeutral)
@@ -441,8 +507,6 @@ namespace AiEnabled.Bots
 
       return bot;
     }
-
-    //static HashSet<long> _factionIdentities = new HashSet<long>();
 
     public static IMyCharacter CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null)
     {

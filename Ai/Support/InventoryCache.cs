@@ -39,11 +39,9 @@ namespace AiEnabled.Ai.Support
 
     ConcurrentDictionary<IMyInventory, List<MyInventoryItem>> _inventories = new ConcurrentDictionary<IMyInventory, List<MyInventoryItem>>();
     ConcurrentDictionary<Vector3I, IMyTerminalBlock> _inventoryPositions = new ConcurrentDictionary<Vector3I, IMyTerminalBlock>(Vector3I.Comparer);
-    ConcurrentDictionary<string, float> _itemCounts = new ConcurrentDictionary<string, float>(); // component subtype to count
+    Dictionary<string, float> _itemCounts = new Dictionary<string, float>(); // component subtype to count
     Dictionary<string, int> _missingComps = new Dictionary<string, int>();
     HashSet<Vector3I> _terminals = new HashSet<Vector3I>(Vector3I.Comparer);
-    List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
-    List<IMySlimBlock> _blockList = new List<IMySlimBlock>();
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     MyObjectBuilder_Ore _scrapOB = MyObjectBuilderSerializer.CreateNewObject<MyObjectBuilder_Ore>("Scrap");
     ParallelTasks.Task _task;
@@ -59,6 +57,22 @@ namespace AiEnabled.Ai.Support
       Grid = grid;
       _workAction = new Action<WorkData>(RemoveItemsInternal);
       _workCallBack = new Action<WorkData>(RemoveItemsComplete);
+    }
+
+    public void SetGrid(MyCubeGrid grid)
+    {
+      Grid = grid;
+
+      ItemCounts.Clear();
+      Inventories.Clear();
+
+      _itemCounts.Clear();
+      _inventories.Clear();
+      _inventoryPositions.Clear();
+      _itemCounts.Clear();
+      _missingComps.Clear();
+      _terminals.Clear();
+      _invItems.Clear();
     }
 
     public void Close()
@@ -85,12 +99,6 @@ namespace AiEnabled.Ai.Support
         _inventories?.Clear();
         _inventories = null;
       }
-
-      _gridList?.Clear();
-      _gridList = null;
-
-      _blockList?.Clear();
-      _blockList = null;
 
       _inventoryPositions?.Clear();
       _inventoryPositions = null;
@@ -360,15 +368,24 @@ namespace AiEnabled.Ai.Support
       Locked = true;
 
       _itemCounts.Clear();
-      _gridList.Clear();
-      MyAPIGateway.GridGroups.GetGroup(Grid, GridLinkTypeEnum.Logical, _gridList);
 
-      for (int i = _gridList.Count - 1; i >= 0; i--)
+      List<IMyCubeGrid> gridList;
+      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
+        gridList = new List<IMyCubeGrid>();
+      else
+        gridList.Clear();
+  
+      MyAPIGateway.GridGroups.GetGroup(Grid, GridLinkTypeEnum.Logical, gridList);
+
+      for (int i = gridList.Count - 1; i >= 0; i--)
       {
-        var grid = _gridList[i];
+        var grid = gridList[i];
         if (grid?.Physics != null && !grid.MarkedForClose && grid.GridSizeEnum == MyCubeSize.Large)
           CheckInventories(grid);
       }
+
+      gridList.Clear();
+      AiSession.Instance.GridGroupListStack.Push(gridList);
 
       _refreshInvList = false;
 
@@ -410,10 +427,16 @@ namespace AiEnabled.Ai.Support
 
     void CheckInventories(IMyCubeGrid grid)
     {
-      grid.GetBlocks(_blockList);
-      for (int i = 0; i < _blockList.Count; i++)
+      List<IMySlimBlock> blockList;
+      if (!AiSession.Instance.SlimListStack.TryPop(out blockList))
+        blockList = new List<IMySlimBlock>();
+      else
+        blockList.Clear();
+
+      grid.GetBlocks(blockList);
+      for (int i = 0; i < blockList.Count; i++)
       {
-        var terminal = _blockList[i]?.FatBlock as IMyTerminalBlock;
+        var terminal = blockList[i]?.FatBlock as IMyTerminalBlock;
         if (terminal?.HasInventory != true)
           continue;
 
@@ -454,6 +477,9 @@ namespace AiEnabled.Ai.Support
           inv.GetItems(items);
         }
       }
+
+      blockList.Clear();
+      AiSession.Instance.SlimListStack.Push(blockList);
     }
 
     private void InventoryCache_ContentsChanged(MyInventoryBase obj)

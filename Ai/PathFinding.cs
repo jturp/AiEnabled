@@ -231,33 +231,33 @@ namespace AiEnabled.Ai
         {
           var newCost = currentCost;
           var node = graph.OpenTileDict[next];
-          if (node.IsSpaceNode)
+          if (node.IsSpaceNode(graph))
           {
-            if (!bot._canUseSpaceNodes)
+            if (!bot.CanUseSpaceNodes)
               continue;
           }
           else if (node.IsAirNode)
           {
-            if (!bot._canUseAirNodes)
+            if (!bot.CanUseAirNodes)
               continue;
 
-            if (bot._groundNodesFirst && !currentNode.IsAirNode)
+            if (bot.GroundNodesFirst && !currentNode.IsAirNode)
               newCost += 5;
           }
           else if (node.IsLadder)
           {
-            if (!bot._canUseLadders)
+            if (!bot.CanUseLadders)
               continue;
           }
           else if (node.IsWaterNode)
           {
-            if (!bot._canUseWaterNodes)
+            if (!bot.CanUseWaterNodes)
               continue;
 
-            if (!bot._waterNodesOnly)
+            if (!bot.WaterNodesOnly)
               newCost += 5;
           }
-          else if (bot._waterNodesOnly)
+          else if (bot.WaterNodesOnly)
             continue;
 
           int nextCost;
@@ -461,14 +461,14 @@ namespace AiEnabled.Ai
           Node n;
           if (tileDict.TryGetValue(localVec, out n) && n != null)
           {
-            if (n.IsGridNodeUnderGround)
-              continue;
-
             if (n.IsGridNodePlanetTile)
             {
               path.Enqueue(n);
               continue;
             }
+
+            if (n.IsGridNodeUnderGround)
+              continue;
           }
 
           Node pathNode;
@@ -525,14 +525,7 @@ namespace AiEnabled.Ai
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -544,14 +537,7 @@ namespace AiEnabled.Ai
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -603,14 +589,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -622,14 +601,7 @@ namespace AiEnabled.Ai
               offset = -downTravelDir * gridSize * 0.25;
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -652,14 +624,7 @@ namespace AiEnabled.Ai
                   offset = downTravelDir * gridSize * 0.25f;
 
                   pathNode = tileDict[localVec];
-                  if (pathNode.SurfacePosition.HasValue)
-                  {
-                    pathNode.SurfacePosition += offset;
-                  }
-                  else if (offset.HasValue)
-                  {
-                    pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                  }
+                  pathNode.Offset = (Vector3)offset.Value;
 
                   optimizedCache[localVec] = pathNode;
                   path.Enqueue(pathNode);
@@ -679,14 +644,7 @@ namespace AiEnabled.Ai
                 }
 
                 pathNode = tileDict[localVec];
-                if (pathNode.SurfacePosition.HasValue)
-                {
-                  pathNode.SurfacePosition += offset;
-                }
-                else if (offset.HasValue)
-                {
-                  pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                }
+                pathNode.Offset = (Vector3)offset.Value;
 
                 optimizedCache[localVec] = pathNode;
                 path.Enqueue(pathNode);
@@ -699,14 +657,7 @@ namespace AiEnabled.Ai
                   offset = -downTravelDir * gridSize * 0.5 - gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
 
                   pathNode = tileDict[localVec];
-                  if (pathNode.SurfacePosition.HasValue)
-                  {
-                    pathNode.SurfacePosition += offset;
-                  }
-                  else if (offset.HasValue)
-                  {
-                    pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                  }
+                  pathNode.Offset = (Vector3)offset.Value;
 
                   optimizedCache[localVec] = pathNode;
                   path.Enqueue(pathNode);
@@ -723,14 +674,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -759,14 +703,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -817,16 +754,11 @@ namespace AiEnabled.Ai
               }
 
               var tempNode = tileDict[localVec];
-              var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-              if (node.SurfacePosition.HasValue)
-              {
-                node.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                node.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              TempNode node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node))
+                node = new TempNode();
 
+              node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
               continue;
             }
@@ -843,14 +775,7 @@ namespace AiEnabled.Ai
                 offset = blockFwd * gridSize * 0.4;
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -879,14 +804,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              if (pathNode.SurfacePosition.HasValue)
-              {
-                pathNode.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              pathNode.Offset = (Vector3)offset.Value;
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -932,14 +850,7 @@ namespace AiEnabled.Ai
                     offset = downTravelDir * gridSize * 0.25f;
 
                     pathNode = tileDict[localVec];
-                    if (pathNode.SurfacePosition.HasValue)
-                    {
-                      pathNode.SurfacePosition += offset;
-                    }
-                    else if (offset.HasValue)
-                    {
-                      pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                    }
+                    pathNode.Offset = (Vector3)offset.Value;
 
                     optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
@@ -974,16 +885,11 @@ namespace AiEnabled.Ai
               }
 
               var tempNode = tileDict[localVec];
-              var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-              if (node.SurfacePosition.HasValue)
-              {
-                node.SurfacePosition += offset;
-              }
-              else if (offset.HasValue)
-              {
-                node.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-              }
+              TempNode node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node))
+                node = new TempNode();
 
+              node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
               continue;
             }
@@ -1027,14 +933,7 @@ namespace AiEnabled.Ai
                 }
 
                 pathNode = tileDict[localVec];
-                if (pathNode.SurfacePosition.HasValue)
-                {
-                  pathNode.SurfacePosition += offset;
-                }
-                else if (offset.HasValue)
-                {
-                  pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                }
+                pathNode.Offset = (Vector3)offset.Value;
 
                 optimizedCache[localVec] = pathNode;
                 path.Enqueue(pathNode);
@@ -1090,15 +989,12 @@ namespace AiEnabled.Ai
                   offset = downTravelDir * gridSize * 0.5f;
 
                 var tempNode = tileDict[localVec];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition += offset;
-                }
-                else if (offset.HasValue)
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                }
+
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
+
+                node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
 
                 path.Enqueue(node);
                 continue;
@@ -1117,16 +1013,11 @@ namespace AiEnabled.Ai
                 }
 
                 var tempNode = tileDict[localVec];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition += offset;
-                }
-                else if (offset.HasValue)
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                }
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
 
+                node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
               }
@@ -1139,16 +1030,11 @@ namespace AiEnabled.Ai
                 }
 
                 var tempNode = tileDict[localVec];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition += offset;
-                }
-                else if (offset.HasValue)
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                }
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
 
+                node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
               }
@@ -1192,14 +1078,7 @@ namespace AiEnabled.Ai
                   }
 
                   pathNode = tileDict[localVec];
-                  if (pathNode.SurfacePosition.HasValue)
-                  {
-                    pathNode.SurfacePosition += offset;
-                  }
-                  else if (offset.HasValue)
-                  {
-                    pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                  }
+                  pathNode.Offset = (Vector3)offset.Value;
 
                   optimizedCache[localVec] = pathNode;
                   path.Enqueue(pathNode);
@@ -1237,14 +1116,7 @@ namespace AiEnabled.Ai
                     offset = blockBwd * gridSize * 0.3;
 
                     pathNode = tileDict[localVec];
-                    if (pathNode.SurfacePosition.HasValue)
-                    {
-                      pathNode.SurfacePosition += offset;
-                    }
-                    else if (offset.HasValue)
-                    {
-                      pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                    }
+                    pathNode.Offset = (Vector3)offset.Value;
 
                     optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
@@ -1284,14 +1156,7 @@ namespace AiEnabled.Ai
                     {
 
                       pathNode = tileDict[localVec];
-                      if (pathNode.SurfacePosition.HasValue)
-                      {
-                        pathNode.SurfacePosition += offset;
-                      }
-                      else if (offset.HasValue)
-                      {
-                        pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                      }
+                      pathNode.Offset = (Vector3)offset.Value;
 
                       optimizedCache[localVec] = pathNode;
                       path.Enqueue(pathNode);
@@ -1322,14 +1187,7 @@ namespace AiEnabled.Ai
                     {
 
                       pathNode = tileDict[localVec];
-                      if (pathNode.SurfacePosition.HasValue)
-                      {
-                        pathNode.SurfacePosition += offset;
-                      }
-                      else if (offset.HasValue)
-                      {
-                        pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                      }
+                      pathNode.Offset = (Vector3)offset.Value;
 
                       optimizedCache[localVec] = pathNode;
                       path.Enqueue(pathNode);
@@ -1346,14 +1204,7 @@ namespace AiEnabled.Ai
 
 
                     pathNode = tileDict[localVec];
-                    if (pathNode.SurfacePosition.HasValue)
-                    {
-                      pathNode.SurfacePosition += offset;
-                    }
-                    else if (offset.HasValue)
-                    {
-                      pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-                    }
+                    pathNode.Offset = (Vector3)offset.Value;
 
                     optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
@@ -1413,16 +1264,11 @@ namespace AiEnabled.Ai
                   extra = fwdTravelDir * gridSize * 0.5;
 
                 var tempNode = tileDict[start];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition = node.SurfacePosition.Value + extra;
-                }
-                else 
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(start) + extra;
-                }
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
 
+                node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
 
@@ -1471,16 +1317,11 @@ namespace AiEnabled.Ai
 
                 //var extra = fwdTravelDir * gridSize * 0.5;
                 var tempNode = tileDict[start];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition = node.SurfacePosition.Value + extra;
-                }
-                else
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(start) + extra;
-                }
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
 
+                node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
 
@@ -1519,16 +1360,11 @@ namespace AiEnabled.Ai
             }
 
             var tempNode2 = tileDict[localVec];
-            var node2 = new Node(tempNode2.Position, tempNode2.Grid, tempNode2.Block, tempNode2.SurfacePosition);
-            if (node2.SurfacePosition.HasValue)
-            {
-              node2.SurfacePosition += offset;
-            }
-            else if (offset.HasValue)
-            {
-              node2.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-            }
+            TempNode node2;
+            if (!AiSession.Instance.NodeStack.TryPop(out node2))
+              node2 = new TempNode();
 
+            node2.Update(tempNode2.Position, offset ?? Vector3.Zero, tempNode2.NodeType, tempNode2.BlockedMask, tempNode2.Grid, tempNode2.Block);
             path.Enqueue(node2);
           }
           else if (prevIsHalfPanelSlope || thisisHalfPanelSlope || nextIsHalfPanelSlope || afterNextIsHalfPanelSlope)
@@ -1561,16 +1397,11 @@ namespace AiEnabled.Ai
                   extra = fwdTravelDir * gridSize * 0.5;
 
                 var tempNode = tileDict[start];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition = node.SurfacePosition.Value + extra;
-                }
-                else
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(start) + extra;
-                }
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
 
+                node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
 
@@ -1617,16 +1448,11 @@ namespace AiEnabled.Ai
 
                 var extra = dir * gridSize * 0.25; // + fwdTravelDir * gridSize * 0.5;
                 var tempNode = tileDict[start];
-                var node = new Node(tempNode.Position, tempNode.Grid, tempNode.Block, tempNode.SurfacePosition);
-                if (node.SurfacePosition.HasValue)
-                {
-                  node.SurfacePosition = node.SurfacePosition.Value + extra;
-                }
-                else
-                {
-                  node.SurfacePosition = gridGraph.LocalToWorld(start) + extra;
-                }
+                TempNode node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                  node = new TempNode();
 
+                node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
 
@@ -1665,32 +1491,19 @@ namespace AiEnabled.Ai
             }
 
             var tempNode2 = tileDict[localVec];
-            var node2 = new Node(tempNode2.Position, tempNode2.Grid, tempNode2.Block, tempNode2.SurfacePosition);
-            if (node2.SurfacePosition.HasValue)
-            {
-              node2.SurfacePosition += offset;
-            }
-            else if (offset.HasValue)
-            {
-              node2.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-            }
+            TempNode node2;
+            if (!AiSession.Instance.NodeStack.TryPop(out node2))
+              node2 = new TempNode();
 
+            node2.Update(tempNode2.Position, offset ?? Vector3.Zero, tempNode2.NodeType, tempNode2.BlockedMask, tempNode2.Grid, tempNode2.Block);
             path.Enqueue(node2);
           }
           else
           {
-            if (tileDict.TryGetValue(localVec, out n) && n.SurfacePosition.HasValue)
-              offset = n.SurfacePosition.Value - collection.Graph.LocalToWorld(localVec);
-
             pathNode = tileDict[localVec];
-            if (pathNode.SurfacePosition.HasValue)
-            {
-              pathNode.SurfacePosition += offset;
-            }
-            else if (offset.HasValue)
-            {
-              pathNode.SurfacePosition = gridGraph.LocalToWorld(localVec) + offset.Value;
-            }
+
+            if (offset.HasValue)
+              pathNode.Offset = (Vector3)offset.Value;
 
             optimizedCache[localVec] = pathNode;
             path.Enqueue(pathNode);

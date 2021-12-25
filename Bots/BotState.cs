@@ -16,12 +16,29 @@ namespace AiEnabled.Bots
 {
   public class BotState
   {
-    public bool IsOnLadder, WasOnLadder, GoingDownLadder;
-    public bool IsRunning;
-    public bool IsCrouching;
-    public bool IsFalling;
-    public bool IsFlying;
+    [Flags]
+    enum State : byte
+    {
+      None = 0,
+      IsOnLadder = 1,
+      WasOnLadder = 2,
+      GoingDownLadder = 4,
+      IsRunning = 8,
+      IsCrouching = 16,
+      IsFalling = 32,
+      IsFlying = 64
+    }
+
+    public bool IsOnLadder => (_state & State.IsOnLadder) > 0;
+    public bool WasOnLadder => (_state & State.WasOnLadder) > 0;
+    public bool GoingDownLadder => (_state & State.GoingDownLadder) > 0;
+    public bool IsRunning => (_state & State.IsRunning) > 0;
+    public bool IsCrouching => (_state & State.IsCrouching) > 0;
+    public bool IsFalling => (_state & State.IsFalling) > 0;
+    public bool IsFlying => (_state & State.IsFlying) > 0;
+
     public BotBase Bot;
+    State _state;
 
     public BotState(BotBase b)
     {
@@ -46,23 +63,22 @@ namespace AiEnabled.Bots
         case MyCharacterMovementEnum.RunStrafingLeft:
         case MyCharacterMovementEnum.RunStrafingRight:
           {
-            WasOnLadder = IsOnLadder;
-            IsFlying = false;
-            IsRunning = true;
-            IsOnLadder = false;
-            GoingDownLadder = false;
-            IsCrouching = false;
-            IsFalling = false;
+            var onLadder = IsOnLadder;
+            _state = State.IsRunning;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
             return;
           }
         case MyCharacterMovementEnum.LadderOut:
           {
-            WasOnLadder = IsOnLadder;
-            IsFlying = false;
-            IsOnLadder = true;
-            GoingDownLadder = false;
-            IsRunning = false;
-            IsCrouching = false;
+            var onLadder = IsOnLadder;
+            _state = State.IsOnLadder;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
             return;
           }
         default:
@@ -88,55 +104,54 @@ namespace AiEnabled.Bots
       {
         case 4: // falling
           {
-            WasOnLadder = IsOnLadder;
-            IsFlying = false;
-            IsRunning = false;
-            IsOnLadder = false;
-            GoingDownLadder = false;
-            IsCrouching = false;
-            IsFalling = true;
+            var onLadder = IsOnLadder;
+            _state = State.IsFalling;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
             return;
           }
         case 7: // ladder
           {
-            GoingDownLadder = state == MyCharacterMovementEnum.LadderDown;
-            WasOnLadder = IsOnLadder;
-            IsOnLadder = true;
-            IsFlying = false;
-            IsRunning = false;
-            IsCrouching = false;
+            var onLadder = IsOnLadder;
+            _state = State.IsOnLadder;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
+            if (state == MyCharacterMovementEnum.LadderDown)
+              _state |= State.GoingDownLadder;
+
             return;
           }
         case 2: // crouching
           {
-            WasOnLadder = IsOnLadder;
-            IsCrouching = true;
-            IsFlying = false;
-            IsRunning = false;
-            IsOnLadder = false;
-            GoingDownLadder = false;
-            IsFalling = false;
+            var onLadder = IsOnLadder;
+            _state = State.IsCrouching;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
             return;
           }
         case 3: // flying
           {
-            WasOnLadder = IsOnLadder;
-            IsCrouching = false;
-            IsRunning = false;
-            IsOnLadder = false;
-            GoingDownLadder = false;
-            IsFalling = false;
-            IsFlying = true;
+            var onLadder = IsOnLadder;
+            _state = State.IsFlying;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
 
             var jetpack = Bot.Character.Components?.Get<MyCharacterJetpackComponent>();
             if (jetpack != null)
             {
               if (jetpack.TurnedOn)
               {
-                if (!Bot._canUseAirNodes)
+                if (!Bot.CanUseAirNodes)
                   jetpack.TurnOnJetpack(false);
               }
-              else if (Bot._requiresJetpack)
+              else if (Bot.RequiresJetpack)
               {
                 var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
                 MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
@@ -149,15 +164,13 @@ namespace AiEnabled.Bots
           }
         default:
           {
-            WasOnLadder = IsOnLadder;
-            IsCrouching = false;
-            IsRunning = false;
-            IsOnLadder = false;
-            GoingDownLadder = false;
-            IsFalling = false;
-            IsFlying = false;
+            var onLadder = IsOnLadder;
+            _state = State.None;
 
-            if (WasOnLadder && Bot._requiresJetpack && !Bot._jetpackEnabled)
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
+            if (WasOnLadder && Bot.RequiresJetpack && !Bot.JetpackEnabled)
             {
               var jetpack = Bot.Character.Components?.Get<MyCharacterJetpackComponent>();
               if (jetpack != null && !jetpack.TurnedOn)
