@@ -525,7 +525,7 @@ namespace AiEnabled.Ai
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -537,7 +537,7 @@ namespace AiEnabled.Ai
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -589,7 +589,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -601,7 +601,7 @@ namespace AiEnabled.Ai
               offset = -downTravelDir * gridSize * 0.25;
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -624,7 +624,7 @@ namespace AiEnabled.Ai
                   offset = downTravelDir * gridSize * 0.25f;
 
                   pathNode = tileDict[localVec];
-                  pathNode.Offset = (Vector3)offset.Value;
+                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                   optimizedCache[localVec] = pathNode;
                   path.Enqueue(pathNode);
@@ -644,7 +644,7 @@ namespace AiEnabled.Ai
                 }
 
                 pathNode = tileDict[localVec];
-                pathNode.Offset = (Vector3)offset.Value;
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                 optimizedCache[localVec] = pathNode;
                 path.Enqueue(pathNode);
@@ -657,7 +657,7 @@ namespace AiEnabled.Ai
                   offset = -downTravelDir * gridSize * 0.5 - gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
 
                   pathNode = tileDict[localVec];
-                  pathNode.Offset = (Vector3)offset.Value;
+                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                   optimizedCache[localVec] = pathNode;
                   path.Enqueue(pathNode);
@@ -674,7 +674,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -703,7 +703,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -758,7 +758,7 @@ namespace AiEnabled.Ai
               if (!AiSession.Instance.NodeStack.TryPop(out node))
                 node = new TempNode();
 
-              node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+              node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
               continue;
             }
@@ -775,7 +775,7 @@ namespace AiEnabled.Ai
                 offset = blockFwd * gridSize * 0.4;
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -804,7 +804,7 @@ namespace AiEnabled.Ai
               }
 
               pathNode = tileDict[localVec];
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
               path.Enqueue(pathNode);
@@ -850,7 +850,7 @@ namespace AiEnabled.Ai
                     offset = downTravelDir * gridSize * 0.25f;
 
                     pathNode = tileDict[localVec];
-                    pathNode.Offset = (Vector3)offset.Value;
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                     optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
@@ -889,7 +889,7 @@ namespace AiEnabled.Ai
               if (!AiSession.Instance.NodeStack.TryPop(out node))
                 node = new TempNode();
 
-              node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+              node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
               continue;
             }
@@ -933,7 +933,7 @@ namespace AiEnabled.Ai
                 }
 
                 pathNode = tileDict[localVec];
-                pathNode.Offset = (Vector3)offset.Value;
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                 optimizedCache[localVec] = pathNode;
                 path.Enqueue(pathNode);
@@ -994,8 +994,7 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
-
+                node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
               }
@@ -1017,7 +1016,7 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+                node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
               }
@@ -1034,7 +1033,7 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+                node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
               }
@@ -1078,7 +1077,7 @@ namespace AiEnabled.Ai
                   }
 
                   pathNode = tileDict[localVec];
-                  pathNode.Offset = (Vector3)offset.Value;
+                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                   optimizedCache[localVec] = pathNode;
                   path.Enqueue(pathNode);
@@ -1116,7 +1115,7 @@ namespace AiEnabled.Ai
                     offset = blockBwd * gridSize * 0.3;
 
                     pathNode = tileDict[localVec];
-                    pathNode.Offset = (Vector3)offset.Value;
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                     optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
@@ -1156,7 +1155,7 @@ namespace AiEnabled.Ai
                     {
 
                       pathNode = tileDict[localVec];
-                      pathNode.Offset = (Vector3)offset.Value;
+                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                       optimizedCache[localVec] = pathNode;
                       path.Enqueue(pathNode);
@@ -1187,7 +1186,7 @@ namespace AiEnabled.Ai
                     {
 
                       pathNode = tileDict[localVec];
-                      pathNode.Offset = (Vector3)offset.Value;
+                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                       optimizedCache[localVec] = pathNode;
                       path.Enqueue(pathNode);
@@ -1204,7 +1203,7 @@ namespace AiEnabled.Ai
 
 
                     pathNode = tileDict[localVec];
-                    pathNode.Offset = (Vector3)offset.Value;
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                     optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
@@ -1503,7 +1502,7 @@ namespace AiEnabled.Ai
             pathNode = tileDict[localVec];
 
             if (offset.HasValue)
-              pathNode.Offset = (Vector3)offset.Value;
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
             optimizedCache[localVec] = pathNode;
             path.Enqueue(pathNode);

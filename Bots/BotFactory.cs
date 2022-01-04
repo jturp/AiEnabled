@@ -247,6 +247,22 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnBotFromAPI(string subtype, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null)
     {
+      var position = positionAndOrientation.Position;
+
+      float _;
+      var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out _);
+      if (gravity.LengthSquared() > 0)
+      {
+        var planet = MyGamePruningStructure.GetClosestPlanet(position);
+        if (GridBase.PointInsideVoxel(position, planet))
+        {
+          gravity.Normalize();
+
+          bool onGround;
+          positionAndOrientation.Position = GridBase.GetClosestSurfacePointFast(position, -gravity, planet, out onGround);
+        }
+      }
+
       if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
         return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, color);
 
@@ -258,7 +274,6 @@ namespace AiEnabled.Bots
       var bot = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color);
       if (bot != null)
       {
-        grid = grid?.GetBiggestGridInGroup();
         var gridMap = AiSession.Instance.GetNewGraph(grid, bot.WorldAABB.Center, bot.WorldMatrix);
         bool needsName = string.IsNullOrWhiteSpace(displayName);
 

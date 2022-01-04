@@ -476,22 +476,22 @@ namespace AiEnabled.Support
         return;
       }
 
-      List<long> activeHelpers;
-      if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out activeHelpers) && activeHelpers?.Count > 0)
+      List<long> helperIds;
+      if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds.Count >= AiSession.Instance.MaxHelpers)
       {
         found = false;
-        for (int i = 0; i < activeHelpers.Count; i++)
+        for (int i = 0; i < helperIds.Count; i++)
         {
-          if (activeHelpers[i] == helperInfo.HelperId)
+          if (helperIds[i] == helperInfo.HelperId)
           {
-            found = true;
+            found = helperInfo.IsActiveHelper;
             break;
           }
         }
 
         if (!found)
         {
-          SetContextMessage(block, "You already have a helper...");
+          SetContextMessage(block, $"You already have {helperIds.Count} helper(s).");
           return;
         }
       }

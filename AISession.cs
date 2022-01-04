@@ -133,7 +133,33 @@ namespace AiEnabled
       if (grid == null || grid.MarkedForClose)
         return null;
 
-      if (grid.GridSizeEnum != MyCubeSize.Large)
+      List<IMyCubeGrid> gridGroup;
+      if (!GridGroupListStack.TryPop(out gridGroup))
+      {
+        gridGroup = new List<IMyCubeGrid>();
+      }
+      else
+      {
+        gridGroup.Clear();
+      }
+
+      MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroup);
+      foreach (var g in gridGroup)
+      {
+        if (g == null || g.MarkedForClose || g.EntityId == grid.EntityId || g.GridSizeEnum == MyCubeSize.Small)
+          continue;
+
+        var mygrid = g as MyCubeGrid;
+        if (mygrid.BlocksCount > grid.BlocksCount || grid.GridSizeEnum == MyCubeSize.Small)
+        {
+          grid = mygrid;
+        }
+      }
+
+      gridGroup.Clear();
+      GridGroupListStack.Push(gridGroup);
+
+      if (grid.GridSizeEnum == MyCubeSize.Small)
       {
         Logger.Log($"GetGridGraph: Attempted to get a graph for a small grid!", MessageType.WARNING);
         return null;
@@ -393,6 +419,7 @@ namespace AiEnabled
       Projectiles?.Close();
       Network?.Unregister();
 
+      ComponentDefinitions?.Clear();
       InvCacheStack?.Clear();
       SlimListStack?.Clear();
       GridMapListStack?.Clear();
@@ -445,9 +472,8 @@ namespace AiEnabled
       _botsToClose?.Clear();
       _botEntityIds?.Clear();
       _useObjList?.Clear();
-      _gridSeats?.Clear();
-      _gridSeatGroupEnter?.Clear();
 
+      ComponentDefinitions = null;
       MapInitQueue = null;
       InvCacheStack = null;
       CornerArrayStack = null;
@@ -532,8 +558,7 @@ namespace AiEnabled
       _botsToClose = null;
       _botEntityIds = null;
       _useObjList = null;
-      _gridSeats = null;
-      _gridSeatGroupEnter = null;
+      _localBotAPI = null;
 
       Logger?.Close();
     }
@@ -558,115 +583,6 @@ namespace AiEnabled
           AnimationControllerDictionary[subtype] = def.AnimationController;
           RobotSubtypes.Add(subtype);
         }
-
-        //Logger.Log($"Sounds:");
-        //foreach (var soundDef in MyDefinitionManager.Static.GetSoundDefinitions())
-        //{
-        //  Logger.Log(soundDef.Id.SubtypeName);
-        //}
-
-        //HashSet<MyDefinitionId> ammoIds = new HashSet<MyDefinitionId>();
-        //Logger.Log($"Ammo Definition info");
-        //foreach (var def in MyDefinitionManager.Static.GetWeaponDefinitions())
-        //{
-        //  var weaponItemDef = def as MyWeaponItemDefinition;
-        //  if (weaponItemDef == null)
-        //  {
-        //    Logger.AddLine($"{def.Id} was not a MyWeaponItemDefinition\n");
-        //    continue;
-        //  }
-
-        //  var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
-        //  if (weaponDef?.AmmoMagazinesId != null)
-        //  {
-        //    for (int i = 0; i < weaponDef.AmmoMagazinesId.Length; i++)
-        //    {
-        //      var magDef = MyDefinitionManager.Static.GetAmmoMagazineDefinition(weaponDef.AmmoMagazinesId[i]);
-        //      if (magDef != null)
-        //      {
-        //        var ammoDef = MyDefinitionManager.Static.GetAmmoDefinition(magDef.AmmoDefinitionId);
-        //        var projDef = ammoDef as MyProjectileAmmoDefinition;
-        //        var mslDef = ammoDef as MyMissileAmmoDefinition;
-        //        if (projDef != null)
-        //        {
-        //          if (!ammoIds.Add(projDef.Id))
-        //            continue;
-
-        //          Logger.AddLine($"{projDef.Id}");
-        //          Logger.AddLine($" -> AmmoType: {projDef.AmmoType}");
-        //          Logger.AddLine($" -> IsExplosive {projDef.IsExplosive}");
-        //          Logger.AddLine($" -> Speed: {projDef.DesiredSpeed}");
-        //          Logger.AddLine($" -> SpeedVar: {projDef.SpeedVar}");
-        //          Logger.AddLine($" -> Max Trajectory: {projDef.MaxTrajectory}");
-        //          Logger.AddLine($" -> HeadShot Allowed: {projDef.HeadShot}");
-        //          Logger.AddLine($" -> HeadShot Damage: {projDef.ProjectileHeadShotDamage}");
-        //          Logger.AddLine($" -> Health Damage: {projDef.ProjectileHealthDamage}");
-        //          Logger.AddLine($" -> Mass Damage: {projDef.ProjectileMassDamage}");
-        //          Logger.AddLine($" -> Mechanical Damage: {projDef.GetDamageForMechanicalObjects()}");
-        //          Logger.AddLine($" -> Damage Multiplier = {weaponDef.DamageMultiplier}");
-        //          Logger.AddLine($" -> OnHit Effect: {projDef.ProjectileOnHitEffectName}");
-        //          Logger.AddLine($" -> Trail Material: {projDef.ProjectileTrailMaterial}");
-        //          Logger.AddLine($" -> Trail Probability: {projDef.ProjectileTrailProbability}");
-        //          Logger.AddLine($" -> Trail Color: {projDef.ProjectileTrailColor}");
-        //          Logger.AddLine($" -> Trail Scale: {projDef.ProjectileTrailScale}\n");
-        //        }
-        //        else if (mslDef != null)
-        //        {
-        //          if (!ammoIds.Add(mslDef.Id))
-        //            continue;
-
-        //          Logger.AddLine($"{mslDef.Id}");
-        //          Logger.AddLine($" -> AmmoType: {mslDef.AmmoType}");
-        //          Logger.AddLine($" -> IsExplosive {mslDef.IsExplosive}");
-        //          Logger.AddLine($" -> Initial Speed = {mslDef.MissileInitialSpeed}");
-        //          Logger.AddLine($" -> Desired Speed: {mslDef.DesiredSpeed}");
-        //          Logger.AddLine($" -> Acceleration: {mslDef.MissileAcceleration}");
-        //          Logger.AddLine($" -> SpeedVar: {mslDef.SpeedVar}");
-        //          Logger.AddLine($" -> Max Trajectory: {mslDef.MaxTrajectory}");
-        //          Logger.AddLine($" -> Missile Mass: {mslDef.MissileMass}");
-        //          Logger.AddLine($" -> Damage: {mslDef.MissileExplosionDamage}");
-        //          Logger.AddLine($" -> Mechanical Damage: {mslDef.GetDamageForMechanicalObjects()}");
-        //          Logger.AddLine($" -> Damage Radius = {mslDef.MissileExplosionRadius}");
-        //        }
-        //        else
-        //        {
-        //          Logger.AddLine($"{magDef.Id} returned null as MyProjectileAmmoDefinition and MyMissileAmmoDefinition\n");
-        //        }
-        //      }
-        //      else
-        //      {
-        //        Logger.AddLine($"{weaponDef.AmmoMagazinesId[i]} returned null as MyAmmoMagazineDefinition\n");
-        //      }
-        //    }
-        //  }
-        //  else
-        //  {
-        //    Logger.AddLine($"{weaponItemDef.WeaponDefinitionId} returned null as MyWeaponDefinition\n");
-        //  }
-        //}
-
-        //Logger.LogAll();
-
-        //Logger.Log($"\nAnimations:");
-        //foreach (var thing in MyDefinitionManager.Static.GetAllDefinitions())
-        //{
-        //  if (thing is MyCubeBlockDefinition)
-        //    continue;
-
-        //  try
-        //  {
-        //    var ob = thing.GetObjectBuilder() as MyObjectBuilder_AnimationDefinition;
-
-        //    if (ob != null)
-        //    {
-        //      Logger.Log($"{ob.Id}");
-        //    }
-        //  }
-        //  catch (Exception ex)
-        //  {
-        //    Logger.Log($"Attempted to get {thing.Id} as MyObjectBuilder_AnimationDefinition. Error = {ex.Message}");
-        //  }
-        //}
 
         _localBotAPI = new LocalBotAPI();
         ControllerCacheNum = Math.Max(20, MyAPIGateway.Session.MaxPlayers * 2);
@@ -1509,13 +1425,23 @@ namespace AiEnabled
         return;
       }
 
-      _gridSeatGroupEnter.Clear();
-      _gridSeats.Clear();
-      MyAPIGateway.GridGroups.GetGroup(playerGrid, GridLinkTypeEnum.Logical, _gridSeatGroupEnter);
+      List<IMyCubeGrid> gridGroup;
+      if (!GridGroupListStack.TryPop(out gridGroup))
+        gridGroup = new List<IMyCubeGrid>();
+      else
+        gridGroup.Clear();
 
-      foreach (var grid in _gridSeatGroupEnter)
+      List<IMySlimBlock> gridSeats;
+      if (!SlimListStack.TryPop(out gridSeats))
+        gridSeats = new List<IMySlimBlock>();
+      else
+        gridSeats.Clear();
+
+      MyAPIGateway.GridGroups.GetGroup(playerGrid, GridLinkTypeEnum.Logical, gridGroup);
+
+      foreach (var grid in gridGroup)
       {
-        grid.GetBlocks(_gridSeats, b =>
+        grid.GetBlocks(gridSeats, b =>
         {
           var seat = b.FatBlock as IMyCockpit;
           if (seat == null || seat.Pilot != null || !seat.IsFunctional
@@ -1530,69 +1456,80 @@ namespace AiEnabled
         });
       }
 
-      for (int i = playerHelpers.Count - 1; i >= 0; i--)
+      gridGroup.Clear();
+      GridGroupListStack.Push(gridGroup);
+
+      if (gridSeats.Count > 0)
       {
-        var bot = playerHelpers[i];
-        if (bot?.Character == null || bot.Character.IsDead)
+        var ownerPos = player.Character.WorldAABB.Center;
+
+        for (int i = playerHelpers.Count - 1; i >= 0; i--)
         {
-          playerHelpers.RemoveAtFast(i);
-          continue;
-        }
-
-        if (!bot.CanUseSeats)
-          continue;
-
-        if (_gridSeats.Count == 0)
-          break;
-
-        if (bot.UseAPITargets || bot.Character.Parent is IMyCockpit)
-          continue;
-
-        _gridSeats.ShellSort(bot.Position, reverse: true);
-
-        for (int j = _gridSeats.Count - 1; j >= 0; j--)
-        {
-          var seat = _gridSeats[j]?.FatBlock as IMyCockpit;
-          if (seat == null || seat.Pilot != null || !seat.IsFunctional || !seat.HasPlayerAccess(bot.Character.ControllerInfo.ControllingIdentityId))
+          var bot = playerHelpers[i];
+          if (bot?.Character == null || bot.Character.IsDead)
           {
-            _gridSeats.RemoveAtFast(j);
+            playerHelpers.RemoveAtFast(i);
             continue;
           }
 
-          CubeGridMap gridGraph;
-          if (seat.CubeGrid.GridSize > 1 && GridGraphDict.TryGetValue(seat.CubeGrid.EntityId, out gridGraph) && gridGraph != null)
+          if (!bot.CanUseSeats || Vector3D.DistanceSquared(ownerPos, bot.Position) > 10000)
+            continue;
+
+          if (gridSeats.Count == 0)
+            break;
+
+          if (bot.UseAPITargets || bot.Character.Parent is IMyCockpit)
+            continue;
+
+          gridSeats.ShellSort(bot.Position, reverse: true);
+
+          for (int j = gridSeats.Count - 1; j >= 0; j--)
           {
-            if (!gridGraph.TempBlockedNodes.ContainsKey(seat.Position))
+            var seat = gridSeats[j]?.FatBlock as IMyCockpit;
+            if (seat == null || seat.Pilot != null || !seat.IsFunctional || !seat.HasPlayerAccess(bot.Character.ControllerInfo.ControllingIdentityId))
             {
-              _gridSeats.RemoveAtFast(i);
-              var seatPos = seat.GetPosition();
-              bot.Target.SetOverride(seatPos);
+              gridSeats.RemoveAtFast(j);
+              continue;
+            }
+
+            CubeGridMap gridGraph;
+            if (seat.CubeGrid.GridSize > 1 && GridGraphDict.TryGetValue(seat.CubeGrid.EntityId, out gridGraph) && gridGraph != null)
+            {
+              if (!gridGraph.TempBlockedNodes.ContainsKey(seat.Position))
+              {
+                gridSeats.RemoveAtFast(i);
+                var seatPos = seat.GetPosition();
+                bot.Target.SetOverride(seatPos);
+                break;
+              }
+            }
+
+            // TODO: Save bot position relative to the seat and return bot to relative position when player exits
+            // Also need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
+
+            _useObjList.Clear();
+            var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
+            useComp?.GetInteractiveObjects(_useObjList);
+            if (_useObjList.Count > 0)
+            {
+              var relativePosition = Vector3D.Rotate(bot.Position - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+              BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
+
+              var useObj = _useObjList[0];
+              useObj.Use(UseActionEnum.Manipulate, bot.Character);
+
+              bot._pathCollection?.CleanUp(true);
+              bot.Target?.RemoveTarget();
+
+              gridSeats.RemoveAtFast(j);
               break;
             }
           }
-
-          // TODO: Save bot position relative to the seat and return bot to relative position when player exits
-          // Also need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
-
-          _useObjList.Clear();
-          var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
-          useComp?.GetInteractiveObjects(_useObjList);
-          if (_useObjList.Count > 0)
-          {
-            var relativePosition = Vector3D.Rotate(bot.Position - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
-            BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
-
-            var useObj = _useObjList[0];
-            useObj.Use(UseActionEnum.Manipulate, bot.Character);
-
-            bot._pathCollection?.CleanUp(true);
-            bot.Target?.RemoveTarget();
-
-            _gridSeats.RemoveAtFast(j);
-            break;
-          }
         }
       }
+
+      gridSeats.Clear();
+      SlimListStack.Push(gridSeats);
     }
 
     private void BeforeDamageHandler(object target, ref MyDamageInformation info)
@@ -2217,6 +2154,79 @@ namespace AiEnabled
         var packet = new SpawnPacket(position, forward, up, player.IdentityId);
         Network.SendToServer(packet);
       }
+      else if (cmd.Equals("test", StringComparison.OrdinalIgnoreCase))
+      {
+        float _;
+        var centerPosition = player.Character.WorldAABB.Center;
+        var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(centerPosition, out _);
+
+        if (gravity.LengthSquared() > 0)
+        {
+          var planet = MyGamePruningStructure.GetClosestPlanet(centerPosition);
+          var upVec = Vector3D.Normalize(-gravity);
+          var fwdVec = Vector3D.CalculatePerpendicularVector(upVec);
+          var lftVec = Vector3D.Cross(upVec, fwdVec);
+          var bwdVec = -fwdVec;
+          var rgtVec = -lftVec;
+
+          var distance = 250;
+          var position = centerPosition + fwdVec * distance;
+          position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          // spawn
+          var matrix = MatrixD.CreateWorld(position, fwdVec, upVec);
+          var bot = BotFactory.SpawnNPC("Police_Bot", "Ai_1", new MyPositionAndOrientation(matrix));
+
+          //position += lftVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_2", new MyPositionAndOrientation(matrix));
+
+          //position += bwdVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_3", new MyPositionAndOrientation(matrix));
+
+          //position += bwdVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_4", new MyPositionAndOrientation(matrix));
+
+          //position += rgtVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_5", new MyPositionAndOrientation(matrix));
+
+          //position += rgtVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_6", new MyPositionAndOrientation(matrix));
+
+          //position += fwdVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_7", new MyPositionAndOrientation(matrix));
+
+          //position += fwdVec * distance;
+          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+
+          //// spawn
+          //matrix.Translation = position;
+          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_8", new MyPositionAndOrientation(matrix));
+        }
+      }
       else if (cmd.Equals("pet", StringComparison.OrdinalIgnoreCase))
       {
         if (IsServer)
@@ -2569,7 +2579,6 @@ namespace AiEnabled
 
         ++GlobalSpawnTimer;
         ++GlobalSpeakTimer;
-        ++GlobalMapInitTimer;
         ++_ticks;
         _isTick10 = _ticks % 10 == 0;
         _isTick100 = _isTick10 && _ticks % 100 == 0;
@@ -3065,11 +3074,13 @@ namespace AiEnabled
       bool clearObstacles = _tempObstacleTimer % 360 == 0;
 
       ++GlobalMapInitTimer;
+      //MyAPIGateway.Utilities.ShowNotification($"Map Init Timer = {GlobalMapInitTimer}", 160);
       if (GlobalMapInitTimer > 6 && MapInitQueue.Count > 0)
       {
         GridBase map;
         if (MapInitQueue.TryDequeue(out map))
         {
+          //MyAPIGateway.Utilities.ShowMessage("AiE", $"Running map init. {MapInitQueue.Count} remaining.");
           GlobalMapInitTimer = 0;
           map.Init();
         }

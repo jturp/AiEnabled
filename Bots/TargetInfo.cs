@@ -200,27 +200,41 @@ namespace AiEnabled.Bots
         {
           var gridGraph = graph as CubeGridMap;
           var localPos = gridGraph.Grid.WorldToGridInteger(goTo);
-          var cube = gridGraph.Grid.GetCubeBlock(localPos) as IMySlimBlock;
-          if (cube?.FatBlock is IMyCockpit)
+
+          Node node;
+          float _;
+          if (gridGraph.OpenTileDict.TryGetValue(localPos, out node))
           {
-            position = gridGraph.Grid.GridIntegerToWorld(localPos);
-          }
-          else if (gridGraph.GetClosestValidNode(_base, localPos, out localPos, _base.WorldMatrix.Up))
-          {
-            position = gridGraph.Grid.GridIntegerToWorld(localPos);
-          }
-          else
-          {
-            var surfacePoint = gridGraph.GetClosestSurfacePointFast(_base, goTo, _base.WorldMatrix.Up);
-            localPos = gridGraph.Grid.WorldToGridInteger(surfacePoint);
-            if (gridGraph.GetClosestValidNode(_base, localPos, out localPos))
+            var cube = node.Block;
+            if (cube?.FatBlock is IMyCockpit)
             {
               position = gridGraph.Grid.GridIntegerToWorld(localPos);
             }
+            else if (gridGraph.GetClosestValidNode(_base, localPos, out localPos, _base.WorldMatrix.Up))
+            {
+              position = gridGraph.Grid.GridIntegerToWorld(localPos);
+            }
+            else if (gridGraph.Planet != null && MyAPIGateway.Physics.CalculateNaturalGravityAt(goTo, out _).LengthSquared() > 0)
+            {
+              var surfacePoint = gridGraph.GetClosestSurfacePointFast(_base, goTo, _base.WorldMatrix.Up);
+              localPos = gridGraph.Grid.WorldToGridInteger(surfacePoint);
+              if (gridGraph.GetClosestValidNode(_base, localPos, out localPos))
+              {
+                position = gridGraph.Grid.GridIntegerToWorld(localPos);
+              }
+              else
+              {
+                position = surfacePoint;
+              }
+            }
             else
             {
-              position = surfacePoint;
+              position = goTo;
             }
+          }
+          else
+          {
+            position = goTo;
           }
         }
         else

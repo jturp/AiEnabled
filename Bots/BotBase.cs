@@ -664,6 +664,7 @@ namespace AiEnabled.Bots
         _hitList.Clear();
 
       Character.OnClosing += Character_OnClosing;
+      Character.OnClose += Character_OnClosing;
       Character.CharacterDied += Character_CharacterDied;
 
       _graphWorkAction = new Action<WorkData>(CheckGraph);
@@ -674,8 +675,6 @@ namespace AiEnabled.Bots
 
     private void Character_CharacterDied(IMyCharacter bot)
     {
-      IsDead = true;
-
       var inventory = bot?.GetInventory() as MyInventory;
       if (inventory != null)
       {
@@ -696,7 +695,6 @@ namespace AiEnabled.Bots
 
     private void Character_OnClosing(IMyEntity bot)
     {
-      IsDead = true;
       CleanUp();
     }
 
@@ -708,9 +706,12 @@ namespace AiEnabled.Bots
 
     internal virtual void CleanUp(bool cleanConfig = false)
     {
+      IsDead = true;
+
       if (Character != null)
       {
         Character.OnClosing -= Character_OnClosing;
+        Character.OnClose -= Character_OnClosing;
         Character.CharacterDied -= Character_CharacterDied;
 
         if (Owner != null)
@@ -1063,7 +1064,8 @@ namespace AiEnabled.Bots
             if (Owner.Character.EnabledLights != Character.EnabledLights)
               Character.SwitchLights();
 
-            if (CanUseSeats && !UseAPITargets && Owner.Character.Parent is IMyCockpit)
+            if (CanUseSeats && !UseAPITargets && Owner.Character.Parent is IMyCockpit && !(Character.Parent is IMyCockpit)
+              && Vector3D.DistanceSquared(Position, Owner.Character.WorldAABB.Center) <= 10000)
               AiSession.Instance.PlayerEnteredCockpit(null, Owner.IdentityId, null);
           }
           else if (Character.EnabledLights)
@@ -2187,10 +2189,17 @@ namespace AiEnabled.Bots
       AiSession.Instance.GridGroupListStack.Push(gridGroups);
     }
 
+    // debug only
+    bool tempTaskInProcess;
     public void StartCheckGraph(ref Vector3D tgtPosition, bool force = false)
     {
       if (!_graphTask.IsComplete)
         return;
+
+      if (tempTaskInProcess)
+        return;
+
+      tempTaskInProcess = true;
 
       if (_graphWorkData == null)
         _graphWorkData = new GraphWorkData();
@@ -2208,6 +2217,7 @@ namespace AiEnabled.Bots
     void CheckGraphComplete(WorkData workData)
     {
       CheckGraphNeeded = false;
+      tempTaskInProcess = false;
     }
 
     void CheckGraph(WorkData workData)

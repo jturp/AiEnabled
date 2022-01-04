@@ -351,6 +351,7 @@ namespace AiEnabled
     public HashSet<long> AnalyzeHash = new HashSet<long>();
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
     public List<IMySlimBlock> GridSeatsAPI = new List<IMySlimBlock>();
+    public List<MyDefinitionId> ComponentDefinitions = new List<MyDefinitionId>(); // TODO: Use this to randomize components "found" by scavenger bot
 
     Stack<WeaponInfo> _weaponInfoStack = new Stack<WeaponInfo>(20);
     Stack<IconInfo> _iconInfoStack = new Stack<IconInfo>(20);
@@ -367,12 +368,9 @@ namespace AiEnabled
     List<long> _analyzeList = new List<long>();
     List<WeaponInfo> _weaponFireList = new List<WeaponInfo>();
     List<BotBase> _robots = new List<BotBase>(10);
-    List<IMyCubeGrid> _gridSeatGroupEnter = new List<IMyCubeGrid>();
-    //List<IMyCubeGrid> _gridSeatGroupExit = new List<IMyCubeGrid>();
     List<IMyUseObject> _useObjList = new List<IMyUseObject>();
     List<IMyPlayer> _tempPlayers = new List<IMyPlayer>(16);
     List<IMyPlayer> _tempPlayersAsync = new List<IMyPlayer>(16);
-    List<IMySlimBlock> _gridSeats = new List<IMySlimBlock>();
     List<IMyCharacter> _botCharsToClose = new List<IMyCharacter>();
     Dictionary<long, long> _newPlayerIds = new Dictionary<long, long>(); // bot identityId to bot entityId
     HashSet<long> _iconRemovals = new HashSet<long>();

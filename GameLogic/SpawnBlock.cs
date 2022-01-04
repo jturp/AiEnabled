@@ -43,7 +43,9 @@ namespace AiEnabled.GameLogic
   [MyEntityComponentDescriptor(typeof(MyObjectBuilder_UpgradeModule), false, "BotSpawner")]
   public class Spawner : MyGameLogicComponent
   {
-    List<IMyCubeGrid> _grids = new List<IMyCubeGrid>();
+    List<MyIniKey> _iniKeys = new List<MyIniKey>();
+    Dictionary<string, string> _subtypeToRole = new Dictionary<string, string>();
+
     List<string> _subtypes = new List<string>()
     {
       "Police_Bot",
@@ -69,13 +71,20 @@ namespace AiEnabled.GameLogic
       try
       {
         _ini?.Clear();
-        _grids?.Clear();
+        _iniKeys?.Clear();
         _subtypes?.Clear();
+        _subtypeToRole?.Clear();
+
         _fakeBlock = null;
         _subtypes = null;
-        _grids = null;
         _block = null;
         _ini = null;
+        _iniKeys = null;
+        _subtypeToRole = null;
+      }
+      catch(Exception ex)
+      {
+        AiSession.Instance?.Logger?.Log($"Exception in SpawnBlock.Close: {ex.Message}\n{ex.StackTrace}");
       }
       finally
       {
@@ -140,7 +149,10 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
       _ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n ");
       _ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch.\n ");
-  
+
+      _ini.Set("Additional Subtypes", "Subtype", "BotRole");
+      _ini.SetSectionComment("Additional Subtypes", " \n You can have the spawner spawn additional subtypes by\n adding subtypes below, one per line, in the following format:\n   Key = Value, where Key is the SubtypeId and Value\n   is one of the roles listed above");
+
       _lastConfig = _ini.ToString();
       _block.CustomData = _lastConfig;
     }
@@ -189,8 +201,110 @@ namespace AiEnabled.GameLogic
 
       _allowBossBot = ini.Get("AiEnabled", "Allow BruiserBot").ToBoolean(true);
       _minSecondsBetweenSpawns = Math.Max(1, ini.Get("AiEnabled", "Min Spawn Interval").ToInt32(60));
-      _maxSecondsBetweenSpawns = Math.Max(1, ini.Get("AiEnabled", "Max Spawn Interval").ToInt32(180));
+      _maxSecondsBetweenSpawns = Math.Max(_minSecondsBetweenSpawns, ini.Get("AiEnabled", "Max Spawn Interval").ToInt32(180));
       _maxSimultaneousSpawns = Math.Max(1, ini.Get("AiEnabled", "Max Simultaneous Spawns").ToInt32(2));
+
+      _iniKeys.Clear();
+      _subtypeToRole.Clear();
+      ini.GetKeys("Additional Subtypes", _iniKeys);
+
+      foreach (var iniKey in _iniKeys)
+      {
+        var subtype = iniKey.Name;
+        var role = ini.Get(iniKey.Section, subtype).ToString("");
+
+        if (!string.IsNullOrWhiteSpace(subtype) && !string.IsNullOrWhiteSpace(role)
+          && !subtype.Equals("Police_Bot", StringComparison.OrdinalIgnoreCase)
+          && !subtype.Equals("Space_Skeleton", StringComparison.OrdinalIgnoreCase)
+          && !subtype.Equals("Space_Zombie", StringComparison.OrdinalIgnoreCase)
+          && !subtype.Equals("Ghost_Bot", StringComparison.OrdinalIgnoreCase)
+          && !subtype.Equals("Boss_Bot", StringComparison.OrdinalIgnoreCase))
+        {
+          switch (role)
+          {
+            case "SoldierBot":
+              if (allowSoldier)
+              {
+                if (!_subtypes.Contains(subtype))
+                {
+                  _subtypes.Add(subtype);
+                }
+
+                _subtypeToRole[subtype] = role;
+              }
+              else
+              {
+                _subtypes.Remove(subtype);
+                _subtypeToRole.Remove(subtype);
+              }
+              break;
+            case "GrinderBot":
+              if (allowGrinder)
+              {
+                if (!_subtypes.Contains(subtype))
+                {
+                  _subtypes.Add(subtype);
+                }
+
+                _subtypeToRole[subtype] = role;
+              }
+              else
+              {
+                _subtypes.Remove(subtype);
+                _subtypeToRole.Remove(subtype);
+              }
+              break;
+            case "ZombieBot":
+              if (allowZombie)
+              {
+                if (!_subtypes.Contains(subtype))
+                {
+                  _subtypes.Add(subtype);
+                }
+
+                _subtypeToRole[subtype] = role;
+              }
+              else
+              {
+                _subtypes.Remove(subtype);
+                _subtypeToRole.Remove(subtype);
+              }
+              break;
+            case "GhostBot":
+              if (allowGhost)
+              {
+                if (!_subtypes.Contains(subtype))
+                {
+                  _subtypes.Add(subtype);
+                }
+
+                _subtypeToRole[subtype] = role;
+              }
+              else
+              {
+                _subtypes.Remove(subtype);
+                _subtypeToRole.Remove(subtype);
+              }
+              break;
+            case "BruiserBot":
+              if (_allowBossBot)
+              {
+                if (!_subtypes.Contains(subtype))
+                {
+                  _subtypes.Add(subtype);
+                }
+
+                _subtypeToRole[subtype] = role;
+              }
+              else
+              {
+                _subtypes.Remove(subtype);
+                _subtypeToRole.Remove(subtype);
+              }
+              break;
+          }
+        }
+      }
 
       ini.Clear();
       ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
@@ -211,6 +325,20 @@ namespace AiEnabled.GameLogic
       ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
       ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n ");
       ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch.\n ");
+
+      if (_subtypeToRole.Count > 0)
+      {
+        foreach (var kvp in _subtypeToRole)
+        {
+          ini.Set("Additional Subtypes", kvp.Key, kvp.Value);
+        }
+      }
+      else
+      {
+        ini.Set("Additional Subtypes", "Subtype", "BotRole");
+      }
+
+      ini.SetSectionComment("Additional Subtypes", " \n You can have the spawner spawn additional subtypes by\n adding subtypes below, one per line, in the following format:\n   Key = Value, where Key is the SubtypeId and Value\n   is one of the roles listed above\n ");
 
       _lastConfig = ini.ToString();
       _block.CustomData = _lastConfig;
@@ -243,7 +371,12 @@ namespace AiEnabled.GameLogic
 
         if (_gridMap == null)
         {
-          var list = new List<IMyCubeGrid>();
+          List<IMyCubeGrid> list;
+          if (!AiSession.Instance.GridGroupListStack.TryPop(out list))
+            list = new List<IMyCubeGrid>();
+          else
+            list.Clear();
+
           MyAPIGateway.GridGroups.GetGroup(_block.CubeGrid, GridLinkTypeEnum.Logical, list);
 
           MyCubeGrid biggest = _block.CubeGrid as MyCubeGrid;
@@ -254,6 +387,7 @@ namespace AiEnabled.GameLogic
           }
 
           list.Clear();
+          AiSession.Instance.GridGroupListStack.Push(list);
           _gridMap = AiSession.Instance.GetGridGraph(biggest, _block.WorldMatrix);
         }
         else if (_gridMap.LastActiveTicks > 100)
@@ -297,9 +431,10 @@ namespace AiEnabled.GameLogic
             else
               return;
 
-            var posOr = new MyPositionAndOrientation(_block.PositionComp.WorldAABB.Center + _block.WorldMatrix.Backward * 2.5, (Vector3)_block.WorldMatrix.Backward, (Vector3)(Vector3)_block.WorldMatrix.Up);
+            var role = _subtypeToRole.GetValueOrDefault(botType, null);
+            var posOr = new MyPositionAndOrientation(_block.PositionComp.WorldAABB.Center + _block.WorldMatrix.Backward * 2.5, (Vector3)_block.WorldMatrix.Backward, (Vector3)_block.WorldMatrix.Up);
 
-            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid);
+            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid, role);
             if (bot != null)
             {
               //long ownerId;

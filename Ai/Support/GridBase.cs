@@ -106,6 +106,9 @@ namespace AiEnabled.Ai.Support
     /// <returns></returns>
     public virtual bool IsPositionUsable(BotBase bot, Vector3D worldPosition)
     {
+      if (bot == null || bot.IsDead)
+        return false;
+
       Node node;
       var localPosition = WorldToLocal(worldPosition);
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
@@ -129,6 +132,11 @@ namespace AiEnabled.Ai.Support
     /// <returns></returns>
     public virtual bool IsPositionUsable(BotBase bot, Vector3D worldPosition, out Node node)
     {
+      node = null;
+
+      if (bot == null || bot.IsDead)
+        return false;
+
       var localPosition = WorldToLocal(worldPosition);
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
         && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
@@ -143,7 +151,6 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      node = null;
       return false;
     }
 
