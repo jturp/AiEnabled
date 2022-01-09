@@ -29,7 +29,6 @@ using VRage.ModAPI;
 using System.Threading;
 using VRage.Voxels;
 using AiEnabled.API;
-using Jakaria.API;
 
 namespace AiEnabled.Ai.Support
 {
@@ -714,7 +713,7 @@ namespace AiEnabled.Ai.Support
           var testPosition = currentNode + dirVec;
 
           Node testNode;
-          if (nCur.IsBlocked(dirVec) || !OpenTileDict.TryGetValue(testPosition, out testNode) || testNode == null || testNode.IsBlocked(-dirVec))
+          if (OpenTileDict.TryGetValue(testPosition, out testNode) && (nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
           {
             passable = false;
           }
@@ -728,7 +727,7 @@ namespace AiEnabled.Ai.Support
             var testPosition = currentNode + dirVec;
 
             Node testNode;
-            if (nCur.IsBlocked(dirVec) || !OpenTileDict.TryGetValue(testPosition, out testNode) || testNode == null || testNode.IsBlocked(-dirVec))
+            if (OpenTileDict.TryGetValue(testPosition, out testNode) && (nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
             {
               passable = false;
             }
@@ -740,7 +739,7 @@ namespace AiEnabled.Ai.Support
             var testPosition = currentNode + dirVec;
 
             Node testNode;
-            if (nCur.IsBlocked(dirVec) || !OpenTileDict.TryGetValue(testPosition, out testNode) || testNode == null || testNode.IsBlocked(-dirVec))
+            if (OpenTileDict.TryGetValue(testPosition, out testNode) && (nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
             {
               passable = false;
             }
@@ -2092,8 +2091,17 @@ namespace AiEnabled.Ai.Support
 
       while (iter.IsValid())
       {
+        if (Dirty)
+        {
+          return;
+        }
+
         var localPoint = iter.Current;
         iter.MoveNext();
+
+        Node node;
+        if (OpenTileDict.TryGetValue(localPoint, out node) && !node.IsGridNodePlanetTile)
+          continue;
 
         bool isGroundNode = false;
         bool isTunnelNode = false;
@@ -2192,7 +2200,6 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        Node node;
         if (addNodeBelow && OpenTileDict.TryGetValue(localBelow, out node))
         {
           NodeType nType = NodeType.None;
@@ -2206,7 +2213,7 @@ namespace AiEnabled.Ai.Support
           node.SetNodeType(nType);
           addNodeBelow = false;
         }
-        
+
         if (OpenTileDict.TryGetValue(localPoint, out node))
         {
           NodeType nType = NodeType.None;
@@ -2225,7 +2232,9 @@ namespace AiEnabled.Ai.Support
         for (int i = _additionalMaps2.Count - 1; i >= 0; i--)
         {
           if (Dirty)
+          {
             return;
+          }
 
           var otherGrid = _additionalMaps2[i]?.Grid;
           if (otherGrid == null || otherGrid.MarkedForClose)
@@ -2253,7 +2262,9 @@ namespace AiEnabled.Ai.Support
           for (int i = GridGroups.Count - 1; i >= 0; i--)
           {
             if (Dirty)
+            {
               return;
+            }
 
             var otherGrid = GridGroups[i];
             if (otherGrid == null || otherGrid.MarkedForClose)
@@ -5036,12 +5047,23 @@ namespace AiEnabled.Ai.Support
       else
         nodeList.Clear();
 
-      Grid.RayCastCells(bot.Position, requestedPosition, nodeList);
+      List<Vector3I> testList;
+      if (!AiSession.Instance.LineListStack.TryPop(out testList))
+        testList = new List<Vector3I>();
+      else
+        testList.Clear();
+
+      Grid.RayCastCells(bot.Position, requestedPosition, nodeList, new Vector3I(11));
+
+      bool getGroundFirst = !bot.CanUseAirNodes;
 
       for (int i = 0; i < nodeList.Count; i++)
       {
         var localPosition = nodeList[i];
-       
+
+        if (getGroundFirst)
+          GetClosestGroundNode(localPosition, testList, out localPosition);
+
         Node tempNode;
         if (IsPositionUsable(bot, LocalToWorld(localPosition), out tempNode))
         {
@@ -5052,9 +5074,78 @@ namespace AiEnabled.Ai.Support
         break;
       }
 
+      //var localBot = WorldToLocal(bot.Position);
+      //var botPosition = LocalToWorld(localBot);
+
+      //var vector = requestedPosition - botPosition;
+      //var length = vector.Normalize();
+      //var cellSize = (double)CellSize;
+
+      //var count = (int)Math.Floor(length / cellSize);
+
+      //for (int i = count; i >= 0; i--)
+      //{
+      //  var worldPos = botPosition + (vector * count * cellSize);
+      //  if (!OBB.Contains(ref worldPos))
+      //    continue;
+
+      //  Vector3I tempNode;
+      //  if (!bot.CanUseAirNodes && GetClosestGroundNode(WorldToLocal(worldPos), testList, out tempNode))
+      //    worldPos = LocalToWorld(tempNode);
+
+      //  if (IsPositionUsable(bot, worldPos, out node))
+      //    break;
+      //}
+
       nodeList.Clear();
+      testList.Clear();
       AiSession.Instance.LineListStack.Push(nodeList);
+      AiSession.Instance.LineListStack.Push(testList);
+
       return node != null;
+    }
+
+    bool GetClosestGroundNode(Vector3I pos, List<Vector3I> list, out Vector3I groundPos)
+    {
+      groundPos = pos;
+
+      Node node;
+      if (OpenTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
+      {
+        groundPos = node.Position;
+        return true;
+      }
+
+      var top = pos + Vector3I.Up * 10;
+      var btm = pos - Vector3I.Up * 10;
+
+      var posWorld = Grid.GridIntegerToWorld(pos);
+      var topWorld = Grid.GridIntegerToWorld(top);
+      var btmWorld = Grid.GridIntegerToWorld(btm);
+
+      list.Clear();
+      Grid.RayCastCells(topWorld, btmWorld, list, new Vector3I(11));
+
+      bool result = false;
+      int distance = int.MaxValue;
+
+      for (int i = 0; i < list.Count; i++)
+      {
+        var localPos = list[i];
+
+        if (OpenTileDict.TryGetValue(localPos, out node) && node.IsGroundNode)
+        {
+          var dManhattan = Vector3I.DistanceManhattan(localPos, pos);
+          if (dManhattan < distance)
+          {
+            distance = dManhattan;
+            groundPos = localPos;
+            result = true;
+          }
+        }
+      }
+
+      return result;
     }
 
     public override void UpdateTempObstacles()

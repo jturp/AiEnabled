@@ -9,8 +9,6 @@ using AiEnabled.API;
 using AiEnabled.Bots;
 using AiEnabled.Utilities;
 
-using Jakaria.API;
-
 using Sandbox.Definitions;
 using Sandbox.Game.Entities;
 using Sandbox.Game.WorldEnvironment;
@@ -642,15 +640,14 @@ namespace AiEnabled.Ai.Support
         var localAbove = node.Position + upVec;
 
         Node nAbove;
-        if (OpenTileDict.TryGetValue(localAbove, out nAbove))
+        if (OpenTileDict.TryGetValue(localAbove, out nAbove) && !nAbove.IsGridNode)
         {
-          if (!nAbove.IsGridNode)
-            nAbove.SetNodeType(NodeType.Ground);
+          nAbove.SetNodeType(NodeType.Ground);
 
           var worldPoint = LocalToWorld(node.Position) + node.Offset;
-          nAbove.Offset = worldPoint - LocalToWorld(nAbove.Position);
+          nAbove.Offset = (Vector3)(worldPoint - LocalToWorld(nAbove.Position));
 
-          OpenTileDict[localAbove] = nAbove;
+          //OpenTileDict[localAbove] = nAbove;
         }
       }
 
@@ -661,39 +658,59 @@ namespace AiEnabled.Ai.Support
     public override bool GetRandomOpenNode(BotBase bot, Vector3D requestedPosition, out Node node)
     {
       node = null;
-      if (OpenTileDict.Count == 0)
+      if (OpenTileDict.Count == 0 || (!bot.CanUseAirNodes && Planet == null))
         return false;
 
       var localBot = WorldToLocal(bot.Position);
       var botPosition = LocalToWorld(localBot);
 
-      requestedPosition = GetClosestSurfacePointFast(bot, requestedPosition, WorldMatrix.Up);
       var localReq = WorldToLocal(requestedPosition);
       requestedPosition = LocalToWorld(localReq);
 
-      botPosition = Vector3D.Transform(botPosition, MatrixNormalizedInv);
-      requestedPosition = Vector3D.Transform(requestedPosition, MatrixNormalizedInv);
+      var vector = requestedPosition - botPosition;
+      var length = vector.Normalize();
+      var cellSize = (double)CellSize;
 
-      List<Vector3I> nodeList;
-      if (!AiSession.Instance.LineListStack.TryPop(out nodeList))
-        nodeList = new List<Vector3I>();
-      else
-        nodeList.Clear();
+      var count = (int)Math.Floor(length / cellSize);
 
-      MyCubeGrid.RayCastStaticCells(botPosition, requestedPosition, nodeList, CellSize, BoundingBox.HalfExtents);
-
-      for (int i = nodeList.Count - 1; i >= 0; i--)
+      for (int i = count; i >= 0; i--)
       {
-        var localPosition = nodeList[i];
-        if (IsPositionUsable(bot, LocalToWorld(localPosition), out node))
-        {
-          break;
-        }
+        var worldPos = botPosition + (vector * count * cellSize);
+        if (!OBB.Contains(ref worldPos))
+          continue;
+
+        Node tempNode;
+        if (!bot.CanUseAirNodes && GetClosestGroundNode(WorldToLocal(worldPos), out tempNode))
+          worldPos = LocalToWorld(tempNode.Position);
+
+        if (IsPositionUsable(bot, worldPos, out node))
+          return true;
       }
 
-      nodeList.Clear();
-      AiSession.Instance.LineListStack.Push(nodeList);
-      return node != null;
+      node = null;
+      return false;
+    }
+
+    bool GetClosestGroundNode(Vector3I pos, out Node node)
+    {
+      if (OpenTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
+        return true;
+
+      if (GetClosestSurfacePointFast(LocalToWorld(pos), WorldMatrix.Up, out node))
+        return true;
+
+      pos += Vector3I.Up * 10;
+
+      for (int i = 0; i < 20; i++)
+      {
+        pos += Vector3I.Down;
+
+        if (OpenTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
+          return true;
+      }
+
+      node = null;
+      return false;
     }
 
     public override void UpdateTempObstacles()

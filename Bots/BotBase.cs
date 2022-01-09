@@ -40,7 +40,6 @@ using Sandbox.Game.WorldEnvironment;
 using AiEnabled.Bots.Roles;
 using AiEnabled.Parallel;
 using ParallelTasks;
-using AiEnabled.ModFiles.Parallel;
 
 namespace AiEnabled.Bots
 {
@@ -600,7 +599,7 @@ namespace AiEnabled.Bots
     internal Vector3I _lastCurrent, _lastPrevious, _lastEndLocal;
     internal int _stuckCounter, _stuckTimer, _stuckTimerReset;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter;
-    internal uint _pathTimer, _idleTimer, _lowHealthTimer = 1800;
+    internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
     internal uint _ticksSinceFoundTarget, _damageTicks, _despawnTicks = 15000;
     internal uint _ticksBeforeDamage = 35;
     internal uint _ticksBetweenAttacks = 300;
@@ -989,6 +988,7 @@ namespace AiEnabled.Bots
       ++_ticksSinceFoundTarget;
       ++_ticksSinceLastDismount;
       ++_lowHealthTimer;
+      ++_idlePathTimer;
 
       Behavior?.Update();
 
@@ -1020,9 +1020,6 @@ namespace AiEnabled.Bots
 
       bool inSeat = Character?.Parent is IMyCockpit;
       bool collectionOK = _pathCollection != null;
-
-      if (collectionOK)
-        _pathCollection.IdlePathTimer++;
 
       if (_currentGraph != null)
       {
@@ -1936,7 +1933,7 @@ namespace AiEnabled.Bots
             var floater = Target.Entity as MyFloatingObject;
             var floaterPosition = floater?.PositionComp.WorldAABB.Center ?? Vector3D.PositiveInfinity;
             var distanceToFloater = Vector3D.DistanceSquared(floaterPosition, hit.Position);
-            result = distanceToFloater < 1;
+            result = distanceToFloater < 1.5;
             break;
           }
           
@@ -2610,7 +2607,7 @@ namespace AiEnabled.Bots
             {
               GetNextNodeAndMove(ref distanceToCheck);
             }
-            else if (!_pathCollection.HasPath && !_pathCollection.Locked && _pathCollection.IdlePathTimer > 120 && !Target.IsSlimBlock
+            else if (!_pathCollection.HasPath && !_pathCollection.Locked && !Target.IsSlimBlock
               && (!NeedsTransition || _transitionPoint == null))
             {
               SimulateIdleMovement(false, Owner?.Character?.IsDead == false);
@@ -3416,6 +3413,8 @@ namespace AiEnabled.Bots
 
     internal void SimulateIdleMovement(bool getMoving, bool towardOwner = false)
     {
+      var botPosition = Position;
+
       if (towardOwner)
       {
         _moveTo = null;
@@ -3423,18 +3422,18 @@ namespace AiEnabled.Bots
       }
       else if (_moveTo.HasValue)
       {
-        var vector = Vector3D.TransformNormal(_moveTo.Value - Position, Matrix.Transpose(WorldMatrix));
+        var vector = Vector3D.TransformNormal(_moveTo.Value - botPosition, Matrix.Transpose(WorldMatrix));
         var flattenedVector = new Vector3D(vector.X, 0, vector.Z);
 
         if (flattenedVector.LengthSquared() <= 3)
           _moveTo = null;
         else
         {
-          var distFromPrev = Vector3D.DistanceSquared(_prevMoveTo.Value, Position);
+          var distFromPrev = Vector3D.DistanceSquared(_prevMoveTo.Value, botPosition);
           if (distFromPrev > 4)
           {
             _idleTimer = 0;
-            _prevMoveTo = Position;
+            _prevMoveTo = botPosition;
           }
           else
           {
@@ -3456,19 +3455,25 @@ namespace AiEnabled.Bots
         _pathCollection.Graph = _currentGraph;
       }
 
+      //if (AiSession.Instance.DrawDebug && _pathCollection != null)
+      //{
+      //  var start = Position;
+      //  var end = _moveTo ?? start;
+      //  _pathCollection.DrawFreeSpace(start, end);
+      //}
+
       if (_moveTo == null)
       {
         if (towardOwner)
         {
           var pos = Owner.Character.WorldAABB.Center;
-          if (Vector3D.DistanceSquared(Position, pos) <= 25)
+          if (Vector3D.DistanceSquared(botPosition, pos) <= 25)
           {
             _pathCollection?.CleanUp(true);
 
             Vector3D goTo, actual;
             if (Target.GetTargetPosition(out goTo, out actual))
             {
-              var botPosition = Position;
               actual = Vector3D.Normalize(actual - botPosition);
               MoveToPoint(botPosition + actual);
             }
@@ -3488,23 +3493,30 @@ namespace AiEnabled.Bots
 
         if (_moveTo == null)
         {
-          var direction = GetTravelDirection();
-
-          if (graphReady)
+          if (_idlePathTimer > 300)
           {
-            Node moveNode;
-            var pos = Position + direction * MyUtils.GetRandomInt(10, (int)_currentGraph.OBB.HalfExtent.AbsMax());
-            if (!_currentGraph.GetRandomOpenNode(this, pos, out moveNode) || moveNode == null)
-              return;
+            _idlePathTimer = 0;
+            var direction = GetTravelDirection();
 
-            _moveTo = _currentGraph.LocalToWorld(moveNode.Position) + moveNode.Offset;
+            if (graphReady)
+            {
+              Node moveNode;
+              var pos = botPosition + direction * MyUtils.GetRandomInt(10, (int)_currentGraph.OBB.HalfExtent.AbsMax());
+              if (_currentGraph.GetRandomOpenNode(this, pos, out moveNode))
+              {
+                _moveTo = _currentGraph.LocalToWorld(moveNode.Position) + moveNode.Offset;
+              }
+            }
+            else
+              _moveTo = botPosition + direction * MyUtils.GetRandomInt(10, 26);
           }
-          else
-            _moveTo = Position + direction * MyUtils.GetRandomInt(10, 26);
         }
 
-        _prevMoveTo = Position;
+        _prevMoveTo = botPosition;
         _idleTimer = 0;
+
+        if (_moveTo == null)
+          return;
       }
 
       if (graphReady)

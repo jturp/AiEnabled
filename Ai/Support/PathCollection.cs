@@ -35,23 +35,6 @@ namespace AiEnabled.Ai.Support
     readonly Vector3D[] _corners = new Vector3D[8];
     double? _distanceToWaypointSquared = null;
 
-    //public struct PathNode
-    //{
-    //  public Node Node;
-    //  public Vector3D? Offset;
-
-    //  public PathNode(Node n, Vector3D? offset = null)
-    //  {
-    //    Node = n;
-    //    Offset = offset;
-    //  }
-    //}
-
-    /// <summary>
-    /// The number of ticks since the path collection was last cleared
-    /// </summary>
-    public uint IdlePathTimer;
-
     /// <summary>
     /// Keeps track of the elapsed time since FindPath was called
     /// </summary>
@@ -897,7 +880,6 @@ namespace AiEnabled.Ai.Support
 
         _useObjList.Clear();
         _temp.Clear();
-        IdlePathTimer = 0;
         IntermediatePoints.Clear();
         CameFrom.Clear();
         CostSoFar.Clear();

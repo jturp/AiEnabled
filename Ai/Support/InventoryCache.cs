@@ -1,5 +1,5 @@
 ﻿using AiEnabled.Bots;
-using AiEnabled.ModFiles.Parallel;
+using AiEnabled.Parallel;
 using AiEnabled.Utilities;
 
 using ParallelTasks;
@@ -8,6 +8,7 @@ using Sandbox.Common.ObjectBuilders.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
+using Sandbox.ModAPI.Weapons;
 
 using System;
 using System.Collections.Concurrent;
@@ -25,6 +26,7 @@ using VRage.ObjectBuilders;
 using VRageMath;
 
 using MyInventoryItem = VRage.Game.ModAPI.Ingame.MyInventoryItem;
+using MyItemType = VRage.Game.ModAPI.Ingame.MyItemType;
 
 namespace AiEnabled.Ai.Support
 {
@@ -43,7 +45,6 @@ namespace AiEnabled.Ai.Support
     Dictionary<string, int> _missingComps = new Dictionary<string, int>();
     HashSet<Vector3I> _terminals = new HashSet<Vector3I>(Vector3I.Comparer);
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
-    MyObjectBuilder_Ore _scrapOB = MyObjectBuilderSerializer.CreateNewObject<MyObjectBuilder_Ore>("Scrap");
     ParallelTasks.Task _task;
     internal bool _needsUpdate = true;
     bool _refreshInvList;
@@ -115,7 +116,6 @@ namespace AiEnabled.Ai.Support
       _invItems?.Clear();
       _invItems = null;
 
-      _scrapOB = null;
       _workAction = null;
       _workCallBack = null;
       _workData = null;
@@ -198,39 +198,67 @@ namespace AiEnabled.Ai.Support
     {
       var data = workData as RepairWorkData;
       var block = data.Block;
-      var bot = data.Bot;
+      var bot = data.Bot?.Character;
 
-      if (block == null || block.IsDestroyed || bot == null || bot.MarkedForClose)
+      var botInv = bot?.GetInventory();
+      if (bot == null || bot.MarkedForClose || botInv == null)
         return;
-
-      var botInv = bot.GetInventory();
-      if (botInv == null)
-      {
-        return;
-      }
 
       _invItems.Clear();
       botInv.GetItems(_invItems);
+      var tool = data.Bot.ToolSubtype;
 
       for (int i = _invItems.Count - 1; i >= 0; i--)
       {
         var item = _invItems[i];
-        if (item.Type.SubtypeId.Contains("Scrap"))
+
+        VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
+        if (!AiSession.Instance.ComponentInfoDict.TryGetValue(item.Type, out itemInfo))
+        {
+          itemInfo = VRage.Game.ModAPI.Ingame.MyPhysicalInventoryItemExtensions_ModAPI.GetItemInfo(item.Type);
+          AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
+        }
+
+        if (itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent
+          || (itemInfo.IsTool && item.Type.SubtypeId != tool))
         {
           var itemAmount = item.Amount;
           foreach (var invKvp in Inventories)
           {
-            var inv = invKvp.Key as MyInventory;
-            if (inv == null || inv.IsFull)
+            var inv = invKvp.Key;
+            var myInv = inv as MyInventory;
+
+            if (myInv == null || myInv.IsFull)
               continue;
 
-            var amountToFit = inv.ComputeAmountThatFits(item.Type);
+            var invOwner = inv.Owner as IMyTerminalBlock;
+            if (invOwner == null)
+              continue;
+
+            List<MyItemType> acceptedItems;
+            if (!AiSession.Instance.AcceptedItemDict.TryGetValue(invOwner.BlockDefinition, out acceptedItems))
+            {
+              acceptedItems = new List<MyItemType>();
+              inv.GetAcceptedItems(acceptedItems);
+            }
+
+            if (!acceptedItems.Contains(item.Type))
+              continue;
+
+            var amountToFit = myInv.ComputeAmountThatFits(item.Type);
             if (amountToFit > 0)
             {
               var amount = MyFixedPoint.Min(amountToFit, itemAmount);
 
+              MyObjectBuilder_PhysicalObject ob;
+              if (!AiSession.Instance.ItemOBDict.TryGetValue(item.Type, out ob))
+              {
+                ob = MyObjectBuilderSerializer.CreateNewObject((MyDefinitionId)item.Type) as MyObjectBuilder_PhysicalObject;
+                AiSession.Instance.ItemOBDict[item.Type] = ob;
+              }
+
               botInv.RemoveItemsAt(i, amount);
-              inv.AddItems(amount, _scrapOB);
+              inv.AddItems(amount, ob);
 
               if (amount >= itemAmount)
               {
@@ -244,7 +272,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (botInv.IsFull)
+      if (botInv.IsFull || block == null || block.IsDestroyed)
       {
         return;
       }
@@ -336,7 +364,7 @@ namespace AiEnabled.Ai.Support
       _needsUpdate = true;
     }
 
-    public void RemoveItemsFor(IMySlimBlock block, IMyCharacter bot)
+    public void RemoveItemsFor(IMySlimBlock block, BotBase bot)
     {
       if (_repairTask.IsComplete)
       {

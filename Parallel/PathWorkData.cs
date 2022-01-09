@@ -8,7 +8,7 @@ using ParallelTasks;
 
 using VRageMath;
 
-namespace AiEnabled.ModFiles.Parallel
+namespace AiEnabled.Parallel
 {
   public class PathWorkData : WorkData
   {

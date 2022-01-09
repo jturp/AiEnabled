@@ -453,6 +453,8 @@ namespace AiEnabled
       BotToSeatRelativePosition?.Clear();
       ComponentInfoDict?.Clear();
       StorageStack?.Clear();
+      AcceptedItemDict?.Clear();
+      ItemOBDict?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -535,6 +537,8 @@ namespace AiEnabled
       StorageStack = null;
       VoxelGraphDict = null;
       GridGraphDict = null;
+      AcceptedItemDict = null;
+      ItemOBDict = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -1260,276 +1264,293 @@ namespace AiEnabled
 
     internal void PlayerLeftCockpit(string entityName, long playerId, string gridName)
     {
-      List<BotBase> playerHelpers;
-      if (!Registered || !PlayerToHelperDict.TryGetValue(playerId, out playerHelpers) || playerHelpers == null || playerHelpers.Count == 0)
+      try
       {
-        return;
-      }
-
-      bool recallBots = gridName == "AiEnabled_RecallBots";
-
-      for (int i = playerHelpers.Count - 1; i >= 0; i--)
-      {
-        var bot = playerHelpers[i];
-        var character = bot?.Character;
-        if (character == null || character.IsDead)
+        List<BotBase> playerHelpers;
+        if (!Registered || !PlayerToHelperDict.TryGetValue(playerId, out playerHelpers) || playerHelpers == null || playerHelpers.Count == 0)
         {
-          playerHelpers.RemoveAtFast(i);
-          continue;
+          return;
         }
 
-        if (!bot.CanUseSeats)
-          continue;
-
-        if (recallBots)
-          bot.UseAPITargets = false;
-        else if (bot.UseAPITargets)
-          continue;
-
-        var seat = character.Parent as IMyCockpit;
-        if (seat != null)
-        {
-          seat.RemovePilot();
-
-          var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
-          if (jetpack != null)
-          {
-            if (bot.RequiresJetpack)
-            {
-              if (!jetpack.TurnedOn)
-              {
-                var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                jetpack.TurnOnJetpack(true);
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-              }
-            }
-            else if (jetpack.TurnedOn)
-              jetpack.SwitchThrusts();
-          }
-
-          bot.Target.RemoveTarget();
-          bot._pathCollection?.CleanUp(true);
-
-          if (!bot.UseAPITargets)
-            bot.SetTarget();
-
-          Vector3D gotoPosition, actualPosition;
-          bot.Target.GetTargetPosition(out gotoPosition, out actualPosition);
-          bot.StartCheckGraph(ref actualPosition, true);
-
-          Vector3D relPosition;
-          BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition);
-          var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
-
-          var voxelGraph = bot._currentGraph as VoxelGridMap;
-          var gridGraph = bot._currentGraph as CubeGridMap;
-          MatrixD? newMatrix = null;
-
-          if (voxelGraph != null)
-          {
-            Vector3D up = bot.WorldMatrix.Up;
-
-            float interference;
-            var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
-            if (gravity.LengthSquared() == 0)
-              gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
-
-            if (gravity.LengthSquared() > 0)
-              up = Vector3D.Normalize(-gravity);
-
-            if (relPosition.LengthSquared() < 2)
-              position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
-
-            position = voxelGraph.GetClosestSurfacePointFast(bot, position, up) + up;
-
-            if (bot.WorldMatrix.Up.Dot(up) < 0)
-            {
-              var forward = Vector3D.CalculatePerpendicularVector(up);
-              newMatrix = MatrixD.CreateWorld(position, forward, up);
-            }
-          }
-          else if (gridGraph != null && seat.CubeGrid.GridSize > 1)
-          {
-            var local = gridGraph.WorldToLocal(position);
-            Vector3I openNode;
-            if (gridGraph.GetClosestValidNode(bot, local, out openNode, seat.WorldMatrix.Up))
-            {
-              position = gridGraph.LocalToWorld(openNode) + bot.WorldMatrix.Down;
-            }
-            else
-            {
-              Logger.Log($"{GetType().FullName}: Unable to find valid position upon exit from seat! Grid = {gridGraph.Grid?.DisplayName ?? "NULL"}", MessageType.WARNING);
-            }
-          }
-          else if (relPosition.LengthSquared() < 2)
-          {
-            Vector3D up = bot.WorldMatrix.Up;
-            MyPlanet planet = null;
-
-            float interference;
-            var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
-            if (gravity.LengthSquared() == 0)
-              gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
-            else
-              planet = MyGamePruningStructure.GetClosestPlanet(position);
-
-            if (gravity.LengthSquared() > 0)
-              up = Vector3D.Normalize(-gravity);
-
-            position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
-
-            if (planet != null)
-              position = planet.GetClosestSurfacePointGlobal(position) + up * 5;
-          }
-
-          if (newMatrix.HasValue)
-            character.SetWorldMatrix(newMatrix.Value);
-          else
-            character.SetPosition(position);
-        }
-        else if (bot.Target.Override.HasValue)
-        {
-          bot.Target.RemoveOverride(false);
-          bot.Target.RemoveTarget();
-        }
-      }
-    }
-
-    internal void PlayerEnteredCockpit(string entityName, long playerId, string gridName)
-    {
-      IMyPlayer player;
-      if (!Players.TryGetValue(playerId, out player) || player?.Character == null || player.Character.IsDead)
-      {
-        return;
-      }
-
-      var parent = player.Character.Parent as IMyShipController;
-      var playerGrid = parent?.CubeGrid;
-      if (playerGrid == null || playerGrid.MarkedForClose)
-      {
-        return;
-      }
-
-      var blockDef = parent.BlockDefinition.SubtypeName;
-      if (blockDef.IndexOf("toilet", StringComparison.OrdinalIgnoreCase) >= 0
-        || blockDef.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
-        || blockDef.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
-      {
-        return;
-      }
-
-      List<BotBase> playerHelpers;
-      if (!PlayerToHelperDict.TryGetValue(playerId, out playerHelpers) || playerHelpers == null || playerHelpers.Count == 0)
-      {
-        return;
-      }
-
-      List<IMyCubeGrid> gridGroup;
-      if (!GridGroupListStack.TryPop(out gridGroup))
-        gridGroup = new List<IMyCubeGrid>();
-      else
-        gridGroup.Clear();
-
-      List<IMySlimBlock> gridSeats;
-      if (!SlimListStack.TryPop(out gridSeats))
-        gridSeats = new List<IMySlimBlock>();
-      else
-        gridSeats.Clear();
-
-      MyAPIGateway.GridGroups.GetGroup(playerGrid, GridLinkTypeEnum.Logical, gridGroup);
-
-      foreach (var grid in gridGroup)
-      {
-        grid.GetBlocks(gridSeats, b =>
-        {
-          var seat = b.FatBlock as IMyCockpit;
-          if (seat == null || seat.Pilot != null || !seat.IsFunctional
-            || seat.BlockDefinition.SubtypeId.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
-            || seat.BlockDefinition.SubtypeId.IndexOf("toilet", StringComparison.OrdinalIgnoreCase) >= 0
-            || seat.BlockDefinition.SubtypeId.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
-          {
-            return false;
-          }
-
-          return true;
-        });
-      }
-
-      gridGroup.Clear();
-      GridGroupListStack.Push(gridGroup);
-
-      if (gridSeats.Count > 0)
-      {
-        var ownerPos = player.Character.WorldAABB.Center;
+        bool recallBots = gridName == "AiEnabled_RecallBots";
 
         for (int i = playerHelpers.Count - 1; i >= 0; i--)
         {
           var bot = playerHelpers[i];
-          if (bot?.Character == null || bot.Character.IsDead)
+          var character = bot?.Character;
+          if (character == null || character.IsDead)
           {
             playerHelpers.RemoveAtFast(i);
             continue;
           }
 
-          if (!bot.CanUseSeats || Vector3D.DistanceSquared(ownerPos, bot.Position) > 10000)
+          if (!bot.CanUseSeats)
             continue;
 
-          if (gridSeats.Count == 0)
-            break;
-
-          if (bot.UseAPITargets || bot.Character.Parent is IMyCockpit)
+          if (recallBots)
+            bot.UseAPITargets = false;
+          else if (bot.UseAPITargets)
             continue;
 
-          gridSeats.ShellSort(bot.Position, reverse: true);
-
-          for (int j = gridSeats.Count - 1; j >= 0; j--)
+          var seat = character.Parent as IMyCockpit;
+          if (seat != null)
           {
-            var seat = gridSeats[j]?.FatBlock as IMyCockpit;
-            if (seat == null || seat.Pilot != null || !seat.IsFunctional || !seat.HasPlayerAccess(bot.Character.ControllerInfo.ControllingIdentityId))
+            seat.RemovePilot();
+
+            var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
+            if (jetpack != null)
             {
-              gridSeats.RemoveAtFast(j);
-              continue;
+              if (bot.RequiresJetpack)
+              {
+                if (!jetpack.TurnedOn)
+                {
+                  var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+                  MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+                  jetpack.TurnOnJetpack(true);
+                  MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+                }
+              }
+              else if (jetpack.TurnedOn)
+                jetpack.SwitchThrusts();
             }
 
-            CubeGridMap gridGraph;
-            if (seat.CubeGrid.GridSize > 1 && GridGraphDict.TryGetValue(seat.CubeGrid.EntityId, out gridGraph) && gridGraph != null)
+            bot.Target.RemoveTarget();
+            bot._pathCollection?.CleanUp(true);
+
+            if (!bot.UseAPITargets)
+              bot.SetTarget();
+
+            Vector3D gotoPosition, actualPosition;
+            bot.Target.GetTargetPosition(out gotoPosition, out actualPosition);
+            bot.StartCheckGraph(ref actualPosition, true);
+
+            Vector3D relPosition;
+            BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition);
+            var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
+
+            var voxelGraph = bot._currentGraph as VoxelGridMap;
+            var gridGraph = bot._currentGraph as CubeGridMap;
+            MatrixD? newMatrix = null;
+
+            if (voxelGraph != null)
             {
-              if (!gridGraph.TempBlockedNodes.ContainsKey(seat.Position))
+              Vector3D up = bot.WorldMatrix.Up;
+
+              float interference;
+              var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
+              if (gravity.LengthSquared() == 0)
+                gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
+
+              if (gravity.LengthSquared() > 0)
+                up = Vector3D.Normalize(-gravity);
+
+              if (relPosition.LengthSquared() < 2)
+                position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
+
+              position = voxelGraph.GetClosestSurfacePointFast(bot, position, up) + up;
+
+              if (bot.WorldMatrix.Up.Dot(up) < 0)
               {
-                gridSeats.RemoveAtFast(i);
-                var seatPos = seat.GetPosition();
-                bot.Target.SetOverride(seatPos);
-                break;
+                var forward = Vector3D.CalculatePerpendicularVector(up);
+                newMatrix = MatrixD.CreateWorld(position, forward, up);
               }
             }
-
-            // TODO: Save bot position relative to the seat and return bot to relative position when player exits
-            // Also need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
-
-            _useObjList.Clear();
-            var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
-            useComp?.GetInteractiveObjects(_useObjList);
-            if (_useObjList.Count > 0)
+            else if (gridGraph != null && seat.CubeGrid.GridSize > 1)
             {
-              var relativePosition = Vector3D.Rotate(bot.Position - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
-              BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
-
-              var useObj = _useObjList[0];
-              useObj.Use(UseActionEnum.Manipulate, bot.Character);
-
-              bot._pathCollection?.CleanUp(true);
-              bot.Target?.RemoveTarget();
-
-              gridSeats.RemoveAtFast(j);
-              break;
+              var local = gridGraph.WorldToLocal(position);
+              Vector3I openNode;
+              if (gridGraph.GetClosestValidNode(bot, local, out openNode, seat.WorldMatrix.Up))
+              {
+                position = gridGraph.LocalToWorld(openNode) + bot.WorldMatrix.Down;
+              }
+              else
+              {
+                Logger.Log($"{GetType().FullName}: Unable to find valid position upon exit from seat! Grid = {gridGraph.Grid?.DisplayName ?? "NULL"}", MessageType.WARNING);
+              }
             }
+            else if (relPosition.LengthSquared() < 2)
+            {
+              Vector3D up = bot.WorldMatrix.Up;
+              MyPlanet planet = null;
+
+              float interference;
+              var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
+              if (gravity.LengthSquared() == 0)
+                gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
+              else
+                planet = MyGamePruningStructure.GetClosestPlanet(position);
+
+              if (gravity.LengthSquared() > 0)
+                up = Vector3D.Normalize(-gravity);
+
+              position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
+
+              if (planet != null)
+                position = planet.GetClosestSurfacePointGlobal(position) + up * 5;
+            }
+
+            if (newMatrix.HasValue)
+              character.SetWorldMatrix(newMatrix.Value);
+            else
+              character.SetPosition(position);
+          }
+          else if (bot.Target.Override.HasValue)
+          {
+            bot.Target.RemoveOverride(false);
+            bot.Target.RemoveTarget();
           }
         }
       }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in PlayerLeftCockpit: {ex.Message}\n{ex.StackTrace}");
+      }
+    }
 
-      gridSeats.Clear();
-      SlimListStack.Push(gridSeats);
+    internal void PlayerEnteredCockpit(string entityName, long playerId, string gridName)
+    {
+      try
+      {
+        IMyPlayer player;
+        if (!Players.TryGetValue(playerId, out player) || player?.Character == null || player.Character.IsDead)
+        {
+          return;
+        }
+
+        var parent = player.Character.Parent as IMyShipController;
+        var playerGrid = parent?.CubeGrid;
+        if (playerGrid == null || playerGrid.MarkedForClose)
+        {
+          return;
+        }
+
+        var blockDef = parent.BlockDefinition.SubtypeName;
+        if (blockDef.IndexOf("toilet", StringComparison.OrdinalIgnoreCase) >= 0
+          || blockDef.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
+          || blockDef.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          return;
+        }
+
+        List<BotBase> playerHelpers;
+        if (!PlayerToHelperDict.TryGetValue(playerId, out playerHelpers) || playerHelpers == null || playerHelpers.Count == 0)
+        {
+          return;
+        }
+
+        List<IMyCubeGrid> gridGroup;
+        if (!GridGroupListStack.TryPop(out gridGroup))
+          gridGroup = new List<IMyCubeGrid>();
+        else
+          gridGroup.Clear();
+
+        List<IMySlimBlock> gridSeats;
+        if (!SlimListStack.TryPop(out gridSeats))
+          gridSeats = new List<IMySlimBlock>();
+        else
+          gridSeats.Clear();
+
+        MyAPIGateway.GridGroups.GetGroup(playerGrid, GridLinkTypeEnum.Logical, gridGroup);
+
+        foreach (var grid in gridGroup)
+        {
+          if (grid == null || grid.MarkedForClose)
+            continue;
+
+          grid.GetBlocks(gridSeats, b =>
+          {
+            var seat = b.FatBlock as IMyCockpit;
+            if (seat == null || seat.Pilot != null || !seat.IsFunctional
+              || seat.BlockDefinition.SubtypeId.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
+              || seat.BlockDefinition.SubtypeId.IndexOf("toilet", StringComparison.OrdinalIgnoreCase) >= 0
+              || seat.BlockDefinition.SubtypeId.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              return false;
+            }
+
+            return true;
+          });
+        }
+
+        gridGroup.Clear();
+        GridGroupListStack.Push(gridGroup);
+
+        if (gridSeats.Count > 0)
+        {
+          var ownerPos = player.Character.WorldAABB.Center;
+
+          for (int i = playerHelpers.Count - 1; i >= 0; i--)
+          {
+            var bot = playerHelpers[i];
+            if (bot?.Character == null || bot.Character.IsDead)
+            {
+              playerHelpers.RemoveAtFast(i);
+              continue;
+            }
+
+            if (!bot.CanUseSeats || Vector3D.DistanceSquared(ownerPos, bot.Position) > 10000)
+              continue;
+
+            if (gridSeats.Count == 0)
+              break;
+
+            if (bot.UseAPITargets || bot.Character.Parent is IMyCockpit)
+              continue;
+
+            gridSeats.ShellSort(bot.Position, reverse: true);
+
+            for (int j = gridSeats.Count - 1; j >= 0; j--)
+            {
+              var seat = gridSeats[j]?.FatBlock as IMyCockpit;
+              if (seat == null || seat.Pilot != null || !seat.IsFunctional || !seat.HasPlayerAccess(bot.Character.ControllerInfo.ControllingIdentityId))
+              {
+                gridSeats.RemoveAtFast(j);
+                continue;
+              }
+
+              CubeGridMap gridGraph;
+              if (seat.CubeGrid.GridSize > 1 && GridGraphDict.TryGetValue(seat.CubeGrid.EntityId, out gridGraph) && gridGraph != null)
+              {
+                if (!gridGraph.TempBlockedNodes.ContainsKey(seat.Position))
+                {
+                  gridSeats.RemoveAtFast(i);
+                  var seatPos = seat.GetPosition();
+                  bot.Target.SetOverride(seatPos);
+                  break;
+                }
+              }
+
+              // TODO: Save bot position relative to the seat and return bot to relative position when player exits
+              // Also need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
+
+              _useObjList.Clear();
+              var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
+              useComp?.GetInteractiveObjects(_useObjList);
+              if (_useObjList.Count > 0)
+              {
+                var relativePosition = Vector3D.Rotate(bot.Position - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+                BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
+
+                var useObj = _useObjList[0];
+                useObj.Use(UseActionEnum.Manipulate, bot.Character);
+
+                bot._pathCollection?.CleanUp(true);
+                bot.Target?.RemoveTarget();
+
+                gridSeats.RemoveAtFast(j);
+                break;
+              }
+            }
+          }
+        }
+
+        gridSeats.Clear();
+        SlimListStack.Push(gridSeats);
+      }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in PlayerEnteredCockpit: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     private void BeforeDamageHandler(object target, ref MyDamageInformation info)

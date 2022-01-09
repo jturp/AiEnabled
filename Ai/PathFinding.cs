@@ -758,6 +758,18 @@ namespace AiEnabled.Ai
               if (!AiSession.Instance.NodeStack.TryPop(out node))
                 node = new TempNode();
 
+              if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+              {                
+                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                {
+                  if (offset.HasValue)
+                    offset = offset.Value - downTravelDir * 0.5f;
+                  else
+                    offset = -downTravelDir * 0.5f;
+                }  
+              }
+
               node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
               continue;
@@ -889,6 +901,18 @@ namespace AiEnabled.Ai
               if (!AiSession.Instance.NodeStack.TryPop(out node))
                 node = new TempNode();
 
+              if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+              {
+                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                {
+                  if (offset.HasValue)
+                    offset = offset.Value - downTravelDir * 0.5f;
+                  else
+                    offset = -downTravelDir * 0.5f;
+                }
+              }
+
               node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
               continue;
@@ -994,6 +1018,18 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
+
                 node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
@@ -1016,6 +1052,18 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
+
                 node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
                 continue;
@@ -1032,6 +1080,18 @@ namespace AiEnabled.Ai
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
+
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
 
                 node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
@@ -1267,6 +1327,18 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
+
                 node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
@@ -1320,6 +1392,18 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
+
                 node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
@@ -1363,6 +1447,18 @@ namespace AiEnabled.Ai
             if (!AiSession.Instance.NodeStack.TryPop(out node2))
               node2 = new TempNode();
 
+            if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+            {
+              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+              {
+                if (offset.HasValue)
+                  offset = offset.Value - downTravelDir * 0.5f;
+                else
+                  offset = -downTravelDir * 0.5f;
+              }
+            }
+
             node2.Update(tempNode2.Position, offset ?? Vector3.Zero, tempNode2.NodeType, tempNode2.BlockedMask, tempNode2.Grid, tempNode2.Block);
             path.Enqueue(node2);
           }
@@ -1399,6 +1495,18 @@ namespace AiEnabled.Ai
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
+
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
 
                 node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
@@ -1451,6 +1559,18 @@ namespace AiEnabled.Ai
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
+                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                {
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  {
+                    if (offset.HasValue)
+                      offset = offset.Value - downTravelDir * 0.5f;
+                    else
+                      offset = -downTravelDir * 0.5f;
+                  }
+                }
+
                 node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
               }
@@ -1493,6 +1613,18 @@ namespace AiEnabled.Ai
             TempNode node2;
             if (!AiSession.Instance.NodeStack.TryPop(out node2))
               node2 = new TempNode();
+
+            if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+            {
+              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+              {
+                if (offset.HasValue)
+                  offset = offset.Value - downTravelDir * 0.5f;
+                else
+                  offset = -downTravelDir * 0.5f;
+              }
+            }
 
             node2.Update(tempNode2.Position, offset ?? Vector3.Zero, tempNode2.NodeType, tempNode2.BlockedMask, tempNode2.Grid, tempNode2.Block);
             path.Enqueue(node2);

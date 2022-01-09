@@ -4,20 +4,22 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.Bots;
+
 using ParallelTasks;
 
 using VRage.Game.ModAPI;
 
-namespace AiEnabled.ModFiles.Parallel
+namespace AiEnabled.Parallel
 {
   public class RepairWorkData : WorkData
   {
     public IMySlimBlock Block;
-    public IMyCharacter Bot;
+    public BotBase Bot;
 
     public RepairWorkData() { }
 
-    public RepairWorkData(IMySlimBlock block, IMyCharacter bot)
+    public RepairWorkData(IMySlimBlock block, BotBase bot)
     {
       Block = block;
       Bot = bot;

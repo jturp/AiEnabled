@@ -332,43 +332,69 @@ namespace AiEnabled.Bots.Roles.Helpers
           return;
 
         var inv = Character.GetInventory() as MyInventory;
-        if (inv != null && !inv.IsFull)
+        if (inv != null)
         {
-          List<MyEntity> entities;
-          if (!AiSession.Instance.EntListStack.TryPop(out entities))
-            entities = new List<MyEntity>();
-          else
-            entities.Clear();
-
-          MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, entities, MyEntityQueryType.Dynamic);
-
-          for (int i = entities.Count - 1; i >= 0; i--)
+          if (inv.IsFull)
           {
-            var ent = entities[i];
-            if (ent?.MarkedForClose != false)
-              continue;
+            // inv too full, send bot to drop off current stock
 
-            var floater = ent as MyFloatingObject;
-            if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null)
-              continue;
-
-            if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
-              continue;
-
-            var floaterPos = floater.PositionComp.GetPosition();
-            if (_currentGraph.IsPositionValid(floaterPos))
+            var botLocal = graph.WorldToLocal(botPosition);
+            var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
+            if (invBlock != null)
             {
-              var node = _currentGraph.WorldToLocal(floaterPos);
-              if (_currentGraph.GetClosestValidNode(this, node, out node, WorldMatrix.Up))
-              {
-                tgt = ent;
-                break;
-              }
+              Target.SetInventory(invBlock);
+              isInventory = true;
             }
           }
+          else
+          {
+            List<MyEntity> entities;
+            if (!AiSession.Instance.EntListStack.TryPop(out entities))
+              entities = new List<MyEntity>();
+            else
+              entities.Clear();
 
-          entities.Clear();
-          AiSession.Instance.EntListStack.Push(entities);
+            MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, entities, MyEntityQueryType.Dynamic);
+
+            for (int i = entities.Count - 1; i >= 0; i--)
+            {
+              var ent = entities[i];
+              if (ent == null || ent.MarkedForClose)
+                continue;
+
+              var floater = ent as MyFloatingObject;
+              if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null)
+                continue;
+
+              if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
+              {
+                // inv too full, send bot to drop off current stock
+
+                var botLocal = graph.WorldToLocal(botPosition);
+                var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
+                if (invBlock != null)
+                {
+                  Target.SetInventory(invBlock);
+                  isInventory = true;
+                }
+                break;
+              }
+
+              var floaterPos = floater.PositionComp.GetPosition();
+              if (_currentGraph.IsPositionValid(floaterPos))
+              {
+                var node = _currentGraph.WorldToLocal(floaterPos);
+                if (_currentGraph.GetClosestValidNode(this, node, out node, WorldMatrix.Up))
+                {
+                  tgt = ent;
+                  break;
+                }
+              }
+            }
+
+            entities.Clear();
+            AiSession.Instance.EntListStack.Push(entities);
+          }
         }
       }
 
@@ -604,7 +630,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             if (grid.InventoryCache.Locked)
               return;
 
-            grid.InventoryCache.RemoveItemsFor(Target.Entity as IMySlimBlock, Character);
+            grid.InventoryCache.RemoveItemsFor(Target.Entity as IMySlimBlock, this);
             Target.RemoveInventory();
           }
 

@@ -311,7 +311,9 @@ namespace AiEnabled
     public Dictionary<string, string> AnimationControllerDictionary { get; protected set; } = new Dictionary<string, string>(); // character subtype to controller subtype
     public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
 
+    public ConcurrentDictionary<MyItemType, MyObjectBuilder_PhysicalObject> ItemOBDict = new ConcurrentDictionary<MyItemType, MyObjectBuilder_PhysicalObject>();
     public ConcurrentDictionary<MyItemType, MyItemInfo> ComponentInfoDict = new ConcurrentDictionary<MyItemType, MyItemInfo>();
+    public ConcurrentDictionary<MyDefinitionId, List<MyItemType>> AcceptedItemDict = new ConcurrentDictionary<MyDefinitionId, List<MyItemType>>(MyDefinitionId.Comparer);
     public ConcurrentDictionary<long, IMyGps> BotGPSDictionary = new ConcurrentDictionary<long, IMyGps>(); // Bot EntityId to GPS
     public ConcurrentDictionary<long, IMyPlayer> Players = new ConcurrentDictionary<long, IMyPlayer>();
     public ConcurrentDictionary<long, HealthInfoStat> PlayerToHealthBars = new ConcurrentDictionary<long, HealthInfoStat>(); // player ident to health info stat

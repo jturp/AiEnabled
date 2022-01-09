@@ -557,6 +557,46 @@ namespace AiEnabled.Ai.Support
       return closestSurfacePoint;
     }
 
+    internal bool GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, out Node node)
+    {
+      node = null;
+      if (Planet == null || Planet.MarkedForClose)
+      {
+        return false;
+      }
+
+      var localPoint = WorldToLocal(worldPosition);
+
+      float _;
+      Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
+      if (gravity.LengthSquared() > 0)
+        upVec = Vector3D.Normalize(-gravity);
+
+      var closestSurfacePoint = LocalToWorld(localPoint);
+      var addVec = upVec * CellSize;
+
+      if (PointInsideVoxel(closestSurfacePoint, Planet))
+      {
+        closestSurfacePoint += addVec;
+
+        while (PointInsideVoxel(closestSurfacePoint, Planet))
+          closestSurfacePoint += addVec;
+      }
+      else
+      {
+        closestSurfacePoint -= addVec;
+
+        while (!PointInsideVoxel(closestSurfacePoint, Planet))
+          closestSurfacePoint -= addVec;
+
+        if (PointInsideVoxel(closestSurfacePoint, Planet))
+          closestSurfacePoint += addVec;
+      }
+
+      localPoint = WorldToLocal(closestSurfacePoint);
+      return OpenTileDict.TryGetValue(localPoint, out node) && node.IsGroundNode;
+    }
+
     public static Vector3D GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, MyPlanet planet, out bool pointOnGround)
     {
       pointOnGround = true;
@@ -603,74 +643,74 @@ namespace AiEnabled.Ai.Support
       return pointAbove;
     }
 
-    internal bool GetClosestSurfacePointLocal(ref Vector3 gravityNorm, ref Vector3I point, out Vector3I secondaryPoint, out Vector3D surfacePoint)
-    {
-      secondaryPoint = Vector3I.Zero;
-      surfacePoint = Vector3D.Zero;
+    //internal bool GetClosestSurfacePointLocal(ref Vector3 gravityNorm, ref Vector3I point, out Vector3I secondaryPoint, out Vector3D surfacePoint)
+    //{
+    //  secondaryPoint = Vector3I.Zero;
+    //  surfacePoint = Vector3D.Zero;
 
-      if (Planet == null || Planet.MarkedForClose)
-        return false;
+    //  if (Planet == null || Planet.MarkedForClose)
+    //    return false;
 
-      var localToWorld = LocalToWorld(point);
-      localToWorld = Planet.GetClosestSurfacePointGlobal(localToWorld);
+    //  var localToWorld = LocalToWorld(point);
+    //  localToWorld = Planet.GetClosestSurfacePointGlobal(localToWorld);
 
-      if (PointInsideVoxel(localToWorld, Planet))
-      {
-        localToWorld -= gravityNorm * 0.1f;
+    //  if (PointInsideVoxel(localToWorld, Planet))
+    //  {
+    //    localToWorld -= gravityNorm * 0.1f;
 
-        int count = 0;
-        while (PointInsideVoxel(localToWorld, Planet))
-        {
-          count++;
-          if (count > 500)
-          {
-            AiSession.Instance.Logger.Log($"Point {point} took too many attempts to finish (going up)", MessageType.WARNING);
-            break;
-          }
+    //    int count = 0;
+    //    while (PointInsideVoxel(localToWorld, Planet))
+    //    {
+    //      count++;
+    //      if (count > 500)
+    //      {
+    //        AiSession.Instance.Logger.Log($"Point {point} took too many attempts to finish (going up)", MessageType.WARNING);
+    //        break;
+    //      }
 
-          localToWorld -= gravityNorm * 0.1f;
-        }
+    //      localToWorld -= gravityNorm * 0.1f;
+    //    }
 
-        localToWorld -= gravityNorm * 0.1f;
-      }
-      else
-      {
-        localToWorld += gravityNorm * 0.1f;
+    //    localToWorld -= gravityNorm * 0.1f;
+    //  }
+    //  else
+    //  {
+    //    localToWorld += gravityNorm * 0.1f;
 
-        int count = 0;
-        while (!PointInsideVoxel(localToWorld, Planet))
-        {
-          count++;
-          if (count > 500)
-          {
-            AiSession.Instance.Logger.Log($"Point {point} took too many attempts to finish (going down)", MessageType.WARNING);
-            break;
-          }
+    //    int count = 0;
+    //    while (!PointInsideVoxel(localToWorld, Planet))
+    //    {
+    //      count++;
+    //      if (count > 500)
+    //      {
+    //        AiSession.Instance.Logger.Log($"Point {point} took too many attempts to finish (going down)", MessageType.WARNING);
+    //        break;
+    //      }
 
-          localToWorld += gravityNorm * 0.1f;
-        }
+    //      localToWorld += gravityNorm * 0.1f;
+    //    }
 
-        localToWorld -= gravityNorm * 0.1f;
-      }
+    //    localToWorld -= gravityNorm * 0.1f;
+    //  }
 
-      surfacePoint = localToWorld - gravityNorm;
+    //  surfacePoint = localToWorld - gravityNorm;
 
-      point = secondaryPoint = WorldToLocal(localToWorld);
-      localToWorld = LocalToWorld(point);
+    //  point = secondaryPoint = WorldToLocal(localToWorld);
+    //  localToWorld = LocalToWorld(point);
 
-      if (PointInsideVoxel(localToWorld, Planet))
-      {
-        localToWorld -= gravityNorm * CellSize;
-        point = WorldToLocal(localToWorld);
-      }
-      else
-      {
-        localToWorld += gravityNorm * CellSize;
-        secondaryPoint = WorldToLocal(localToWorld);
-      } 
+    //  if (PointInsideVoxel(localToWorld, Planet))
+    //  {
+    //    localToWorld -= gravityNorm * CellSize;
+    //    point = WorldToLocal(localToWorld);
+    //  }
+    //  else
+    //  {
+    //    localToWorld += gravityNorm * CellSize;
+    //    secondaryPoint = WorldToLocal(localToWorld);
+    //  } 
       
-      return true;
-    }
+    //  return true;
+    //}
 
     public static bool PointInsideVoxel(Vector3D pos, MyVoxelBase voxel)
     {
@@ -701,7 +741,7 @@ namespace AiEnabled.Ai.Support
       if (v2 != vecMax && v3 != vecMin)
       {
         tmpStorage.Resize(v2, v3);
-        //using (voxel.Pin())
+        using (voxel.Pin())
           voxel.Storage.ReadRange(tmpStorage, MyStorageDataTypeFlags.Content, 0, v2, v3);
       }
 

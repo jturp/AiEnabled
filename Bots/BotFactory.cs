@@ -390,14 +390,15 @@ namespace AiEnabled.Bots
 
               MyVisualScriptLogicProvider.SetPlayersFaction(botId, faction.Tag);
             }
-            else if (AiSession.Instance.Players.ContainsKey(ownerId.Value))
+            else if (MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId)?.Tag != "SPRT")
             {
-              if (AiSession.Instance.BotFactions.TryGetValue(faction.FactionId, out faction))
+              faction = MyAPIGateway.Session.Factions.TryGetFactionByTag("SPRT");
+              if (faction != null)
               {
                 if (!faction.AutoAcceptMember)
                   MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
 
-                MyVisualScriptLogicProvider.SetPlayersFaction(botId, faction.Tag);
+                MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
               }
             }
           }

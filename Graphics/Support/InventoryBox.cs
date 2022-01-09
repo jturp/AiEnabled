@@ -297,13 +297,14 @@ namespace AiEnabled.Graphics.Support
       for (int i = 0; i < items.Count; i++)
       {
         var item = items[i];
+        var amount = item.GetItemAmountString();
 
         Button btn;
         if (_btnStack.Count > 0)
         {
           btn = _btnStack.Pop();
           btn.Icon.Material = MyStringId.GetOrCompute($"AiEnabled_{item.IconName}");
-          btn.UpdateText($"x{(float)item.InventoryItem.Amount:0.##}", aspectRatio);
+          btn.UpdateText($"x{amount}", aspectRatio);
         }
         else
         {
@@ -326,7 +327,7 @@ namespace AiEnabled.Graphics.Support
             Blend: BlendTypeEnum.PostPP);
 
           var hm = new HudAPIv2.HUDMessage(
-            Message: new StringBuilder($"x{(float)item.InventoryItem.Amount:0.##}"),
+            Message: new StringBuilder($"x{amount}"),
             Origin: bg.Origin,
             Scale: 0.7f,
             Blend: BlendTypeEnum.PostPP);

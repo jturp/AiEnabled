@@ -50,5 +50,26 @@ namespace AiEnabled.Graphics.Support
         }
       }
     }
+
+    public string GetItemAmountString()
+    {
+      var itemAmount = (float)InventoryItem.Amount;
+      string amount;
+
+      if (itemAmount > 1000000)
+      {
+        amount = $"{itemAmount * 0.000001f:0.#}M";
+      }
+      else if (itemAmount > 1000)
+      {
+        amount = $"{itemAmount * 0.001f:0.#}k";
+      }
+      else
+      {
+        amount = $"{itemAmount:0.##}";
+      }
+
+      return amount;
+    }
   }
 }

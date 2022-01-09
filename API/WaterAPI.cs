@@ -13,7 +13,7 @@ using VRage.Utils;
 
 using VRageMath;
 
-namespace Jakaria.API
+namespace AiEnabled.API
 {
   //Only Include this file in your project
 
