@@ -114,7 +114,7 @@ namespace AiEnabled.Networking
     /// </summary>
     public void RelayToClients(PacketBase packet, byte[] rawData = null)
     {
-      if (!MyAPIGateway.Multiplayer.IsServer)
+      if (!MyAPIGateway.Multiplayer.IsServer || !MyAPIGateway.Multiplayer.MultiplayerActive)
         return;
 
       try

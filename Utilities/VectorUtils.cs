@@ -24,6 +24,17 @@ namespace AiEnabled.Utilities
       return Math.Acos(MathHelperD.Clamp(a.Dot(b) / Math.Sqrt(a.LengthSquared() * b.LengthSquared()), -1, 1));
     }
 
+    public static double GetCosineAngleBetween(Vector3D a, Vector3D b)
+    {
+      if (Vector3D.IsZero(a) || Vector3D.IsZero(b))
+        return 0;
+
+      if (IsUnitVector(a) && IsUnitVector(b))
+        return MathHelperD.Clamp(a.Dot(b), -1, 1);
+
+      return MathHelperD.Clamp(a.Dot(b) / Math.Sqrt(a.LengthSquared() * b.LengthSquared()), -1, 1);
+    }
+
     public static Vector3D Project(Vector3D a, Vector3D b)
     {
       if (Vector3D.IsZero(a) || Vector3D.IsZero(b))

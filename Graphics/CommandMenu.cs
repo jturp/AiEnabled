@@ -1602,7 +1602,7 @@ namespace AiEnabled.Graphics
 
         invCloseBB.Width = (float)width;
         invCloseBB.Height = (float)height;
-        invCloseBB.Offset = new Vector2D(0, height * -1.75 * 3);
+        invCloseBB.Offset = new Vector2D(0, height * -1.75 * 5);
         invCloseMsg.Offset = invCloseBB.Offset - length * 0.5;
 
         _invClose = new Button(invCloseBB, invCloseMsg, AspectRatio, _billboardColor, borderColor, mouseOverColor, mouseOverColor, _emitter, _mouseOverSoundPair);

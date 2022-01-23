@@ -147,10 +147,9 @@ namespace AiEnabled.Ai.Support
 
       if (NextNode != null)
       {
-        if (Bot.Target.HasTarget)
+        if (Bot.Target.PositionsValid)
         {
-          Vector3D gotoPos, actualPos;
-          Bot.Target.GetTargetPosition(out gotoPos, out actualPos);
+          Vector3D gotoPos = Bot.Target.CurrentGoToPosition;
           var localTarget = Graph.WorldToLocal(gotoPos);
 
           if (localTarget == NextNode.Position)
@@ -207,14 +206,14 @@ namespace AiEnabled.Ai.Support
 
       lock (PathToTarget)
       {
-        Vector3D gotoPosition, actualTarget;
-        if (!Bot.Target.GetTargetPosition(out gotoPosition, out actualTarget))
+        if (!Bot.Target.PositionsValid)
         {
           NextNode = PathToTarget.Dequeue();
           nextIsAirNode = NextNode.IsAirNode;
           return;
         }
 
+        var gotoPosition = Bot.Target.CurrentGoToPosition;
         var localCurrent = Graph.WorldToLocal(current);
         var localTarget = Graph.WorldToLocal(gotoPosition);
 

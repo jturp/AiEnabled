@@ -164,7 +164,7 @@ namespace AiEnabled.Ai.Support
         var projector = myGrid?.Projector as IMyProjector;
         if (projector?.CanBuild(block, true) == BuildCheckResult.OK)
         {
-          block.GetMissingComponentsProjected(_missingComps);
+          block.GetMissingComponentsProjected(_missingComps, null);
           if (_missingComps.Count == 0)
             return false;
         }
@@ -286,7 +286,7 @@ namespace AiEnabled.Ai.Support
         var projector = myGrid?.Projector as IMyProjector;
         if (projector?.CanBuild(block, true) == BuildCheckResult.OK)
         {
-          block.GetMissingComponentsProjected(_missingComps);
+          block.GetMissingComponentsProjected(_missingComps, null);
           if (_missingComps.Count == 0)
             return;
         }
@@ -346,6 +346,13 @@ namespace AiEnabled.Ai.Support
               fixedPoint = maxFit;
               amount = (float)maxFit;
               isFull = true;
+            }
+            else if (kvp.Key == "SteelPlate" && amount <= 1)
+            {
+              var leftOver = maxFit - fixedPoint;
+              var added = MyFixedPoint.Min(5, leftOver);
+              fixedPoint += added;
+              amount += (float)added;
             }
 
             if (amount > 0)

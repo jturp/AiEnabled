@@ -14,15 +14,17 @@ namespace AiEnabled.Particles
     public long BlockEntityId;
     public long GridEntityId;
     public Vector3I? BlockPosition;
+    public Vector3D? WorldPosition;
     public ParticleInfoBase.ParticleType ParticleType;
     public bool IsWelderParticle;
 
-    public ParticleInfoClient(ParticleInfoBase.ParticleType particleType, long botId, long blockId = 0, long gridId = 0, Vector3I? position = null, bool isWelder = false)
+    public ParticleInfoClient(ParticleInfoBase.ParticleType particleType, long botId, long blockId = 0, long gridId = 0, Vector3I? blockPosition = null, Vector3D? worldPosition = null, bool isWelder = false)
     {
       BotEntityId = botId;
       BlockEntityId = blockId;
       GridEntityId = gridId;
-      BlockPosition = position;
+      BlockPosition = blockPosition;
+      WorldPosition = worldPosition;
       ParticleType = particleType;
       IsWelderParticle = isWelder;
     }

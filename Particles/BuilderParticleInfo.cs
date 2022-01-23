@@ -28,8 +28,15 @@ namespace AiEnabled.Particles
       Bot = bot;
       Block = block;
       ParticleName = isWelder ? MyParticleEffectsNameEnum.WelderContactPoint : MyParticleEffectsNameEnum.AngleGrinder;
-      SoundPair = new MySoundPair(isWelder ? "ToolPlayWeldMetal" : "ToolPlayGrindMetal");
-      SoundEmitter = new MyEntity3DSoundEmitter(bot as MyEntity);
+
+      var sound = isWelder ? "ToolPlayWeldMetal" : "ToolPlayGrindMetal";
+      if (!AiSession.Instance.SoundPairDict.TryGetValue(sound, out SoundPair))
+      {
+        SoundPair = new MySoundPair(sound);
+        AiSession.Instance.SoundPairDict[sound] = SoundPair;
+      }
+
+      SoundEmitter = AiSession.Instance.GetEmitter(bot as MyEntity); // new MyEntity3DSoundEmitter(bot as MyEntity);
       SoundEmitter.PlaySound(SoundPair);
     }
 
@@ -58,8 +65,7 @@ namespace AiEnabled.Particles
     {
       base.Close();
       SoundEmitter?.Cleanup();
-      SoundEmitter = null;
-      SoundPair = null;
+      AiSession.Instance.ReturnEmitter(SoundEmitter);
     }
 
     public override void Stop()

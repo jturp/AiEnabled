@@ -187,18 +187,22 @@ namespace AiEnabled.GameLogic
 
     BotBase CreateBot(IMyCharacter bot, GridBase gBase, long ownerId)
     {
+      BotBase botBase = null;
       switch (SelectedRole)
       {
         case AiSession.BotType.Repair:
-          return new RepairBot(bot, gBase, ownerId);
+          botBase = new RepairBot(bot, gBase, ownerId);
+          MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
+          break;
         case AiSession.BotType.Combat:
-          //case AiSession.BotType.Medic:
-          return new CombatBot(bot, gBase, ownerId);
-          //case AiSession.BotType.Scavenger:
-          //  return new ScavengerBot(bot, gBase, ownerId);
+          botBase = new CombatBot(bot, gBase, ownerId);
+          MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
+          break;
+        //case AiSession.BotType.Scavenger:
+        //  return new ScavengerBot(bot, gBase, ownerId);
       }
 
-      return null;
+      return botBase;
     }
 
     public override void UpdateAfterSimulation10()

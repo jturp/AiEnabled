@@ -437,10 +437,11 @@ namespace AiEnabled.Ai
       var grid = gridGraph.Grid;
       var gridMatrix = grid.WorldMatrix;
       var gridSize = grid.GridSize;
+      var botMatrix = collection.Bot.WorldMatrix;
 
-      var botMatrixTransposed = MatrixD.Transpose(collection.Bot.WorldMatrix);
+      var botMatrixTransposed = MatrixD.Transpose(botMatrix);
       var allowedDiff = gridSize * 0.5f;
-      var botDownDir = gridMatrix.GetClosestDirection(collection.Bot.WorldMatrix.Down);
+      var botDownDir = gridMatrix.GetClosestDirection(botMatrix.Down);
       var downTravelDir = gridMatrix.GetDirectionVector(botDownDir);
       var intVecDown = Base6Directions.GetIntVector(botDownDir);
 
@@ -1424,7 +1425,7 @@ namespace AiEnabled.Ai
                 // standing at the bottom of the stairs (actual block position)
                 // set this point to be up and forward one block so the bot has to move all the way up the stairs to proceed
 
-                var botUpDir = gridMatrix.GetClosestDirection(collection.Bot.WorldMatrix.Up);
+                var botUpDir = gridMatrix.GetClosestDirection(botMatrix.Up);
                 var UpTravelDir = gridMatrix.GetDirectionVector(botUpDir);
 
                 var dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
@@ -1591,7 +1592,7 @@ namespace AiEnabled.Ai
                 // standing at the bottom of the slope (actual block position)
                 // set this point to be up and forward one block so the bot has to move all the way up the slope to proceed
 
-                var botUpDir = gridMatrix.GetClosestDirection(collection.Bot.WorldMatrix.Up);
+                var botUpDir = gridMatrix.GetClosestDirection(botMatrix.Up);
                 var UpTravelDir = gridMatrix.GetDirectionVector(botUpDir);
 
                 var dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);

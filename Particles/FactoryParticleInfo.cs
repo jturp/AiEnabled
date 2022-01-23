@@ -25,8 +25,14 @@ namespace AiEnabled.Particles
     {
       Bot = bot;
       Block = block;
-      SoundPair = new MySoundPair("BlockAssemblerProcess");
-      SoundEmitter = new MyEntity3DSoundEmitter((MyEntity)block);
+
+      if (!AiSession.Instance.SoundPairDict.TryGetValue("BlockAssemblerProcess", out SoundPair))
+      {
+        SoundPair = new MySoundPair("BlockAssemblerProcess");
+        AiSession.Instance.SoundPairDict["BlockAssemblerProcess"] = SoundPair;
+      }
+
+      SoundEmitter = AiSession.Instance.GetEmitter((MyEntity)block);
       SoundEmitter.PlaySound(SoundPair);
     }
 
@@ -49,8 +55,7 @@ namespace AiEnabled.Particles
     {
       base.Close();
       SoundEmitter?.Cleanup();
-      SoundEmitter = null;
-      SoundPair = null;
+      AiSession.Instance.ReturnEmitter(SoundEmitter);
     }
 
     public override void Update()

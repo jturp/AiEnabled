@@ -44,7 +44,7 @@ namespace AiEnabled.GameLogic
   public class Spawner : MyGameLogicComponent
   {
     List<MyIniKey> _iniKeys = new List<MyIniKey>();
-    Dictionary<string, string> _subtypeToRole = new Dictionary<string, string>();
+    Dictionary<string, KeyValuePair<string, string>> _subtypeToRole = new Dictionary<string, KeyValuePair<string, string>>(10);
 
     List<string> _subtypes = new List<string>()
     {
@@ -150,8 +150,8 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n ");
       _ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch.\n ");
 
-      _ini.Set("Additional Subtypes", "Subtype", "BotRole");
-      _ini.SetSectionComment("Additional Subtypes", " \n You can have the spawner spawn additional subtypes by\n adding subtypes below, one per line, in the following format:\n   Key = Value, where Key is the SubtypeId and Value\n   is one of the roles listed above");
+      _ini.Set("Additional Subtypes", "Subtype", "BotRole;#112233");
+      _ini.SetSectionComment("Additional Subtypes", " \n You can have the spawner spawn additional subtypes by\n adding subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n ");
 
       _lastConfig = _ini.ToString();
       _block.CustomData = _lastConfig;
@@ -211,7 +211,9 @@ namespace AiEnabled.GameLogic
       foreach (var iniKey in _iniKeys)
       {
         var subtype = iniKey.Name;
-        var role = ini.Get(iniKey.Section, subtype).ToString("");
+        var kvp = ini.Get(iniKey.Section, subtype).ToString("").Split(';');
+        var role = kvp[0].ToUpperInvariant();
+        var color = (kvp.Length > 1) ? kvp[1] : "";
 
         if (!string.IsNullOrWhiteSpace(subtype) && !string.IsNullOrWhiteSpace(role)
           && !subtype.Equals("Police_Bot", StringComparison.OrdinalIgnoreCase)
@@ -222,84 +224,84 @@ namespace AiEnabled.GameLogic
         {
           switch (role)
           {
-            case "SoldierBot":
+            case "SOLDIER":
+
+              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
+
               if (allowSoldier)
               {
                 if (!_subtypes.Contains(subtype))
                 {
                   _subtypes.Add(subtype);
                 }
-
-                _subtypeToRole[subtype] = role;
               }
               else
               {
                 _subtypes.Remove(subtype);
-                _subtypeToRole.Remove(subtype);
               }
               break;
-            case "GrinderBot":
+            case "GRINDER":
+
+              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
+
               if (allowGrinder)
               {
                 if (!_subtypes.Contains(subtype))
                 {
                   _subtypes.Add(subtype);
                 }
-
-                _subtypeToRole[subtype] = role;
               }
               else
               {
                 _subtypes.Remove(subtype);
-                _subtypeToRole.Remove(subtype);
               }
               break;
-            case "ZombieBot":
+            case "ZOMBIE":
+
+              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
+
               if (allowZombie)
               {
                 if (!_subtypes.Contains(subtype))
                 {
                   _subtypes.Add(subtype);
                 }
-
-                _subtypeToRole[subtype] = role;
               }
               else
               {
                 _subtypes.Remove(subtype);
-                _subtypeToRole.Remove(subtype);
               }
               break;
-            case "GhostBot":
+            case "GHOST":
+
+              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
+
               if (allowGhost)
               {
                 if (!_subtypes.Contains(subtype))
                 {
                   _subtypes.Add(subtype);
                 }
-
-                _subtypeToRole[subtype] = role;
               }
               else
               {
                 _subtypes.Remove(subtype);
-                _subtypeToRole.Remove(subtype);
               }
               break;
-            case "BruiserBot":
+            case "BRUISER":
+
+              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
+
               if (_allowBossBot)
               {
                 if (!_subtypes.Contains(subtype))
                 {
                   _subtypes.Add(subtype);
                 }
-
-                _subtypeToRole[subtype] = role;
               }
               else
               {
                 _subtypes.Remove(subtype);
-                _subtypeToRole.Remove(subtype);
               }
               break;
           }
@@ -330,15 +332,15 @@ namespace AiEnabled.GameLogic
       {
         foreach (var kvp in _subtypeToRole)
         {
-          ini.Set("Additional Subtypes", kvp.Key, kvp.Value);
+          ini.Set("Additional Subtypes", kvp.Key, $"{kvp.Value.Key};{kvp.Value.Value}");
         }
       }
       else
       {
-        ini.Set("Additional Subtypes", "Subtype", "BotRole");
+        ini.Set("Additional Subtypes", "Subtype", "BotRole;#112233");
       }
 
-      ini.SetSectionComment("Additional Subtypes", " \n You can have the spawner spawn additional subtypes by\n adding subtypes below, one per line, in the following format:\n   Key = Value, where Key is the SubtypeId and Value\n   is one of the roles listed above\n ");
+      ini.SetSectionComment("Additional Subtypes", " \n You can have the spawner spawn additional subtypes by\n adding subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n ");
 
       _lastConfig = ini.ToString();
       _block.CustomData = _lastConfig;
@@ -351,7 +353,7 @@ namespace AiEnabled.GameLogic
         if (_isClient || AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn)
           return;
 
-        if (_block == null || _block.MarkedForClose || !_block.IsWorking || AiSession.Instance.Players.Count == 0 || (_hasSpawned && CheckSpawnTimer()))
+        if (_block == null || _block.MarkedForClose || !_block.IsWorking || AiSession.Instance.Players.Count == 0)
           return;
 
         if (_fakeBlock.GridResourceDistributor.ResourceState == MyResourceStateEnum.NoPower)
@@ -366,7 +368,7 @@ namespace AiEnabled.GameLogic
         else if (_ini.ToString() != _lastConfig)
           ParseConfig(_ini);
 
-        if (_currentSpawnCount >= _maxSimultaneousSpawns || AiSession.Instance.GlobalSpawnTimer < 60)
+        if (_currentSpawnCount >= _maxSimultaneousSpawns || AiSession.Instance.GlobalSpawnTimer < 60 || (_hasSpawned && CheckSpawnTimer()))
           return;
 
         if (_gridMap == null)
@@ -404,6 +406,9 @@ namespace AiEnabled.GameLogic
         if (!hasRegular && !_allowBossBot)
           return;
 
+        var maxPlayerDistance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy;
+        maxPlayerDistance *= maxPlayerDistance;
+
         foreach (var kvp in AiSession.Instance.Players)
         {
           var player = kvp.Value?.Character;
@@ -411,7 +416,7 @@ namespace AiEnabled.GameLogic
             continue;
 
           var playerPosition = player.PositionComp.WorldAABB.Center;
-          if (Vector3D.DistanceSquared(playerPosition, _block.WorldAABB.Center) < 90000)
+          if (Vector3D.DistanceSquared(playerPosition, _block.WorldAABB.Center) < maxPlayerDistance)
           {
             string botType;
             if (_allowBossBot && (!hasRegular || _gridMap.TotalSpawnCount > 2 && MyUtils.GetRandomInt(1, 101) >= _gridMap.BossSpawnChance))
@@ -429,31 +434,22 @@ namespace AiEnabled.GameLogic
                 _gridMap.BossSpawnChance--;
             }
             else
-              return;
+              break;
 
-            var role = _subtypeToRole.GetValueOrDefault(botType, null);
+            string role = null;
+            Color? color = null;
+            KeyValuePair<string, string> roleAndColor;
+            if (_subtypeToRole.TryGetValue(botType, out roleAndColor))
+            {
+              role = roleAndColor.Key;
+              color = ColorExtensions.FromHtml(roleAndColor.Value);
+            }
+
             var posOr = new MyPositionAndOrientation(_block.PositionComp.WorldAABB.Center + _block.WorldMatrix.Backward * 2.5, (Vector3)_block.WorldMatrix.Backward, (Vector3)_block.WorldMatrix.Up);
 
-            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid, role);
+            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid, role, color: color);
             if (bot != null)
             {
-              //long ownerId;
-              //if (_block.CubeGrid.BigOwners?.Count > 0)
-              //  ownerId = _block.CubeGrid.BigOwners[0];
-              //else if (_block.CubeGrid.SmallOwners?.Count > 0)
-              //  ownerId = _block.CubeGrid.SmallOwners[0];
-              //else
-              //  ownerId = _block.OwnerId;
-
-              //if (ownerId > 0)
-              //{
-              //  var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ownerId);
-              //  if (faction != null && !faction.AcceptHumans)
-              //  {
-              //    MyVisualScriptLogicProvider.SetPlayersFaction(bot.ControllerInfo.ControllingIdentityId, faction.Tag);
-              //  }
-              //}
-
               AiSession.Instance.GlobalSpawnTimer = 0;
               _currentSpawnCount++;
               _gridMap.TotalSpawnCount++;

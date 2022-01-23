@@ -69,29 +69,23 @@ namespace AiEnabled
 
     public struct FutureBot
     {
-      public string Subtype, DisplayName;
-      public long OwnerId, GridId, BotId;
-      public int Role;
-      public MyPositionAndOrientation PositionAndOrientation;
+      public HelperInfo HelperInfo;
+      public long OwnerId;
 
-      public FutureBot(string subtype, string name, long ownerId, long botId, long gridEntityId, BotType botType, MatrixD matrix)
+      public FutureBot(HelperInfo info, long ownerId)
       {
-        DisplayName = name;
-        Subtype = subtype;
+        HelperInfo = info;
         OwnerId = ownerId;
-        GridId = gridEntityId;
-        BotId = botId;
-        Role = (int)botType;
-        PositionAndOrientation = new MyPositionAndOrientation(matrix);
       }
     }
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public string VERSION = "v0.9b";
+    public string VERSION = "v0.10b";
 
     public int MaxBots = 100;
     public int MaxHelpers = 2;
+    public int MaxBotProjectileDistance = 150;
     public int ControllerCacheNum = 20;
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
 
@@ -105,6 +99,8 @@ namespace AiEnabled
     public bool FactoryActionsCreated;
     public bool IsServer, IsClient;
     public bool DrawDebug;
+    public bool ShieldAPILoaded;
+    public MyStringHash ShieldHash = MyStringHash.GetOrCompute("DefenseShield");
 
     public List<HelperInfo> MyHelperInfo;
     public CommandMenu CommandMenu;
@@ -115,6 +111,8 @@ namespace AiEnabled
     public PlayerData PlayerData;
     public Inputs Input;
     public ProjectileInfo Projectiles = new ProjectileInfo();
+    public DefenseShieldsAPI ShieldAPI = new DefenseShieldsAPI();
+    public RepairDelay BlockRepairDelays = new RepairDelay();
     LocalBotAPI _localBotAPI;
     IMyHudNotification _hudMsg;
     bool _isControlBot;
@@ -176,7 +174,7 @@ namespace AiEnabled
     }
 
     ulong _lastVoxelId;
-    public VoxelGridMap GetVoxelGraph(Vector3D worldPosition, bool forceRefresh = false)
+    public VoxelGridMap GetVoxelGraph(Vector3D worldPosition, bool forceRefresh = false, bool returnFirstFound = true)
     {
       foreach (var voxelGraph in VoxelGraphDict.Values)
       {
@@ -189,10 +187,22 @@ namespace AiEnabled
 
         if (voxelGraph.OBB.Contains(ref worldPosition))
         {
-          if (forceRefresh)
-            voxelGraph.Refresh();
+          if (returnFirstFound)
+          {
+            if (forceRefresh)
+              voxelGraph.Refresh();
 
-          return voxelGraph;
+            return voxelGraph;
+          }
+
+          var graphDistance = Vector3D.DistanceSquared(worldPosition, voxelGraph.OBB.Center);
+          if (graphDistance < 10)
+          {
+            if (forceRefresh)
+              voxelGraph.Refresh();
+
+            return voxelGraph;
+          }
         }
       }
 
@@ -206,7 +216,7 @@ namespace AiEnabled
       return graph;
     }
 
-    public void StartWeaponFire(long botId, long targetId, float damage, List<float> rand, int ticksBetweenAttacks, int ammoRemaining, bool isGrinder, bool isWelder)
+    public void StartWeaponFire(long botId, long targetId, float damage, float angleDeviationTan, List<float> rand, int ticksBetweenAttacks, int ammoRemaining, bool isGrinder, bool isWelder, bool leadTargets)
     {
       var bot = MyEntities.GetEntityById(botId) as IMyCharacter;
       if (bot == null || bot.IsDead)
@@ -217,7 +227,7 @@ namespace AiEnabled
         return;
 
       var info = GetWeaponInfo();
-      info.Set(bot, tgt, damage, rand, ticksBetweenAttacks, ammoRemaining, isGrinder, isWelder);
+      info.Set(bot, tgt, damage, angleDeviationTan, rand, ticksBetweenAttacks, ammoRemaining, isGrinder, isWelder, leadTargets);
 
       _botEntityIds[botId] = new byte();
       _weaponFireList.Add(info);
@@ -412,6 +422,13 @@ namespace AiEnabled
         }
       }
 
+      if (ShieldAPILoaded)
+      {
+        ShieldAPILoaded = false;
+        ShieldAPI?.Unload();
+      }
+
+      BlockRepairDelays?.Close();
       CommandMenu?.Close();
       PlayerMenu?.Close();
       Input?.Close();
@@ -475,6 +492,7 @@ namespace AiEnabled
       _botEntityIds?.Clear();
       _useObjList?.Clear();
 
+      BlockRepairDelays = null;
       ComponentDefinitions = null;
       MapInitQueue = null;
       InvCacheStack = null;
@@ -539,6 +557,7 @@ namespace AiEnabled
       GridGraphDict = null;
       AcceptedItemDict = null;
       ItemOBDict = null;
+      ShieldAPI = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -580,28 +599,56 @@ namespace AiEnabled
         IsServer = MyAPIGateway.Multiplayer.IsServer;
         IsClient = !IsServer;
         MainThreadId = Environment.CurrentManagedThreadId;
-
-        foreach (var def in MyDefinitionManager.Static.Characters)
-        {
-          var subtype = def.Id.SubtypeName;
-          AnimationControllerDictionary[subtype] = def.AnimationController;
-          RobotSubtypes.Add(subtype);
-        }
-
-        _localBotAPI = new LocalBotAPI();
         ControllerCacheNum = Math.Max(20, MyAPIGateway.Session.MaxPlayers * 2);
 
-        if (MyAPIGateway.Session?.SessionSettings != null)
+        bool sessionOK = MyAPIGateway.Session != null;
+
+        if (sessionOK && MyAPIGateway.Session.Mods?.Count > 0)
         {
-          MyAPIGateway.Session.SessionSettings.EnableWolfs = false;
-          MyAPIGateway.Session.SessionSettings.EnableSpiders = false;
-          MyAPIGateway.Session.SessionSettings.MaxFactionsCount = 100;
+          foreach (var mod in MyAPIGateway.Session.Mods)
+          {
+            if (mod.PublishedFileId == 1365616918 || mod.PublishedFileId == 2372872458
+              || mod.GetPath().Contains("AppData\\Roaming\\SpaceEngineers\\Mods\\DefenseShields"))
+            {
+              ShieldAPILoaded = ShieldAPI.Load();
+              Logger.Log($"Defense Shields Mod found. API loaded successfully = {ShieldAPILoaded}");
+            }
+            else if (mod.PublishedFileId == 2200451495)
+            {
+              Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} Found. API loaded successfully = {WaterAPI.Registered}");
+            }
+          }
         }
         else
-          Logger.Log($"AiSession.BeforeStart: Unable to disable wolves and spiders, or adjust max factions - SessionSettings was null!", MessageType.WARNING);
+        {
+          Logger.Log($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}", MessageType.WARNING);
+        }
 
         if (IsServer)
         {
+          _localBotAPI = new LocalBotAPI();
+
+          foreach (var def in MyDefinitionManager.Static.Characters)
+          {
+            var subtype = def.Id.SubtypeName;
+            AnimationControllerDictionary[subtype] = def.AnimationController;
+            RobotSubtypes.Add(subtype);
+          }
+
+          if (sessionOK)
+          {
+            if (MyAPIGateway.Session.SessionSettings != null)
+            {
+              MyAPIGateway.Session.SessionSettings.EnableWolfs = false;
+              MyAPIGateway.Session.SessionSettings.EnableSpiders = false;
+              MyAPIGateway.Session.SessionSettings.MaxFactionsCount = 100;
+            }
+            else
+              Logger.Log($"AiSession.BeforeStart: Unable to disable wolves and spiders, or adjust max factions - SessionSettings was null!", MessageType.WARNING);
+          }
+          else
+            Logger.Log($"APIGateway.Session was null in BeforeStart", MessageType.WARNING);
+
           VoxelGraphDict = new ConcurrentDictionary<ulong, VoxelGridMap>();
 
           ModSaveData = Config.ReadFileFromWorldStorage<SaveData>("AiEnabled.cfg", typeof(SaveData), Logger);
@@ -610,9 +657,19 @@ namespace AiEnabled
             ModSaveData = new SaveData()
             {
               MaxBotsInWorld = MaxBots,
-              MaxHelpersPerPlayer = MaxHelpers
+              MaxHelpersPerPlayer = MaxHelpers,
+              MaxBotProjectileDistance = 150,
+              MaxBotHuntingDistanceEnemy = 300,
+              MaxBotHuntingDistanceFriendly = 150,
+              
             };
           }
+
+          ModSaveData.MaxBotHuntingDistanceEnemy = Math.Max(50, Math.Min(1000, ModSaveData.MaxBotHuntingDistanceEnemy));
+          ModSaveData.MaxBotHuntingDistanceFriendly = Math.Max(50, Math.Min(1000, ModSaveData.MaxBotHuntingDistanceFriendly));
+          ModSaveData.MaxBotProjectileDistance = Math.Max(50, Math.Min(500, ModSaveData.MaxBotProjectileDistance));
+          MaxBotProjectileDistance = ModSaveData.MaxBotProjectileDistance;
+          AllowMusic = ModSaveData.AllowBotMusic;
 
           if (ModSaveData.PlayerHelperData == null)
             ModSaveData.PlayerHelperData = new List<HelperData>();
@@ -636,12 +693,9 @@ namespace AiEnabled
                 if (!helper.IsActiveHelper)
                   continue;
 
-                data.Helpers.RemoveAtFast(i);
-                var matrix = MatrixD.CreateFromQuaternion(helper.Orientation);
-                matrix.Translation = helper.Position;
-
-                var future = new FutureBot(helper.Subtype, helper.DisplayName, data.OwnerIdentityId, helper.HelperId, helper.GridEntityId, (BotType)helper.Role, matrix);
+                var future = new FutureBot(helper, data.OwnerIdentityId);
                 FutureBotQueue.Enqueue(future);
+                data.Helpers.RemoveAtFast(i);
               }
             }
           }
@@ -669,7 +723,7 @@ namespace AiEnabled
             if (!faction.AcceptHumans)
             {
               if (!faction.AutoAcceptMember)
-                MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, 0L, true, faction.AutoAcceptPeace);
+                MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, faction.FounderId, true, faction.AutoAcceptPeace);
 
               var joinRequests = faction.JoinRequests;
               if (joinRequests.Count > 0)
@@ -1010,7 +1064,7 @@ namespace AiEnabled
 
     public void UpdateAdminConfig()
     {
-      if (!_needsAdminUpdate || ++_updateCounterAdmin < UpdateTime)
+      if (++_updateCounterAdmin < UpdateTime)
         return;
 
       _needsAdminUpdate = false;
@@ -1037,10 +1091,13 @@ namespace AiEnabled
         var faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
         if (faction != null && !faction.AcceptHumans && !faction.AutoAcceptMember)
         {
-          MyAPIGateway.Session.Factions.ChangeAutoAccept(factionId, 0L, true, faction.AutoAcceptPeace);
+          MyAPIGateway.Session.Factions.ChangeAutoAccept(factionId, faction.FounderId, true, faction.AutoAcceptPeace);
         }
       }
-      catch { }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in Factions_FactionAutoAcceptChanged: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     private void Factions_FactionStateChanged(MyFactionStateChange action, long fromFactionId, long toFactionId, long playerId, long senderId)
@@ -1070,7 +1127,10 @@ namespace AiEnabled
           }
         }
       }
-      catch { }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in Factions_FactionStateChanged: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     private void Factions_FactionEdited(long factionId)
@@ -1119,7 +1179,10 @@ namespace AiEnabled
             Logger.Log($"AiSession.FactionEdited: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
         }
       }
-      catch { }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in Factions_FactionEdited: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     private void Factions_FactionCreated(long factionId)
@@ -1156,7 +1219,10 @@ namespace AiEnabled
             Logger.Log($"AiSession.FactionCreated: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
         }
       }
-      catch { }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in Factions_FactionCreated: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     public void ClearBotControllers()
@@ -1318,15 +1384,19 @@ namespace AiEnabled
             bot._pathCollection?.CleanUp(true);
 
             if (!bot.UseAPITargets)
+            {
               bot.SetTarget();
+              bot.Target.Update();
+            }
 
-            Vector3D gotoPosition, actualPosition;
-            bot.Target.GetTargetPosition(out gotoPosition, out actualPosition);
+            Vector3D actualPosition = bot.Target.CurrentActualPosition;
             bot.StartCheckGraph(ref actualPosition, true);
+
+            var botMatrix = bot.WorldMatrix;
 
             Vector3D relPosition;
             BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition);
-            var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
+            var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + botMatrix.Down;
 
             var voxelGraph = bot._currentGraph as VoxelGridMap;
             var gridGraph = bot._currentGraph as CubeGridMap;
@@ -1334,7 +1404,7 @@ namespace AiEnabled
 
             if (voxelGraph != null)
             {
-              Vector3D up = bot.WorldMatrix.Up;
+              Vector3D up = botMatrix.Up;
 
               float interference;
               var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
@@ -1349,7 +1419,7 @@ namespace AiEnabled
 
               position = voxelGraph.GetClosestSurfacePointFast(bot, position, up) + up;
 
-              if (bot.WorldMatrix.Up.Dot(up) < 0)
+              if (botMatrix.Up.Dot(up) < 0)
               {
                 var forward = Vector3D.CalculatePerpendicularVector(up);
                 newMatrix = MatrixD.CreateWorld(position, forward, up);
@@ -1361,7 +1431,7 @@ namespace AiEnabled
               Vector3I openNode;
               if (gridGraph.GetClosestValidNode(bot, local, out openNode, seat.WorldMatrix.Up))
               {
-                position = gridGraph.LocalToWorld(openNode) + bot.WorldMatrix.Down;
+                position = gridGraph.LocalToWorld(openNode) + botMatrix.Down;
               }
               else
               {
@@ -1370,7 +1440,7 @@ namespace AiEnabled
             }
             else if (relPosition.LengthSquared() < 2)
             {
-              Vector3D up = bot.WorldMatrix.Up;
+              Vector3D up = botMatrix.Up;
               MyPlanet planet = null;
 
               float interference;
@@ -1555,133 +1625,214 @@ namespace AiEnabled
 
     private void BeforeDamageHandler(object target, ref MyDamageInformation info)
     {
-      if (!Registered || !IsServer || info.IsDeformation || info.AttackerId == 0 || info.Amount == 0)
-        return;
-
-      var slim = target as IMySlimBlock;
-      if (slim?.FatBlock is IMyDoor && info.Type == MyDamageType.Grind)
+      try
       {
-        var grinder = MyEntities.GetEntityById(info.AttackerId) as IMyAngleGrinder;
-        if (grinder != null && Bots.ContainsKey(grinder.OwnerId))
+        if (!Registered || !IsServer || info.IsDeformation || info.AttackerId == 0 || info.Amount == 0)
+          return;
+
+        var slim = target as IMySlimBlock;
+        if (slim != null && info.Type == MyDamageType.Grind)
         {
-          info.Amount = 0.005f;
+          var grinder = MyEntities.GetEntityById(info.AttackerId) as IMyAngleGrinder;
+
+          if (!Bots.ContainsKey(grinder.OwnerId))
+          {
+            if (!slim.IsDestroyed && slim.CubeGrid != null && !slim.CubeGrid.MarkedForClose)
+              CheckGrindTarget(slim, grinder.OwnerId);
+          }
+          else if (slim.FatBlock is IMyDoor)
+          {
+            info.Amount = 0.005f;
+            return;
+          }
+        }
+
+        var character = target as IMyCharacter;
+        var charNull = character == null;
+        if (charNull || character.IsDead)
+        {
           return;
         }
-      }
 
-      var character = target as IMyCharacter;
-      if (character == null || character.IsDead)
-        return;
-
-      BotBase bot;
-      bool targetIsBot = false;
-      if (Bots.TryGetValue(character.EntityId, out bot))
-      {
-        targetIsBot = true;
-        if (bot?.Behavior?.PainSounds?.Count > 0)
-          bot.Behavior.ApplyPain();
-      }
-
-      long ownerId, ownerIdentityId = 0;
-      float damageAmount;
-      switch (info.Type.String)
-      {
-        case "Grind":
-          ownerId = info.AttackerId;
-
-          if (Bots.ContainsKey(ownerId))
-          {
-            if (targetIsBot)
-            {
-              SetNomadHostility(character.EntityId, ownerId);
-            }
-
-            info.Amount = 0;
-            return;
-          }
-
-          damageAmount = 0.2f;
-
-          var ch = MyEntities.GetEntityById(ownerId) as IMyCharacter;
-          if (ch != null)
-            ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
-
-          break;
-        default:
-          var ent = MyEntities.GetEntityById(info.AttackerId);
-
-          var turret = ent as IMyLargeTurretBase;
-          if (turret != null)
-          {
-            if (targetIsBot)
-            {
-              var amount = info.Amount * 0.1f;
-              info.Amount = 0;
-              DamageCharacter(turret.EntityId, character, info.Type, amount);
-            }
-
-            return;
-          }
-
-          var attackerChar = ent as IMyCharacter;
-          if (attackerChar != null)
-          {
-            if (targetIsBot)
-            {
-              var subtype = attackerChar.Definition.Id.SubtypeName;
-              if (subtype.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase) || subtype.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase))
-              {
-                info.Amount = 0;
-                DamageCharacter(info.AttackerId, character, info.Type, 1.5f);
-              }
-
-              SetNomadHostility(character.EntityId, attackerChar.EntityId);
-            }
-
-            return;
-          }
-
-          var gun = ent as IMyHandheldGunObject<MyGunBase>;
-          if (gun == null)
-          {
-            return;
-          }
-
-          ownerId = gun.OwnerId;
-          ownerIdentityId = gun.OwnerIdentityId;
-          damageAmount = targetIsBot ? 10f : 1.5f;
-          break;
-      }
-
-      if (targetIsBot && ownerId > 0)
-      {
-        SetNomadHostility(character.EntityId, ownerId);
-      }
-
-      if (!Bots.ContainsKey(ownerId))
-      {
-        if (targetIsBot && Players.ContainsKey(ownerIdentityId))
+        BotBase bot;
+        bool targetIsBot = false;
+        if (Bots.TryGetValue(character.EntityId, out bot))
         {
-          HealthInfoStat infoStat;
-          if (!PlayerToHealthBars.TryGetValue(ownerIdentityId, out infoStat))
-          {
-            infoStat = new HealthInfoStat();
-            PlayerToHealthBars[ownerIdentityId] = infoStat;
-          }
-          else if (infoStat.ShowHealthBars)
-          {
-            infoStat.BotEntityIds.Add(character.EntityId);
-          }
+          targetIsBot = true;
+          if (bot?.Behavior?.PainSounds?.Count > 0)
+            bot.Behavior.ApplyPain();
         }
 
-        return;
-      }
+        long ownerId, ownerIdentityId = 0;
+        float damageAmount;
+        switch (info.Type.String)
+        {
+          case "Environment":
+            ownerId = info.AttackerId;
 
-      var owner = MyEntities.GetEntityById(ownerId) as IMyCharacter;
-      if (owner != null)
+            var ownerEnt = MyEntities.GetEntityById(ownerId, true);
+            if (ownerEnt?.DefinitionId != null && ownerEnt.DefinitionId.Value.TypeId == typeof(MyObjectBuilder_Missile))
+            {
+              var ob = ownerEnt.GetObjectBuilder() as MyObjectBuilder_Missile;
+              if (ob != null)
+                ownerId = ob.Owner;
+            }
+
+            if (Bots.ContainsKey(ownerId))
+            {
+              damageAmount = info.Amount * 0.0001f;
+            }
+            else if (targetIsBot && (character.Definition.Id.SubtypeName == "Default_Astronaut" || character.Definition.Id.SubtypeName == "Default_Astronaut_Female"))
+            {
+              damageAmount = info.Amount * 0.001f;
+            }
+            else
+            {
+              damageAmount = info.Amount;
+            }
+
+            break;
+          case "Rocket":
+          case "Explosion":
+            ownerId = info.AttackerId;
+
+            if (Bots.ContainsKey(ownerId))
+            {
+              damageAmount = info.Amount * 0.04f;
+            }
+            else if (targetIsBot && (character.Definition.Id.SubtypeName == "Default_Astronaut" || character.Definition.Id.SubtypeName == "Default_Astronaut_Female"))
+            {
+              damageAmount = info.Amount * 0.4f;
+            }
+            else
+            {
+              damageAmount = info.Amount;
+            }
+
+            break;
+          case "Grind":
+            var grinder = MyEntities.GetEntityById(info.AttackerId) as IMyAngleGrinder;
+            ownerId = grinder?.OwnerId ?? info.AttackerId;
+
+            if (Bots.ContainsKey(ownerId))
+            {
+              if (targetIsBot)
+              {
+                SetNomadHostility(character.EntityId, ownerId);
+              }
+
+              info.Amount = 0;
+              return;
+            }
+
+            damageAmount = 0.2f;
+
+            var ch = MyEntities.GetEntityById(ownerId) as IMyCharacter;
+            if (ch != null)
+              ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
+
+            break;
+          default:
+            var ent = MyEntities.GetEntityById(info.AttackerId);
+
+            var turret = ent as IMyLargeTurretBase;
+            if (turret != null)
+            {
+              if (targetIsBot)
+              {
+                var amount = info.Amount * 0.1f;
+                info.Amount = 0;
+                DamageCharacter(turret.EntityId, character, info.Type, amount);
+              }
+
+              return;
+            }
+
+            var attackerChar = ent as IMyCharacter;
+            if (attackerChar != null)
+            {
+              if (targetIsBot)
+              {
+                var subtype = attackerChar.Definition.Id.SubtypeName;
+                if (subtype.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase) || subtype.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase))
+                {
+                  info.Amount = 0;
+                  DamageCharacter(info.AttackerId, character, info.Type, 1.5f);
+                }
+
+                SetNomadHostility(character.EntityId, attackerChar.EntityId);
+              }
+
+              return;
+            }
+
+            var gun = ent as IMyHandheldGunObject<MyGunBase>;
+            if (gun == null)
+            {
+              return;
+            }
+
+            ownerId = gun.OwnerId;
+            ownerIdentityId = gun.OwnerIdentityId;
+            damageAmount = targetIsBot ? 10f : 1.5f;
+            break;
+        }
+
+        if (targetIsBot && ownerId > 0)
+        {
+          SetNomadHostility(character.EntityId, ownerId);
+        }
+
+        if (!Bots.ContainsKey(ownerId))
+        {
+          if (targetIsBot && Players.ContainsKey(ownerIdentityId))
+          {
+            HealthInfoStat infoStat;
+            if (!PlayerToHealthBars.TryGetValue(ownerIdentityId, out infoStat))
+            {
+              infoStat = new HealthInfoStat();
+              PlayerToHealthBars[ownerIdentityId] = infoStat;
+            }
+            else if (infoStat.ShowHealthBars)
+            {
+              infoStat.BotEntityIds.Add(character.EntityId);
+            }
+
+            var subtype = character.Definition.Id.SubtypeName;
+            if (subtype == "Default_Astronaut" || subtype == "Default_Astronaut_Female")
+            {
+              info.Amount = 0;
+              DamageCharacter(-1L, character, info.Type, damageAmount);
+            }
+          }
+
+          return;
+        }
+
+        var owner = MyEntities.GetEntityById(ownerId) as IMyCharacter;
+        if (owner != null)
+        {
+          info.Amount = 0;
+          DamageCharacter(owner.EntityId, character, info.Type, damageAmount);
+        }
+      }
+      catch (Exception ex)
       {
-        info.Amount = 0;
-        DamageCharacter(owner.EntityId, character, info.Type, damageAmount);
+        Logger.Log($"Exception in BeforeDamageHandler: {ex.Message}\n{ex.StackTrace}");
+      }
+    }
+
+    void CheckGrindTarget(IMySlimBlock block, long attackerId)
+    {
+      var entity = MyEntities.GetEntityById(attackerId) as IMyCharacter;
+      if (entity != null)
+      {
+        List<BotBase> helpers;
+        var player = MyAPIGateway.Players.GetPlayerControllingEntity(entity);
+        if (player != null && PlayerToHelperDict.TryGetValue(player.IdentityId, out helpers) && helpers?.Count > 0)
+        {
+          BlockRepairDelays.AddDelay(block.CubeGrid.EntityId, block.Position);
+        }
       }
     }
 
@@ -1750,7 +1901,8 @@ namespace AiEnabled
               for (int j = botList.Count - 1; j >= 0; j--)
               {
                 var bot = botList[j];
-                var id = bot.Character.EntityId;
+                var botChar = bot.Character;
+                var id = botChar.EntityId;
                 bool botFound = false;
 
                 for (int k = helperList.Count - 1; k >= 0; k--)
@@ -1761,10 +1913,26 @@ namespace AiEnabled
                     var matrix = bot.WorldMatrix;
                     helper.Orientation = Quaternion.CreateFromRotationMatrix(matrix);
                     helper.Position = matrix.Translation;
+                    helper.ToolSubtype = bot.ToolSubtype ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id.SubtypeName ?? null;
+                    helper.InventoryItems?.Clear();
 
                     var gridGraph = bot._currentGraph as CubeGridMap;
                     var grid = gridGraph?.Grid ?? null;
                     helper.GridEntityId = grid?.EntityId ?? 0L;
+
+                    var inventory = botChar.GetInventory() as MyInventory;
+                    if (inventory?.ItemCount > 0)
+                    {
+                      if (helper.InventoryItems == null)
+                        helper.InventoryItems = new List<InventoryItem>();
+
+                      var items = inventory.GetItems();
+                      for (int ll = 0; ll < items.Count; ll++)
+                      {
+                        var item = items[ll];
+                        helper.InventoryItems.Add(new InventoryItem(item.Content.GetId(), item.Amount));
+                      }
+                    }
 
                     botFound = true;
                     break;
@@ -1838,7 +2006,7 @@ namespace AiEnabled
       {
         if (!info.IsWelder && !info.IsGrinder)
         {
-          Projectiles.Add(bot, tgt, info.GetRandom(), info.Damage, info);
+          Projectiles.Add(bot, tgt, info);
         }
         else
         {
@@ -1892,6 +2060,22 @@ namespace AiEnabled
             ReturnIconInfo(info);
         }
       }
+    }
+
+    public void PlayeSoundAtPosition(Vector3D position, string sound, bool stop)
+    {
+      var emitter = GetEmitter();
+      emitter.SetPosition(position);
+
+      MySoundPair soundPair;
+      if (!SoundPairDict.TryGetValue(sound, out soundPair))
+      {
+        soundPair = new MySoundPair(sound);
+        SoundPairDict[sound] = soundPair;
+      }
+
+      emitter.PlaySound(soundPair);
+      ReturnEmitter(emitter);
     }
 
     void PlaySoundForEntity(MyEntity entity, string sound, bool stop)
@@ -2044,6 +2228,8 @@ namespace AiEnabled
     }
 
     public bool AllowMusic = true;
+    bool? _allowEnemyFlight;
+    int _maxHuntEnemy, _maxHuntFriendly, _maxProjectile;
     MyCommandLine _cli = new MyCommandLine();
     private void OnMessageEntered(string messageText, ref bool sendToOthers)
     {
@@ -2087,7 +2273,7 @@ namespace AiEnabled
 
         if (num != MaxBots)
         {
-          var packet = new AdminPacket(num, MaxHelpers);
+          var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic);
           Network.SendToServer(packet);
         }
       }
@@ -2100,7 +2286,7 @@ namespace AiEnabled
         if (AllowMusic != on)
         {
           AllowMusic = on;
-          var pkt = new AdminPacket(AllowMusic);
+          var pkt = new AdminPacket(AllowMusic, null);
           Network.SendToServer(pkt);
         }
 
@@ -2162,7 +2348,7 @@ namespace AiEnabled
           up = character.WorldMatrix.Up;
           forward = character.WorldMatrix.Forward;
         }
-        
+
         var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 50;
         var planet = MyGamePruningStructure.GetClosestPlanet(position);
         if (planet != null)
@@ -2175,161 +2361,75 @@ namespace AiEnabled
         var packet = new SpawnPacket(position, forward, up, player.IdentityId);
         Network.SendToServer(packet);
       }
-      else if (cmd.Equals("test", StringComparison.OrdinalIgnoreCase))
+      else if (cmd.Equals("maxhuntenemy", StringComparison.OrdinalIgnoreCase))
       {
-        float _;
-        var centerPosition = player.Character.WorldAABB.Center;
-        var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(centerPosition, out _);
-
-        if (gravity.LengthSquared() > 0)
+        int distance;
+        if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
         {
-          var planet = MyGamePruningStructure.GetClosestPlanet(centerPosition);
-          var upVec = Vector3D.Normalize(-gravity);
-          var fwdVec = Vector3D.CalculatePerpendicularVector(upVec);
-          var lftVec = Vector3D.Cross(upVec, fwdVec);
-          var bwdVec = -fwdVec;
-          var rgtVec = -lftVec;
+          distance = Math.Max(50, Math.Min(1000, distance));
 
-          var distance = 250;
-          var position = centerPosition + fwdVec * distance;
-          position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
+          if (distance != _maxHuntEnemy)
+          {
+            _maxHuntEnemy = distance;
 
-          // spawn
-          var matrix = MatrixD.CreateWorld(position, fwdVec, upVec);
-          var bot = BotFactory.SpawnNPC("Police_Bot", "Ai_1", new MyPositionAndOrientation(matrix));
+            var pkt = new AdminPacket(distance, null, null);
+            Network.SendToServer(pkt);
 
-          //position += lftVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_2", new MyPositionAndOrientation(matrix));
-
-          //position += bwdVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_3", new MyPositionAndOrientation(matrix));
-
-          //position += bwdVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_4", new MyPositionAndOrientation(matrix));
-
-          //position += rgtVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_5", new MyPositionAndOrientation(matrix));
-
-          //position += rgtVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_6", new MyPositionAndOrientation(matrix));
-
-          //position += fwdVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_7", new MyPositionAndOrientation(matrix));
-
-          //position += fwdVec * distance;
-          //position = planet.GetClosestSurfacePointGlobal(position) + upVec * 5;
-
-          //// spawn
-          //matrix.Translation = position;
-          //bot = BotFactory.SpawnNPC("Police_Bot", "Ai_8", new MyPositionAndOrientation(matrix));
+            ShowMessage($"Max Enemy Hunting Distance set to {distance}m");
+          }
         }
       }
-      else if (cmd.Equals("pet", StringComparison.OrdinalIgnoreCase))
+      else if (cmd.Equals("maxhuntfriendly", StringComparison.OrdinalIgnoreCase))
       {
-        if (IsServer)
+        int distance;
+        if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
         {
-          if (!CanSpawn)
-          {
-            MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. Try again in a moment...");
-            return;
-          }
+          distance = Math.Max(50, Math.Min(1000, distance));
 
-          var ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(player.IdentityId);
-          if (ownerFaction == null)
+          if (distance != _maxHuntFriendly)
           {
-            MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. Owner is not in a faction!");
-            return;
-          }
+            _maxHuntFriendly = distance;
 
-          IMyFaction botFaction;
-          if (!BotFactions.TryGetValue(ownerFaction.FactionId, out botFaction))
-          {
-            MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. There was no bot faction paired with owner's faction!");
-            return;
+            var pkt = new AdminPacket(null, distance, null);
+            Network.SendToServer(pkt);
+
+            ShowMessage($"Max Friendly Hunting Distance set to {distance}m");
           }
         }
-
-        float num;
-        var grav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
-        var artGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(character.WorldAABB.Center, num);
-        grav += artGrav;
-
-        Vector3D forward, up;
-        if (grav.LengthSquared() > 0)
-        {
-          up = Vector3D.Normalize(-grav);
-          forward = Vector3D.CalculatePerpendicularVector(up);
-        }
-        else
-        {
-          up = character.WorldMatrix.Up;
-          forward = character.WorldMatrix.Forward;
-        }
-
-        var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 50;
-        var planet = MyGamePruningStructure.GetClosestPlanet(position);
-        if (planet != null)
-        {
-          var surfacePoint = planet.GetClosestSurfacePointGlobal(position);
-          var lineTo = surfacePoint - planet.PositionComp.GetPosition();
-          position = surfacePoint + Vector3D.Normalize(lineTo) * 5;
-        }
-
-        var matrix = MatrixD.CreateWorld(position, forward, up);
-        var posAndOr = new MyPositionAndOrientation(ref matrix);
-
-        //var pet = BotFactory.SpawnHelper("Space_Wolf", "Wolfy", player.IdentityId, posAndOr, null, "Soldier");
-        var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag("SPID");
-        BotFactory.SpawnBotFromAPI("Space_spider_black", "SPID_1", posAndOr, null, "Creature", faction?.FounderId);
-        BotFactory.SpawnBotFromAPI("Space_spider_black", "SPID_2", posAndOr, null, "Creature", faction?.FounderId);
-
-        //var packet = new SpawnPacket(position, forward, up, player.IdentityId);
-        //Network.SendToServer(packet);
       }
-      else if (cmd.Equals("nomad", StringComparison.OrdinalIgnoreCase))
+      else if (cmd.Equals("maxbulletdistance", StringComparison.OrdinalIgnoreCase))
       {
-        if (IsServer)
+        int distance;
+        if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
         {
-          if (!CanSpawn)
+          distance = Math.Max(50, Math.Min(500, distance));
+
+          if (distance != _maxProjectile)
           {
-            MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. Try again in a moment...");
-            return;
+            _maxProjectile = distance;
+
+            var pkt = new AdminPacket(null, null, distance);
+            Network.SendToServer(pkt);
+
+            ShowMessage($"Max Projectile Distance set to {distance}m");
           }
         }
+      }
+      else if (cmd.Equals("enemyflight", StringComparison.OrdinalIgnoreCase))
+      {
+        bool b;
+        if (_cli.ArgumentCount > 2 && bool.TryParse(_cli.Argument(2), out b))
+        {
+          if (_allowEnemyFlight == null || b != _allowEnemyFlight.Value)
+          {
+            _allowEnemyFlight = b;
 
-        Vector3D forward, up;
-        up = character.WorldMatrix.Up;
-        forward = character.WorldMatrix.Forward;
-        var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 10;
+            var pkt = new AdminPacket(AllowMusic, b);
+            Network.SendToServer(pkt);
 
-        var nomad = BotFactory.SpawnNPC("Default_Astronaut", null, new MyPositionAndOrientation(position, forward, up), null, "Nomad", Color.Tan);
-
-        //var packet = new SpawnPacket(position, forward, up);
-        //Network.SendToServer(packet);
+            ShowMessage($"Allow Enemy Flight set to {b}");
+          }
+        }
       }
     }
 
@@ -2516,10 +2616,11 @@ namespace AiEnabled
       if (bot is CombatBot)
       {
         bool allowed = toolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0 
-          || toolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0;
+          || toolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0
+          || toolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
 
         if (!allowed)
-          reason = "The CombatBot can only use rifles and pistols.";
+          reason = "The CombatBot can only use rifles, pistols, and rocket launchers.";
 
         return allowed;
       }
@@ -2532,6 +2633,33 @@ namespace AiEnabled
           reason = "The RepairBot can only use welders";
 
         return allowed;
+      }
+
+      return false;
+    }
+
+    public bool IsBotAllowedToUse(string botRole, string toolSubtype)
+    {
+      var definition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype);
+
+      if (MyDefinitionManager.Static.TryGetHandItemDefinition(ref definition) != null)
+      {
+        if (botRole.Equals("RepairBot", StringComparison.OrdinalIgnoreCase))
+        {
+          return toolSubtype.IndexOf("welder", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        if (botRole.Equals("CombatBot", StringComparison.OrdinalIgnoreCase) || botRole.Equals("SoldierBot", StringComparison.OrdinalIgnoreCase))
+        {
+          return toolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0
+          || toolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0
+          || toolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        if (botRole.Equals("GrinderBot", StringComparison.OrdinalIgnoreCase))
+        {
+          return toolSubtype.IndexOf("grinder", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
       }
 
       return false;
@@ -2567,16 +2695,32 @@ namespace AiEnabled
             continue;
 
           BotBase bot;
-          var botChar = MyEntities.GetEntityById(helperData.HelperId) as IMyCharacter;
-          if (botChar == null || !Bots.TryGetValue(botChar.EntityId, out bot))
+          if (!Bots.TryGetValue(helperData.HelperId, out bot) || bot.IsDead)
             continue;
 
+          var botChar = bot.Character;
           var gridGraph = bot._currentGraph as CubeGridMap;
           var grid = gridGraph?.Grid ?? null;
 
           helperData.GridEntityId = grid?.EntityId ?? 0L;
           helperData.Position = botChar.GetPosition();
           helperData.Orientation = Quaternion.CreateFromRotationMatrix(botChar.WorldMatrix);
+          helperData.InventoryItems?.Clear();
+          helperData.ToolSubtype = bot.ToolSubtype ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id.SubtypeName ?? null;
+
+          var inventory = botChar.GetInventory() as MyInventory;
+          if (inventory?.ItemCount > 0)
+          {
+            if (helperData.InventoryItems == null)
+              helperData.InventoryItems = new List<InventoryItem>();
+
+            var items = inventory.GetItems();
+            for (int k = 0; k < items.Count; k++)
+            {
+              var item = items[k];
+              helperData.InventoryItems.Add(new InventoryItem(item.Content.GetId(), item.Amount));
+            }
+          }
         }
       }
 
@@ -2899,7 +3043,8 @@ namespace AiEnabled
           }
         }
 
-        UpdateParticles();
+        if (MyAPIGateway.Session.Player != null)
+          UpdateParticles();
 
         if (IsClient)
         {
@@ -2925,6 +3070,8 @@ namespace AiEnabled
         {
           return;
         }
+
+        BlockRepairDelays.Update();
 
         if (_checkControlTimer)
         {
@@ -3000,14 +3147,16 @@ namespace AiEnabled
         for (int i = _robots.Count - 1; i >= 0; i--)
         {
           var robot = _robots[i];
-          if (robot?.IsDead != false || robot.Character.MarkedForClose)
+          if (robot?.Character == null || robot.IsDead || robot.Character.MarkedForClose)
           {
             _robots.RemoveAtFast(i);
             continue;
           }
 
           if (!robot.Update() || robot.Character.Parent is IMyCockpit)
+          {
             continue;
+          }
 
           if (robot.Owner != null)
             robot.CheckPathCounter();
@@ -3025,20 +3174,43 @@ namespace AiEnabled
     {
       foreach (var item in ParticleDictionary)
       {
-        if (ParticleInfoDict.ContainsKey(item.Key))
+        var isShieldDeath = item.Value.ParticleType == ParticleInfoBase.ParticleType.Shield;
+        if (!isShieldDeath && ParticleInfoDict.ContainsKey(item.Key))
         {
           continue;
         }
 
         var val = item.Value;
         var bot = MyEntities.GetEntityById(val.BotEntityId) as IMyCharacter;
-        if (bot == null)
+        if (bot == null && !isShieldDeath)
         {
           continue;
         }
 
         switch (val.ParticleType)
         {
+          case ParticleInfoBase.ParticleType.Shield:
+            if (val.BotEntityId > 0 && val.WorldPosition.HasValue)
+            {
+              ParticleInfoBase pBase;
+              if (ParticleInfoDict.TryGetValue(val.BotEntityId, out pBase))
+              {
+                if (pBase?.Type != ParticleInfoBase.ParticleType.Shield)
+                {
+                  if (ParticleInfoDict.TryRemove(val.BotEntityId, out pBase))
+                  {
+                    pBase?.Close();
+                  }
+
+                  var added = ParticleInfoDict.TryAdd(val.BotEntityId, new ShieldDeathParticleInfo(val.WorldPosition.Value, val.BotEntityId));
+                }
+              }
+              else
+              {
+                var added = ParticleInfoDict.TryAdd(val.BotEntityId, new ShieldDeathParticleInfo(val.WorldPosition.Value, val.BotEntityId));
+              }
+            }
+            break;
           case ParticleInfoBase.ParticleType.Factory:
             if (val.BlockEntityId > 0)
             {
@@ -3076,10 +3248,12 @@ namespace AiEnabled
 
       foreach (var item in ParticleInfoDict)
       {
-        if (item.Value?.Bot?.MarkedForClose != false)
+        if (item.Value?.Type != ParticleInfoBase.ParticleType.Shield && (item.Value?.Bot == null || item.Value.Bot.MarkedForClose))
         {
           ParticleInfoBase pBase;
-          ParticleInfoDict.TryRemove(item.Key, out pBase);
+          if (ParticleInfoDict.TryRemove(item.Key, out pBase))
+            pBase?.Close();
+
           continue;
         }
 
@@ -3287,33 +3461,54 @@ namespace AiEnabled
               break;
 
             var future = FutureBotQueue.Dequeue();
+            if (future.HelperInfo == null)
+              continue;
+
+            var info = future.HelperInfo;
+
+            var matrix = MatrixD.CreateFromQuaternion(info.Orientation);
+            matrix.Translation = info.Position;
+            var posOr = new MyPositionAndOrientation(matrix);
 
             MyCubeGrid grid = null;
-            if (future.GridId > 0)
+            if (info.GridEntityId > 0)
             {
-              grid = MyEntities.GetEntityById(future.GridId) as MyCubeGrid;
+              grid = MyEntities.GetEntityById(info.GridEntityId) as MyCubeGrid;
             }
 
-            var bot = BotFactory.SpawnHelper(future.Subtype, future.DisplayName ?? "", future.OwnerId, future.PositionAndOrientation, grid, ((BotType)future.Role).ToString());
+            var bot = BotFactory.SpawnHelper(info.CharacterSubtype, info.DisplayName ?? "", future.OwnerId, posOr, grid, ((BotType)info.Role).ToString(), info.ToolSubtype, info.BotColor);
             if (bot == null)
             {
               Logger.Log($"{GetType().FullName}: FutureBot returned null from spawn event", MessageType.WARNING);
             }
             else
             {
+              try
+              {
+                var botInventory = bot.GetInventory() as MyInventory;
+                if (info.InventoryItems?.Count > 0 && botInventory != null)
+                {
+                  foreach (var item in info.InventoryItems)
+                  {
+                    var ob = MyObjectBuilderSerializer.CreateNewObject(item.ItemDefinition);
+                    botInventory.AddItems(item.Amount, ob);
+                  }
+                }
+
+                BotBase botBase;
+                if (Bots.TryGetValue(bot.EntityId, out botBase) && !string.IsNullOrWhiteSpace(botBase?.ToolSubtype))
+                {
+                  MyAPIGateway.Utilities.InvokeOnGameThread(botBase.EquipWeapon, "AiEnabled");
+                }
+              }
+              catch (Exception ex)
+              {
+                Logger.Log($"Error trying to add items to future bot ({future.HelperInfo.DisplayName}) inventory: {ex.Message}\n{ex.StackTrace}", MessageType.WARNING);
+              }
+
               IMyPlayer player;
               if (Players.TryGetValue(future.OwnerId, out player) && player != null) 
               {
-                //List<long> helperIds;
-                //if (!PlayerToActiveHelperIds.TryGetValue(future.OwnerId, out helperIds))
-                //{
-                //  helperIds = new List<long>();
-                //  PlayerToActiveHelperIds[future.OwnerId] = helperIds;
-                //}
-
-                //if (!helperIds.Contains(bot.EntityId))
-                //  helperIds.Add(bot.EntityId);
-
                 var pkt = new SpawnPacketClient(bot.EntityId, false);
                 Network.SendToPlayer(pkt, player.SteamUserId);
 
@@ -3324,14 +3519,18 @@ namespace AiEnabled
                   if (playerData.OwnerIdentityId == player.IdentityId)
                   {
                     var helperData = playerData.Helpers;
-                    for (int j = 0; j < helperData.Count; j++)
+                    for (int j = helperData.Count - 1; j >= 0 ; j--)
                     {
                       var helper = helperData[j];
-                      if (helper.HelperId == future.BotId)
+                      if (helper.HelperId == info.HelperId)
                       {
-                        helperData.RemoveAt(j);
+                        helperData.RemoveAtFast(j);
                         break;
                       }
+                      //else if (helper.HelperId == bot.EntityId)
+                      //{
+                      //  helper.ToolSubtype = info.ToolSubtype;
+                      //}
                     }
 
                     var pkt2 = new ClientHelperPacket(helperData);
@@ -3345,7 +3544,9 @@ namespace AiEnabled
           }
 
           if (FutureBotQueue.Count == 0)
-            StartAdminUpdateCounter();
+          {
+            SaveModData(true);
+          }
         }
 
         ++_planetCheckTimer;
@@ -3373,7 +3574,7 @@ namespace AiEnabled
           var graph = kvp.Value;
           if (graph._locked || !graph.IsActive)
           {
-            if (!graph._locked && graph.LastActiveTicks > 100 && !removedGraphThisTick)
+            if (!graph._locked && graph.LastActiveTicks > 200 && !removedGraphThisTick)
             {
               removedGraphThisTick = true;
 
@@ -3813,6 +4014,23 @@ namespace AiEnabled
                 helper.Orientation = Quaternion.CreateFromRotationMatrix(matrix);
                 helper.Position = matrix.Translation;
                 helper.GridEntityId = grid?.EntityId ?? 0L;
+                helper.ToolSubtype = bot.ToolSubtype ?? (bot.Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id.SubtypeName ?? null;
+                helper.InventoryItems?.Clear();
+
+                var inventory = bot.Character.GetInventory() as MyInventory;
+                if (inventory?.ItemCount > 0)
+                {
+                  if (helper.InventoryItems == null)
+                    helper.InventoryItems = new List<InventoryItem>();
+
+                  var items = inventory.GetItems();
+                  for (int k = 0; k < items.Count; k++)
+                  {
+                    var item = items[k];
+                    helper.InventoryItems.Add(new InventoryItem(item.Content.GetId(), item.Amount));
+                  }
+                }
+
                 add = false;
                 break;
               }
@@ -3917,10 +4135,7 @@ namespace AiEnabled
             if (!helper.IsActiveHelper)
               continue;
 
-            var matrix = MatrixD.CreateFromQuaternion(helper.Orientation);
-            matrix.Translation = helper.Position;
-
-            var future = new FutureBot(helper.Subtype, helper.DisplayName, data.OwnerIdentityId, helper.HelperId, helper.GridEntityId, (BotType)helper.Role, matrix);
+            var future = new FutureBot(helper, data.OwnerIdentityId);
             FutureBotQueue.Enqueue(future);
           }
 

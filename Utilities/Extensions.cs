@@ -240,19 +240,25 @@ namespace AiEnabled.Utilities
       }
     }
 
-    public static void GetMissingComponentsProjected(this IMySlimBlock slim, Dictionary<string, int> comps)
+    public static bool GetMissingComponentsProjected(this IMySlimBlock slim, Dictionary<string, int> comps, IMyInventory botInventory)
     {
       if (slim?.BlockDefinition == null || comps == null)
-        return;
+        return false;
 
       var cubeDef = slim.BlockDefinition as MyCubeBlockDefinition;
       if (cubeDef == null)
-        return;
+        return false;
 
+      bool botHasFirstItem = false;
       comps.Clear();
       for (int i = 0; i < cubeDef.Components.Length; i++)
       {
         var component = cubeDef.Components[i];
+
+        if (i == 0)
+        {
+          botHasFirstItem = botInventory?.GetItemAmount(component.Definition.Id) > 0;
+        }
 
         int amount;
         var componentId = component.Definition.Id.SubtypeName;
@@ -260,6 +266,8 @@ namespace AiEnabled.Utilities
         amount += component.Count;
         comps[componentId] = amount;
       }
+
+      return botHasFirstItem;
     }
 
     public static bool GetDistanceToEdgeInDirection(this MyOrientedBoundingBoxD obb, RayD ray, Vector3D[] array, out double distance)

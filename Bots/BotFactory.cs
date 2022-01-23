@@ -126,8 +126,7 @@ namespace AiEnabled.Bots
         if (!bot.UseAPITargets)
           bot.SetTarget();
 
-        Vector3D gotoPosition, actualPosition;
-        bot.Target.GetTargetPosition(out gotoPosition, out actualPosition);
+        Vector3D actualPosition = bot.Target.CurrentActualPosition;
         bot.StartCheckGraph(ref actualPosition, true);
         Vector3D position = seat.WorldAABB.Center + seat.WorldMatrix.Forward * 2;
 
@@ -154,11 +153,17 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnBotFromAPI(MyPositionAndOrientation positionAndOrientation, RemoteBotAPI.SpawnData spawnData, MyCubeGrid grid = null, long? owner = null)
     {
+      string toolType = null;
+      if (!string.IsNullOrWhiteSpace(spawnData.ToolSubtypeId) && AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, spawnData.ToolSubtypeId))
+      {
+        toolType = spawnData.ToolSubtypeId;
+      }
+
       IMyCharacter botChar;
       if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
-        botChar = SpawnHelper(spawnData.BotSubtype, spawnData.DisplayName, owner.Value, positionAndOrientation, grid, spawnData.BotRole, spawnData.Color);
+        botChar = SpawnHelper(spawnData.BotSubtype, spawnData.DisplayName, owner.Value, positionAndOrientation, grid, spawnData.BotRole, toolType, spawnData.Color);
       else
-        botChar = SpawnNPC(spawnData.BotSubtype, spawnData.DisplayName, positionAndOrientation, grid, spawnData.BotRole, spawnData.Color, owner);
+        botChar = SpawnNPC(spawnData.BotSubtype, spawnData.DisplayName, positionAndOrientation, grid, spawnData.BotRole, toolType, spawnData.Color, owner);
 
       BotBase bot;
       if (botChar != null && AiSession.Instance.Bots.TryGetValue(botChar.EntityId, out bot))
@@ -170,6 +175,8 @@ namespace AiEnabled.Bots
         bot.GroundNodesFirst = spawnData.UseGroundNodesFirst;
         bot.CanUseLadders = spawnData.CanUseLadders;
         bot.CanUseSeats = spawnData.CanUseSeats;
+        bot.ShouldLeadTargets = spawnData.LeadTargets;
+        bot._shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(spawnData.ShotDeviationAngle));
 
         if (spawnData.DespawnTicks == 0)
           bot.EnableDespawnTimer = false;
@@ -264,12 +271,12 @@ namespace AiEnabled.Bots
       }
 
       if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
-        return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, color);
+        return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color);
 
-      return SpawnNPC(subtype, displayName, positionAndOrientation, grid, role, color, owner);
+      return SpawnNPC(subtype, displayName, positionAndOrientation, grid, role, null, color, owner);
     }
 
-    public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, Color? color = null)
+    public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null)
     {
       var bot = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color);
       if (bot != null)
@@ -308,7 +315,7 @@ namespace AiEnabled.Bots
               bot.Name = GetUniqueName("RepairBot");
             }
 
-            robot = new RepairBot(bot, gridMap, ownerId);
+            robot = new RepairBot(bot, gridMap, ownerId, toolType);
             break;
           case BotRoleFriendly.SCAVENGER:
             if (needsName)
@@ -324,7 +331,7 @@ namespace AiEnabled.Bots
               bot.Name = GetUniqueName("CombatBot");
             }
 
-            robot = new CombatBot(bot, gridMap, ownerId);
+            robot = new CombatBot(bot, gridMap, ownerId, toolType);
             break;
         }
 
@@ -334,14 +341,15 @@ namespace AiEnabled.Bots
       return bot;
     }
 
-    public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, Color? color = null, long? ownerId = null)
+    public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, long? ownerId = null)
     {
       var bot = CreateBotObject(subType, displayName, positionAndOrientation, null, color);
       if (bot != null)
       {
         var biggestGrid = grid;
+        GridBase gridMap;
 
-        if (grid != null)
+        if (grid != null && !grid.MarkedForClose && !AiSession.Instance.GridGraphDict.ContainsKey(grid.EntityId))
         {
           List<IMyCubeGrid> gridGroup;
           if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroup))
@@ -364,7 +372,7 @@ namespace AiEnabled.Bots
           AiSession.Instance.GridGroupListStack.Push(gridGroup);
         }
 
-        var gridMap = AiSession.Instance.GetNewGraph(biggestGrid, bot.WorldAABB.Center, bot.WorldMatrix);
+        gridMap = AiSession.Instance.GetNewGraph(biggestGrid, bot.WorldAABB.Center, bot.WorldMatrix);
         bool needsName = string.IsNullOrWhiteSpace(displayName);
         bool isNomad = !string.IsNullOrWhiteSpace(role) && role.ToUpperInvariant() == "NOMAD";
         var botId = bot.ControllerInfo.ControllingIdentityId;
@@ -469,7 +477,7 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("GrinderBot");
               }
 
-              robot = new GrinderBot(bot, gridMap);
+              robot = new GrinderBot(bot, gridMap, toolType);
               break;
             case BotRoleEnemy.BRUISER:
               robot = new BruiserBot(bot, gridMap);
@@ -497,7 +505,7 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("SoldierBot");
               }
 
-              robot = new SoldierBot(bot, gridMap);
+              robot = new SoldierBot(bot, gridMap, toolType);
               break;
           }
         }

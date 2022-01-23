@@ -3,6 +3,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
+using System;
 using System.Collections.Generic;
 
 using VRage.Game;
@@ -19,24 +20,28 @@ namespace AiEnabled.Support
     public IMyEntity Target;
     public List<float> Randoms;
     public float Damage;
+    public float ShotDeviationAngleTan;
     public int Ticks;
     public bool Finished;
     public bool IsGrinder;
     public bool IsWelder;
+    public bool LeadTargets;
     internal int _maxTicks;
     internal int _ticksBetweenProjectiles;
     internal int _ammoRemaining;
 
-    public void Set(IMyCharacter bot, IMyEntity tgt, float damage, List<float> rand, int ticksBetween, int ammoLeft, bool isGrinder, bool isWelder)
+    public void Set(IMyCharacter bot, IMyEntity tgt, float damage, float angleDeviationTan, List<float> rand, int ticksBetween, int ammoLeft, bool isGrinder, bool isWelder, bool leadTargets)
     {
       Bot = bot;
       Target = tgt;
       Damage = damage;
+      ShotDeviationAngleTan = angleDeviationTan;
       Randoms = rand;
       Ticks = 0;
       Finished = false;
       IsGrinder = isGrinder;
       IsWelder = isWelder;
+      LeadTargets = leadTargets;
       _ticksBetweenProjectiles = ticksBetween;
       _ammoRemaining = ammoLeft;
       _maxTicks = isGrinder || isWelder ? 60 : ticksBetween * 10;
@@ -46,15 +51,11 @@ namespace AiEnabled.Support
     {
       float rand = 0;
 
-      if (Randoms != null)
+      if (Randoms?.Count > 0)
       {
-        var count = Randoms.Count;
-        if (count > 0)
-        {
-          var last = count - 1;
-          rand = Randoms[last];
-          Randoms.RemoveAtFast(last);
-        }
+        var last = Randoms.Count - 1;
+        rand = Randoms[last];
+        Randoms.RemoveAtFast(last);
       }
 
       return rand;

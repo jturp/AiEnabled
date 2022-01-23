@@ -10,11 +10,13 @@ using AiEnabled.Networking;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
 
+using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
+using VRage;
 using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -30,21 +32,26 @@ namespace AiEnabled.Bots.Roles
     uint _lineOfSightTimer;
     int _lastMovementX, _ticksSinceFirePacket;
     bool _firePacketSent;
+    List<float> _randoms = new List<float>();
 
-    public SoldierBot(IMyCharacter bot, GridBase gridBase) : base(bot, 5, 15, gridBase)
+    public SoldierBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
     {
       Behavior = new EnemyBehavior(bot);
-      ToolSubtype = "RapidFireAutomaticRifleItem";
+      ToolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
 
       _ticksSinceFoundTarget = 241;
       _ticksBetweenAttacks = 200;
       _blockDamagePerSecond = 175;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
+      _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(1.5f));
 
-      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      CanUseSpaceNodes = RequiresJetpack;
-      CanUseAirNodes = RequiresJetpack;
-      GroundNodesFirst = !RequiresJetpack;
+      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+
+      RequiresJetpack = jetRequired;
+      CanUseSpaceNodes = jetAllowed;
+      CanUseAirNodes = jetAllowed;
+      GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = true;
       CanUseWaterNodes = true;
       WaterNodesOnly = false;
@@ -73,7 +80,7 @@ namespace AiEnabled.Bots.Roles
       var inventory = Character?.GetInventory();
       if (inventory == null)
       {
-        AiSession.Instance.Logger.Log($"SoliderBot.AddWeapon: WARNING: Inventory was NULL!", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING: Inventory was NULL!", MessageType.WARNING);
         return;
       }
 
@@ -81,15 +88,52 @@ namespace AiEnabled.Bots.Roles
 
       if (inventory.CanItemsBeAdded(1, weaponDefinition))
       {
-       var weapon = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(weaponDefinition);
-       inventory.AddItems(1, weapon);
+        var weapon = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(weaponDefinition);
+        inventory.AddItems(1, weapon);
 
-        var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), "NATO_5p56x45mm");
+        string ammoSubtype = null;
 
-        if (inventory.CanItemsBeAdded(10, ammoDefinition))
+        var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(weaponDefinition) as MyWeaponItemDefinition;
+        if (weaponItemDef != null)
+        {
+          var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
+          ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
+        }
+        else
+        {
+          AiSession.Instance.Logger.Log($"WeaponItemDef was null for {weaponDefinition}");
+        }
+
+        if (ammoSubtype == null)
+        {
+          AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
+
+          if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
+          {
+            ammoSubtype = "NATO_5p56x45mm";
+          }
+          else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
+          {
+            ammoSubtype = "Missile200mm";
+          }
+          else if (ToolSubtype.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+          {
+            ammoSubtype = ToolSubtype.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+          }
+          else
+          {
+            ammoSubtype = "ElitePistolMagazine";
+          }
+        }
+
+        var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
+        var amountThatFits = ((MyInventory)inventory).ComputeAmountThatFits(ammoDefinition);
+        var amount = MyFixedPoint.Min(amountThatFits, 10);
+
+        if (inventory.CanItemsBeAdded(amount, ammoDefinition))
         {
           var ammo = (MyObjectBuilder_AmmoMagazine)MyObjectBuilderSerializer.CreateNewObject(ammoDefinition);
-          inventory.AddItems(10, ammo);
+          inventory.AddItems(amount, ammo);
 
           var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
           if (charController.CanSwitchToWeapon(weaponDefinition))
@@ -99,13 +143,13 @@ namespace AiEnabled.Bots.Roles
             SetShootInterval();
           }
           else
-            AiSession.Instance.Logger.Log($"SoldierBot.AddWeapon: WARNING! Added rifle and ammo but unable to swith to weapon!", MessageType.WARNING);
+            AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added weapon and ammo but unable to switch to weapon!", MessageType.WARNING);
         }
         else
-          AiSession.Instance.Logger.Log($"SoldierBot.AddWeapon: WARNING! Added rifle but unable to add ammo!", MessageType.WARNING);
+          AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added weapon but unable to add ammo!", MessageType.WARNING);
       }
       else
-        AiSession.Instance.Logger.Log($"SoldierBot.AddWeapon: WARNING! Unable to add rifle to inventory!", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Unable to add weapon to inventory!", MessageType.WARNING);
     }
 
     internal override void MoveToTarget()
@@ -118,12 +162,14 @@ namespace AiEnabled.Bots.Roles
         return;
       }
 
-      Vector3D gotoPosition, actualPosition;
-      if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
+      if (!Target.PositionsValid)
         return;
+
+      var actualPosition = Target.CurrentActualPosition;
 
       if (UsePathFinder)
       {
+        var gotoPosition = Target.CurrentGoToPosition;
         UsePathfinder(gotoPosition, actualPosition);
         return;
       }
@@ -144,7 +190,7 @@ namespace AiEnabled.Bots.Roles
       if (_firePacketSent)
       {
         _ticksSinceFirePacket++;
-        if (_ticksSinceFirePacket > TicksBetweenProjectiles * 20)
+        if (_ticksSinceFirePacket > TicksBetweenProjectiles * 25)
           _firePacketSent = false;
       }
 
@@ -167,7 +213,25 @@ namespace AiEnabled.Bots.Roles
           if (ammoCount <= 0 && !MyAPIGateway.Session.CreativeMode)
           {
             var inventory = Character.GetInventory();
-            var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), "NATO_5p56x45mm");
+            string ammoSubtype;
+            if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              ammoSubtype = "NATO_5p56x45mm";
+            }
+            else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              ammoSubtype = "Missile200mm";
+            }
+            else if (ToolSubtype.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              ammoSubtype = ToolSubtype.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+            }
+            else
+            {
+              ammoSubtype = "ElitePistolMagazine";
+            }
+
+            var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
 
             if (inventory.CanItemsBeAdded(10, ammoDefinition))
             {
@@ -187,7 +251,22 @@ namespace AiEnabled.Bots.Roles
       return true;
     }
 
-    readonly List<float> _randoms = new List<float>();
+    internal override void Close(bool cleanConfig = false)
+    {
+      try
+      {
+        _randoms?.Clear();
+        _randoms = null;
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in CombatBot.Close: {ex.Message}\n{ex.StackTrace}");
+      }
+      finally
+      {
+        base.Close(cleanConfig);
+      }
+    }
 
     bool FireWeapon()
     {
@@ -216,15 +295,42 @@ namespace AiEnabled.Bots.Roles
           _randoms.Add(rand);
         }
 
-        var ammoCount = MyAPIGateway.Session.CreativeMode ? 30 : gun.GunBase.CurrentAmmo;
-        if (MyAPIGateway.Multiplayer.MultiplayerActive)
+        bool isLauncher = ToolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        if (isLauncher)
         {
-          var packet = new WeaponFirePacket(Character.EntityId, targetEnt.EntityId, 1.5f, _randoms, TicksBetweenProjectiles, ammoCount, false, false);
-          AiSession.Instance.Network.RelayToClients(packet);
+          AiSession.Instance.Projectiles.AddMissileForBot(this, targetEnt);
+        }
+        else
+        {
+          int ammoCount;
+          if (MyAPIGateway.Session.CreativeMode)
+          {
+            if (ToolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              ammoCount = ToolSubtype.IndexOf("fullauto", StringComparison.OrdinalIgnoreCase) >= 0 ? 20 : 10;
+            }
+            else
+            {
+              ammoCount = 30;
+            }
+          }
+          else
+          {
+            ammoCount = gun.GunBase.CurrentAmmo;
+          }
+
+          bool leadTargets = ShouldLeadTargets;
+
+          if (MyAPIGateway.Multiplayer.MultiplayerActive)
+          {
+            var packet = new WeaponFirePacket(Character.EntityId, targetEnt.EntityId, 1.5f, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets);
+            AiSession.Instance.Network.RelayToClients(packet);
+          }
+
+          AiSession.Instance.StartWeaponFire(Character.EntityId, targetEnt.EntityId, 1.5f, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets);
         }
 
-        AiSession.Instance.StartWeaponFire(Character.EntityId, targetEnt.EntityId, 1.5f, _randoms, TicksBetweenProjectiles, ammoCount, false, false);
-        
         _firePacketSent = true;
         _ticksSinceFirePacket = 0;
       }
@@ -238,9 +344,10 @@ namespace AiEnabled.Bots.Roles
     {
       rifleAttack = false;
       var botPosition = Position;
+      var botMatrix = WorldMatrix;
 
       var vecToWP = waypoint - botPosition;
-      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(WorldMatrix));
+      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
 
       if (_botState.IsOnLadder)
       {
@@ -254,17 +361,16 @@ namespace AiEnabled.Bots.Roles
       var flattenedLengthSquared = flattenedVector.LengthSquared();
       var distanceSqd = relVectorBot.LengthSquared();
 
-      Vector3D gotoPosition, actualPosition;
-      Target.GetTargetPosition(out gotoPosition, out actualPosition);
-
+      var actualPosition = Target.CurrentActualPosition;
+      var maxProjectileDistance = AiSession.Instance.ModSaveData.MaxBotProjectileDistance * 0.9;
       double distanceSqdToTarget = double.MaxValue;
-      double distanceToCheck = 10000;
+      double distanceToCheck = maxProjectileDistance * maxProjectileDistance;
       if (HasWeaponOrTool && Target.HasTarget)
       {
         distanceSqdToTarget = Vector3D.DistanceSquared(actualPosition, botPosition);
 
         if (Target.Entity is IMyLargeTurretBase)
-          distanceToCheck = 15625;
+          distanceToCheck = Math.Min(distanceToCheck, 15625);
       }
 
       if (distanceSqdToTarget <= distanceToCheck)
@@ -286,9 +392,9 @@ namespace AiEnabled.Bots.Roles
       if (_sideNode.HasValue && Vector3D.DistanceSquared(botPosition, _sideNode.Value) > 400)
         _sideNode = null;
 
-      var projUp = VectorUtils.Project(vecToWP, WorldMatrix.Up);
+      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
+      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
       if (!WaitForStuckTimer && angleTwoOrLess)
@@ -306,14 +412,24 @@ namespace AiEnabled.Bots.Roles
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
         if (Vector3D.DistanceSquared(worldPosAligned, waypoint) >= _currentGraph.CellSize * _currentGraph.CellSize)
         {
-          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(WorldMatrix));
+          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(botMatrix));
           var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
 
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            var absY = Math.Abs(relVectorBot.Y);
+            if (!JetpackEnabled || absY <= 0.1)
             {
-              movement = Vector3.Zero;
+              if (!_currentGraph.IsGridGraph && absY > 0.5 && relVectorBot.Y < 0)
+              {
+                _pathCollection.ClearNode();
+                rotation = Vector2.Zero;
+                movement = Vector3.Forward;
+              }
+              else
+              {
+                movement = Vector3.Zero;
+              }
             }
             else
             {
@@ -332,10 +448,10 @@ namespace AiEnabled.Bots.Roles
         if (UsePathFinder)
         {
           var vecToTgt = actualPosition - botPosition;
-          var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(WorldMatrix));
-          projUp = VectorUtils.Project(vecToTgt, WorldMatrix.Up);
+          var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
+          projUp = VectorUtils.Project(vecToTgt, botMatrix.Up);
           reject = vecToTgt - projUp;
-          angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
+          angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
 
           if (relToTarget.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2))
           {
@@ -375,7 +491,7 @@ namespace AiEnabled.Bots.Roles
               //else
               {
                 var dirVec = _sideNode.Value - botPosition;
-                var relativeDir = Vector3D.TransformNormal(dirVec, MatrixD.Transpose(WorldMatrix));
+                var relativeDir = Vector3D.TransformNormal(dirVec, MatrixD.Transpose(botMatrix));
                 var absX = Math.Abs(relativeDir.X);
                 var absZ = Math.Abs(relativeDir.Z);
 
@@ -413,7 +529,7 @@ namespace AiEnabled.Bots.Roles
               }
 
               var dirVec = _sideNode.Value - botPosition;
-              var relativeDir = Vector3D.TransformNormal(dirVec, MatrixD.Transpose(WorldMatrix));
+              var relativeDir = Vector3D.TransformNormal(dirVec, MatrixD.Transpose(botMatrix));
 
               var xMove = Math.Abs(relativeDir.X) < 0.5 ? 0 : Math.Sign(relativeDir.X);
               var zMove = Math.Abs(relativeDir.Z) < 0.5 ? 0 : Math.Sign(relativeDir.Z);
@@ -464,7 +580,7 @@ namespace AiEnabled.Bots.Roles
           if (!rifleAttack)
           {
             var ch = Character as Sandbox.Game.Entities.IMyControllableEntity;
-            var distanceToTarget = Vector3D.DistanceSquared(gotoPosition, botPosition);
+            var distanceToTarget = Vector3D.DistanceSquared(Target.CurrentGoToPosition, botPosition);
 
             var botRunning = _botState.IsRunning;
             if (distanceToTarget > 100)
@@ -501,8 +617,20 @@ namespace AiEnabled.Bots.Roles
       if (!fistAttack && isTarget && !HasWeaponOrTool && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
-      if (JetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
-        AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
+      if (JetpackEnabled)
+      {
+        var vecToTgt = Target.CurrentActualPosition - botPosition;
+        var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
+        var flatToTarget = new Vector3D(relToTarget.X, 0, relToTarget.Z);
+        if (flatToTarget.LengthSquared() <= 10 && Math.Abs(relToTarget.Y) > 0.5)
+        {
+          movement = Vector3.Zero;
+          relVectorBot = relToTarget;
+        }
+
+        if (Math.Abs(relVectorBot.Y) > 0.05)
+          AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
+      }
     }
 
     void CheckFire(bool shouldFire, bool shouldAttack, ref Vector3 movement)

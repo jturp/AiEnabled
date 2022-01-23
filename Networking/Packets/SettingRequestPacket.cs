@@ -14,7 +14,7 @@ namespace AiEnabled.Networking
     public SettingRequestPacket() { }
     public override bool Received(NetworkHandler netHandler)
     {
-      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers);
+      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers, AiSession.Instance.ModSaveData.MaxBotProjectileDistance, AiSession.Instance.AllowMusic);
       netHandler.SendToPlayer(pkt, SenderId);
 
       return false;

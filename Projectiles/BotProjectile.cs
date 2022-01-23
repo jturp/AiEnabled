@@ -18,6 +18,9 @@ using Sandbox.Definitions;
 using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
 
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
+using AiEnabled.API;
+using VRage.Game.Entity;
+using Sandbox.Common.ObjectBuilders;
 
 namespace AiEnabled.Projectiles
 {
@@ -37,14 +40,33 @@ namespace AiEnabled.Projectiles
     public Vector3D Direction;
     float _headShotMultiplier;
     bool _firstCheck;
+    bool _isMissile;
     Color _trailColor;
     List<IHitInfo> _hitList;
+    MyEntity _missile;
 
-    public void Init(Vector3D start, Vector3D dir, IMyCharacter bot, IMyEntity target, float damage, MyGunBase gun, List<IHitInfo> hitList)
+    public void Init(Vector3D start, Vector3D dir, IMyCharacter bot, IMyEntity target, float damage, MyGunBase gun, List<IHitInfo> hitList, MyEntity missile)
     {
-      var ammoDef = gun.CurrentAmmoDefinition as MyProjectileAmmoDefinition;
-      _headShotMultiplier = ammoDef == null ? 2 : ammoDef.ProjectileHeadShotDamage / ammoDef.ProjectileHealthDamage;
-      _trailColor = Vector3.IsZero(ammoDef.ProjectileTrailColor) ? Color.White : new Color(ammoDef.ProjectileTrailColor);
+      if (missile != null)
+      {
+        _isMissile = true;
+        _missile = missile;
+
+        var ammoDef = gun.CurrentAmmoDefinition as MyMissileAmmoDefinition;
+        _headShotMultiplier = 1;
+        _trailColor = Color.Transparent;
+        BlockDamage = damage;
+        ProjectileSpeed = ammoDef.DesiredSpeed;
+      }
+      else
+      {
+        var ammoDef = gun.CurrentAmmoDefinition as MyProjectileAmmoDefinition;
+        _headShotMultiplier = ammoDef == null ? 2 : ammoDef.ProjectileHeadShotDamage / ammoDef.ProjectileHealthDamage;
+        _trailColor = Vector3.IsZero(ammoDef.ProjectileTrailColor) ? Color.White : new Color(ammoDef.ProjectileTrailColor);
+        BlockDamage = ammoDef.ProjectileMassDamage;
+        ProjectileSpeed = ammoDef.DesiredSpeed;
+      }
+
       _firstCheck = true;
       _hitList = hitList;
 
@@ -53,15 +75,13 @@ namespace AiEnabled.Projectiles
       Owner = bot;
       Target = target;
       Damage = damage;
-      BlockDamage = ammoDef.ProjectileMassDamage;
       WeaponId = bot.EquippedTool.EntityId;
       Start = start;
       LastPosition = start;
       Position = start;
       Direction = dir;
-      ProjectileSpeed = ammoDef.DesiredSpeed;
 
-      if (MyAPIGateway.Session.Player != null)
+      if (!_isMissile && MyAPIGateway.Session.Player != null)
       {
         IsTracer = MyUtils.GetRandomInt(1, 101) > 30;
 
@@ -82,14 +102,110 @@ namespace AiEnabled.Projectiles
       LastPosition = Position;
       Position += Direction * ProjectileSpeed * timeStep;
 
-      if (Vector3D.DistanceSquared(Start, Position) > 22500)
-        return true;
+      if (_isMissile)
+      {
+        if (_missile == null || _missile.Closed || _missile.MarkedForClose)
+          return true;
+      }
+      else
+      {
+        var maxDistance = AiSession.Instance.MaxBotProjectileDistance;
+
+        if (Vector3D.DistanceSquared(Start, Position) > maxDistance * maxDistance)
+          return true;
+      }
 
       float tracerLength = IsTracer ? MyUtils.GetRandomFloat(1, 2) : 0f;
 
       IHitInfo hitInfo = null;
       IMyEntity hitEntity = null;
       Vector3D hitPosition = Vector3D.Zero;
+
+      if (AiSession.Instance.ShieldAPILoaded)
+      {
+        if (_firstCheck)
+          LastPosition = Start - Direction;
+
+        List<MyLineSegmentOverlapResult<VRage.Game.Entity.MyEntity>> lineList;
+        if (!AiSession.Instance.OverlapResultListStack.TryPop(out lineList))
+          lineList = new List<MyLineSegmentOverlapResult<VRage.Game.Entity.MyEntity>>();
+        else
+          lineList.Clear();
+
+        var line = new LineD(LastPosition, Position);
+        MyGamePruningStructure.GetTopmostEntitiesOverlappingRay(ref line, lineList, MyEntityQueryType.Dynamic);
+
+        bool shieldHit = false;
+        for (int i = 0; i < lineList.Count; i++)
+        {
+          var lineResult = lineList[i];
+          var shieldent = lineResult.Element;
+          if (AiSession.Instance.ShieldHash == shieldent?.DefinitionId?.SubtypeId && shieldent.Render.Visible)
+          {
+            var shieldInfo = AiSession.Instance.ShieldAPI.MatchEntToShieldFastExt(shieldent, true);
+            if (shieldInfo != null && shieldInfo.Value.Item2.Item1 && Vector3D.Transform(Start, shieldInfo.Value.Item3.Item1).LengthSquared() > 1)
+            {
+              var dist = DefenseShieldsAPI.IntersectEllipsoid(shieldInfo.Value.Item3.Item1, shieldInfo.Value.Item3.Item2, new RayD(line.From, line.Direction));
+
+              if (dist.HasValue && dist.Value <= line.Length)
+              {
+                // hit a shield
+                hitPosition = line.From + line.Direction * dist.Value;
+                var additionalDamage = _isMissile ? Damage : 0;
+
+                AiSession.Instance.ShieldAPI.PointAttackShieldCon(shieldInfo.Value.Item1, hitPosition, Owner.EntityId, Damage, additionalDamage, energy: _isMissile, drawParticle: true);
+                shieldHit = true;
+                break;
+              }
+            }
+          }
+        }
+
+        lineList.Clear();
+        AiSession.Instance.OverlapResultListStack.Push(lineList);
+
+        if (shieldHit)
+        {
+          if (MyAPIGateway.Session.Player != null)
+          {
+            string material, sound;
+            if (_isMissile)
+            {
+              material = MyParticleEffectsNameEnum.Explosion_Missile;
+              sound = "WepSmallMissileExpl";
+            }
+            else
+            {
+              material = MyParticleEffectsNameEnum.MaterialHit_Metal;
+              sound = "WepPlayRifleImpGlass";
+            }
+
+            var matrix = Owner.WorldMatrix;
+            matrix.Translation = hitPosition;
+
+            MyParticleEffect _;
+            MyParticlesManager.TryCreateParticleEffect(material, ref matrix, ref hitPosition, uint.MaxValue, out _);
+
+            MyEntity3DSoundEmitter emitter = AiSession.Instance.GetEmitter();
+            emitter.SetPosition(hitPosition);
+
+            MySoundPair soundPair;
+            if (!AiSession.Instance.SoundPairDict.TryGetValue(sound, out soundPair))
+            {
+              soundPair = new MySoundPair(sound);
+              AiSession.Instance.SoundPairDict[sound] = soundPair;
+            }
+
+            emitter.PlaySound(soundPair);
+            AiSession.Instance.ReturnEmitter(emitter);
+          }
+
+          return true;
+        }
+      }
+
+      if (_isMissile)
+        return false;
 
       if (_firstCheck)
       {
@@ -174,9 +290,8 @@ namespace AiEnabled.Projectiles
 
         if (MyAPIGateway.Session.Player != null)
         {
-          var position = hitPosition;
           var matrix = character.WorldMatrix;
-          matrix.Translation = position;
+          matrix.Translation = hitPosition;
 
           string effectName = "MaterialHit_Character";
           string soundName = "WepPlayRifleImpPlay";
@@ -202,7 +317,7 @@ namespace AiEnabled.Projectiles
           }
 
           MyParticleEffect _;
-          MyParticlesManager.TryCreateParticleEffect(effectName, ref matrix, ref position, uint.MaxValue, out _);
+          MyParticlesManager.TryCreateParticleEffect(effectName, ref matrix, ref hitPosition, uint.MaxValue, out _);
 
           var soundComp = character.Components?.Get<MyCharacterSoundComponent>();
           if (soundComp != null)
@@ -262,11 +377,10 @@ namespace AiEnabled.Projectiles
 
         if (MyAPIGateway.Session.Player != null)
         {
-          var position = hitPosition;
           Matrix m;
           block.Orientation.GetMatrix(out m);
-          m.Translation = (Vector3)position;
           MatrixD matrix = m;
+          matrix.Translation = hitPosition;
 
           string material, sound;
           var blockDef = block.BlockDefinition.Id;
@@ -297,7 +411,7 @@ namespace AiEnabled.Projectiles
           }
 
           MyParticleEffect _;
-          MyParticlesManager.TryCreateParticleEffect(material, ref matrix, ref position, uint.MaxValue, out _);
+          MyParticlesManager.TryCreateParticleEffect(material, ref matrix, ref hitPosition, uint.MaxValue, out _);
 
           MyEntity3DSoundEmitter emitter = AiSession.Instance.GetEmitter();
           emitter.SetPosition(hitPosition);

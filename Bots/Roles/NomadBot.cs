@@ -35,10 +35,13 @@ namespace AiEnabled.Bots.Roles
       _blockDamagePerSecond = 50;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 
-      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      CanUseSpaceNodes = RequiresJetpack;
-      CanUseAirNodes = RequiresJetpack;
-      GroundNodesFirst = !RequiresJetpack;
+      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+
+      RequiresJetpack = jetRequired;
+      CanUseSpaceNodes = jetAllowed;
+      CanUseAirNodes = jetAllowed;
+      GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = true;
       CanUseWaterNodes = true;
       WaterNodesOnly = false;
@@ -88,8 +91,10 @@ namespace AiEnabled.Bots.Roles
     public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out bool fistAttack, double distanceCheck = 4)
     {
       var botPosition = Position;
+      var botMatrix = WorldMatrix;
+
       var vecToWP = waypoint - botPosition;
-      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(WorldMatrix));
+      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
 
       if (_botState.IsOnLadder)
       {
@@ -103,9 +108,9 @@ namespace AiEnabled.Bots.Roles
       var flattenedLengthSquared = flattenedVector.LengthSquared();
       var distanceSqd = relVectorBot.LengthSquared();
 
-      var projUp = VectorUtils.Project(vecToWP, WorldMatrix.Up);
+      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
+      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
       if (!WaitForStuckTimer && angleTwoOrLess)
@@ -123,14 +128,24 @@ namespace AiEnabled.Bots.Roles
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
         if (Vector3D.DistanceSquared(worldPosAligned, waypoint) >= _currentGraph.CellSize * _currentGraph.CellSize)
         {
-          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(WorldMatrix));
+          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(botMatrix));
           var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
 
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            var absY = Math.Abs(relVectorBot.Y);
+            if (!JetpackEnabled || absY <= 0.1)
             {
-              movement = Vector3.Zero;
+              if (!_currentGraph.IsGridGraph && absY > 0.5 && relVectorBot.Y < 0)
+              {
+                _pathCollection.ClearNode();
+                rotation = Vector2.Zero;
+                movement = Vector3.Forward;
+              }
+              else
+              {
+                movement = Vector3.Zero;
+              }
             }
             else
             {
@@ -161,8 +176,20 @@ namespace AiEnabled.Bots.Roles
       if (!fistAttack && isTarget && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
-      if (JetpackEnabled && Math.Abs(relVectorBot.Y) > 0.05)
-        AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
+      if (JetpackEnabled)
+      {
+        var vecToTgt = Target.CurrentActualPosition - botPosition;
+        var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
+        var flatToTarget = new Vector3D(relToTarget.X, 0, relToTarget.Z);
+        if (flatToTarget.LengthSquared() <= 10 && Math.Abs(relToTarget.Y) > 0.5)
+        {
+          movement = Vector3.Zero;
+          relVectorBot = relToTarget;
+        }
+
+        if (Math.Abs(relVectorBot.Y) > 0.05)
+          AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition);
+      }
     }
 
     internal override bool Update()
@@ -196,12 +223,14 @@ namespace AiEnabled.Bots.Roles
         return;
       }
 
-      Vector3D gotoPosition, actualPosition;
-      if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
+      if (!Target.PositionsValid)
         return;
+
+      var actualPosition = Target.CurrentActualPosition;
 
       if (UsePathFinder)
       {
+        var gotoPosition = Target.CurrentGoToPosition;
         UsePathfinder(gotoPosition, actualPosition);
         return;
       }

@@ -33,6 +33,7 @@ namespace AiEnabled.Networking
   [ProtoInclude(1021, typeof(StoreBotPacket))]
   [ProtoInclude(1022, typeof(ClientHelperPacket))]
   [ProtoInclude(1023, typeof(SettingRequestPacket))]
+  [ProtoInclude(1024, typeof(ShieldHitPacket))]
   [ProtoContract]
   public abstract class PacketBase
   {

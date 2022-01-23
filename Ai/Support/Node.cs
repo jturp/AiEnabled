@@ -59,17 +59,21 @@ namespace AiEnabled.Ai.Support
       NodeType = NodeType.None;
       BlockedMask = 0;
 
-      if (block != null)
-        _ref = block;
-      else
-        _ref = grid;
-
       if (grid != null)
       {
         NodeType |= NodeType.Grid;
 
-        if (block != null && AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
-          NodeType |= NodeType.Ladder;
+        if (block != null)
+        {
+          _ref = block;
+
+          if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
+            NodeType |= NodeType.Ladder;
+        }
+        else
+        {
+          _ref = grid;
+        }
       }
     }
 

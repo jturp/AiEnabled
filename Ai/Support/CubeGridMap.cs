@@ -66,9 +66,9 @@ namespace AiEnabled.Ai.Support
 
     /// <summary>
     /// If repair bots are present on the grid, this will hold any tiles they are actively reparing or building.
-    /// Key is bot entity id, Value is block position on grid.
+    /// Key is grid entity id, value is a Dictionary where Key is bot entity id and Value is block position on grid.
     /// </summary>
-    public ConcurrentDictionary<long, Vector3I> SelectedRepairTiles = new ConcurrentDictionary<long, Vector3I>();
+    public ConcurrentDictionary<long, Dictionary<long, Vector3I>> SelectedRepairTiles = new ConcurrentDictionary<long, Dictionary<long, Vector3I>>();
 
     /// <summary>
     /// Doors that are currently closed and non-functional will be in this collection
@@ -231,18 +231,55 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// Checks if a given position is being repaired by a different repair bot
     /// </summary>
+    /// <param name="gridEntityId">The EntityId of the grid</param>
     /// <param name="position">Block position on the grid</param>
     /// <param name="botId">Entity Id of the asking repair bot</param>
     /// <returns>true if a DIFFERENT bot is currently planning to repair the given block, otherwise false</returns>
-    public bool IsTileBeingRepaired(Vector3I position, long botId)
+    public bool IsTileBeingRepaired(long gridEntityId, Vector3I position, long botId)
     {
-      foreach (var kvp in SelectedRepairTiles)
+      Dictionary<long, Vector3I> repairDict;
+      if (!SelectedRepairTiles.TryGetValue(gridEntityId, out repairDict))
+      {
+        return false;
+      }
+
+      foreach (var kvp in repairDict)
       {
         if (kvp.Value == position)
           return kvp.Key != botId;
       }
 
       return false;
+    }
+
+    /// <summary>
+    /// Adds the bots repair target to the dictionary to keep other bots from trying to repair the same block
+    /// </summary>
+    /// <param name="gridEntityId">The EntityId of the grid</param>
+    /// <param name="position">Block position on the grid</param>
+    /// <param name="botId">Entity Id of the asking repair bot</param>
+    public void AddRepairTile(long gridEntityId, Vector3I position, long botId)
+    {
+      Dictionary<long, Vector3I> repairDict;
+      if (!SelectedRepairTiles.TryGetValue(gridEntityId, out repairDict))
+      {
+        repairDict = new Dictionary<long, Vector3I>();
+        SelectedRepairTiles[gridEntityId] = repairDict;
+      }
+
+      repairDict[botId] = position;
+    }
+
+    /// <summary>
+    /// Clears all repair tiles for the a bot
+    /// </summary>
+    /// <param name="botId">Entity Id of the asking repair bot</param>
+    public void RemoveRepairTiles(long botId)
+    {
+      foreach (var kvp in SelectedRepairTiles)
+      {
+        kvp.Value.Remove(botId);
+      }
     }
 
     public void ResetMovement()
@@ -706,49 +743,38 @@ namespace AiEnabled.Ai.Support
       var movement = nextNode - currentNode;
       if (movement.RectangularLength() > 1)
       {
-        bool passable = true;
+        Node testNode;
         if (movement.Y != 0)
         {
           var dirVec = new Vector3I(0, movement.Y, 0);
           var testPosition = currentNode + dirVec;
 
-          Node testNode;
-          if (OpenTileDict.TryGetValue(testPosition, out testNode) && (nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
+          if (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
           {
-            passable = false;
+            return false;
           }
         }
 
-        if (passable)
+        if (movement.X != 0)
         {
-          if (movement.X != 0)
+          var dirVec = new Vector3I(movement.X, 0, 0);
+          var testPosition = currentNode + dirVec;
+
+          if (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
           {
-            var dirVec = new Vector3I(movement.X, 0, 0);
-            var testPosition = currentNode + dirVec;
-
-            Node testNode;
-            if (OpenTileDict.TryGetValue(testPosition, out testNode) && (nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
-            {
-              passable = false;
-            }
-          }
-
-          if (passable && movement.Z != 0)
-          {
-            var dirVec = new Vector3I(0, 0, movement.Z);
-            var testPosition = currentNode + dirVec;
-
-            Node testNode;
-            if (OpenTileDict.TryGetValue(testPosition, out testNode) && (nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
-            {
-              passable = false;
-            }
+            return false;
           }
         }
 
-        if (!passable)
+        if (movement.Z != 0)
         {
-          return false;
+          var dirVec = new Vector3I(0, 0, movement.Z);
+          var testPosition = currentNode + dirVec;
+
+          if (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
+          {
+            return false;
+          }
         }
       }
 
@@ -930,19 +956,30 @@ namespace AiEnabled.Ai.Support
                   for (int j = 1; j < cubeDef.Size.Y; j++)
                   {
                     var newPos = mainGridPosition - upVec * j;
-                    var newNode = new Node(newPos, Vector3.Zero, connectedGrid, block);
 
-                    if (j == 1)
-                      newNode.SetNodeType(NodeType.Ground);
-  
-                    OpenTileDict[newPos] = newNode;
+                    if (!OpenTileDict.ContainsKey(newPos))
+                    {
+                      var newNode = new Node(newPos, Vector3.Zero, connectedGrid, block);
+                      OpenTileDict[newPos] = newNode;
+                    }
                   }
                 }
                 else if (block.Orientation.Up == Base6Directions.GetOppositeDirection(upDir))
                 {
-                  var newPos = mainGridPosition + upVec;
-                  var newNode = new Node(newPos, Vector3.Zero, connectedGrid, block);
-                  OpenTileDict[newPos] = newNode;
+                  for (int j = 1; j < cubeDef.Size.Y; j++)
+                  {
+                    var newPos = mainGridPosition + upVec * j;
+
+                    if (j == 1 || !OpenTileDict.ContainsKey(newPos))
+                    {
+                      var newNode = new Node(newPos, Vector3.Zero, connectedGrid, block);
+
+                      if (j == 1)
+                        newNode.SetNodeType(NodeType.Ground);
+
+                      OpenTileDict[newPos] = newNode;
+                    }
+                  }
                 }
               }
               else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")

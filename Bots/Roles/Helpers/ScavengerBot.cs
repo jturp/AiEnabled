@@ -30,16 +30,20 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       Owner = AiSession.Instance.Players[ownerId];
       Behavior = new ScavengerBehavior(bot);
-      bool hasOwner = Owner != null;
 
       _followDistanceSqd = 25;
       _ticksBetweenAttacks = 150;
       _blockDamagePerSecond = 175;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
-      RequiresJetpack = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      CanUseSpaceNodes = RequiresJetpack || hasOwner;
-      CanUseAirNodes = RequiresJetpack || hasOwner;
-      GroundNodesFirst = !RequiresJetpack;
+
+      bool hasOwner = Owner != null;
+      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+
+      RequiresJetpack = jetRequired;
+      CanUseSpaceNodes = jetAllowed;
+      CanUseAirNodes = jetAllowed;
+      GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = !hasOwner;
       CanUseWaterNodes = true;
       WaterNodesOnly = false;
@@ -91,12 +95,14 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      Vector3D gotoPosition, actualPosition;
-      if (!Target.GetTargetPosition(out gotoPosition, out actualPosition))
+      if (!Target.PositionsValid)
         return;
+
+      var actualPosition = Target.CurrentActualPosition;
 
       if (UsePathFinder)
       {
+        var gotoPosition = Target.CurrentGoToPosition;
         UsePathfinder(gotoPosition, actualPosition);
         return;
       }
@@ -120,8 +126,10 @@ namespace AiEnabled.Bots.Roles.Helpers
     public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out bool shouldAttack, double distanceCheck = 4)
     {
       var botPosition = Position;
+      var botMatrix = WorldMatrix;
+
       var vecToWP = waypoint - botPosition;
-      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(WorldMatrix));
+      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
       var isFriendly = isTarget && Target.IsFriendly();
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
 
@@ -138,12 +146,9 @@ namespace AiEnabled.Bots.Roles.Helpers
       var distanceSqd = relVectorBot.LengthSquared();
       var isOwnerTgt = Target.Player?.IdentityId == Owner.IdentityId;
 
-      Vector3D gotoPosition, actualPosition;
-      Target.GetTargetPosition(out gotoPosition, out actualPosition);
-
-      var projUp = VectorUtils.Project(vecToWP, WorldMatrix.Up);
+      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(WorldMatrix.Forward, reject);
+      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
 
       if (!WaitForStuckTimer && angleTwoOrLess)
@@ -161,14 +166,24 @@ namespace AiEnabled.Bots.Roles.Helpers
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
         if (Vector3D.DistanceSquared(worldPosAligned, waypoint) >= _currentGraph.CellSize * _currentGraph.CellSize)
         {
-          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(WorldMatrix));
+          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(botMatrix));
           var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
 
           if (Vector3D.IsZero(flattenedVecWP, 0.1))
           {
-            if (!JetpackEnabled || Math.Abs(relVectorBot.Y) < 0.1)
+            var absY = Math.Abs(relVectorBot.Y);
+            if (!JetpackEnabled || absY <= 0.1)
             {
-              movement = Vector3.Zero;
+              if (!_currentGraph.IsGridGraph && absY > 0.5 && relVectorBot.Y < 0)
+              {
+                _pathCollection.ClearNode();
+                rotation = Vector2.Zero;
+                movement = Vector3.Forward;
+              }
+              else
+              {
+                movement = Vector3.Zero;
+              }
             }
             else
             {
@@ -204,7 +219,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (!JetpackEnabled && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
           {
             var ch = Character as Sandbox.Game.Entities.IMyControllableEntity;
-            var distanceToTarget = Vector3D.DistanceSquared(gotoPosition, botPosition);
+            var distanceToTarget = Vector3D.DistanceSquared(Target.CurrentGoToPosition, botPosition);
             if (distanceToTarget > 200)
             {
               ch.Sprint(true);
@@ -279,7 +294,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var ownerPos = character.WorldAABB.Center;
       var ownerHeadPos = character.GetHeadMatrix(true).Translation;
       var botHeadPos = Character.GetHeadMatrix(true).Translation;
-      var sphere = new BoundingSphereD(ownerPos, 75);
+      var sphere = new BoundingSphereD(ownerPos, AiSession.Instance.ModSaveData.MaxBotHuntingDistanceFriendly);
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entities, MyEntityQueryType.Dynamic);
       entities.ShellSort(ownerPos);
       IMyEntity tgt = character;

@@ -65,8 +65,8 @@ namespace AiEnabled.Networking
           helper.Target.RemoveTarget();
           helper.SetTarget();
 
-          Vector3D gotoPosition, actualPosition;
-          helper.Target.GetTargetPosition(out gotoPosition, out actualPosition);
+          helper.Target.Update();
+          var actualPosition = helper.Target.CurrentActualPosition;
           helper.StartCheckGraph(ref actualPosition, true);
         }
         else if (AiSession.Instance.Players.TryGetValue(_ownerIdentityId, out player))
@@ -87,10 +87,10 @@ namespace AiEnabled.Networking
                   var pkt = new ClientHelperPacket(helperData);
                   AiSession.Instance.Network.SendToPlayer(pkt, player.SteamUserId);
 
-                  var matrix = block.WorldMatrix;
-                  matrix.Translation = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
+                  helper.Position = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
+                  helper.GridEntityId = block.CubeGrid.EntityId;
 
-                  var future = new AiSession.FutureBot(helper.Subtype, helper.DisplayName, _ownerIdentityId, _botEntityId, block.CubeGrid.EntityId, (AiSession.BotType)helper.Role, matrix);
+                  var future = new AiSession.FutureBot(helper, _ownerIdentityId);
                   AiSession.Instance.FutureBotQueue.Enqueue(future);
 
                   return false;

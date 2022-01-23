@@ -134,6 +134,22 @@ namespace AiEnabled.API
       /// These actions (emotes) are performed randomly by the Nomad bot
       /// </summary>
       [ProtoMember(17)] public List<string> Actions;
+
+      /// <summary>
+      /// This is the angle (in degrees) that the bot's projectiles can vary from its target
+      /// </summary>
+      [ProtoMember(18)] public float ShotDeviationAngle = 1.5f;
+
+      /// <summary>
+      /// If true, bots will lead targets when shooting
+      /// </summary>
+      [ProtoMember(19)] public bool LeadTargets;
+
+      /// <summary>
+      /// This is the SubtypeId for the weapon or tool you want to give the bot. 
+      /// If the bot is unable to use the specified type, the default type will be used instead.
+      /// </summary>
+      [ProtoMember(20)] public string ToolSubtypeId;
     }
 
     /////////////////////////////////////////////

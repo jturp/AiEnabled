@@ -20,27 +20,31 @@ namespace AiEnabled.Networking
     [ProtoMember(3)] public bool IsGrinder;
     [ProtoMember(4)] public bool IsWelder;
     [ProtoMember(5)] public float Damage;
-    [ProtoMember(6)] public int TicksBetweenProjectiles;
-    [ProtoMember(7)] public int CurrentAmmo;
-    [ProtoMember(8)] public List<float> Randoms;
+    [ProtoMember(6)] public float AngleDeviationDegrees;
+    [ProtoMember(7)] public int TicksBetweenProjectiles;
+    [ProtoMember(8)] public int CurrentAmmo;
+    [ProtoMember(9)] public List<float> Randoms;
+    [ProtoMember(10)] public bool LeadTargets;
 
     public WeaponFirePacket() { }
 
-    public WeaponFirePacket(long botId, long tgtId, float damage, List<float> rand, int ticksBetween, int ammoLeft, bool isGrinder, bool isWelder)
+    public WeaponFirePacket(long botId, long tgtId, float damage, float angleDeviationDegrees, List<float> rand, int ticksBetween, int ammoLeft, bool isGrinder, bool isWelder, bool leadTargets)
     {
       BotEntityId = botId;
       TargetEntityId = tgtId;
       Damage = damage;
+      AngleDeviationDegrees = angleDeviationDegrees;
       TicksBetweenProjectiles = ticksBetween;
       IsGrinder = isGrinder;
       IsWelder = isWelder;
       CurrentAmmo = ammoLeft;
       Randoms = rand;
+      LeadTargets = leadTargets;
     }
 
     public override bool Received(NetworkHandler netHandler)
     {
-      AiSession.Instance.StartWeaponFire(BotEntityId, TargetEntityId, Damage, Randoms, TicksBetweenProjectiles, CurrentAmmo, IsGrinder, IsWelder);
+      AiSession.Instance.StartWeaponFire(BotEntityId, TargetEntityId, Damage, AngleDeviationDegrees, Randoms, TicksBetweenProjectiles, CurrentAmmo, IsGrinder, IsWelder, LeadTargets);
       return false;
     }
   }

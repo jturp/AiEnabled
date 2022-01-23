@@ -81,8 +81,8 @@ namespace AiEnabled.Networking
           helper.Target.RemoveTarget();
           helper.SetTarget();
 
-          Vector3D gotoPosition, actualPosition;
-          helper.Target.GetTargetPosition(out gotoPosition, out actualPosition);
+          helper.Target.Update();
+          var actualPosition = helper.Target.CurrentActualPosition;
           helper.StartCheckGraph(ref actualPosition, true);
         }
       }

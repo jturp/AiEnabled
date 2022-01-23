@@ -12,20 +12,43 @@ using VRage.Game.ModAPI;
 
 using VRageMath;
 using ProtoBuf;
+using VRage.ObjectBuilders;
+using Sandbox.Game;
+using VRage.Game.Entity;
+using Sandbox.Game.Weapons;
+using VRage.Game;
 
 namespace AiEnabled.ConfigData
 {
+  [ProtoContract]
+  public class InventoryItem
+  {
+    [ProtoMember(200)] public SerializableDefinitionId ItemDefinition;
+    [ProtoMember(201)] public MyFixedPoint Amount;
+
+    public InventoryItem() { }
+
+    public InventoryItem(MyDefinitionId id, MyFixedPoint amount)
+    {
+      ItemDefinition = id;
+      Amount = amount;
+    }
+  }
+
   [ProtoContract]
   public class HelperInfo
   {
     [ProtoMember(100)] public long HelperId;
     [ProtoMember(101)] public long GridEntityId;
-    [ProtoMember(102)] public string Subtype;
+    [ProtoMember(102)] public string CharacterSubtype;
     [ProtoMember(103)] public string DisplayName;
-    [ProtoMember(104)] public bool IsActiveHelper;
-    [ProtoMember(105)] public SerializableVector3D Position;
-    [ProtoMember(106)] public SerializableQuaternion Orientation;
-    [ProtoMember(107)] public int Role;
+    [ProtoMember(104)] public string ToolSubtype;
+    [ProtoMember(105)] public bool IsActiveHelper;
+    [ProtoMember(106)] public SerializableVector3D Position;
+    [ProtoMember(107)] public SerializableQuaternion Orientation;
+    [ProtoMember(108)] public int Role;
+    [ProtoMember(109)] public Color BotColor;
+    [ProtoMember(110)] public List<InventoryItem> InventoryItems;
 
     public HelperInfo() { }
 
@@ -33,12 +56,30 @@ namespace AiEnabled.ConfigData
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
-      Subtype = bot.Definition.Id.SubtypeName;
+      CharacterSubtype = bot.Definition.Id.SubtypeName;
+      ToolSubtype = (bot.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.DefinitionId.SubtypeName ?? null;
       DisplayName = bot.Name ?? "";
       Position = bot.GetPosition();
       Orientation = Quaternion.CreateFromRotationMatrix(bot.WorldMatrix);
       IsActiveHelper = true;
       Role = (int)botType;
+
+      var hsvOffset = ((MyObjectBuilder_Character)bot.GetObjectBuilder()).ColorMaskHSV;
+      var hsv = MyColorPickerConstants.HSVOffsetToHSV(hsvOffset);
+      BotColor = hsv.HSVtoColor();
+
+      var inventory = bot.GetInventory() as MyInventory;
+      if (inventory?.ItemCount > 0)
+      {
+        InventoryItems = new List<InventoryItem>();
+
+        var items = inventory.GetItems();
+        for (int i = 0; i < items.Count; i++)
+        {
+          var item = items[i];
+          InventoryItems.Add(new InventoryItem(item.Content.GetId(), item.Amount));
+        }
+      }
     }
   }
 
@@ -67,15 +108,15 @@ namespace AiEnabled.ConfigData
 
     public bool RemoveHelper(long id)
     {
-      if (Helpers == null)
-        return false;
-
-      for (int i = Helpers.Count - 1; i >= 0; i--)
+      if (Helpers != null)
       {
-        if (Helpers[i].HelperId == id)
+        for (int i = Helpers.Count - 1; i >= 0; i--)
         {
-          Helpers.RemoveAtFast(i);
-          return true;
+          if (Helpers[i].HelperId == id)
+          {
+            Helpers.RemoveAtFast(i);
+            return true;
+          }
         }
       }
 
