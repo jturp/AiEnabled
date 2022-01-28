@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using AiEnabled.Bots;
+using AiEnabled.Support;
 
 using ProtoBuf;
 
@@ -90,7 +91,7 @@ namespace AiEnabled.Networking
                   helper.Position = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
                   helper.GridEntityId = block.CubeGrid.EntityId;
 
-                  var future = new AiSession.FutureBot(helper, _ownerIdentityId);
+                  var future = new FutureBot(helper, _ownerIdentityId);
                   AiSession.Instance.FutureBotQueue.Enqueue(future);
 
                   return false;

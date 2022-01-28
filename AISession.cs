@@ -67,18 +67,6 @@ namespace AiEnabled
       }
     }
 
-    public struct FutureBot
-    {
-      public HelperInfo HelperInfo;
-      public long OwnerId;
-
-      public FutureBot(HelperInfo info, long ownerId)
-      {
-        HelperInfo = info;
-        OwnerId = ownerId;
-      }
-    }
-
     public static int MainThreadId = 1;
     public static AiSession Instance;
     public string VERSION = "v0.10b";
@@ -92,7 +80,8 @@ namespace AiEnabled
     public int BotNumber => _robots?.Count ?? 0;
     public Logger Logger { get; protected set; }
     public bool Registered { get; protected set; }
-    public bool CanSpawn => Registered && _controllerInfo?.Count > 10;
+    public bool CanSpawn => Registered && _controllerInfo?.Count >= MIN_SPAWN_COUNT;
+    const int MIN_SPAWN_COUNT = 3;
 
     public bool FactoryControlsHooked;
     public bool FactoryControlsCreated;
@@ -465,6 +454,9 @@ namespace AiEnabled
       SoundPairDict?.Clear();
       SoundEmitters?.Clear();
       FutureBotQueue?.Clear();
+      FutureBotAPIStack?.Clear();
+      FutureBotAPIQueue?.Clear();
+      SpawnDataStack?.Clear();
       RobotSubtypes?.Clear();
       UseObjectsAPI?.Clear();
       BotToSeatRelativePosition?.Clear();
@@ -541,7 +533,10 @@ namespace AiEnabled
       SoundPairDict = null;
       SoundEmitters = null;
       ModSaveData = null;
+      SpawnDataStack = null;
       FutureBotQueue = null;
+      FutureBotAPIStack = null;
+      FutureBotAPIQueue = null;
       RobotSubtypes = null;
       Projectiles = null;
       PlayerToHelperIdentity = null;
@@ -615,7 +610,7 @@ namespace AiEnabled
             }
             else if (mod.PublishedFileId == 2200451495)
             {
-              Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} Found. API loaded successfully = {WaterAPI.Registered}");
+              Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} Found");
             }
           }
         }
@@ -3457,7 +3452,7 @@ namespace AiEnabled
         {
           while (FutureBotQueue.Count > 0)
           {
-            if (_controllerInfo.Count < 10)
+            if (_controllerInfo.Count < MIN_SPAWN_COUNT)
               break;
 
             var future = FutureBotQueue.Dequeue();
@@ -3547,6 +3542,11 @@ namespace AiEnabled
           {
             SaveModData(true);
           }
+        }
+        else if (FutureBotQueue.Count == 0 && FutureBotAPIQueue.Count > 0 && _controllerInfo.Count >= MIN_SPAWN_COUNT)
+        {
+          var future = FutureBotAPIQueue.Dequeue();
+          future?.Spawn();
         }
 
         ++_planetCheckTimer;

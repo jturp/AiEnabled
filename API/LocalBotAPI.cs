@@ -1,5 +1,6 @@
 ﻿using AiEnabled.Ai.Support;
 using AiEnabled.Bots;
+using AiEnabled.Support;
 using AiEnabled.Utilities;
 
 using Sandbox.Common.ObjectBuilders;
@@ -41,6 +42,8 @@ namespace AiEnabled.API
       {
         { "SpawnBot", new Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, IMyCharacter>(SpawnBot) },
         { "SpawnBotCustom", new Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>(SpawnBot)},
+        { "SpawnBotQueued", new Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>(SpawnBotQueued)},
+        { "SpawnBotCustomQueued", new Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>(SpawnBotQueued)},
         { "GetFriendlyRoles", new Func<string[]>(GetFriendlyBotRoles) },
         { "GetNPCRoles", new Func<string[]>(GetNPCBotRoles) },
         { "GetNeutralRoles", new Func<string[]>(GetNeutralBotRoles) },
@@ -79,22 +82,26 @@ namespace AiEnabled.API
     public bool CanSpawn() => AiSession.Instance?.CanSpawn ?? false;
 
     /// <summary>
-    /// Retrieves the current set of available bot subtypes the mod will recognize
+    /// Retrieves the current set of available bot subtypes the mod will recognize.
+    /// This allocates so grab it once and cache it!
     /// </summary>
     public string[] GetBotSubtypes() => AiSession.Instance?.RobotSubtypes?.ToArray() ?? null;
 
     /// <summary>
-    /// Retrieves the current set of available friendly bot roles
+    /// Retrieves the current set of available friendly bot roles.
+    /// This allocates so grab it once and cache it!
     /// </summary>
     public string[] GetFriendlyBotRoles() => Enum.GetNames(typeof(BotFactory.BotRoleFriendly));
 
     /// <summary>
-    /// Retrieves the current set of available non-friendly bot roles
+    /// Retrieves the current set of available non-friendly bot roles.
+    /// This allocates so grab it once and cache it!
     /// </summary>
     public string[] GetNPCBotRoles() => Enum.GetNames(typeof(BotFactory.BotRoleEnemy));
 
     /// <summary>
-    /// Retrieves the current set of available neutral bot roles
+    /// Retrieves the current set of available neutral bot roles.
+    /// This allocates so grab it once and cache it!
     /// </summary>
     public string[] GetNeutralBotRoles() => Enum.GetNames(typeof(BotFactory.BotRoleNeutral));
 
@@ -108,7 +115,7 @@ namespace AiEnabled.API
       if (AiSession.Instance?.Registered != true)
         return false;
 
-      return AiSession.Instance.Bots.ContainsKey(entityId);
+      return AiSession.Instance.Bots?.ContainsKey(entityId) == true;
     }
 
     /// <summary>
@@ -339,15 +346,12 @@ namespace AiEnabled.API
     /// <param name="owner">Owner / Identity of the Bot (if a HelperBot)</param>
     /// <param name="color">The color for the bot in RGB format</param>
     /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
+    [Obsolete("This method can cause lag, use SpawnBotQueued instead.")]
     public IMyCharacter SpawnBot(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null)
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        if (MyAPIGateway.Session?.Player != null)
-          MyAPIGateway.Utilities.ShowNotification($"The mod is not ready to spawn bots just yet..");
-
         AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
-
         return null;
       }
 
@@ -363,15 +367,12 @@ namespace AiEnabled.API
     /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
     /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
     /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
+    [Obsolete("This method can cause lag, use SpawnBotQueued instead.")]
     public IMyCharacter SpawnBot(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null)
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        if (MyAPIGateway.Session?.Player != null)
-          MyAPIGateway.Utilities.ShowNotification($"The mod is not ready to spawn bots just yet..");
-
         AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
-
         return null;
       }
 
@@ -380,6 +381,58 @@ namespace AiEnabled.API
         return null;
 
       return BotFactory.SpawnBotFromAPI(positionAndOrientation, data, grid, owner);
+    }
+
+    /// <summary>
+    /// This method will queue a Bot to be spawned with custom behavior
+    /// </summary>
+    /// <param name="subType">The SubtypeId of the Bot you want to Spawn (see <see cref="GetBotSubtypes"/>)</param>
+    /// <param name="displayName">The DisplayName of the Bot</param>
+    /// <param name="role">Bot Role: see <see cref="GetFriendlyBotRoles"/>, <see cref="GetNPCBotRoles"/>, or <see cref="GetNeutralBotRoles"/>. If not supplied, it will be determined by the subType's default usage</param>
+    /// <param name="positionAndOrientation">Position and Orientation</param>
+    /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
+    /// <param name="owner">Owner / Identity of the Bot (if a HelperBot)</param>
+    /// <param name="color">The color for the bot in RGB format</param>
+    /// <param name="callBack">The callback method to invoke when the bot is spawned</param>
+    /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful, in a callback method</returns>
+    public void SpawnBotQueued(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, Action<IMyCharacter> callBack = null)
+    {
+      if (AiSession.Instance?.CanSpawn != true)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
+        return;
+      }
+
+      var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
+      future.SetInfo(subType, displayName, positionAndOrientation, grid, role, owner, color, callBack);
+      AiSession.Instance.FutureBotAPIQueue.Enqueue(future);
+    }
+
+    /// <summary>
+    /// This method will queue a Bot to be spawned with custom behavior
+    /// </summary>
+    /// <param name="displayName">The DisplayName of the Bot</param>
+    /// <param name="positionAndOrientation">Position and Orientation</param>
+    /// <param name="spawnData">The serialized <see cref="RemoteBotAPI.SpawnData"/> object</param>
+    /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
+    /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
+    /// <param name="callback">The callback method to invoke when the bot is spawned</param>
+    /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful, in a callback method</returns>
+    public void SpawnBotQueued(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null, Action<IMyCharacter> callBack = null)
+    {
+      if (AiSession.Instance?.CanSpawn != true)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
+        return;
+      }
+
+      var data = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(spawnData);
+      if (data == null)
+        return;
+
+      var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
+      future.SetInfo(positionAndOrientation, data, grid, owner, callBack);
+      AiSession.Instance.FutureBotAPIQueue.Enqueue(future);
     }
 
     /// <summary>

@@ -159,31 +159,59 @@ namespace AiEnabled.API
     /// <summary>
     /// Check this to ensure API loaded properly
     /// </summary>
-    public bool Valid; 
+    public bool Valid;
 
     /// <summary>
-    /// This method will spawn a Bot with Custom Behavior
+    /// This method will spawn a Bot with custom behavior
     /// </summary>
     /// <param name="subType">The SubtypeId of the Bot you want to Spawn (<see cref="GetBotSubtypes"/>)</param>
     /// <param name="displayName">The DisplayName of the Bot</param>
     /// <param name="role">Bot Role: <see cref="GetFriendlyBotRoles"/>, <see cref="GetNPCBotRoles"/>, or <see cref="GetNeutralBotRoles"/>. If not supplied, it will be determined by the subType's default usage</param>
     /// <param name="positionAndOrientation">Position and Orientation</param>
     /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
-    /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
+    /// <param name="owner">Owner's IdentityId for the Bot</param>
     /// <param name="color">The color for the bot in RGB format</param>
     /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
+    [Obsolete("This method can cause lag, use SpawnBotQueued instead.")]
     public IMyCharacter SpawnBot(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null) => _spawnBot?.Invoke(subType, displayName, positionAndOrientation, grid, role, owner, color) ?? null;
 
     /// <summary>
-    /// This method will spawn a Bot with Custom Behavior
+    /// This method will spawn a Bot with custom behavior
+    /// </summary>
+    /// <param name="displayName">The DisplayName of the Bot</param>
+    /// <param name="positionAndOrientation">Position and Orientation</param>
+    /// <param name="spawnData">The serialized <see cref="SpawnData"/> object</param>
+    /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
+    /// <param name="owner">Owner's IdentityId for the Bot</param>
+    /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
+    [Obsolete("This method can cause lag, use SpawnBotQueued instead.")]
+    public IMyCharacter SpawnBot(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null) => _spawnBotCustom?.Invoke(positionAndOrientation, spawnData, grid, owner) ?? null;
+
+    /// <summary>
+    /// This method will queue a Bot to be spawned with custom behavior
+    /// </summary>
+    /// <param name="subType">The SubtypeId of the Bot you want to Spawn (see <see cref="GetBotSubtypes"/>)</param>
+    /// <param name="displayName">The DisplayName of the Bot</param>
+    /// <param name="role">Bot Role: see <see cref="GetFriendlyBotRoles"/>, <see cref="GetNPCBotRoles"/>, or <see cref="GetNeutralBotRoles"/>. If not supplied, it will be determined by the subType's default usage</param>
+    /// <param name="positionAndOrientation">Position and Orientation</param>
+    /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
+    /// <param name="owner">Owner / Identity of the Bot</param>
+    /// <param name="color">The color for the bot in RGB format</param>
+    /// <param name="callBack">The callback method to invoke when the bot is spawned</param>
+    /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful, in a callback method</returns>
+    public void SpawnBotQueued(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, Action<IMyCharacter> callBack = null) => _spawnBotQueued?.Invoke(subType, displayName, positionAndOrientation, grid, role, owner, color, callBack);
+
+    /// <summary>
+    /// This method will queue a Bot to be spawned with custom behavior
     /// </summary>
     /// <param name="displayName">The DisplayName of the Bot</param>
     /// <param name="positionAndOrientation">Position and Orientation</param>
     /// <param name="spawnData">The serialized <see cref="SpawnData"/> object</param>
     /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
     /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
-    /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful</returns>
-    public IMyCharacter SpawnBot(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null) => _spawnBotCustom?.Invoke(positionAndOrientation, spawnData, grid, owner) ?? null;
+    /// <param name="callback">The callback method to invoke when the bot is spawned</param>
+    /// <returns>The IMyCharacter created for the Bot, or null if unsuccessful, in a callback method</returns>
+    public void SpawnBotQueued(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null, Action<IMyCharacter> callBack = null) => _spawnBotCustomQueued?.Invoke(positionAndOrientation, spawnData, grid, owner, callBack);
 
     /// <summary>
     /// Check this BEFORE attempting to spawn a bot to ensure the mod is ready
@@ -398,6 +426,8 @@ namespace AiEnabled.API
     private Action<long, string> _speak;
     private Func<long, bool> _isBot;
     private Func<long, long, MyRelationsBetweenPlayerAndBlock> _getRelationshipBetween;
+    private Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>> _spawnBotQueued;
+    private Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>> _spawnBotCustomQueued;
     private GetClosestNodeDelegate _getClosestValidNode;
     private GetBotAndRelationTo _getBotAndRelationTo;
 
@@ -440,6 +470,8 @@ namespace AiEnabled.API
         _isBot = dict["IsBot"] as Func<long, bool>;
         _getRelationshipBetween = dict["GetRelationshipBetween"] as Func<long, long, MyRelationsBetweenPlayerAndBlock>;
         _getBotAndRelationTo = dict["GetBotAndRelationTo"] as GetBotAndRelationTo;
+        _spawnBotQueued = dict["SpawnBotQueued"] as Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>;
+        _spawnBotCustomQueued = dict["SpawnBotCustomQueued"] as Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>;
 
       }
       catch

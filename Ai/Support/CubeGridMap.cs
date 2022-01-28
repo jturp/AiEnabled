@@ -749,7 +749,7 @@ namespace AiEnabled.Ai.Support
           var dirVec = new Vector3I(0, movement.Y, 0);
           var testPosition = currentNode + dirVec;
 
-          if (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
+          if (Grid?.CubeExists(testPosition) == true || (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec))))
           {
             return false;
           }
@@ -760,7 +760,7 @@ namespace AiEnabled.Ai.Support
           var dirVec = new Vector3I(movement.X, 0, 0);
           var testPosition = currentNode + dirVec;
 
-          if (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
+          if (Grid?.CubeExists(testPosition) == true || (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec))))
           {
             return false;
           }
@@ -771,7 +771,7 @@ namespace AiEnabled.Ai.Support
           var dirVec = new Vector3I(0, 0, movement.Z);
           var testPosition = currentNode + dirVec;
 
-          if (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec)))
+          if ( Grid?.CubeExists(testPosition) == true || (OpenTileDict.TryGetValue(testPosition, out testNode) && testNode != null && (testNode.Block != null || nCur.IsBlocked(dirVec) || testNode.IsBlocked(-dirVec))))
           {
             return false;
           }

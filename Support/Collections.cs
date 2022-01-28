@@ -25,6 +25,7 @@ using Sandbox.Common.ObjectBuilders;
 using MyItemType = VRage.Game.ModAPI.Ingame.MyItemType;
 using MyItemInfo = VRage.Game.ModAPI.Ingame.MyItemInfo;
 using VRage.Voxels;
+using AiEnabled.API;
 
 namespace AiEnabled
 {
@@ -349,6 +350,9 @@ namespace AiEnabled
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
 
     //public Dictionary<string, int> AnimationTimeDictionary = new Dictionary<string, int>(); // TODO: Try and find a reference to the duration of animations
+    public Stack<RemoteBotAPI.SpawnData> SpawnDataStack = new Stack<RemoteBotAPI.SpawnData>();
+    public Stack<FutureBotAPI> FutureBotAPIStack = new Stack<FutureBotAPI>();
+    public Queue<FutureBotAPI> FutureBotAPIQueue = new Queue<FutureBotAPI>();
     public Queue<FutureBot> FutureBotQueue = new Queue<FutureBot>();
     public HashSet<long> AnalyzeHash = new HashSet<long>();
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
