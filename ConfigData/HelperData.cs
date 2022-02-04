@@ -49,10 +49,11 @@ namespace AiEnabled.ConfigData
     [ProtoMember(108)] public int Role;
     [ProtoMember(109)] public Color BotColor;
     [ProtoMember(110)] public List<InventoryItem> InventoryItems;
+    [ProtoMember(111)] public List<SerializableVector3D> PatrolRoute;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null, List<Vector3D> route = null)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
@@ -67,6 +68,14 @@ namespace AiEnabled.ConfigData
       var hsvOffset = ((MyObjectBuilder_Character)bot.GetObjectBuilder()).ColorMaskHSV;
       var hsv = MyColorPickerConstants.HSVOffsetToHSV(hsvOffset);
       BotColor = hsv.HSVtoColor();
+
+      if (route?.Count > 0)
+      {
+        PatrolRoute = new List<SerializableVector3D>(route.Count);
+
+        for (int i = 0; i < route.Count; i++)
+          PatrolRoute.Add(route[i]);
+      }
 
       var inventory = bot.GetInventory() as MyInventory;
       if (inventory?.ItemCount > 0)
@@ -98,12 +107,12 @@ namespace AiEnabled.ConfigData
       Helpers = new List<HelperInfo>();
     }
 
-    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid)
+    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid, List<Vector3D> patrolRoute)
     {
       if (Helpers == null)
         Helpers = new List<HelperInfo>();
 
-      Helpers.Add(new HelperInfo(helper, botType, grid));
+      Helpers.Add(new HelperInfo(helper, botType, grid, patrolRoute));
     }
 
     public bool RemoveHelper(long id)

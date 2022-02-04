@@ -37,7 +37,7 @@ using VRage;
 using AiEnabled.Bots;
 using VRage.Voxels;
 
-using static AiEnabled.Graphics.Support.HudAPIv2;
+using static AiEnabled.API.HudAPIv2;
 using AiEnabled.ConfigData;
 
 namespace AiEnabled.Graphics

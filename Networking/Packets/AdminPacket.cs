@@ -67,21 +67,7 @@ namespace AiEnabled.Networking
     {
       if (AiSession.Instance.IsServer)
       {
-        if (MaxHuntDistanceFriendly.HasValue || MaxHuntDistanceEnemy.HasValue || MaxProjectileDistance.HasValue)
-        {
-          var modData = AiSession.Instance.ModSaveData;
-
-          if (MaxHuntDistanceEnemy.HasValue)
-            modData.MaxBotHuntingDistanceEnemy = MaxHuntDistanceEnemy.Value;
-          else if (MaxHuntDistanceFriendly.HasValue) 
-            modData.MaxBotHuntingDistanceFriendly = MaxHuntDistanceFriendly.Value;
-          else
-            modData.MaxBotProjectileDistance = MaxProjectileDistance.Value;
-
-          AiSession.Instance.StartAdminUpdateCounter();
-          return false;
-        }
-        else if (MaxBots > 0 && MaxHelpers >= 0)
+        if (MaxBots > 0 && MaxHelpers >= 0)
         {
           if (MyAPIGateway.Session.Player != null && AiSession.Instance?.PlayerMenu != null)
           {
@@ -102,6 +88,20 @@ namespace AiEnabled.Networking
 
           AiSession.Instance.StartAdminUpdateCounter();
           return MyAPIGateway.Multiplayer.MultiplayerActive;
+        }
+        else if (MaxHuntDistanceFriendly.HasValue || MaxHuntDistanceEnemy.HasValue || MaxProjectileDistance.HasValue)
+        {
+          var modData = AiSession.Instance.ModSaveData;
+
+          if (MaxHuntDistanceEnemy.HasValue)
+            modData.MaxBotHuntingDistanceEnemy = MaxHuntDistanceEnemy.Value;
+          else if (MaxHuntDistanceFriendly.HasValue) 
+            modData.MaxBotHuntingDistanceFriendly = MaxHuntDistanceFriendly.Value;
+          else
+            modData.MaxBotProjectileDistance = MaxProjectileDistance.Value;
+
+          AiSession.Instance.StartAdminUpdateCounter();
+          return false;
         }
         else if (AllowMusic.HasValue)
         {

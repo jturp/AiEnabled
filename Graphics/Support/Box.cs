@@ -12,6 +12,7 @@ using Sandbox.ModAPI;
 using VRage.Utils;
 using VRage.ModAPI;
 using VRage.Game;
+using AiEnabled.API;
 
 namespace AiEnabled.Graphics.Support
 {
@@ -65,7 +66,8 @@ namespace AiEnabled.Graphics.Support
       _bottom.Origin = down;
       _top.Width = _bottom.Width = width;
 
-      base.SetVisibility(true);
+      var val = true;
+      base.SetVisibility(ref val);
     }
 
     public void FadeToBlack(float amount)
@@ -74,12 +76,12 @@ namespace AiEnabled.Graphics.Support
       _left.BillBoardColor = _right.BillBoardColor = _top.BillBoardColor = _bottom.BillBoardColor = color;
     }
 
-    public override void SetVisibility(bool enable)
+    public override void SetVisibility(ref bool enable)
     {
       if (_boxBackground != null)
         _boxBackground.Visible = enable;
 
-      base.SetVisibility(enable);
+      base.SetVisibility(ref enable);
     }
   }
 }

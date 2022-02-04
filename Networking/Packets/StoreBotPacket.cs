@@ -6,11 +6,16 @@ using System.Threading.Tasks;
 
 using AiEnabled.Bots;
 using AiEnabled.Bots.Roles.Helpers;
+using AiEnabled.ConfigData;
 using AiEnabled.Particles;
 
 using ProtoBuf;
 
+using Sandbox.Game;
 using Sandbox.ModAPI;
+
+using VRage;
+using VRage.Game;
 
 namespace AiEnabled.Networking
 {
@@ -58,6 +63,23 @@ namespace AiEnabled.Networking
               {
                 helperIds.Remove(helper.HelperId);
               }
+
+              var inventory = bot.Character.GetInventory() as MyInventory;
+              if (inventory?.ItemCount > 0)
+              {
+                if (helper.InventoryItems == null)
+                  helper.InventoryItems = new List<InventoryItem>();
+
+                var items = inventory.GetItems();
+                for (int k = 0; k < items.Count; k++)
+                {
+                  var item = items[k];
+                  helper.InventoryItems.Add(new InventoryItem(item.Content.GetId(), item.Amount));
+                }
+              }
+
+              if (helper.PatrolRoute?.Count > 0)
+                helper.PatrolRoute.Clear();
 
               AiSession.Instance.SaveModData(true);
               break;

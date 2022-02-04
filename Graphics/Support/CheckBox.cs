@@ -17,6 +17,7 @@ using Sandbox.Game.Entities;
 using VRage.Game.Entity;
 using Sandbox.Game.Contracts;
 using VRage.Game.ModAPI;
+using AiEnabled.API;
 
 namespace AiEnabled.Graphics.Support
 {
@@ -70,10 +71,10 @@ namespace AiEnabled.Graphics.Support
       _leftSlash.Visible = _rightSlash.Visible = check;
     }
 
-    public override void SetVisibility(bool enable)
+    public override void SetVisibility(ref bool enable)
     {
       _leftSlash.Visible = _rightSlash.Visible = enable && IsChecked;
-      base.SetVisibility(enable);
+      base.SetVisibility(ref enable);
     }
   }
 }

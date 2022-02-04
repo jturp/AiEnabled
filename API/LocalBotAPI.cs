@@ -1,11 +1,13 @@
 ﻿using AiEnabled.Ai.Support;
 using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
 
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character.Components;
 using Sandbox.ModAPI;
 
 using SpaceEngineers.Game.ModAPI;
@@ -68,6 +70,7 @@ namespace AiEnabled.API
         { "IsBot", new Func<long, bool>(IsBot) },
         { "GetRelationshipBetween", new Func<long, long, MyRelationsBetweenPlayerAndBlock>(GetRelationshipBetween) },
         { "GetBotAndRelationTo", new GetBotAndRelationTo(CheckBotRelationTo) },
+        { "SetBotPatrol", new Func<long, List<Vector3D>, bool>(SetBotPatrol) },
      };
 
       return dict;
@@ -472,6 +475,69 @@ namespace AiEnabled.API
     }
 
     /// <summary>
+    /// Assigns a patrol route to the Bot. In patrol mode, the bot will attack any enemies that come near its route.
+    /// You must call <see cref="ResetBotTargeting(long)"/> for it to resume normal functions
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="waypoints">A list of world coordinates for the bot to patrol</param>
+    /// <returns>true if the route is assigned successfully, otherwise false</returns>
+    public bool SetBotPatrol(long botEntityId, List<Vector3D> waypoints)
+    {
+      if (AiSession.Instance?.Registered != true)
+        return false;
+
+      if (waypoints == null || waypoints.Count == 0)
+        return false;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.IsDead != false)
+        return false;
+
+      bot.UseAPITargets = false;
+      bot.PatrolMode = true;
+      bot.FollowMode = false;
+      bot.Target.RemoveOverride(false);
+
+      if (bot is RepairBot)
+      {
+        bot.Target.RemoveTarget();
+      }
+
+      bot.UpdatePatrolPoints(waypoints);
+
+      var seat = bot.Character.Parent as IMyCockpit;
+      if (seat != null)
+      {
+        seat.RemovePilot();
+        Vector3D relPosition;
+        if (!AiSession.Instance.BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition))
+          relPosition = Vector3D.Forward * 2.5 + Vector3D.Up;
+
+        var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
+        bot.Character.SetPosition(position);
+
+        var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
+        if (jetpack != null)
+        {
+          if (bot.RequiresJetpack)
+          {
+            if (!jetpack.TurnedOn)
+            {
+              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+              jetpack.TurnOnJetpack(true);
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+            }
+          }
+          else if (jetpack.TurnedOn)
+            jetpack.SwitchThrusts();
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
     /// Sets the Override Complete Action associated with a given Bot. 
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
@@ -528,8 +594,10 @@ namespace AiEnabled.API
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.IsDead != false)
         return false;
 
+      bot.PatrolMode = false;
       bot.UseAPITargets = false;
       bot.Target.RemoveTarget();
+      bot.Target.RemoveOverride(false);
       bot._pathCollection?.CleanUp(true);
       return true;
     }

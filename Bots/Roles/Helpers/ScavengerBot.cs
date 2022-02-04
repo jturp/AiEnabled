@@ -274,9 +274,31 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
+      if (FollowMode)
+      {
+        var ownerParent = character.GetTopMostParent();
+        var currentEnt = Target.Entity as IMyEntity;
+
+        if (currentEnt?.EntityId != ownerParent.EntityId)
+        {
+          Target.SetTarget(ownerParent);
+          _pathCollection?.CleanUp(true);
+        }
+
+        return;
+      }
+
+      var botPosition = Position;
       if (Target.IsDestroyed())
       {
         Target.RemoveTarget();
+      }
+      else if (Target.Entity != null && HasLineOfSight)
+      {
+        // if the current target is viable there's not reason to keep trying to switch targets
+        var ch = Target.Entity as IMyCharacter;
+        if (ch != null && ch.EntityId != character.EntityId && Vector3D.DistanceSquared(ch.WorldAABB.Center, botPosition) < 3000)
+          return;
       }
 
       List<IHitInfo> hitList;
@@ -291,13 +313,27 @@ namespace AiEnabled.Bots.Roles.Helpers
       else
         entities.Clear();
 
+      var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var ownerPos = character.WorldAABB.Center;
       var ownerHeadPos = character.GetHeadMatrix(true).Translation;
       var botHeadPos = Character.GetHeadMatrix(true).Translation;
-      var sphere = new BoundingSphereD(ownerPos, AiSession.Instance.ModSaveData.MaxBotHuntingDistanceFriendly);
+
+      var centerPoint = ownerPos;
+      var distance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceFriendly;
+
+      if (onPatrol)
+      {
+        centerPoint = botPosition;
+        var enemyHuntDistance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy;
+
+        if (enemyHuntDistance > distance && distance < 300)
+          distance = Math.Min(300, enemyHuntDistance);
+      }
+
+      var sphere = new BoundingSphereD(centerPoint, distance);
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entities, MyEntityQueryType.Dynamic);
-      entities.ShellSort(ownerPos);
-      IMyEntity tgt = character;
+      entities.ShellSort(centerPoint);
+      IMyEntity tgt = null;
 
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
@@ -320,9 +356,11 @@ namespace AiEnabled.Bots.Roles.Helpers
             continue;
 
           var worldHeadPos = ch.GetHeadMatrix(true).Translation;
-          MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
 
-          if (hitList.Count > 0)
+          if (!onPatrol)
+            MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
+
+          if (onPatrol || hitList.Count > 0)
           {
             bool valid = true;
             foreach (var hit in hitList)
@@ -422,6 +460,37 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       AiSession.Instance.HitListStack.Push(hitList);
       AiSession.Instance.EntListStack.Push(entities);
+
+      if (tgt == null)
+      {
+        if (onPatrol)
+        {
+          if (Target.Entity != null)
+            Target.RemoveTarget();
+
+          if (Target.Override.HasValue)
+            return;
+
+          var patrolPoint = GetNextPatrolPoint();
+
+          if (patrolPoint.HasValue)
+          {
+            Target.SetOverride(patrolPoint.Value);
+          }
+
+          return;
+        }
+        else
+        {
+          tgt = character;
+        }
+      }
+
+      if (onPatrol && Target.Override.HasValue)
+      {
+        _patrolIndex = Math.Max((short)-1, (short)(_patrolIndex - 1));
+        Target.RemoveOverride(false);
+      }
 
       var parent = tgt is IMyCharacter ? tgt.GetTopMostParent() : tgt;
       var currentTgt = Target.Entity as IMyEntity;

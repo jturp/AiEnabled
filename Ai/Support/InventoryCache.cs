@@ -51,13 +51,16 @@ namespace AiEnabled.Ai.Support
     bool _closed;
     ParallelTasks.Task _repairTask;
     Action<WorkData> _workAction, _workCallBack;
-    RepairWorkData _workData = new RepairWorkData();
+    RepairWorkData _workData;
 
     public InventoryCache(MyCubeGrid grid)
     {
       Grid = grid;
       _workAction = new Action<WorkData>(RemoveItemsInternal);
       _workCallBack = new Action<WorkData>(RemoveItemsComplete);
+
+      if (!AiSession.Instance.RepairWorkStack.TryPop(out _workData))
+        _workData = new RepairWorkData();
     }
 
     public void SetGrid(MyCubeGrid grid)
@@ -79,6 +82,9 @@ namespace AiEnabled.Ai.Support
     public void Close()
     {
       _closed = true;
+
+      if (_workData != null)
+        AiSession.Instance.RepairWorkStack.Push(_workData);
 
       ItemCounts?.Clear();
       ItemCounts = null;
@@ -118,7 +124,6 @@ namespace AiEnabled.Ai.Support
 
       _workAction = null;
       _workCallBack = null;
-      _workData = null;
     }
 
     public IMySlimBlock GetClosestInventory(Vector3I localBot, BotBase bot)
@@ -375,7 +380,7 @@ namespace AiEnabled.Ai.Support
     {
       if (_repairTask.IsComplete)
       {
-        if (_workData == null)
+        if (_workData == null && !AiSession.Instance.RepairWorkStack.TryPop(out _workData))
           _workData = new RepairWorkData();
 
         _workData.Bot = bot;

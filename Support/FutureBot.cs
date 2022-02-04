@@ -35,6 +35,7 @@ namespace AiEnabled.Support
     public MyCubeGrid Grid;
     public long? Owner;
     public MyPositionAndOrientation PositionAndOrientation;
+    public SerializableVector3I? LocalPosition;
     public Action<IMyCharacter> CallBackAction;
     bool _restack;
 
@@ -47,6 +48,7 @@ namespace AiEnabled.Support
       Grid = grid;
       Owner = owner;
       CallBackAction = callBack;
+      LocalPosition = Grid?.WorldToGridInteger(positionAndOrientation.Position);
     }
 
     public void SetInfo(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, Action<IMyCharacter> callback = null)
@@ -63,6 +65,7 @@ namespace AiEnabled.Support
       Grid = grid;
       Owner = owner;
       CallBackAction = callback;
+      LocalPosition = Grid?.WorldToGridInteger(positionAndOrientation.Position);
     }
 
     public void Spawn()
@@ -71,6 +74,11 @@ namespace AiEnabled.Support
 
       if (SpawnData != null)
       {
+        if (Grid != null && LocalPosition.HasValue)
+        {
+          PositionAndOrientation.Position = Grid.GridIntegerToWorld(LocalPosition.Value);
+        }
+
         bot = BotFactory.SpawnBotFromAPI(PositionAndOrientation, SpawnData, Grid, Owner);
 
         if (_restack)

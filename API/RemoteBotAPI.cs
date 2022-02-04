@@ -299,6 +299,15 @@ namespace AiEnabled.API
     public bool SetBotTarget(long botEntityId, object target) => _setBotTarget?.Invoke(botEntityId, target) ?? false;
 
     /// <summary>
+    /// Assigns a patrol route to the Bot. In patrol mode, the bot will attack any enemies that come near its route, but will not hunt outside of its current map.
+    /// You must call <see cref="ResetBotTargeting(long)"/> for it to resume normal functions
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="waypoints">A list of world coordinates for the bot to patrol</param>
+    /// <returns>true if the route is assigned successfully, otherwise false</returns>
+    public bool SetBotPatrol(long botEntityId, List<Vector3D> waypoints) => _setBotPatrol?.Invoke(botEntityId, waypoints) ?? false;
+
+    /// <summary>
     /// Clears the Bot's current target and re-enables autonomous targeting
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
@@ -425,6 +434,7 @@ namespace AiEnabled.API
     private Action<long, string> _perform;
     private Action<long, string> _speak;
     private Func<long, bool> _isBot;
+    private Func<long, List<Vector3D>, bool> _setBotPatrol;
     private Func<long, long, MyRelationsBetweenPlayerAndBlock> _getRelationshipBetween;
     private Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>> _spawnBotQueued;
     private Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>> _spawnBotCustomQueued;
@@ -472,6 +482,7 @@ namespace AiEnabled.API
         _getBotAndRelationTo = dict["GetBotAndRelationTo"] as GetBotAndRelationTo;
         _spawnBotQueued = dict["SpawnBotQueued"] as Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>;
         _spawnBotCustomQueued = dict["SpawnBotCustomQueued"] as Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>;
+        _setBotPatrol = dict["SetBotPatrol"] as Func<long, List<Vector3D>, bool>;
 
       }
       catch

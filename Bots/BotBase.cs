@@ -48,7 +48,7 @@ namespace AiEnabled.Bots
   public abstract partial class BotBase
   {
     [Flags]
-    enum BotInfo : uint
+    enum BotInfo : ulong
     {
       None = 0x0,
       HasTool = 0x1,
@@ -83,6 +83,9 @@ namespace AiEnabled.Bots
       CallBack = 0x20000000,
       LastIsAirNode = 0x40000000,
       LeadTargets = 0x80000000,
+      BuggZapped = 0x100000000,
+      FollowMode = 0x200000000,
+      PatrolMode = 0x400000000,
     }
 
     public IMyPlayer Owner;
@@ -605,6 +608,55 @@ namespace AiEnabled.Bots
       }
     }
 
+
+    internal bool BugZapped
+    {
+      get { return (_botInfo & BotInfo.BuggZapped) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.BuggZapped;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.BuggZapped;
+        }
+      }
+    }
+
+    internal bool PatrolMode
+    {
+      get { return (_botInfo & BotInfo.PatrolMode) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.PatrolMode;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.PatrolMode;
+        }
+      }
+    }
+
+    internal bool FollowMode
+    {
+      get { return (_botInfo & BotInfo.FollowMode) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.FollowMode;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.FollowMode;
+        }
+      }
+    }
+
     internal float _minDamage, _maxDamage, _followDistanceSqd = 10;
     internal float _blockDamagePerAttack, _blockDamagePerSecond = 100;
     internal float _shotAngleDeviationTan = 0;
@@ -617,6 +669,7 @@ namespace AiEnabled.Bots
     internal Task _task;
     internal Vector3D _lastEnd;
     internal Vector3I _lastCurrent, _lastPrevious, _lastEndLocal;
+    internal short _patrolIndex = -1;
     internal int _stuckCounter, _stuckTimer, _stuckTimerReset;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter;
     internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
@@ -625,13 +678,13 @@ namespace AiEnabled.Bots
     internal uint _ticksBetweenAttacks = 300;
     internal uint _ticksSinceLastAttack = 1000;
     internal uint _ticksSinceLastDismount = 1000;
+    internal List<Vector3D> _patrolList;
     internal List<MySoundPair> _attackSounds;
     internal List<string> _attackSoundStrings;
     internal MySoundPair _deathSound;
     internal string _deathSoundString;
     internal MyObjectBuilder_ConsumableItem _energyOB;
     internal BotBehavior Behavior;
-    internal bool BugZapped;
 
     List<IHitInfo> _hitList;
     Task _graphTask;
@@ -639,8 +692,8 @@ namespace AiEnabled.Bots
 
     Action<WorkData> _graphWorkAction, _graphWorkCallBack;
     Action<WorkData> _pathWorkAction, _pathWorkCallBack;
-    GraphWorkData _graphWorkData = new GraphWorkData();
-    PathWorkData _pathWorkData = new PathWorkData();
+    readonly GraphWorkData _graphWorkData;
+    readonly PathWorkData _pathWorkData;
 
     public void SetShootInterval()
     {
@@ -678,7 +731,7 @@ namespace AiEnabled.Bots
       _maxDamage = maxDamage + 1;
       _energyOB = MyObjectBuilderSerializer.CreateNewObject<MyObjectBuilder_ConsumableItem>("Powerkit");
 
-      if (!AiSession.Instance.HitListStack.TryPop(out _hitList))
+      if (!AiSession.Instance.HitListStack.TryPop(out _hitList) || _hitList == null)
         _hitList = new List<IHitInfo>();
       else
         _hitList.Clear();
@@ -691,6 +744,17 @@ namespace AiEnabled.Bots
       _graphWorkCallBack = new Action<WorkData>(CheckGraphComplete);
       _pathWorkAction = new Action<WorkData>(FindPath);
       _pathWorkCallBack = new Action<WorkData>(FindPathCallBack);
+
+      if (!AiSession.Instance.GraphWorkStack.TryPop(out _graphWorkData) || _graphWorkData == null)
+        _graphWorkData = new GraphWorkData();
+
+      if (!AiSession.Instance.PathWorkStack.TryPop(out _pathWorkData) || _pathWorkData == null)
+        _pathWorkData = new PathWorkData();
+
+      if (!AiSession.Instance.PatrolListStack.TryPop(out _patrolList) || _patrolList == null)
+        _patrolList = new List<Vector3D>();
+      else
+        _patrolList.Clear();
     }
 
     private void Character_CharacterDied(IMyCharacter bot)
@@ -742,7 +806,7 @@ namespace AiEnabled.Bots
           {
             AiSession.Instance.CommandMenu.CloseMenu();
             AiSession.Instance.CommandMenu.CloseInteractMessage();
-            AiSession.Instance.CommandMenu.UpdateBlacklist(true);
+            AiSession.Instance.CommandMenu.ResetCommands();
           }
 
           var packet = new SpawnPacketClient(Character.EntityId, remove: true);
@@ -780,6 +844,12 @@ namespace AiEnabled.Bots
         AiSession.Instance.RemoveBot(Character.EntityId, Owner?.IdentityId ?? 0L, cleanConfig);
       }
 
+      if (_pathWorkData != null)
+        AiSession.Instance.PathWorkStack.Push(_pathWorkData);
+
+      if (_graphWorkData != null)
+        AiSession.Instance.GraphWorkStack.Push(_graphWorkData);
+
       if (_pathCollection != null)
         AiSession.Instance.ReturnCollection(_pathCollection);
 
@@ -787,6 +857,11 @@ namespace AiEnabled.Bots
       {
         _hitList.Clear();
         AiSession.Instance.HitListStack.Push(_hitList);
+      }
+
+      if (_patrolList != null)
+      {
+        AiSession.Instance.PatrolListStack.Push(_patrolList);
       }
 
       if (_attackSounds != null)
@@ -807,18 +882,17 @@ namespace AiEnabled.Bots
       Target = null;
       Behavior = null;
       _hitList = null;
+      _patrolList = null;
       _attackSounds = null;
       _attackSoundStrings = null;
       _currentGraph = null;
       _nextGraph = null;
       _previousGraph = null;
       _pathCollection = null;
-      _pathWorkData = null;
       _pathWorkAction = null;
       _pathWorkCallBack = null;
       _graphWorkAction = null;
       _graphWorkCallBack = null;
-      _graphWorkData = null;
     }
 
     internal virtual void PlayDeathSound()
@@ -924,6 +998,42 @@ namespace AiEnabled.Bots
     public Vector3D Position => Character != null ? Character.WorldAABB.Center : Vector3D.Zero;
     public MatrixD WorldMatrix => Character?.WorldMatrix ?? MatrixD.Identity;
     internal void GiveControl(IMyEntityController controller) => controller.TakeControl(Character);
+
+    internal void UpdatePatrolPoints(List<Vector3D> waypoints)
+    {
+      _patrolList.Clear();
+      _patrolIndex = -1;
+
+      if (waypoints != null)
+      {
+        _patrolList.AddRange(waypoints);
+      }
+    }
+
+    internal void UpdatePatrolPoints(List<SerializableVector3D> waypoints)
+    {
+      _patrolList.Clear();
+      _patrolIndex = -1;
+
+      if (waypoints?.Count > 0)
+      {
+        for (int i = 0; i < waypoints.Count; i++)
+          _patrolList.Add(waypoints[i]);
+
+        PatrolMode = true;
+      }
+    }
+
+    internal Vector3D? GetNextPatrolPoint()
+    {
+      if (_patrolList == null || _patrolList.Count == 0)
+      {
+        return null;
+      }
+
+      var num = ++_patrolIndex % _patrolList.Count;
+      return _patrolList[num];
+    }
 
     internal virtual void Reset()
     {
@@ -1033,7 +1143,7 @@ namespace AiEnabled.Bots
       if (AiSession.Instance.ShieldAPILoaded && _tickCount % 2 == 0)
       {
         List<MyEntity> entList;
-        if (!AiSession.Instance.EntListStack.TryPop(out entList))
+        if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
           entList = new List<MyEntity>();
         else
           entList.Clear();
@@ -1437,32 +1547,32 @@ namespace AiEnabled.Bots
       }
 
       List<MyEntity> gridTurrets;
-      if (!AiSession.Instance.EntListStack.TryPop(out gridTurrets))
+      if (!AiSession.Instance.EntListStack.TryPop(out gridTurrets) || gridTurrets == null)
         gridTurrets = new List<MyEntity>();
 
       List<IMyCubeGrid> gridGroups;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups))
+      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups) || gridGroups == null)
         gridGroups = new List<IMyCubeGrid>();
 
       List<MyEntity> entList;
-      if (!AiSession.Instance.EntListStack.TryPop(out entList))
+      if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
         entList = new List<MyEntity>();
       else
         entList.Clear();
 
       HashSet<long> checkedGridIDs;
-      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs))
+      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs) || checkedGridIDs == null)
         checkedGridIDs = new HashSet<long>();
       else
         checkedGridIDs.Clear();
 
-      var sphere = new BoundingSphereD(Position, AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy);
+      var botPosition = Position;
+      var sphere = new BoundingSphereD(botPosition, AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy);
       var blockDestroEnabled = MyAPIGateway.Session.SessionSettings.DestructibleBlocks;
       var queryType = blockDestroEnabled ? MyEntityQueryType.Both : MyEntityQueryType.Dynamic;
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, queryType);
 
       IMyEntity tgt = null;
-      var botPosition = Position;
       var distance = double.MaxValue;
       entList.ShellSort(botPosition);
 
@@ -1608,16 +1718,44 @@ namespace AiEnabled.Bots
       AiSession.Instance.EntListStack.Push(entList);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
 
+      var onPatrol = PatrolMode && _patrolList?.Count > 0;
+
       if (tgt == null)
       {
-        Target.RemoveTarget();
+        if (onPatrol)
+        {
+          if (Target.Entity != null)
+            Target.RemoveTarget();
+
+          if (Target.Override.HasValue)
+            return;
+
+          var patrolPoint = GetNextPatrolPoint();
+
+          if (patrolPoint.HasValue)
+          {
+            Target.SetOverride(patrolPoint.Value);
+          }
+        }
+        else
+        {
+          Target.RemoveTarget();
+        }
+
         return;
       }
-      else if (tgt is IMyCharacter)
+
+      if (onPatrol && Target.Override.HasValue)
       {
-        var ch = tgt as IMyCharacter;
+        _patrolIndex = Math.Max((short)-1, (short)(_patrolIndex - 1));
+        Target.RemoveOverride(false);
+      }
+
+      var tgtChar = tgt as IMyCharacter;
+      if (tgtChar != null)
+      {
         List<BotBase> helpers;
-        if (!(ch.Parent is IMyCockpit) && AiSession.Instance.PlayerToHelperDict.TryGetValue(ch.ControllerInfo.ControllingIdentityId, out helpers))
+        if (!(tgtChar.Parent is IMyCockpit) && AiSession.Instance.PlayerToHelperDict.TryGetValue(tgtChar.ControllerInfo.ControllingIdentityId, out helpers))
         {
           foreach (var bot in helpers)
           {
@@ -1634,7 +1772,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      var parent = (tgt is IMyCharacter && tgt.Parent != null) ? tgt.Parent : tgt;
+      var parent = (tgtChar != null && tgt.Parent != null) ? tgt.Parent : tgt;
       if (ReferenceEquals(Target.Entity, parent))
         return;
 
@@ -1771,17 +1909,17 @@ namespace AiEnabled.Bots
       }
 
       List<IMyCubeGrid> gridGroups;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups))
+      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups) || gridGroups == null)
         gridGroups = new List<IMyCubeGrid>();
 
       List<MyLineSegmentOverlapResult<MyEntity>> rayEntities;
-      if (!AiSession.Instance.OverlapResultListStack.TryPop(out rayEntities))
+      if (!AiSession.Instance.OverlapResultListStack.TryPop(out rayEntities) || rayEntities == null)
         rayEntities = new List<MyLineSegmentOverlapResult<MyEntity>>();
       else
         rayEntities.Clear();
 
       HashSet<long> checkedGridIDs;
-      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs))
+      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs) || checkedGridIDs == null)
         checkedGridIDs = new HashSet<long>();
       else
         checkedGridIDs.Clear();
@@ -1911,14 +2049,38 @@ namespace AiEnabled.Bots
           var seat = cube?.FatBlock as IMyCockpit;
           if (seat != null)
           {
-            if (CanUseSeats && seat.Pilot == null && manhattanDist < 2)
+            if (CanUseSeats && seat.Pilot == null && (localTgt - localBot).AbsMax() < 2 && manhattanDist <= 2)
             {
-              var useObj = _pathCollection.GetBlockUseObject(seat as MyCubeBlock);
+              var seatCube = seat as MyCubeBlock;
+              var useObj = _pathCollection.GetBlockUseObject(seatCube);
               if (useObj != null)
               {
-                var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
-                AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
-                useObj.Use(UseActionEnum.Manipulate, Character);
+                var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+                bool changeBack = false;
+
+                if (shareMode != MyOwnershipShareModeEnum.All)
+                {
+                  var owner = Owner?.IdentityId ?? Character.ControllerInfo.ControllingIdentityId;
+                  var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+                  var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+                  if (relation != MyRelationsBetweenPlayers.Enemies)
+                  {
+                    changeBack = true;
+                    seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+                  }
+                }
+
+                if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+                {
+                  var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+                  AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
+                  useObj.Use(UseActionEnum.Manipulate, Character);
+                }
+
+                if (changeBack)
+                  seatCube.IDModule.ShareMode = shareMode;
+
                 shouldReturn = true;
                 return true;
               }
@@ -1959,7 +2121,7 @@ namespace AiEnabled.Bots
       if (Target.Entity != null)
       {
         List<IHitInfo> hitlist;
-        if (!AiSession.Instance.HitListStack.TryPop(out hitlist))
+        if (!AiSession.Instance.HitListStack.TryPop(out hitlist) || hitlist == null)
           hitlist = new List<IHitInfo>();
         else
           hitlist.Clear();
@@ -2084,7 +2246,7 @@ namespace AiEnabled.Bots
         return;
 
       List<Vector3I> tempNodes;
-      if (!AiSession.Instance.LineListStack.TryPop(out tempNodes))
+      if (!AiSession.Instance.LineListStack.TryPop(out tempNodes) || tempNodes == null)
         tempNodes = new List<Vector3I>();
       else
         tempNodes.Clear();
@@ -2241,7 +2403,7 @@ namespace AiEnabled.Bots
       HasLineOfSight = true;
 
       List<IMyCubeGrid> gridGroups;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups))
+      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups) || gridGroups == null)
         gridGroups = new List<IMyCubeGrid>();
 
       foreach (var hitInfo in hitList)
@@ -2321,16 +2483,10 @@ namespace AiEnabled.Bots
     bool tempTaskInProcess;
     public void StartCheckGraph(ref Vector3D tgtPosition, bool force = false)
     {
-      if (!_graphTask.IsComplete)
-        return;
-
-      if (tempTaskInProcess)
+      if (!_graphTask.IsComplete || tempTaskInProcess)
         return;
 
       tempTaskInProcess = true;
-
-      if (_graphWorkData == null)
-        _graphWorkData = new GraphWorkData();
 
       CheckGraphNeeded = true;
       _graphWorkData.Force = force;
@@ -3215,7 +3371,7 @@ namespace AiEnabled.Bots
         var botMatrix = WorldMatrix;
 
         List<IHitInfo> hitlist;
-        if (!AiSession.Instance.HitListStack.TryPop(out hitlist))
+        if (!AiSession.Instance.HitListStack.TryPop(out hitlist) || hitlist == null)
           hitlist = new List<IHitInfo>();
         else
           hitlist.Clear();
@@ -3545,6 +3701,9 @@ namespace AiEnabled.Bots
 
     internal void SimulateIdleMovement(bool getMoving, bool towardOwner = false)
     {
+      if (PatrolMode || FollowMode)
+        return;
+
       var botPosition = Position;
       var botMatrix = WorldMatrix;
 

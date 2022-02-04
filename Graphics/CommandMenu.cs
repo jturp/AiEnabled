@@ -36,35 +36,49 @@ using VRage.Input;
 using VRage;
 using AiEnabled.Bots;
 using VRage.Voxels;
+using AiEnabled.API;
+using AiEnabled.ConfigData;
 
 namespace AiEnabled.Graphics
 {
   public class CommandMenu
   {
-    public enum Quadrant { None, Top, Right, Left, Bottom }
+    public enum Quadrant { None, Top, TopLeft, TopRight, Bottom, BottomLeft, BottomRight }
 
+    public bool ShowInventory { get; private set; }
+    public bool ShowPatrol { get; private set; }
+    public bool SendTo { get; private set; }
+    public bool PatrolTo { get; private set; }
     public bool Registered { get; private set; }
     public bool RadialVisible { get; private set; }
     public bool InteractVisible { get; private set; }
+    public bool PatrolVisible { get; private set; }
     public double AspectRatio { get; private set; }
     public IMyControl UseControl { get; private set; }
     public Quadrant SelectedQuadrant { get; private set; } = Quadrant.None;
 
-    public MatrixD CameraViewMatrix;
-
-    Vector2D _screenPX;
+    //Vector2D _screenPX;
     Vector2 _cursorPosition = new Vector2(0, 50);
-    HudAPIv2.BillBoardHUDMessage _interactBB, _radialBBLeft, _radialBBRight, _radialBBTop, _radialBBBottom, _radialArrow, _invBackground, _invBgBorder, _cursor;
+
+    HudAPIv2.MenuTextInput _nameInput, _renameInput;
+    HudAPIv2.BillBoardHUDMessage _interactBB, _radialArrow, _invBackground, _invBgBorder, _cursor;
     HudAPIv2.BillBoardHUDMessage _radialBracket1, _radialBracket2;
-    HudAPIv2.HUDMessage _interactMsg, _radialMsgLeft, _radialMsgRight, _radialMsgTop, _radialMsgBottom;
-    Button _invAddToBot, _invAddToPlayer, _invClose;
+    HudAPIv2.BillBoardHUDMessage _radialBBTop, _radialBBBottom, _radialBBTopLeft, _radialBBTopRight, _radialBBBottomLeft, _radialBBBottomRight;
+    HudAPIv2.HUDMessage _interactMsg;
+    HudAPIv2.HUDMessage _radialMsgTop, _radialMsgTopLeft, _radialMsgTopRight, _radialMsgBottom, _radialMsgBottomLeft, _radialMsgBottomRight;
+    Button _invAddToBot, _invAddToPlayer, _invClose, _moveButton, _equipWeaponBtn;
+    TextBox _logoBox;
+    PatrolMenu _patrolMenu;
     MyEntity3DSoundEmitter _emitter;
     MySoundPair _mouseOverSoundPair, _hudClickSoundPair, _errorSoundPair, _moveItemSoundPair;
     List<MyMouseButtonsEnum> _mouseButtonList;
-    TextBox _logoBox;
     string _lastControlString;
+    MyStringId _material_square = MyStringId.GetOrCompute("Square");
+    MyStringId _material_cursor = MyStringId.GetOrCompute("AiEnabled_Cursor");
 
     Vector4 _billboardColor, _highlightColor, _radialColor;
+    Vector2D _minCursorPosition, _maxCursorPosition;
+    List<Vector3D> _patrolList = new List<Vector3D>(10);
 
     public CommandMenu()
     {
@@ -80,6 +94,39 @@ namespace AiEnabled.Graphics
         MyMouseButtonsEnum.Middle,
         MyMouseButtonsEnum.Right,
       };
+    }
+
+    void OnRouteName_Submitted(string name)
+    {
+      if (!Registered)
+        return;
+
+      var pkt = new CommandPacket(ActiveBot.EntityId, patrol: true, patrolList: _patrolList);
+      AiSession.Instance.Network.SendToServer(pkt);
+      AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
+
+      _patrolMenu.RouteBox.AddRoute(_patrolList, name);
+      AiSession.Instance.UpdateConfig(true);
+    }
+
+    void OnRouteRename_Submitted(string name)
+    {
+      if (!Registered)
+        return;
+
+      var ratio = AspectRatio;
+      _patrolMenu.RenameRoute(name, ref ratio);
+      AiSession.Instance.UpdateConfig(true);
+    }
+
+    public void AddPatrolRoutes(List<SerializableRoute> routeList)
+    {
+      _patrolMenu.RouteBox.SetStoredRoutes(routeList);
+    }
+
+    public void GetPatrolRoutes(List<SerializableRoute> routeList)
+    {
+      _patrolMenu.RouteBox.GetStoredRoutes(routeList);
     }
 
     public void DrawRadialMenu()
@@ -119,6 +166,9 @@ namespace AiEnabled.Graphics
     {
       try
       {
+        if (AiSession.Instance?.Registered != true || !AiSession.Instance.HudAPI.Heartbeat)
+          return;
+
         if (!Registered)
         {
           if (!Init())
@@ -207,6 +257,8 @@ namespace AiEnabled.Graphics
       }
     }
 
+    public void PlayHudClick() => PlaySound(_hudClickSoundPair);
+
     void PlaySound(MySoundPair sp)
     {
       var obj = MyAPIGateway.Session?.ControlledObject?.Entity as MyEntity;
@@ -214,14 +266,15 @@ namespace AiEnabled.Graphics
         return;
 
       _emitter.Entity = obj;
-      _emitter.PlaySound(sp, true);
+      _emitter.PlaySound(sp);
     }
 
+    bool _allKeysAllows = true;
     public bool UpdateBlacklist(bool enable)
     {
       try
       {
-        if (MyAPIGateway.Session?.Player == null)
+        if (!Registered || MyAPIGateway.Session?.Player == null || _allKeysAllows == enable)
           return false;
 
         var identityId = MyAPIGateway.Session.Player.IdentityId;
@@ -262,6 +315,7 @@ namespace AiEnabled.Graphics
         if (controlString != null)
           MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
 
+        _allKeysAllows = enable;
         return true;
       }
       catch (Exception e)
@@ -275,19 +329,13 @@ namespace AiEnabled.Graphics
     {
       try
       {
-        _emitter?.Cleanup();
-        _mouseButtonList?.Clear();
-
-        _hudClickSoundPair = null;
-        _mouseOverSoundPair = null;
-        _errorSoundPair = null;
-        _moveItemSoundPair = null;
-
         if (!Registered)
           return;
 
         SetRadialVisibility(false);
         SetInventoryScreenVisibility(false);
+
+        Registered = false;
 
         if (_interactBB != null)
           _interactBB.Visible = false;
@@ -295,19 +343,43 @@ namespace AiEnabled.Graphics
         if (_interactMsg != null)
           _interactMsg.Visible = false;
 
-        Registered = false;
+        if (_nameInput != null)
+        {
+          _nameInput.Text = null;
+          _nameInput.OnSubmitAction = null;
+          _nameInput.BackingObject = null;
+          _nameInput = null;
+        }
+
+        if (_renameInput != null)
+        {
+          _renameInput.Text = null;
+          _renameInput.OnSubmitAction = null;
+          _renameInput.BackingObject = null;
+          _renameInput = null;
+        }
+
+        _patrolList?.Clear();
+        _emitter?.Cleanup();
+        _mouseButtonList?.Clear();
+        _invItems?.Clear();
         _radialArrow?.DeleteMessage();
         _interactBB?.DeleteMessage();
-        _radialBBLeft?.DeleteMessage();
-        _radialBBRight?.DeleteMessage();
-        _radialBBTop?.DeleteMessage();
-        _radialBBBottom?.DeleteMessage();
-        _radialMsgLeft?.DeleteMessage();
-        _radialMsgRight?.DeleteMessage();
-        _radialMsgTop?.DeleteMessage();
-        _radialMsgBottom?.DeleteMessage();
         _radialBracket1?.DeleteMessage();
         _radialBracket2?.DeleteMessage();
+        _radialBBBottom?.DeleteMessage();
+        _radialBBBottomLeft?.DeleteMessage();
+        _radialBBBottomRight?.DeleteMessage();
+        _radialBBTop?.DeleteMessage();
+        _radialBBTopLeft?.DeleteMessage();
+        _radialBBTopRight?.DeleteMessage();
+        _radialMsgBottom?.DeleteMessage();
+        _radialMsgBottomLeft?.DeleteMessage();
+        _radialMsgBottomRight?.DeleteMessage();
+        _radialMsgTop?.DeleteMessage();
+        _radialMsgTopLeft?.DeleteMessage();
+        _radialMsgTopRight?.DeleteMessage();
+        
         _logoBox?.Close();
         _invAddToBot?.Close();
         _invAddToPlayer?.Close();
@@ -315,6 +387,15 @@ namespace AiEnabled.Graphics
         _playerInvBox?.Close();
         _botInvBox?.Close();
         _equipWeaponBtn?.Close();
+
+        _patrolList = null;
+        _hudClickSoundPair = null;
+        _mouseOverSoundPair = null;
+        _errorSoundPair = null;
+        _moveItemSoundPair = null;
+        _invItems = null;
+        _emitter = null;
+        _mouseButtonList = null;
 
         AiSession.Instance.HudAPI.OnScreenDimensionsChanged = null;
         MyAPIGateway.Gui.GuiControlRemoved -= GuiControlRemoved;
@@ -333,20 +414,26 @@ namespace AiEnabled.Graphics
           return;
 
         SelectedQuadrant = Quadrant.None;
-        _radialBBRight.BillBoardColor = _radialColor;
-        _radialBBLeft.BillBoardColor = _radialColor;
         _radialBBTop.BillBoardColor = _radialColor;
+        _radialBBTopLeft.BillBoardColor = _radialColor;
+        _radialBBTopRight.BillBoardColor = _radialColor;
         _radialBBBottom.BillBoardColor = _radialColor;
-        _radialMsgRight.InitialColor = Color.White;
-        _radialMsgLeft.InitialColor = Color.White;
+        _radialBBBottomLeft.BillBoardColor = _radialColor;
+        _radialBBBottomRight.BillBoardColor = _radialColor;
         _radialMsgTop.InitialColor = Color.White;
+        _radialMsgTopLeft.InitialColor = Color.White;
+        _radialMsgTopRight.InitialColor = Color.White;
         _radialMsgBottom.InitialColor = Color.White;
+        _radialMsgBottomLeft.InitialColor = Color.White;
+        _radialMsgBottomRight.InitialColor = Color.White;
 
         SetRadialVisibility(false);
 
-        if (!ShowInventory && !SendTo)
+        if (!ShowInventory && !ShowPatrol && !SendTo && !PatrolTo)
+        {
           UpdateBlacklist(true);
-  
+        }
+
         RadialVisible = false;
       }
       catch (Exception ex)
@@ -372,19 +459,113 @@ namespace AiEnabled.Graphics
       }
     }
 
+    public void ActivatePatrol()
+    {
+      if (ActiveBot?.MarkedForClose != false || ActiveBot.IsDead)
+      {
+        SetPatrolMenuVisibility(false);
+        return;
+      }
+
+      _patrolList.Clear();
+      var ratio = AspectRatio;
+      bool newPatrol, closeMenu, renamePatrol;
+      _patrolMenu.TryActivate(ref ratio, _patrolList, out newPatrol, out closeMenu, out renamePatrol);
+
+      if (closeMenu || newPatrol)
+      {
+        ShowPatrol = false;
+        PatrolTo = newPatrol;
+        SetPatrolMenuVisibility(false);
+      }
+      else if (renamePatrol)
+      {
+        // TODO: Uncomment when Text Hud API is updated
+        //_renameInput?.OpenDialog();
+      }
+      else if (_patrolList.Count > 0)
+      {
+        var pkt = new CommandPacket(ActiveBot.EntityId, patrol: true, patrolList: _patrolList);
+        AiSession.Instance.Network.SendToServer(pkt);
+
+        PatrolTo = false;
+        SetPatrolMenuVisibility(false);
+        AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
+      }
+    }
+
+    public void DrawPatrolMenu()
+    {
+      if (ActiveBot?.MarkedForClose != false || ActiveBot.IsDead)
+      {
+        SetPatrolMenuVisibility(false);
+        return;
+      }
+
+      if (!PatrolVisible)
+      {
+        SetPatrolMenuVisibility(true);
+        PatrolVisible = true;
+      }
+    }
+
+    public void SetPatrolMenuVisibility(bool show)
+    {
+      ShowPatrol = show;
+
+      if (_cursor != null)
+        _cursor.Visible = show;
+
+      _patrolMenu?.SetVisibility(show);
+
+      if (!show)
+      {
+        UpdateBlacklist(true);
+      }
+      else
+      {
+        var ratio = AspectRatio;
+        bool newCursorNeeded;
+        _patrolMenu.RouteBox.Update(ratio, out newCursorNeeded);
+
+        if (newCursorNeeded)
+        {
+          var position = _cursor.Origin;
+          var offset = _cursor.Offset;
+          _cursor?.DeleteMessage();
+
+          _cursor = new HudAPIv2.BillBoardHUDMessage(
+            Material: _material_cursor,
+            Origin: position,
+            Offset: offset,
+            BillBoardColor: Color.White,
+            Width: 0.09f,
+            Height: 0.09f,
+            Blend: BlendTypeEnum.PostPP);
+
+          _cursor.Options |= HudAPIv2.Options.Fixed | HudAPIv2.Options.FOVScale;
+          _cursor.Visible = true;
+        }
+      }
+    }
+
     void SetRadialVisibility(bool show)
     {
       _radialBracket1.Visible = show;
       _radialBracket2.Visible = show;
-      _radialBBLeft.Visible = show;
-      _radialBBRight.Visible = show;
-      _radialBBTop.Visible = show;
-      _radialBBBottom.Visible = show;
-      _radialMsgLeft.Visible = show;
-      _radialMsgRight.Visible = show;
-      _radialMsgTop.Visible = show;
-      _radialMsgBottom.Visible = show;
       _radialArrow.Visible = show;
+      _radialBBBottom.Visible = show;
+      _radialBBBottomLeft.Visible = show;
+      _radialBBBottomRight.Visible = show;
+      _radialBBTop.Visible = show;
+      _radialBBTopLeft.Visible = show;
+      _radialBBTopRight.Visible = show;
+      _radialMsgBottom.Visible = show;
+      _radialMsgBottomLeft.Visible = show;
+      _radialMsgBottomRight.Visible = show;
+      _radialMsgTop.Visible = show;
+      _radialMsgTopLeft.Visible = show;
+      _radialMsgTopRight.Visible = show;
 
       if (show)
       {
@@ -404,82 +585,164 @@ namespace AiEnabled.Graphics
 
       var angleDegrees = MathHelper.ToDegrees(angle);
 
-      if (angleDegrees >= 45 && angleDegrees < 135)
+      if (angleDegrees >= -30 && angleDegrees < 30)
       {
-        if (SelectedQuadrant != Quadrant.Right)
+        if (SelectedQuadrant != Quadrant.Top)
         {
-          SelectedQuadrant = Quadrant.Right;
+          SelectedQuadrant = Quadrant.Top;
           PlaySound(_mouseOverSoundPair);
 
-          _radialBBRight.BillBoardColor = _highlightColor;
-          _radialMsgRight.InitialColor = Color.Black;
+          // set colors
+          _radialBBTop.BillBoardColor = _highlightColor;
+          _radialMsgTop.InitialColor = Color.Black;
 
-          _radialBBLeft.BillBoardColor = _radialColor;
-          _radialMsgLeft.InitialColor = Color.White;
+          _radialBBTopLeft.BillBoardColor = _radialColor;
+          _radialMsgTopLeft.InitialColor = Color.White;
 
-          _radialBBTop.BillBoardColor = _radialColor;
-          _radialMsgTop.InitialColor = Color.White;
+          _radialBBTopRight.BillBoardColor = _radialColor;
+          _radialMsgTopRight.InitialColor = Color.White;
 
           _radialBBBottom.BillBoardColor = _radialColor;
           _radialMsgBottom.InitialColor = Color.White;
+
+          _radialBBBottomLeft.BillBoardColor = _radialColor;
+          _radialMsgBottomLeft.InitialColor = Color.White;
+
+          _radialBBBottomRight.BillBoardColor = _radialColor;
+          _radialMsgBottomRight.InitialColor = Color.White;
         }
       }
-      else if (angleDegrees >= 135 || angleDegrees < -135)
+      else if (angleDegrees >= 30 && angleDegrees < 90)
+      {
+        if (SelectedQuadrant != Quadrant.TopRight)
+        {
+          SelectedQuadrant = Quadrant.TopRight;
+          PlaySound(_mouseOverSoundPair);
+
+          // set colors
+          _radialBBTop.BillBoardColor = _radialColor;
+          _radialMsgTop.InitialColor = Color.White;
+
+          _radialBBTopLeft.BillBoardColor = _radialColor;
+          _radialMsgTopLeft.InitialColor = Color.White;
+
+          _radialBBTopRight.BillBoardColor = _highlightColor;
+          _radialMsgTopRight.InitialColor = Color.Black;
+
+          _radialBBBottom.BillBoardColor = _radialColor;
+          _radialMsgBottom.InitialColor = Color.White;
+
+          _radialBBBottomLeft.BillBoardColor = _radialColor;
+          _radialMsgBottomLeft.InitialColor = Color.White;
+
+          _radialBBBottomRight.BillBoardColor = _radialColor;
+          _radialMsgBottomRight.InitialColor = Color.White;
+        }
+      }
+      else if (angleDegrees >= 90 && angleDegrees < 150)
+      {
+        if (SelectedQuadrant != Quadrant.BottomRight)
+        {
+          SelectedQuadrant = Quadrant.BottomRight;
+          PlaySound(_mouseOverSoundPair);
+
+          // set colors
+          _radialBBTop.BillBoardColor = _radialColor;
+          _radialMsgTop.InitialColor = Color.White;
+
+          _radialBBTopLeft.BillBoardColor = _radialColor;
+          _radialMsgTopLeft.InitialColor = Color.White;
+
+          _radialBBTopRight.BillBoardColor = _radialColor;
+          _radialMsgTopRight.InitialColor = Color.White;
+
+          _radialBBBottom.BillBoardColor = _radialColor;
+          _radialMsgBottom.InitialColor = Color.White;
+
+          _radialBBBottomLeft.BillBoardColor = _radialColor;
+          _radialMsgBottomLeft.InitialColor = Color.White;
+
+          _radialBBBottomRight.BillBoardColor = _highlightColor;
+          _radialMsgBottomRight.InitialColor = Color.Black;
+        }
+      }
+      else if (angleDegrees >= 150 || angleDegrees < -150)
       {
         if (SelectedQuadrant != Quadrant.Bottom)
         {
           SelectedQuadrant = Quadrant.Bottom;
           PlaySound(_mouseOverSoundPair);
 
-          _radialBBRight.BillBoardColor = _radialColor;
-          _radialMsgRight.InitialColor = Color.White;
-    
-          _radialBBLeft.BillBoardColor = _radialColor;
-          _radialMsgLeft.InitialColor = Color.White;
-
+          // set colors
           _radialBBTop.BillBoardColor = _radialColor;
           _radialMsgTop.InitialColor = Color.White;
+
+          _radialBBTopLeft.BillBoardColor = _radialColor;
+          _radialMsgTopLeft.InitialColor = Color.White;
+
+          _radialBBTopRight.BillBoardColor = _radialColor;
+          _radialMsgTopRight.InitialColor = Color.White;
 
           _radialBBBottom.BillBoardColor = _highlightColor;
           _radialMsgBottom.InitialColor = Color.Black;
+
+          _radialBBBottomLeft.BillBoardColor = _radialColor;
+          _radialMsgBottomLeft.InitialColor = Color.White;
+
+          _radialBBBottomRight.BillBoardColor = _radialColor;
+          _radialMsgBottomRight.InitialColor = Color.White;
         }
       }
-      else if (angleDegrees >= -135 && angleDegrees < -45)
+      else if (angleDegrees >= -150 && angleDegrees < -90)
       {
-        if (SelectedQuadrant != Quadrant.Left)
+        if (SelectedQuadrant != Quadrant.BottomLeft)
         {
-          SelectedQuadrant = Quadrant.Left;
+          SelectedQuadrant = Quadrant.BottomLeft;
           PlaySound(_mouseOverSoundPair);
 
-          _radialBBRight.BillBoardColor = _radialColor;
-          _radialMsgRight.InitialColor = Color.White;
-
-          _radialBBLeft.BillBoardColor = _highlightColor;
-          _radialMsgLeft.InitialColor = Color.Black;
-
+          // set colors
           _radialBBTop.BillBoardColor = _radialColor;
           _radialMsgTop.InitialColor = Color.White;
 
+          _radialBBTopLeft.BillBoardColor = _radialColor;
+          _radialMsgTopLeft.InitialColor = Color.White;
+
+          _radialBBTopRight.BillBoardColor = _radialColor;
+          _radialMsgTopRight.InitialColor = Color.White;
+
           _radialBBBottom.BillBoardColor = _radialColor;
           _radialMsgBottom.InitialColor = Color.White;
+
+          _radialBBBottomLeft.BillBoardColor = _highlightColor;
+          _radialMsgBottomLeft.InitialColor = Color.Black;
+
+          _radialBBBottomRight.BillBoardColor = _radialColor;
+          _radialMsgBottomRight.InitialColor = Color.White;
         }
       }
-      else if (SelectedQuadrant != Quadrant.Top)
+      else if (SelectedQuadrant != Quadrant.TopLeft) // if (angleDegrees >= -90 && angleDegrees < -30)
       {
-        SelectedQuadrant = Quadrant.Top;
+        SelectedQuadrant = Quadrant.TopLeft;
         PlaySound(_mouseOverSoundPair);
 
-        _radialBBRight.BillBoardColor = _radialColor;
-        _radialMsgRight.InitialColor = Color.White;
+        // set colors
+        _radialBBTop.BillBoardColor = _radialColor;
+        _radialMsgTop.InitialColor = Color.White;
 
-        _radialBBLeft.BillBoardColor = _radialColor;
-        _radialMsgLeft.InitialColor = Color.White;
+        _radialBBTopLeft.BillBoardColor = _highlightColor;
+        _radialMsgTopLeft.InitialColor = Color.Black;
 
-        _radialBBTop.BillBoardColor = _highlightColor;
-        _radialMsgTop.InitialColor = Color.Black;
+        _radialBBTopRight.BillBoardColor = _radialColor;
+        _radialMsgTopRight.InitialColor = Color.White;
 
         _radialBBBottom.BillBoardColor = _radialColor;
         _radialMsgBottom.InitialColor = Color.White;
+
+        _radialBBBottomLeft.BillBoardColor = _radialColor;
+        _radialMsgBottomLeft.InitialColor = Color.White;
+
+        _radialBBBottomRight.BillBoardColor = _radialColor;
+        _radialMsgBottomRight.InitialColor = Color.White;
       }
 
       var vec = new Vector2D(vector.X, vector.Y);
@@ -496,7 +759,13 @@ namespace AiEnabled.Graphics
         SetInventoryScreenVisibility(false);
       }
 
+      if (ShowPatrol)
+      {
+        SetPatrolMenuVisibility(false);
+      }
+
       SendTo = false;
+      PatrolTo = false;
       ActiveBot = null;
       SelectedQuadrant = Quadrant.None;
       _worldPosition = null;
@@ -505,10 +774,7 @@ namespace AiEnabled.Graphics
       UpdateBlacklist(true);
     }
 
-    public bool ShowInventory { get; private set; }
-    public bool SendTo { get; private set; }
-
-    public void Activate(IMyCharacter bot)
+    public void Activate(IMyCharacter bot, bool patrolFinished = false)
     {
       CommandPacket pkt;
 
@@ -529,15 +795,61 @@ namespace AiEnabled.Graphics
         SendTo = false;
         ActiveBot = null;
         _worldPosition = null;
+
         UpdateBlacklist(true);
+        return;
+      }
+      else if (PatrolTo)
+      {
+        MyAPIGateway.Utilities.ShowNotification($"Press [LMB] to add waypoints, [RMB] to finish route.", 16);
+
+        if (patrolFinished)
+        {
+          if (_patrolList.Count > 0 && ActiveBot != null)
+          {
+            PlaySound(_hudClickSoundPair);
+            var patrolName = $"Route for {ActiveBot.Name}";
+
+            pkt = new CommandPacket(ActiveBot.EntityId, patrol: true, patrolList: _patrolList);
+            AiSession.Instance.Network.SendToServer(pkt);
+            AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
+
+            _patrolMenu.RouteBox.AddRoute(_patrolList, patrolName);
+            AiSession.Instance.UpdateConfig(true);
+
+            // TODO: show Name Route pop -- waiting for Draygo to update API to allow this
+            // Remove packet and AddRoute call when done
+            //_nameInput.OpenDialog;
+          }
+          else
+          {
+            PlaySound(_errorSoundPair);
+          }
+
+          PatrolTo = false;
+          ActiveBot = null;
+          _patrolList.Clear();
+
+          UpdateBlacklist(true);
+        }
+        else if (_worldPosition.HasValue && ActiveBot != null)
+        {
+          _patrolList.Add(_worldPosition.Value);
+          PlaySound(_hudClickSoundPair);
+          AiSession.Instance.ShowMessage($"Waypoint {_patrolList.Count} added to patrol queue", MyFontEnum.Debug);
+        }
+        else
+        {
+          PlaySound(_errorSoundPair);
+          return;
+        }
+
         return;
       }
 
       if (bot?.MarkedForClose != false || bot.IsDead)
       {
         SelectedQuadrant = Quadrant.None;
-        SendTo = false;
-        ShowInventory = false;
       }
 
       switch (SelectedQuadrant)
@@ -545,28 +857,61 @@ namespace AiEnabled.Graphics
         case Quadrant.None:
           ActiveBot = null;
           ShowInventory = false;
+          ShowPatrol = false;
           SendTo = false;
+          PatrolTo = false;
           _worldPosition = null;
           return;
         case Quadrant.Top:
           SendTo = false;
+          PatrolTo = false;
           ShowInventory = true;
+          ShowPatrol = false;
           ActiveBot = bot;
           _invRetrieved = false;
           break;
-        case Quadrant.Left:
+        case Quadrant.TopRight:
+          ActiveBot = bot;
+          ShowInventory = false;
+          ShowPatrol = false;
+          PatrolTo = false;
+          SendTo = true;
+          break;
+        case Quadrant.BottomRight:
           ActiveBot = null;
+          ShowInventory = false;
+          ShowPatrol = false;
+          PatrolTo = false;
+          SendTo = false;
+          pkt = new CommandPacket(bot.EntityId, stay: true);
+          AiSession.Instance.Network.SendToServer(pkt);
+          break;
+        case Quadrant.BottomLeft:
+          ActiveBot = null;
+          ShowInventory = false;
+          ShowPatrol = false;
+          PatrolTo = false;
+          SendTo = false;
           pkt = new CommandPacket(bot.EntityId, follow: true);
           AiSession.Instance.Network.SendToServer(pkt);
           break;
-        case Quadrant.Right:
+        case Quadrant.TopLeft:
           ActiveBot = bot;
           ShowInventory = false;
-          SendTo = true;
+          ShowPatrol = true;
+          PatrolTo = false;
+          SendTo = false;
+          _invRetrieved = false;
+          PatrolVisible = false;
+          _patrolList.Clear();
           break;
         case Quadrant.Bottom:
           ActiveBot = null;
-          pkt = new CommandPacket(bot.EntityId, stay: true);
+          ShowInventory = false;
+          ShowPatrol = false;
+          PatrolTo = false;
+          SendTo = false;
+          pkt = new CommandPacket(bot.EntityId, resume: true);
           AiSession.Instance.Network.SendToServer(pkt);
           break;
         default:
@@ -575,9 +920,6 @@ namespace AiEnabled.Graphics
 
       PlaySound(_hudClickSoundPair);
     }
-
-    Button _moveButton;
-    Button _equipWeaponBtn;
 
     public void ActivateInventory(ref bool LMBPressed, ref bool RMBPressed, ref bool LMBReleased, ref bool RMBReleased, ref bool LMBDoubleClick)
     {
@@ -659,7 +1001,8 @@ namespace AiEnabled.Graphics
             }
           }
 
-          _equipWeaponBtn.SetVisibility(false);
+          var val = false;
+          _equipWeaponBtn.SetVisibility(ref val);
           _moveButton = null;
         }
 
@@ -717,8 +1060,10 @@ namespace AiEnabled.Graphics
                     var length = _equipWeaponBtn.Text.GetTextLength();
                     var topRt = _moveButton.Position + new Vector2D((_moveButton.Background.Width) * AspectRatio, _moveButton.Background.Height) * 0.5;
                     var pos = topRt + new Vector2D(0.005 * AspectRatio, length.Y * 1.25 * 0.5);
-                    _equipWeaponBtn.SetAbsolutePosition(pos, AspectRatio, false);
-                    _equipWeaponBtn.SetVisibility(true);
+                    var ratio = AspectRatio;
+                    var val = true;
+                    _equipWeaponBtn.SetAbsolutePosition(ref pos, ref ratio, false);
+                    _equipWeaponBtn.SetVisibility(ref val);
                   }
                   else if (content is MyObjectBuilder_ConsumableItem)
                   {
@@ -727,8 +1072,10 @@ namespace AiEnabled.Graphics
                     var length = _equipWeaponBtn.Text.GetTextLength();
                     var topRt = _moveButton.Position + new Vector2D((_moveButton.Background.Width) * AspectRatio, _moveButton.Background.Height) * 0.5;
                     var pos = topRt + new Vector2D(0.005 * AspectRatio, length.Y * 1.25 * 0.5);
-                    _equipWeaponBtn.SetAbsolutePosition(pos, AspectRatio, false);
-                    _equipWeaponBtn.SetVisibility(true);
+                    var ratio = AspectRatio;
+                    var val = true;
+                    _equipWeaponBtn.SetAbsolutePosition(ref pos, ref ratio, false);
+                    _equipWeaponBtn.SetVisibility(ref val);
                   }
                 }
               }
@@ -786,8 +1133,10 @@ namespace AiEnabled.Graphics
                     var length = _equipWeaponBtn.Text.GetTextLength();
                     var topRt = _moveButton.Position + new Vector2D((_moveButton.Background.Width) * AspectRatio, _moveButton.Background.Height) * 0.5;
                     var pos = topRt + new Vector2D(0.005 * AspectRatio, length.Y * 1.25 * 0.5);
-                    _equipWeaponBtn.SetAbsolutePosition(pos, AspectRatio, false);
-                    _equipWeaponBtn.SetVisibility(true);
+                    var ratio = AspectRatio;
+                    var val = true;
+                    _equipWeaponBtn.SetAbsolutePosition(ref pos, ref ratio, false);
+                    _equipWeaponBtn.SetVisibility(ref val);
                   }
                   else if (content is MyObjectBuilder_ConsumableItem)
                   {
@@ -796,8 +1145,10 @@ namespace AiEnabled.Graphics
                     var length = _equipWeaponBtn.Text.GetTextLength();
                     var topRt = _moveButton.Position + new Vector2D((_moveButton.Background.Width) * AspectRatio, _moveButton.Background.Height) * 0.5;
                     var pos = topRt + new Vector2D(0.005 * AspectRatio, length.Y * 1.25 * 0.5);
-                    _equipWeaponBtn.SetAbsolutePosition(pos, AspectRatio, false);
-                    _equipWeaponBtn.SetVisibility(true);
+                    var ratio = AspectRatio;
+                    var val = true;
+                    _equipWeaponBtn.SetAbsolutePosition(ref pos, ref ratio, false);
+                    _equipWeaponBtn.SetVisibility(ref val);
                   }
                 }
               }
@@ -926,6 +1277,7 @@ namespace AiEnabled.Graphics
       {
         ActiveBot = null;
         SendTo = false;
+        PatrolTo = false;
         return;
       }
 
@@ -973,11 +1325,10 @@ namespace AiEnabled.Graphics
             color.A = 200;
             color4 = color.ToVector4();
 
-            var material = MyStringId.GetOrCompute("Square");
-            MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, material);
+            MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, _material_square);
 
             matrix.Translation -= upVec * 0.125;
-            DrawAxis(ref matrix, 0.75f, color, color, material);
+            DrawAxis(ref matrix, 0.75f, color, color, _material_square);
           }
         }
         else
@@ -1001,11 +1352,10 @@ namespace AiEnabled.Graphics
               color.A = 200;
               color4 = color.ToVector4();
 
-              var material = MyStringId.GetOrCompute("Square");
-              MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, material);
+              MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, _material_square);
 
               matrix.Translation -= ActiveBot.WorldMatrix.Up * 0.125;
-              DrawAxis(ref matrix, 0.75f, color, color, material);
+              DrawAxis(ref matrix, 0.75f, color, color, _material_square);
             }
             else
             {
@@ -1023,11 +1373,10 @@ namespace AiEnabled.Graphics
                 color.A = 200;
                 color4 = color.ToVector4();
 
-                var material = MyStringId.GetOrCompute("Square");
-                MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, material);
+                MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, _material_square);
 
                 matrix.Translation -= ActiveBot.WorldMatrix.Up * 0.125;
-                DrawAxis(ref matrix, 0.75f, color, color, material);
+                DrawAxis(ref matrix, 0.75f, color, color, _material_square);
               }
               else
                 _worldPosition = null;
@@ -1040,74 +1389,95 @@ namespace AiEnabled.Graphics
       else
         _worldPosition = null;
 
-      MySimpleObjectDraw.DrawLine(from, to, MyStringId.GetOrCompute("Square"), ref color4, 0.01f);
+      MySimpleObjectDraw.DrawLine(from, to, _material_square, ref color4, 0.01f);
     }
-
-    Vector2D _minCursorPosition, _maxCursorPosition;
 
     public void UpdateCursorPosition(Vector2 mouseDelta) // TODO: need to include aspect ratio in delta calculation ???
     {
       var delta = new Vector2D(mouseDelta.X, -mouseDelta.Y) * 0.001675 * AiSession.Instance.PlayerData.MouseSensitivityModifier;
       var offset = Vector2D.Clamp(_cursor.Offset + delta, _minCursorPosition, _maxCursorPosition);
+      var lmbPressed = MyAPIGateway.Input.IsLeftMousePressed();
 
       delta = offset - _cursor.Offset;
       _cursor.Offset = offset;
 
-      if (MyAPIGateway.Input.IsLeftMousePressed())
+      if (ShowInventory)
       {
-        var deltaY = (float)delta.Y;
-        var aspectRatio = AspectRatio;
-
-        if (_playerInvBox.ScrollBar.IsMouseOver)
+        if (lmbPressed)
         {
+          var deltaY = (float)delta.Y;
+          var aspectRatio = AspectRatio;
+
+          if (_playerInvBox.ScrollBar.IsMouseOver)
+          {
+            if (deltaY != 0)
+              _playerInvBox.UpdateScrollBar(ref deltaY, ref aspectRatio);
+
+            return;
+          }
+          else if (_botInvBox.ScrollBar.IsMouseOver)
+          {
+            if (deltaY != 0)
+              _botInvBox.UpdateScrollBar(ref deltaY, ref aspectRatio);
+
+            return;
+          }
+        }
+
+        var ratio = AspectRatio;
+        bool equipVisible = _equipWeaponBtn.IsVisible;
+        if (equipVisible)
+        {
+          //_playerInvBox.HideToolTip();
+          //_botInvBox.HideToolTip();
+
+          _equipWeaponBtn.SetMouseOver(_cursor.IsWithinButton(_equipWeaponBtn, AspectRatio));
+        }
+        else if (_moveButton != null)
+        {
+          //_playerInvBox.HideToolTip();
+          //_botInvBox.HideToolTip();
+
+          var min = _minCursorPosition - _moveButton.Background.Origin;
+          var max = _maxCursorPosition - _moveButton.Background.Origin;
+
+          offset = Vector2D.Clamp(_moveButton.Background.Offset + delta, min, max);
+
+          _moveButton.SetRelativePosition(ref offset, ref ratio);
+          _moveButton.SetTextBottomLeft(AspectRatio);
+          return;
+        }
+
+        var position = _cursor.Origin + _cursor.Offset;
+        bool inPlayerBox = _playerInvBox.SetMouseOver(position, ratio, equipVisible);
+        bool inBotBox = _botInvBox.SetMouseOver(position, ratio, equipVisible);
+
+        bool autoFalse = equipVisible || inPlayerBox || inBotBox;
+        bool overPlrBtn = !autoFalse && _cursor.IsWithinButton(_invAddToPlayer, AspectRatio);
+        bool overBotBtn = !autoFalse && !overPlrBtn && _cursor.IsWithinButton(_invAddToBot, AspectRatio);
+        bool overClsBtn = !autoFalse && !overBotBtn && _cursor.IsWithinButton(_invClose, AspectRatio);
+
+        _invAddToPlayer.SetMouseOver(overPlrBtn);
+        _invAddToBot.SetMouseOver(overBotBtn);
+        _invClose.SetMouseOver(overClsBtn);
+      }
+      else if (ShowPatrol)
+      {
+        if (lmbPressed && _patrolMenu.RouteBox.ScrollBar.IsMouseOver)
+        {
+          var deltaY = (float)delta.Y;
+          var aspectRatio = AspectRatio;
+
           if (deltaY != 0)
-            _playerInvBox.UpdateScrollBar(ref deltaY, ref aspectRatio);
+            _patrolMenu.RouteBox.UpdateScrollBar(ref deltaY, ref aspectRatio);
 
           return;
         }
-        else if (_botInvBox.ScrollBar.IsMouseOver)
-        {
-          if (deltaY != 0)
-            _botInvBox.UpdateScrollBar(ref deltaY, ref aspectRatio);
 
-          return;
-        }
+        var position = _cursor.Origin + _cursor.Offset;
+        var ratio = AspectRatio;
+        _patrolMenu.SetMouseOver(ref position, ref ratio);
       }
-
-      var position = _cursor.Origin + _cursor.Offset;
-      bool equipVisible = _equipWeaponBtn.IsVisible;
-      if (equipVisible)
-      {
-        //_playerInvBox.HideToolTip();
-        //_botInvBox.HideToolTip();
-
-        _equipWeaponBtn.SetMouseOver(_cursor.IsWithinButton(_equipWeaponBtn, AspectRatio));
-      }
-      else if (_moveButton != null)
-      {
-        //_playerInvBox.HideToolTip();
-        //_botInvBox.HideToolTip();
-
-        var min = _minCursorPosition - _moveButton.Background.Origin;
-        var max = _maxCursorPosition - _moveButton.Background.Origin;
-
-        offset = Vector2D.Clamp(_moveButton.Background.Offset + delta, min, max);
-        _moveButton.SetRelativePosition(offset, AspectRatio);
-        _moveButton.SetTextBottomLeft(AspectRatio);
-        return;
-      }
-
-      bool inPlayerBox = _playerInvBox.SetMouseOver(position, AspectRatio, equipVisible);
-      bool inBotBox = _botInvBox.SetMouseOver(position, AspectRatio, equipVisible);
-
-      bool autoFalse = equipVisible || inPlayerBox || inBotBox;
-      bool overPlrBtn = !autoFalse && _cursor.IsWithinButton(_invAddToPlayer, AspectRatio);
-      bool overBotBtn = !autoFalse && !overPlrBtn && _cursor.IsWithinButton(_invAddToBot, AspectRatio);
-      bool overClsBtn = !autoFalse && !overBotBtn && _cursor.IsWithinButton(_invClose, AspectRatio);
-
-      _invAddToPlayer.SetMouseOver(overPlrBtn);
-      _invAddToBot.SetMouseOver(overBotBtn);
-      _invClose.SetMouseOver(overClsBtn);
     }
 
     public void ApplyMouseWheelMovement(float movement)
@@ -1115,16 +1485,25 @@ namespace AiEnabled.Graphics
       var cursorPosition = _cursor.Origin + _cursor.Offset;
       var aspectRatio = AspectRatio;
 
-      if (cursorPosition.IsWithinBounds(_playerInvBox.Border, aspectRatio))
+      if (ShowInventory)
       {
-        movement *= 0.02f;
-        _playerInvBox.UpdateScrollBar(ref movement, ref aspectRatio);
-        UpdateCursorPosition(Vector2.Zero);
+        if (cursorPosition.IsWithinBounds(_playerInvBox.Border, aspectRatio))
+        {
+          movement *= 0.02f;
+          _playerInvBox.UpdateScrollBar(ref movement, ref aspectRatio);
+          UpdateCursorPosition(Vector2.Zero);
+        }
+        else if (cursorPosition.IsWithinBounds(_botInvBox.Border, aspectRatio))
+        {
+          movement *= 0.02f;
+          _botInvBox.UpdateScrollBar(ref movement, ref aspectRatio);
+          UpdateCursorPosition(Vector2.Zero);
+        }
       }
-      else if (cursorPosition.IsWithinBounds(_botInvBox.Border, aspectRatio))
+      else if (ShowPatrol && (_patrolMenu.RouteBox.HasFocus || cursorPosition.IsWithinBounds(_patrolMenu.RouteBox.ScrollBarBox.Background, aspectRatio)))
       {
-        movement *= 0.02f;
-        _botInvBox.UpdateScrollBar(ref movement, ref aspectRatio);
+        var delta = Math.Sign(movement);
+        _patrolMenu.RouteBox.UpdateScrollBarMouseWheel(ref delta, ref aspectRatio);
         UpdateCursorPosition(Vector2.Zero);
       }
     }
@@ -1177,12 +1556,14 @@ namespace AiEnabled.Graphics
         {
           var height = _equipWeaponBtn.Background.Height;
           var options = HudAPIv2.Options.Fixed | HudAPIv2.Options.FOVScale;
+          var position = _cursor.Origin;
+          var offset = _cursor.Offset;
 
           _equipWeaponBtn?.Close();
           _cursor?.DeleteMessage();
 
           var equipBB = new HudAPIv2.BillBoardHUDMessage(
-            Material: MyStringId.GetOrCompute("Square"),
+            Material: _material_square,
             Origin: _invBackground.Origin + _invBackground.Offset,
             Width: height,
             Height: height,
@@ -1201,15 +1582,16 @@ namespace AiEnabled.Graphics
           _equipWeaponBtn = new Button(equipBB, equipMsg, AspectRatio, equipBB.BillBoardColor, Color.Transparent, Color.LightCyan, Color.LightCyan, _emitter, _mouseOverSoundPair, false);
 
           _cursor = new HudAPIv2.BillBoardHUDMessage(
-            Material: MyStringId.GetOrCompute("AiEnabled_Cursor"),
-            Origin: Vector2D.Zero,
+            Material: _material_cursor,
+            Origin: position,
+            Offset: offset,
             BillBoardColor: Color.White,
             Width: 0.09f,
             Height: 0.09f,
             Blend: BlendTypeEnum.PostPP);
 
           _cursor.Options |= options;
-          _cursor.Visible = false;
+          _cursor.Visible = true;
         }
 
         SetInventoryScreenVisibility(true);
@@ -1236,14 +1618,15 @@ namespace AiEnabled.Graphics
 
         var screenPx = HudAPIv2.APIinfo.ScreenPositionOnePX;
         var aspectRatio = AspectRatio;
+        var val = false;
         _playerInvBox?.SetVisibility(enable, ref aspectRatio, ref screenPx);
         _botInvBox?.SetVisibility(enable, ref aspectRatio, ref screenPx);
 
-        _equipWeaponBtn.SetVisibility(false);
-        _logoBox?.SetVisibility(enable);
-        _invAddToBot?.SetVisibility(enable);
-        _invAddToPlayer.SetVisibility(enable);
-        _invClose?.SetVisibility(enable);
+        _equipWeaponBtn.SetVisibility(ref val);
+        _logoBox?.SetVisibility(ref enable);
+        _invAddToBot?.SetVisibility(ref enable);
+        _invAddToPlayer.SetVisibility(ref enable);
+        _invClose?.SetVisibility(ref enable);
         _invRetrieved = enable;
         _invRetrievedPreviously = enable;
 
@@ -1300,12 +1683,22 @@ namespace AiEnabled.Graphics
       try
       {
         AiSession.Instance.HudAPI.OnScreenDimensionsChanged = OnScreenDimensionsChanged;
-        _screenPX = HudAPIv2.APIinfo.ScreenPositionOnePX;
+
+        // TODO: When Text Hud API is updated, uncomment this
+        //_nameInput = new HudAPIv2.MenuTextInput("Route Name", null, "Enter a route name", OnRouteName_Submitted);
+        //_renameInput = new HudAPIv2.MenuTextInput("Route Name", null, "Enter new route name", OnRouteRename_Submitted);
+        //_screenPX = HudAPIv2.APIinfo.ScreenPositionOnePX;
 
         Vector2? viewport = MyAPIGateway.Session?.Camera.ViewportSize;
         AspectRatio = viewport == null ? 0.5625 : viewport.Value.Y / viewport.Value.X;
 
         var options = HudAPIv2.Options.Fixed | HudAPIv2.Options.FOVScale;
+
+        var radialBrackets = MyStringId.GetOrCompute("AiEnabled_RadialBrackets");
+        var radialSector = MyStringId.GetOrCompute("AiEnabled_RadialSector2");
+        var arrowButton = MyStringId.GetOrCompute("AiEnabled_ArrowButton");
+        var square2 = MyStringId.GetOrCompute("AiEnabled_Square2");
+        var squareOuter = MyStringId.GetOrCompute("AiEnabled_SquareOuter");
 
         var offsetX = new Vector2D(0.005 * AspectRatio, 0);
         var offsetY = new Vector2D(0, 0.005);
@@ -1314,13 +1707,14 @@ namespace AiEnabled.Graphics
         _billboardColor = new Color(41, 54, 62, 150);
         _highlightColor = Color.LightCyan * 0.9f;
         _radialColor = new Color(41, 54, 62, 225);
+
         var borderColor = new Color(200, 200, 200, 250);
         var mouseOverColor = Color.LightCyan * 0.5f;
         var cursorColor = new Color(112, 128, 144, 225); // Color.SlateGray;
         var logoColor = new Color(255, 255, 255, 225);
 
         _interactBB = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_SquareOuter"),
+          Material: squareOuter,
           Origin: Vector2D.Zero,
           BillBoardColor: _radialColor * 0.8f,
           Blend: BlendTypeEnum.PostPP);
@@ -1382,7 +1776,7 @@ namespace AiEnabled.Graphics
         _interactBB.Offset = _interactMsg.Offset + length * 0.5;
 
         _radialBracket1 = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_RadialBrackets"),
+          Material: radialBrackets,
           Origin: origin,
           BillBoardColor: _radialColor,
           Width: 0.55f,
@@ -1393,7 +1787,7 @@ namespace AiEnabled.Graphics
         _radialBracket1.Visible = false;
 
         _radialBracket2 = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_RadialBrackets"),
+          Material: radialBrackets,
           Origin: origin,
           BillBoardColor: _radialColor,
           Width: 0.55f,
@@ -1404,51 +1798,13 @@ namespace AiEnabled.Graphics
         _radialBracket2.Visible = false;
         _radialBracket2.Rotation = MathHelper.PiOver2;
 
-        _radialBBLeft = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_RadialSector"),
-          Origin: origin,
-          BillBoardColor: _radialColor,
-          Offset: -offsetX,
-          Width: 0.5f,
-          Height: 0.5f,
-          Blend: BlendTypeEnum.PostPP);
-
-        _radialBBLeft.Rotation = -MathHelper.PiOver2;
-        _radialBBLeft.Options |= options;
-        _radialBBLeft.Visible = false;
-
-        _radialMsgLeft = new HudAPIv2.HUDMessage(new StringBuilder("Resume"), origin, _radialBBLeft.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgLeft.Options |= options;
-        _radialMsgLeft.Visible = false;
-
-        var textSize = _radialMsgLeft.GetTextLength();
-        _radialMsgLeft.Offset = _radialBBLeft.Offset - textSize * 0.5 - new Vector2D(_radialBBLeft.Width * AspectRatio * 0.2, 0);
-
-        _radialBBRight = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_RadialSector"),
-          Origin: origin,
-          BillBoardColor: _radialColor,
-          Offset: offsetX,
-          Width: 0.5f,
-          Height: 0.5f,
-          Blend: BlendTypeEnum.PostPP);
-
-        _radialBBRight.Rotation = MathHelper.PiOver2;
-        _radialBBRight.Options |= options;
-        _radialBBRight.Visible = false;
-
-        _radialMsgRight = new HudAPIv2.HUDMessage(new StringBuilder("Go To"), origin, _radialBBRight.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgRight.Options |= options;
-        _radialMsgRight.Visible = false;
-
-        textSize = _radialMsgRight.GetTextLength();
-        _radialMsgRight.Offset = _radialBBRight.Offset - textSize * 0.5 + new Vector2D(_radialBBRight.Width * AspectRatio * 0.2, 0);
+        var offsetY2 = offsetY * 0.5;
 
         _radialBBTop = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_RadialSector"),
+          Material: radialSector,
           Origin: origin,
           BillBoardColor: _radialColor,
-          Offset: offsetY,
+          Offset: offsetY2,
           Width: 0.5f,
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
@@ -1460,14 +1816,54 @@ namespace AiEnabled.Graphics
         _radialMsgTop.Options |= options;
         _radialMsgTop.Visible = false;
 
-        textSize = _radialMsgTop.GetTextLength();
-        _radialMsgTop.Offset = _radialBBTop.Offset - textSize * 0.5 + new Vector2D(0, _radialBBTop.Height * 0.2);
+        var textSize = _radialMsgTop.GetTextLength();
+        _radialMsgTop.Offset = _radialBBTop.Offset - textSize * 0.5 + new Vector2D(0, _radialBBTop.Height * 0.325);
 
-        _radialBBBottom = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_RadialSector"),
+        _radialBBTopLeft = new HudAPIv2.BillBoardHUDMessage(
+          Material: radialSector,
           Origin: origin,
           BillBoardColor: _radialColor,
-          Offset: -offsetY,
+          Offset: -offsetX + offsetY2,
+          Width: 0.5f,
+          Height: 0.5f,
+          Blend: BlendTypeEnum.PostPP);
+
+        _radialBBTopLeft.Rotation = (float)-VectorUtils.PiOver3;
+        _radialBBTopLeft.Options |= options;
+        _radialBBTopLeft.Visible = false;
+
+        _radialMsgTopLeft = new HudAPIv2.HUDMessage(new StringBuilder("Patrol"), origin, _radialBBTopLeft.Offset, Blend: BlendTypeEnum.PostPP);
+        _radialMsgTopLeft.Options |= options;
+        _radialMsgTopLeft.Visible = false;
+
+        textSize = _radialMsgTopLeft.GetTextLength();
+        _radialMsgTopLeft.Offset = _radialBBTopLeft.Offset - textSize * 0.5 + new Vector2D(-_radialBBTopLeft.Width * AspectRatio * 0.25, _radialBBTopLeft.Height * 0.125);
+
+        _radialBBTopRight = new HudAPIv2.BillBoardHUDMessage(
+          Material: radialSector,
+          Origin: origin,
+          BillBoardColor: _radialColor,
+          Offset: offsetX + offsetY2,
+          Width: 0.5f,
+          Height: 0.5f,
+          Blend: BlendTypeEnum.PostPP);
+
+        _radialBBTopRight.Rotation = (float)VectorUtils.PiOver3;
+        _radialBBTopRight.Options |= options;
+        _radialBBTopRight.Visible = false;
+
+        _radialMsgTopRight = new HudAPIv2.HUDMessage(new StringBuilder("Go To"), origin, _radialBBTopRight.Offset, Blend: BlendTypeEnum.PostPP);
+        _radialMsgTopRight.Options |= options;
+        _radialMsgTopRight.Visible = false;
+
+        textSize = _radialMsgTopRight.GetTextLength();
+        _radialMsgTopRight.Offset = _radialBBTopRight.Offset - textSize * 0.5 + new Vector2D(_radialBBTopRight.Width * AspectRatio * 0.25, _radialBBTopRight.Height * 0.125);
+
+        _radialBBBottom = new HudAPIv2.BillBoardHUDMessage(
+          Material: radialSector,
+          Origin: origin,
+          BillBoardColor: _radialColor,
+          Offset: -offsetY2,
           Width: 0.5f,
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
@@ -1476,12 +1872,52 @@ namespace AiEnabled.Graphics
         _radialBBBottom.Options |= options;
         _radialBBBottom.Visible = false;
 
-        _radialMsgBottom = new HudAPIv2.HUDMessage(new StringBuilder("Stay"), origin, _radialBBBottom.Offset, Blend: BlendTypeEnum.PostPP);
+        _radialMsgBottom = new HudAPIv2.HUDMessage(new StringBuilder("Resume"), origin, _radialBBBottom.Offset, Blend: BlendTypeEnum.PostPP);
         _radialMsgBottom.Options |= options;
         _radialMsgBottom.Visible = false;
 
         textSize = _radialMsgBottom.GetTextLength();
-        _radialMsgBottom.Offset = _radialBBBottom.Offset - textSize * 0.5 - new Vector2D(0, _radialBBBottom.Height * 0.2);
+        _radialMsgBottom.Offset = _radialBBBottom.Offset - textSize * 0.5 - new Vector2D(0, _radialBBBottom.Height * 0.325);
+
+        _radialBBBottomLeft = new HudAPIv2.BillBoardHUDMessage(
+          Material: radialSector,
+          Origin: origin,
+          BillBoardColor: _radialColor,
+          Offset: -offsetX - offsetY2,
+          Width: 0.5f,
+          Height: 0.5f,
+          Blend: BlendTypeEnum.PostPP);
+
+        _radialBBBottomLeft.Rotation = MathHelper.Pi + (float)VectorUtils.PiOver3;
+        _radialBBBottomLeft.Options |= options;
+        _radialBBBottomLeft.Visible = false;
+
+        _radialMsgBottomLeft = new HudAPIv2.HUDMessage(new StringBuilder("Follow"), origin, _radialBBBottomLeft.Offset, Blend: BlendTypeEnum.PostPP);
+        _radialMsgBottomLeft.Options |= options;
+        _radialMsgBottomLeft.Visible = false;
+
+        textSize = _radialMsgBottomLeft.GetTextLength();
+        _radialMsgBottomLeft.Offset = _radialBBBottomLeft.Offset - textSize * 0.5 - new Vector2D(_radialBBBottomLeft.Width * AspectRatio * 0.25, _radialBBBottomLeft.Height * 0.125);
+
+        _radialBBBottomRight = new HudAPIv2.BillBoardHUDMessage(
+          Material: radialSector,
+          Origin: origin,
+          BillBoardColor: _radialColor,
+          Offset: offsetX - offsetY2,
+          Width: 0.5f,
+          Height: 0.5f,
+          Blend: BlendTypeEnum.PostPP);
+
+        _radialBBBottomRight.Rotation = MathHelper.Pi - (float)VectorUtils.PiOver3;
+        _radialBBBottomRight.Options |= options;
+        _radialBBBottomRight.Visible = false;
+
+        _radialMsgBottomRight = new HudAPIv2.HUDMessage(new StringBuilder("Stay"), origin, _radialBBBottomRight.Offset, Blend: BlendTypeEnum.PostPP);
+        _radialMsgBottomRight.Options |= options;
+        _radialMsgBottomRight.Visible = false;
+
+        textSize = _radialMsgBottomRight.GetTextLength();
+        _radialMsgBottomRight.Offset = _radialBBBottomRight.Offset - textSize * 0.5 + new Vector2D(_radialBBBottomRight.Width * AspectRatio * 0.25, -_radialBBBottomRight.Height * 0.125);
 
         _radialArrow = new HudAPIv2.BillBoardHUDMessage(
           Material: MyStringId.GetOrCompute("Arrow"),
@@ -1495,7 +1931,7 @@ namespace AiEnabled.Graphics
         _radialArrow.Visible = false;
 
         _invBackground = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_SquareOuter"),
+          Material: squareOuter,
           Origin: new Vector2D(0, 0.2),
           BillBoardColor: _billboardColor,
           Width: 2f,
@@ -1522,7 +1958,7 @@ namespace AiEnabled.Graphics
 
         var logoSize = _invBackground.Height * 0.15f;
         var logoBg = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("Square"),
+          Material: _material_square,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: new Vector2D(0, _invBackground.Height * 0.35),
           BillBoardColor: Color.Transparent,
@@ -1557,7 +1993,7 @@ namespace AiEnabled.Graphics
         var width = (_invBackground.Width - leftOver) * 0.5 * AspectRatio;
 
         var lBoxBB1 = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_Square2"),
+          Material: square2,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: new Vector2D(-width, 0),
           BillBoardColor: _billboardColor,
@@ -1569,7 +2005,7 @@ namespace AiEnabled.Graphics
         lBoxBB1.Visible = false;
 
         var lBoxBB2 = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_Square2"),
+          Material: square2,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: new Vector2D(width, 0),
           BillBoardColor: _billboardColor,
@@ -1584,7 +2020,7 @@ namespace AiEnabled.Graphics
         _botInvBox = new InventoryBox(lBoxBB2, AspectRatio, _billboardColor, _emitter, _mouseOverSoundPair);
 
         var invCloseBB = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("Square"),
+          Material: _material_square,
           Origin: _invBackground.Origin + _invBackground.Offset,
           BillBoardColor: _billboardColor,
           Blend: BlendTypeEnum.PostPP);
@@ -1602,7 +2038,7 @@ namespace AiEnabled.Graphics
 
         invCloseBB.Width = (float)width;
         invCloseBB.Height = (float)height;
-        invCloseBB.Offset = new Vector2D(0, height * -1.75 * 5);
+        invCloseBB.Offset = new Vector2D(0, height * -1.75 * 4.5);
         invCloseMsg.Offset = invCloseBB.Offset - length * 0.5;
 
         _invClose = new Button(invCloseBB, invCloseMsg, AspectRatio, _billboardColor, borderColor, mouseOverColor, mouseOverColor, _emitter, _mouseOverSoundPair);
@@ -1611,7 +2047,7 @@ namespace AiEnabled.Graphics
         var iconHeight = (float)height * 0.6f;
 
         var addToPlayerBB = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("Square"),
+          Material: _material_square,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: Vector2D.Zero,
           Width: (float)height,
@@ -1623,7 +2059,7 @@ namespace AiEnabled.Graphics
         addToPlayerBB.Visible = false;
 
         var addtoPlayerIcon = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_ArrowButton"),
+          Material: arrowButton,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: addToPlayerBB.Offset,
           Width: iconHeight,
@@ -1638,7 +2074,7 @@ namespace AiEnabled.Graphics
         _invAddToPlayer.Icon = addtoPlayerIcon;
 
         var addToBotBB = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("Square"),
+          Material: _material_square,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: new Vector2D(0, height * 1.75),
           Width: (float)height,
@@ -1650,7 +2086,7 @@ namespace AiEnabled.Graphics
         addToBotBB.Visible = false;
 
         var addtoBotIcon = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_ArrowButton"),
+          Material: arrowButton,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Offset: addToBotBB.Offset,
           Width: iconHeight,
@@ -1666,7 +2102,7 @@ namespace AiEnabled.Graphics
         _invAddToBot.Icon = addtoBotIcon;
 
         var equipBB = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("Square"),
+          Material: _material_square,
           Origin: _invBackground.Origin + _invBackground.Offset,
           Width: (float)height,
           Height: (float)height,
@@ -1684,8 +2120,10 @@ namespace AiEnabled.Graphics
 
         _equipWeaponBtn = new Button(equipBB, equipMsg, AspectRatio, equipBB.BillBoardColor, Color.Transparent, Color.LightCyan, Color.LightCyan, _emitter, _mouseOverSoundPair, false);
 
+        _patrolMenu = new PatrolMenu(AspectRatio, _billboardColor, _emitter, _mouseOverSoundPair, _hudClickSoundPair, _errorSoundPair);
+
         _cursor = new HudAPIv2.BillBoardHUDMessage(
-          Material: MyStringId.GetOrCompute("AiEnabled_Cursor"),
+          Material: _material_cursor,
           Origin: Vector2D.Zero,
           BillBoardColor: Color.White,
           Width: 0.09f,
@@ -1711,7 +2149,7 @@ namespace AiEnabled.Graphics
 
       Vector2? viewport = MyAPIGateway.Session?.Camera.ViewportSize;
       AspectRatio = viewport == null ? 0.5625 : viewport.Value.Y / viewport.Value.X;
-      _screenPX = HudAPIv2.APIinfo.ScreenPositionOnePX;
+      //_screenPX = HudAPIv2.APIinfo.ScreenPositionOnePX;
 
       _cursor.Origin = _invBackground.Origin + _invBackground.Offset;
       var half = new Vector2D(_invBackground.Width * 0.5 * AspectRatio, _invBackground.Height * 0.5);

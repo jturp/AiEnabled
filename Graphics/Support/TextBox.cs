@@ -17,13 +17,16 @@ using Sandbox.Game.Entities;
 using VRage.Game.Entity;
 using Sandbox.Game.Contracts;
 using VRage.Game.ModAPI;
+using AiEnabled.API;
 
 namespace AiEnabled.Graphics.Support
 {
+  public enum TextAlignment { Center, Left, Right }
+
   public class TextBox : Border
   {
     public HudAPIv2.BillBoardHUDMessage Icon;
-    public HudAPIv2.BillBoardHUDMessage Background;
+    //public HudAPIv2.BillBoardHUDMessage Background;
     public HudAPIv2.HUDMessage Text;
 
     public bool IsVisible => Background?.Visible ?? false;
@@ -60,7 +63,7 @@ namespace AiEnabled.Graphics.Support
 
       if (updateBackground)
       {
-        bool useBorder = _use && _left.BillBoardColor != Color.Transparent;
+        bool useBorder = _useBorder && _left.BillBoardColor != Color.Transparent;
         if (useBorder || Background.BillBoardColor != Color.Transparent)
         {
           var length = Text.GetTextLength();
@@ -68,7 +71,7 @@ namespace AiEnabled.Graphics.Support
           Background.Height = (float)length.Y * -1.5f;
 
           if (useBorder)
-            UpdateBorder(aspectRatio);
+            UpdateBorder(ref aspectRatio);
         }
       }
 
@@ -79,7 +82,37 @@ namespace AiEnabled.Graphics.Support
       }
     }
 
-    public void SetRelativePosition(Vector2D offset, double aspectRatio, bool center = true)
+    public void SetPositionAligned(ref Vector2D offset, ref double aspectRatio, TextAlignment align = TextAlignment.Center)
+    {
+      // offset is center of button background
+      Text.Origin = Background.Origin;
+      Background.Offset = offset;
+      var length = Text.GetTextLength();
+
+      if (align == TextAlignment.Center)
+      {
+        Text.Offset = offset - length * 0.5;
+      }
+      else if (align == TextAlignment.Left)
+      {
+        Text.Offset = offset - new Vector2D(Background.Width * aspectRatio * 0.98, length.Y) * 0.5;
+      }
+      else // right align
+      {
+        Text.Offset = offset + new Vector2D(Background.Width * aspectRatio * 0.98, 0) * 0.5 - length * 0.5;
+      }
+
+      if (Icon != null)
+      {
+        Icon.Origin = Background.Origin;
+        Icon.Offset = Background.Offset;
+      }
+
+      if (_useBorder)
+        UpdateBorder(ref aspectRatio);
+    }
+
+    public void SetRelativePosition(ref Vector2D offset, ref double aspectRatio, bool center = true)
     {
       Text.Origin = Background.Origin;
 
@@ -100,10 +133,10 @@ namespace AiEnabled.Graphics.Support
         Icon.Offset = Background.Offset;
       }
 
-      UpdateBorder(aspectRatio);
+      UpdateBorder(ref aspectRatio);
     }
 
-    public void SetAbsolutePosition(Vector2D position, double aspectRatio, bool center = true)
+    public void SetAbsolutePosition(ref Vector2D position, ref double aspectRatio, bool center = true)
     {
       Background.Origin = Text.Origin = Vector2D.Zero;
 
@@ -124,7 +157,7 @@ namespace AiEnabled.Graphics.Support
         Icon.Offset = Background.Offset;
       }
 
-      UpdateBorder(aspectRatio);
+      UpdateBorder(ref aspectRatio);
     }
 
     public void SetTextBottomLeft(double aspectRatio)
@@ -136,10 +169,18 @@ namespace AiEnabled.Graphics.Support
       Text.Offset = bottomLeft - new Vector2D(length.X * -0.1, length.Y);
     }
 
-    public void Move(Vector2D delta, double aspectRatio)
+    public void Move(Vector2D delta, ref double aspectRatio)
     {
-      var newCenter = Background.Origin + Background.Offset + delta;
-      SetRelativePosition(newCenter, aspectRatio);
+      if (delta.X != 0)
+        delta.X *= aspectRatio;
+
+      Background.Offset += delta;
+
+      if (Text != null)
+        Text.Offset += delta;
+
+      if (Icon != null)
+        Icon.Offset += delta;
     }
 
     public void SetIconVisibility(bool enable)
@@ -151,11 +192,11 @@ namespace AiEnabled.Graphics.Support
         Text.Visible = enable;
     }
 
-    public override void SetVisibility(bool enable)
+    public override void SetVisibility(ref bool enable)
     {
       Background.Visible = enable;
       SetIconVisibility(enable);
-      base.SetVisibility(enable);
+      base.SetVisibility(ref enable);
     }
   }
 }

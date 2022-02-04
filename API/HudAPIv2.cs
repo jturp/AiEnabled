@@ -1,16 +1,21 @@
 ﻿using ProtoBuf;
+
 using Sandbox.ModAPI;
+
 using System;
 using System.Collections.Generic;
 using System.Text;
+
 using VRage;
 using VRage.Input;
 using VRage.ModAPI;
 using VRage.Utils;
+
 using VRageMath;
+
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 
-namespace AiEnabled.Graphics.Support
+namespace AiEnabled.API
 {
 	public class HudAPIv2
 	{
@@ -55,17 +60,18 @@ namespace AiEnabled.Graphics.Support
 			if (instance != null)
 			{
 
-					return;
+				return;
 			}
 			instance = this;
 			m_onRegisteredAction = onRegisteredAction;
-            MyAPIGateway.Utilities.RegisterMessageHandler(REGISTRATIONID, RegisterComponents);
-        }
+			MyAPIGateway.Utilities.RegisterMessageHandler(REGISTRATIONID, RegisterComponents);
+		}
 
 		public void Close()
 		{
 			Unload();
 		}
+
 		/// <summary>
 		/// Unregisters mod and frees references. 
 		/// </summary>
@@ -78,19 +84,20 @@ namespace AiEnabled.Graphics.Support
 			RemoveMessage = null;
 			registered = false;
 			m_onRegisteredAction = null;
-			if(instance == this)
+			if (instance == this)
 				instance = null;
-        }
+		}
 		private enum RegistrationEnum : int
 		{
 			OnScreenUpdate = 2000
 		}
+
 		private void RegisterComponents(object obj)
 		{
 			if (registered)
 				return;
-			if(obj is MyTuple<Func<int, object>, Action<object, int, object>, Func<object, int, object>, Action<object>>)
-            {
+			if (obj is MyTuple<Func<int, object>, Action<object, int, object>, Func<object, int, object>, Action<object>>)
+			{
 				var Handlers = (MyTuple<Func<int, object>, Action<object, int, object>, Func<object, int, object>, Action<object>>)obj;
 				MessageFactory = Handlers.Item1;
 				MessageSetter = Handlers.Item2;
@@ -101,8 +108,8 @@ namespace AiEnabled.Graphics.Support
 				if (m_onRegisteredAction != null)
 					m_onRegisteredAction();
 				MessageSet(null, (int)RegistrationEnum.OnScreenUpdate, new MyTuple<Action>(ScreenChangedHandle));
-            }
-        }
+			}
+		}
 
 		/// <summary>
 		/// If Heartbeat is true you may call any constructor in this class. Do not call any constructor or set properties if this is false.
@@ -120,14 +127,14 @@ namespace AiEnabled.Graphics.Support
 		#region Intercomm
 		private void DeleteMessage(object BackingObject)
 		{
-			if(BackingObject != null)
+			if (BackingObject != null)
 				RemoveMessage(BackingObject);
 		}
 		private object CreateMessage(MessageTypes type)
 		{
 			return MessageFactory((int)type);
 		}
-		private object MessageGet(object BackingObject, int Member )
+		private object MessageGet(object BackingObject, int Member)
 		{
 			return MessageGetter(BackingObject, Member);
 		}
@@ -144,11 +151,12 @@ namespace AiEnabled.Graphics.Support
 		}
 		private void ScreenChangedHandle()
 		{
-			if(m_onScreenDimensionsChanged != null)
+			if (m_onScreenDimensionsChanged != null)
 			{
 				m_onScreenDimensionsChanged();
-            }
-        }
+			}
+		}
+
 		#endregion
 		private enum MessageTypes : int
 		{
@@ -156,6 +164,7 @@ namespace AiEnabled.Graphics.Support
 			BillBoardHUDMessage,
 			EntityMessage,
 			SpaceMessage,
+			BillboardTriHUDMessage,
 
 			MenuItem = 20,
 			MenuSubCategory,
@@ -173,6 +182,7 @@ namespace AiEnabled.Graphics.Support
 			UIDefinition = 60,
 			UIBehaviourDefinition
 		}
+
 		#region Info
 		public static class APIinfo
 		{
@@ -196,6 +206,7 @@ namespace AiEnabled.Graphics.Support
 					return (Vector2D)instance.MessageGet(null, (int)APIinfoMembers.ScreenPositionOnePX);
 				}
 			}
+
 			/// <summary>
 			/// Available definitions: None, Default, Square
 			/// </summary>
@@ -206,6 +217,7 @@ namespace AiEnabled.Graphics.Support
 				return new BoxUIDefinition(instance.MessageGet(DefinitionName, (int)APIinfoMembers.GetBoxUIDefinition));
 
 			}
+
 			public static BoxUIBehaviourDef GetBoxUIBehaviour(MyStringId DefinitionName)
 			{
 				return new BoxUIBehaviourDef(instance.MessageGet(DefinitionName, (int)APIinfoMembers.GetBoxUIBehaviour));
@@ -215,9 +227,10 @@ namespace AiEnabled.Graphics.Support
 			public static FontDefinition GetFontDefinition(MyStringId DefinitionName)
 			{
 				object retval = instance.MessageGet(DefinitionName, (int)APIinfoMembers.GetFontDefinition);
-                return new FontDefinition(retval);
+				return new FontDefinition(retval);
 
 			}
+
 			/// <summary>
 			/// Gives a list of fonts currently available in the TextHudAPI
 			/// </summary>
@@ -226,10 +239,9 @@ namespace AiEnabled.Graphics.Support
 			{
 				instance.MessageGet(collection, (int)APIinfoMembers.GetFonts);
 			}
-
-
 		}
 		#endregion
+		
 		#region Messages
 		public enum Options : byte
 		{
@@ -240,6 +252,7 @@ namespace AiEnabled.Graphics.Support
 			FOVScale = 0x8,
 			Pixel = 0x10
 		}
+
 		private enum MessageBaseMembers : int
 		{
 			Message = 0,
@@ -252,6 +265,7 @@ namespace AiEnabled.Graphics.Support
 			Draw,
 			Flush
 		}
+
 		public abstract class MessageBase
 		{
 			internal object BackingObject;
@@ -271,7 +285,6 @@ namespace AiEnabled.Graphics.Support
 					instance.MessageSet(BackingObject, (int)MessageBaseMembers.Message, value);
 				}
 			}
-
 
 			/// <summary>
 			/// True if HUD Element is visible, note that this will still be true if the player has their hud activated and HideHud option is set. 
@@ -546,7 +559,7 @@ namespace AiEnabled.Graphics.Support
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.EntityMessage);
-				if(BackingObject != null)
+				if (BackingObject != null)
 				{
 					if (Max.HasValue)
 						this.Max = Max.Value;
@@ -676,11 +689,11 @@ namespace AiEnabled.Graphics.Support
 			}
 			#endregion
 
-			public HUDMessage(StringBuilder Message, Vector2D Origin, Vector2D? Offset = null, int TimeToLive = -1,   double Scale = 1.0d, bool HideHud = true, bool Shadowing = false, Color? ShadowColor = null, BlendTypeEnum Blend = BlendTypeEnum.SDR, string Font = "white")
+			public HUDMessage(StringBuilder Message, Vector2D Origin, Vector2D? Offset = null, int TimeToLive = -1, double Scale = 1.0d, bool HideHud = true, bool Shadowing = false, Color? ShadowColor = null, BlendTypeEnum Blend = BlendTypeEnum.SDR, string Font = "white")
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.HUDMessage);
-				if(BackingObject != null)
+				if (BackingObject != null)
 				{
 					this.TimeToLive = TimeToLive;
 					this.Origin = Origin;
@@ -911,7 +924,7 @@ namespace AiEnabled.Graphics.Support
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.BillBoardHUDMessage);
 
-				if(BackingObject != null)
+				if (BackingObject != null)
 				{
 					this.TimeToLive = TimeToLive;
 					this.Origin = Origin;
@@ -990,6 +1003,234 @@ namespace AiEnabled.Graphics.Support
 				BackingObject = null;
 			}
 		}
+
+		public class BillBoardTriHUDMessage : MessageBase
+		{
+
+			private enum EntityMembers : int
+			{
+				Message = 0,
+				Origin = 10,
+				Options,
+				BillBoardColor,
+				Material,
+				Rotation,
+				Width,
+				Height,
+				p0,
+				p1,
+				p2
+			}
+
+			#region Properties
+			/// <summary>
+			/// top left is -1, 1, bottom right is 1 -1
+			/// </summary>
+			public Vector2D Origin
+			{
+				get
+				{
+					return (Vector2D)instance.MessageGet(BackingObject, (int)EntityMembers.Origin);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.Origin, value);
+				}
+			}
+
+			/// <summary>
+			/// Use MyStringId.GetOrCompute to turn a string into a MyStringId. 
+			/// </summary>
+			public MyStringId Material
+			{
+				get
+				{
+					return (MyStringId)instance.MessageGet(BackingObject, (int)EntityMembers.Material);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.Material, value);
+				}
+			}
+
+
+			/// <summary>
+			/// Set Options, HideHud to true will hide billboard when hud is hidden. Shadowing will draw the element on the shadow layer (behind the text layer)
+			/// </summary>
+			public Options Options
+			{
+				get
+				{
+					return (Options)instance.MessageGet(BackingObject, (int)EntityMembers.Options);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.Options, (byte)value);
+				}
+			}
+
+
+			/// <summary>
+			/// Sets the color mask of the billboard, not all billboards support this parameter. 
+			/// </summary>
+			public Color BillBoardColor
+			{
+				get
+				{
+					return (Color)instance.MessageGet(BackingObject, (int)EntityMembers.BillBoardColor);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.BillBoardColor, value);
+				}
+			}
+
+			/// <summary>
+			/// Rotate billboard in radians.
+			/// </summary>
+			public float Rotation
+			{
+				get
+				{
+					return (float)instance.MessageGet(BackingObject, (int)EntityMembers.Rotation);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.Rotation, value);
+				}
+			}
+
+
+			/// <summary>
+			/// Multiplies the width of the billboard by this amount. Set Scale to 1 if you want to use this to finely control the width of the billboard, such as a value from GetTextLength
+			/// You might need to multiply the result of GetTextLength by 250 or maybe 500 if Scale is 1. Will need experiementing
+			/// </summary>
+			public float Width
+			{
+				get
+				{
+					return (float)instance.MessageGet(BackingObject, (int)EntityMembers.Width);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.Width, value);
+				}
+			}
+
+
+			/// <summary>
+			/// Multiplies the height of the billboard by this amount. Set Scale to 1 if you want to use this to finely control the height of the billboard, such as a value from GetTextLength
+			/// </summary>
+			public float Height
+			{
+				get
+				{
+					return (float)instance.MessageGet(BackingObject, (int)EntityMembers.Height);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.Height, value);
+				}
+			}
+
+			/// <summary>
+			/// UV P0 (note this is percentage based between 0-1 for X,Y)
+			/// </summary>
+			public Vector2 P0
+			{
+				get
+				{
+					return (Vector2)instance.MessageGet(BackingObject, (int)EntityMembers.p0);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.p0, value);
+				}
+			}
+			/// <summary>
+			/// UV P1 (note this is percentage based between 0-1 for X,Y)
+			/// </summary>
+			public Vector2 P1
+			{
+				get
+				{
+					return (Vector2)instance.MessageGet(BackingObject, (int)EntityMembers.p1);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.p1, value);
+				}
+			}
+			/// <summary>
+			/// UV P2 (note this is percentage based between 0-1 for X,Y)
+			/// </summary>
+			public Vector2 P2
+			{
+				get
+				{
+					return (Vector2)instance.MessageGet(BackingObject, (int)EntityMembers.p2);
+				}
+				set
+				{
+					instance.MessageSet(BackingObject, (int)EntityMembers.p2, value);
+				}
+			}
+
+			#endregion
+
+
+
+			public BillBoardTriHUDMessage(MyStringId Material, Vector2D Origin, Color BillBoardColor, Vector2 p0, Vector2 p1, Vector2 p2, Vector2D? Offset = null, int TimeToLive = -1, double Scale = 1d, float Width = 1f, float Height = 1f, float Rotation = 0, bool HideHud = true, bool Shadowing = true, BlendTypeEnum Blend = BlendTypeEnum.SDR)
+			{
+				instance.RegisterCheck();
+				BackingObject = instance.CreateMessage(MessageTypes.BillboardTriHUDMessage);
+
+				if (BackingObject != null)
+				{
+
+					this.TimeToLive = TimeToLive;
+					this.Origin = Origin;
+					this.Options = Options.None;
+					if (HideHud)
+						this.Options |= Options.HideHud;
+					if (Shadowing)
+						this.Options |= Options.Shadowing;
+					this.BillBoardColor = BillBoardColor;
+					this.Scale = Scale;
+					this.Material = Material;
+					this.Rotation = Rotation;
+					this.Blend = Blend;
+					if (Offset.HasValue)
+					{
+						this.Offset = Offset.Value;
+					}
+					else
+					{
+						this.Offset = Vector2D.Zero;
+					}
+					this.Width = Width;
+					this.Height = Height;
+					this.P0 = p0;
+					this.P1 = p1;
+					this.P2 = p2;
+				}
+
+
+			}
+
+			public BillBoardTriHUDMessage()
+			{
+				instance.RegisterCheck();
+				BackingObject = instance.CreateMessage(MessageTypes.BillboardTriHUDMessage);
+			}
+
+			public override void DeleteMessage()
+			{
+				instance.DeleteMessage(BackingObject);
+				BackingObject = null;
+			}
+		}
+
 		public class SpaceMessage : MessageBase
 		{
 			private enum EntityMembers : int
@@ -1080,11 +1321,11 @@ namespace AiEnabled.Graphics.Support
 			#endregion
 
 
-			public SpaceMessage(StringBuilder Message, Vector3D WorldPosition, Vector3D Up, Vector3D Left, double Scale = 1, Vector2D? Offset = null, int TimeToLive = -1,  TextOrientation TxtOrientation = TextOrientation.ltr, BlendTypeEnum Blend = BlendTypeEnum.Standard, string Font = "white")
+			public SpaceMessage(StringBuilder Message, Vector3D WorldPosition, Vector3D Up, Vector3D Left, double Scale = 1, Vector2D? Offset = null, int TimeToLive = -1, TextOrientation TxtOrientation = TextOrientation.ltr, BlendTypeEnum Blend = BlendTypeEnum.Standard, string Font = "white")
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.SpaceMessage);
-				if(BackingObject != null)
+				if (BackingObject != null)
 				{
 					this.TimeToLive = TimeToLive;
 					this.Scale = Scale;
@@ -1241,7 +1482,7 @@ namespace AiEnabled.Graphics.Support
 			private enum MenuRootCategoryMembers : int
 			{
 				MenuFlag = 200
-				
+
 			}
 			/// <summary>
 			/// Which menu to attach to, either Player or Admin menus. 
@@ -1731,7 +1972,7 @@ namespace AiEnabled.Graphics.Support
 			/// <param name="Update">Called every tick while the user is manipulating the dialog. </param>
 			/// <param name="Cancel">Called when user does not click the dialog box window to move it and cancels out of the dialog box.</param>
 			/// <param name="OnSelect">Called when user invokes this dialog box use to refresh the Size property</param>
-			public MenuScreenInput(string Text, MenuCategoryBase Parent, Vector2D Origin, Vector2D Size, string InputDialogTitle = "Move this element",  Action<Vector2D> OnSubmit = null, Action<Vector2D> Update = null, Action Cancel = null, Action OnSelect = null)
+			public MenuScreenInput(string Text, MenuCategoryBase Parent, Vector2D Origin, Vector2D Size, string InputDialogTitle = "Move this element", Action<Vector2D> OnSubmit = null, Action<Vector2D> Update = null, Action Cancel = null, Action OnSelect = null)
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.MenuScreenInput);
@@ -1744,7 +1985,7 @@ namespace AiEnabled.Graphics.Support
 				this.OnCancel = Cancel;
 				this.OnSelect = OnSelect;
 				this.Parent = Parent;
-				
+
 			}
 		}
 		public class MenuSliderInput : MenuItemBase
@@ -2000,7 +2241,7 @@ namespace AiEnabled.Graphics.Support
 				public int margin;
 				[ProtoMember(8)]
 				public int padding;
-            }
+			}
 
 			public BoxUIDefinitionData BoxUIDef
 			{
@@ -2027,7 +2268,7 @@ namespace AiEnabled.Graphics.Support
 				Min
 			}
 
-						
+
 
 			public BoxUIDefinition()
 			{
@@ -2037,26 +2278,26 @@ namespace AiEnabled.Graphics.Support
 			{
 				BackingDefinition = instance.CreateMessage(MessageTypes.UIDefinition);
 				var data = new BoxUIDefinitionData()
-					{
-						Material = Material,
-						imagesize = imagesize,
-						topwidthpx = topwidthpx,
-						leftwidthpx = leftwidthpx,
-						bottomwidthpx = bottomwidthpx,
-						rightwidthpx = rightwidthpx,
-						margin = margin,
-						padding = padding
-					};
+				{
+					Material = Material,
+					imagesize = imagesize,
+					topwidthpx = topwidthpx,
+					leftwidthpx = leftwidthpx,
+					bottomwidthpx = bottomwidthpx,
+					rightwidthpx = rightwidthpx,
+					margin = margin,
+					padding = padding
+				};
 				BoxUIDef = data;
 
-            }
+			}
 			public BoxUIDefinition(object BackingObject)
 			{
 				BackingDefinition = BackingObject;
 			}
 		}
 
-		
+
 		/// <summary>
 		/// Unused at the moment, but will be expanded on in the future. 
 		/// </summary>
@@ -2176,7 +2417,7 @@ namespace AiEnabled.Graphics.Support
 				}
 				set
 				{
-					if(value is BoxUIDefinition)
+					if (value is BoxUIDefinition)
 					{
 						instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.Definition, (value as BoxUIDefinition).BackingDefinition);
 						return;
@@ -2196,12 +2437,12 @@ namespace AiEnabled.Graphics.Support
 				}
 				set
 				{
-					if(value is BoxUIBehaviourDef)
+					if (value is BoxUIBehaviourDef)
 					{
 						instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.Behaviour, (value as BoxUIDefinition).BackingDefinition);
 						return;
 					}
-						
+
 					instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.Behaviour, value);
 				}
 			}
@@ -2220,7 +2461,7 @@ namespace AiEnabled.Graphics.Support
 					instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.HideHud, value);
 				}
 			}
-			
+
 			/// <summary>
 			/// Gets or sets the parent object, please be careful not to create a circular reference. Sub objects are automatically offset by the top left corner of the parent object. 
 			/// </summary>
@@ -2248,7 +2489,7 @@ namespace AiEnabled.Graphics.Support
 			{
 				BehaviourObject = def.BackingDefinition;
 			}
-			
+
 		}
 		public class BoxUIContainer : BoxUIBase
 		{

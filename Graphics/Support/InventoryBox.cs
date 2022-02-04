@@ -1,4 +1,5 @@
-﻿using AiEnabled.Utilities;
+﻿using AiEnabled.API;
+using AiEnabled.Utilities;
 
 using Sandbox.Game;
 using Sandbox.Game.Entities;
@@ -32,14 +33,15 @@ namespace AiEnabled.Graphics.Support
     Stack<Button> _btnStack;
     Box _scrollBarBox;
     Dictionary<InventoryMapItem, Button> _buttonDict = new Dictionary<InventoryMapItem, Button>();
-    Dictionary<InventoryMapItem, ButtonInfo> _infoDict = new Dictionary<InventoryMapItem, ButtonInfo>();
+    Dictionary<InventoryMapItem, Button.ButtonInfo> _infoDict = new Dictionary<InventoryMapItem, Button.ButtonInfo>();
     MyEntity3DSoundEmitter _emitter;
     MySoundPair _soundPair;
     Vector4 _btnColor, _borderColor, _mouseOverColor, _selectedColor;
     Vector2 _size;
     bool _wasWithinBounds;
     string _lastPlayerName;
-    int _maxVisibleRows, _totalRows, _lastVisibleIndex;
+    readonly int _maxVisibleRows;
+    int _totalRows, _lastVisibleIndex;
     float _buttonViewOffsetY;
 
     public InventoryBox(HudAPIv2.BillBoardHUDMessage bg, double aspectRatio, Color buttonColor,
@@ -140,9 +142,10 @@ namespace AiEnabled.Graphics.Support
 
       scrollBoxBg.Options |= options;
       scrollBoxBg.Offset = new Vector2D(Border.Width - scrollBoxBg.Width, 0) * 0.5 * aspectRatio;
+      var val = false;
 
       _scrollBarBox = new Box(aspectRatio, _borderColor, true, scrollBoxBg);
-      _scrollBarBox.SetVisibility(false);
+      _scrollBarBox.SetVisibility(ref val);
 
       var scrollBarBg = new HudAPIv2.BillBoardHUDMessage(
           Material: MyStringId.GetOrCompute("Square"),
@@ -182,7 +185,14 @@ namespace AiEnabled.Graphics.Support
       ToolTip = new TextBox(toolTipBB, toolTipMsg, aspectRatio, Color.Transparent, useBorder: false);
     }
 
-    public void HideToolTip() => ToolTip?.SetVisibility(false);
+    public void HideToolTip()
+    {
+      if (ToolTip != null)
+      {
+        var val = false;
+        ToolTip.SetVisibility(ref val);
+      }
+    }
 
     public void UpdateScrollBar(ref float yDelta, ref double aspectRatio, bool adjustViewOffset = true)
     {
@@ -193,8 +203,8 @@ namespace AiEnabled.Graphics.Support
       var offsetY = offset.Y + yDelta;
       var halfSize = ScrollBar.Background.Height * 0.5;
 
-      var boxCenter = _scrollBarBox._background.Origin.Y + _scrollBarBox._background.Offset.Y;
-      var boxHalfSize = (_scrollBarBox._background.Height - 0.01) * 0.5;
+      var boxCenter = _scrollBarBox.Background.Origin.Y + _scrollBarBox.Background.Offset.Y;
+      var boxHalfSize = (_scrollBarBox.Background.Height - 0.01) * 0.5;
       var top = boxCenter + boxHalfSize - halfSize - ScrollBar.Background.Origin.Y;
       var bottom = boxCenter - boxHalfSize + halfSize - ScrollBar.Background.Origin.Y;
 
@@ -270,15 +280,17 @@ namespace AiEnabled.Graphics.Support
 
       var size = _size * 0.9f;
       var iconSize = size.Y * 0.9f;
+      var val = false;
 
       foreach (var kvp in _buttonDict)
       {
         var btn = kvp.Value;
-        btn.SetVisibility(false);
+        btn.SetVisibility(ref val);
         btn.Reset();
 
         var info = _infoDict[kvp.Key];
-        ResetButtonTextures(btn, info);
+        var iSize = new Vector2(_size.Y * 0.81f);
+        btn.ResetButtonTextures(ref info, ref iSize);
         _btnStack.Push(btn);
       }
 
@@ -350,12 +362,12 @@ namespace AiEnabled.Graphics.Support
         }
 
         var position = firstOffset + new Vector2D(_size.X * aspectRatio, 0) * mod;
-        btn.SetRelativePosition(position, aspectRatio);
+        btn.SetRelativePosition(ref position, ref aspectRatio);
         btn.SetTextBottomLeft(aspectRatio);
         btn.Index = i;
 
         _buttonDict[item] = btn;
-        _infoDict[item] = new ButtonInfo(size, btn.Background.Origin, btn.Background.Offset);
+        _infoDict[item] = new Button.ButtonInfo(size, btn.Background.Origin, btn.Background.Offset);
 
         if (checkSelected && item.InventoryItem.ItemId == SelectedItem.Value.InventoryItem.ItemId)
         {
@@ -369,7 +381,7 @@ namespace AiEnabled.Graphics.Support
       if (checkSelected && !selectedFound)
         SelectedItem = null;
 
-      var sBox = _scrollBarBox._background;
+      var sBox = _scrollBarBox.Background;
       var sBar = ScrollBar.Background;
 
       if (_totalRows > _maxVisibleRows)
@@ -430,9 +442,9 @@ namespace AiEnabled.Graphics.Support
     public void ResetButtonPosition(Button btn, double aspectRatio)
     {
       var info = _infoDict[SelectedItem.Value];
-      ResetButtonTextures(btn, info);
-
-      btn.SetRelativePosition(info.Offset, aspectRatio);
+      var iconSize = new Vector2(_size.Y * 0.81f);
+      btn.ResetButtonTextures(ref info, ref iconSize);
+      btn.SetRelativePosition(ref info.Offset, ref aspectRatio);
       btn.SetTextBottomLeft(aspectRatio);
 
       bool clipped;
@@ -446,8 +458,8 @@ namespace AiEnabled.Graphics.Support
       Header.Visible = enable;
       Footer.Visible = enable;
 
-      ScrollBar.SetVisibility(enable);
-      _scrollBarBox.SetVisibility(enable);
+      ScrollBar.SetVisibility(ref enable);
+      _scrollBarBox.SetVisibility(ref enable);
 
       bool checkIndex = enable && _lastVisibleIndex > 0;
       foreach (var kvp in _buttonDict)
@@ -459,14 +471,15 @@ namespace AiEnabled.Graphics.Support
           ConfineButtonToSurface(kvp.Value, aspectRatio, screenPx, out clipped, info);
         }
         else
-          kvp.Value.SetVisibility(enable);
+          kvp.Value.SetVisibility(ref enable);
       }
 
       if (!enable)
       {
+        var val = false;
         _lastVisibleIndex = -1;
         _buttonViewOffsetY = 0;
-        ToolTip.SetVisibility(false);
+        ToolTip.SetVisibility(ref val);
       }
     }
 
@@ -481,7 +494,7 @@ namespace AiEnabled.Graphics.Support
       autoFalse |= !isWithinBounds;
       _wasWithinBounds = isWithinBounds;
 
-      if (cursorPosition.IsWithinBounds(_scrollBarBox._background, aspectRatio))
+      if (cursorPosition.IsWithinBounds(_scrollBarBox.Background, aspectRatio))
       {
         var inScroll = !autoFalse && cursorPosition.IsWithinBounds(ScrollBar.Background, aspectRatio);
         ScrollBar.SetMouseOver(inScroll);
@@ -500,14 +513,15 @@ namespace AiEnabled.Graphics.Support
             any = true;
 
             ToolTip.UpdateText(kvp.Key.ItemName, aspectRatio, updatePosition: false, updateBackground: true);
-            ToolTip.SetAbsolutePosition(cursorPosition + new Vector2D(0.05 * aspectRatio, -ToolTip.Background.Height * 1.5), aspectRatio, false);
+            var offset = cursorPosition + new Vector2D(0.05 * aspectRatio, -ToolTip.Background.Height * 1.5);
+            ToolTip.SetAbsolutePosition(ref offset, ref aspectRatio, false);
           }
 
           btn.SetMouseOver(within);
         }
       }
 
-      ToolTip.SetVisibility(any);
+      ToolTip.SetVisibility(ref any);
       HasFocus = any;
       return HasFocus;
     }
@@ -582,16 +596,22 @@ namespace AiEnabled.Graphics.Support
       _infoDict = null;
       _emitter = null;
       _soundPair = null;
+      _scrollBarBox = null;
     }
 
-    bool ConfineButtonToSurface(Button btn, double aspectRatio, Vector2D screenPx, out bool clipped, ButtonInfo? info = null)
+    bool ConfineButtonToSurface(Button btn, double aspectRatio, Vector2D screenPx, out bool clipped, Button.ButtonInfo? info = null)
     {
       if (info.HasValue)
-        ResetButtonTextures(btn, info.Value);
-  
+      {
+        var btnInfo = info.Value;
+        var iconSize = new Vector2(_size.Y * 0.81f);
+        btn.ResetButtonTextures(ref btnInfo, ref iconSize);
+      }
+
       clipped = false;
+      var val = true;
       var position = btn.Background.Origin + btn.Background.Offset;
-      btn.SetVisibility(true);
+      btn.SetVisibility(ref val);
 
       BoundingBox2D prunik, borderBox, btnBox;
       if (btn.Background.IntersectsBillboard(Border, ref aspectRatio, true, out prunik, out borderBox, out btnBox))
@@ -623,36 +643,12 @@ namespace AiEnabled.Graphics.Support
       }
       else if (!position.IsWithinBounds(Border, aspectRatio))
       {
-        btn.SetVisibility(false);
+        val = false;
+        btn.SetVisibility(ref val);
         return false;
       }
 
       return true;
-    }
-
-    void ResetButtonTextures(Button btn, ButtonInfo info)
-    {
-      btn.Background.uvOffset = Vector2.Zero;
-      btn.Background.uvSize = Vector2.One;
-      btn.Background.TextureSize = 1;
-
-      btn.Background.Origin = info.Origin;
-      btn.Background.Offset = info.Offset;
-      btn.Background.Width = info.Size.X;
-      btn.Background.Height = info.Size.Y;
-
-      if (btn.Icon != null)
-      {
-        var iconSize = _size.Y * 0.81f;
-        btn.Icon.uvOffset = Vector2.Zero;
-        btn.Icon.uvSize = Vector2.One;
-        btn.Icon.TextureSize = 1;
-
-        btn.Icon.Origin = info.Origin;
-        btn.Icon.Offset = info.Offset;
-        btn.Icon.Width = iconSize;
-        btn.Icon.Height = iconSize;
-      }
     }
 
     void AdjustBillboard(HudAPIv2.BillBoardHUDMessage bb, ref BoundingBox2D prunik, ref BoundingBox2D borderBox, ref BoundingBox2D btnBox, ref double aspectRatio, ref Vector2D screenPx)
@@ -689,19 +685,6 @@ namespace AiEnabled.Graphics.Support
       bb.Width = size.X;
       bb.Height = size.Y;
       bb.Offset = offset;
-    }
-
-    internal struct ButtonInfo
-    {
-      internal Vector2 Size;
-      internal Vector2D Origin, Offset;
-
-      internal ButtonInfo(Vector2 size, Vector2D origin, Vector2D offset)
-      {
-        Size = size;
-        Origin = origin;
-        Offset = offset;
-      }
     }
   }
 }

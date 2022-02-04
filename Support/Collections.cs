@@ -26,6 +26,7 @@ using MyItemType = VRage.Game.ModAPI.Ingame.MyItemType;
 using MyItemInfo = VRage.Game.ModAPI.Ingame.MyItemInfo;
 using VRage.Voxels;
 using AiEnabled.API;
+using AiEnabled.Parallel;
 
 namespace AiEnabled
 {
@@ -334,9 +335,13 @@ namespace AiEnabled
     public ConcurrentDictionary<ulong, VoxelGridMap> VoxelGraphDict;
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
     public ConcurrentStack<TempNode> NodeStack = new ConcurrentStack<TempNode>();
+    public ConcurrentStack<GraphWorkData> GraphWorkStack = new ConcurrentStack<GraphWorkData>();
+    public ConcurrentStack<PathWorkData> PathWorkStack = new ConcurrentStack<PathWorkData>();
+    public ConcurrentStack<RepairWorkData> RepairWorkStack = new ConcurrentStack<RepairWorkData>();
     public ConcurrentStack<List<IMySlimBlock>> SlimListStack = new ConcurrentStack<List<IMySlimBlock>>();
     public ConcurrentStack<List<IMyCubeGrid>> GridGroupListStack = new ConcurrentStack<List<IMyCubeGrid>>();
     public ConcurrentStack<List<Vector3I>> LineListStack = new ConcurrentStack<List<Vector3I>>();
+    public ConcurrentStack<List<Vector3D>> PatrolListStack = new ConcurrentStack<List<Vector3D>>();
     public ConcurrentStack<List<IHitInfo>> HitListStack = new ConcurrentStack<List<IHitInfo>>();
     public ConcurrentStack<List<MyEntity>> EntListStack = new ConcurrentStack<List<MyEntity>>();
     public ConcurrentStack<List<MySoundPair>> SoundListStack = new ConcurrentStack<List<MySoundPair>>();

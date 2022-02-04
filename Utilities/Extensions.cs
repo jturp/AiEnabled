@@ -31,6 +31,7 @@ using System;
 using VRage.Game.ObjectBuilders.AI.Bot;
 using Sandbox.Game.Weapons;
 using AiEnabled.Graphics.Support;
+using AiEnabled.API;
 
 namespace AiEnabled.Utilities
 {

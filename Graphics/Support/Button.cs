@@ -18,6 +18,7 @@ using VRage.Game.Entity;
 using Sandbox.Game.Contracts;
 using VRage.Game.ModAPI;
 using Sandbox.Game;
+using AiEnabled.API;
 
 namespace AiEnabled.Graphics.Support
 {
@@ -58,6 +59,30 @@ namespace AiEnabled.Graphics.Support
       IsMouseOver = false;
       IsSelected = false;
       Background.BillBoardColor = _defaultColor;
+    }
+
+    public void ResetButtonTextures(ref ButtonInfo info, ref Vector2 iconSize)
+    {
+      Background.uvOffset = Vector2.Zero;
+      Background.uvSize = Vector2.One;
+      Background.TextureSize = 1;
+
+      Background.Origin = info.Origin;
+      Background.Offset = info.Offset;
+      Background.Width = info.Size.X;
+      Background.Height = info.Size.Y;
+
+      if (Icon != null)
+      {
+        Icon.uvOffset = Vector2.Zero;
+        Icon.uvSize = Vector2.One;
+        Icon.TextureSize = 1;
+
+        Icon.Origin = info.Origin;
+        Icon.Offset = info.Offset;
+        Icon.Width = iconSize.X;
+        Icon.Height = iconSize.Y;
+      }
     }
 
     public void SetMouseOver(bool enable)
@@ -101,7 +126,20 @@ namespace AiEnabled.Graphics.Support
 
       _soundPlayed = true;
       _emitter.Entity = obj;
-      _emitter.PlaySound(_soundPair, true);
+      _emitter.PlaySound(_soundPair);
+    }
+
+    public struct ButtonInfo
+    {
+      internal Vector2 Size;
+      internal Vector2D Origin, Offset;
+
+      internal ButtonInfo(Vector2 size, Vector2D origin, Vector2D offset)
+      {
+        Size = size;
+        Origin = origin;
+        Offset = offset;
+      }
     }
   }
 }

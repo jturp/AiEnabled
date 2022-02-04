@@ -50,7 +50,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       Behavior = new WorkerBehavior(bot);
       ToolSubtype = toolType ?? "Welder2Item";
       _targetAction = new Action(SetTargetInternal);
-
       _followDistanceSqd = 25;
 
       bool hasOwner = Owner != null;
@@ -171,6 +170,20 @@ namespace AiEnabled.Bots.Roles.Helpers
       var character = Owner?.Character;
       if (character == null)
         return;
+
+      if (FollowMode)
+      {
+        var ownerParent = character.GetTopMostParent();
+        var currentEnt = Target.Entity as IMyEntity;
+
+        if (currentEnt?.EntityId != ownerParent.EntityId)
+        {
+          Target.SetTarget(ownerParent);
+          _pathCollection?.CleanUp(true);
+        }
+
+        return;
+      }
 
       if (Target.IsSlimBlock)
       {
@@ -498,11 +511,39 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
       }
-      
+
+
+      var onPatrol = PatrolMode && _patrolList?.Count > 0;
 
       if (tgt == null)
       {
-        tgt = character;
+        if (onPatrol)
+        {
+          if (Target.Entity != null)
+            Target.RemoveTarget();
+
+          if (Target.Override.HasValue)
+            return;
+
+          var patrolPoint = GetNextPatrolPoint();
+
+          if (patrolPoint.HasValue)
+          {
+            Target.SetOverride(patrolPoint.Value);
+          }
+
+          return;
+        }
+        else
+        {
+          tgt = character;
+        }
+      }
+
+      if (onPatrol && Target.Override.HasValue)
+      {
+        _patrolIndex = Math.Max((short)-1, (short)(_patrolIndex - 1));
+        Target.RemoveOverride(false);
       }
 
       if (Target.Entity != null && ReferenceEquals(Target.Entity, tgt))

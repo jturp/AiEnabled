@@ -69,7 +69,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public string VERSION = "v0.10b";
+    public string VERSION = "v0.11b";
 
     public int MaxBots = 100;
     public int MaxHelpers = 2;
@@ -128,8 +128,8 @@ namespace AiEnabled
       else
       {
         gridGroup.Clear();
-      }
-
+      }      
+        
       MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroup);
       foreach (var g in gridGroup)
       {
@@ -425,6 +425,9 @@ namespace AiEnabled
       Projectiles?.Close();
       Network?.Unregister();
 
+      RepairWorkStack?.Clear();
+      GraphWorkStack?.Clear();
+      PathWorkStack?.Clear();
       ComponentDefinitions?.Clear();
       InvCacheStack?.Clear();
       SlimListStack?.Clear();
@@ -464,6 +467,7 @@ namespace AiEnabled
       StorageStack?.Clear();
       AcceptedItemDict?.Clear();
       ItemOBDict?.Clear();
+      PatrolListStack?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -484,6 +488,9 @@ namespace AiEnabled
       _botEntityIds?.Clear();
       _useObjList?.Clear();
 
+      RepairWorkStack = null;
+      GraphWorkStack = null;
+      PathWorkStack = null;
       BlockRepairDelays = null;
       ComponentDefinitions = null;
       MapInitQueue = null;
@@ -553,6 +560,7 @@ namespace AiEnabled
       AcceptedItemDict = null;
       ItemOBDict = null;
       ShieldAPI = null;
+      PatrolListStack = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -982,6 +990,9 @@ namespace AiEnabled
             if (PlayerData.Keybinds == null)
               PlayerData.Keybinds = new List<Input.Support.SerializableKeybind>();
 
+            if (PlayerData.PatrolRoutes == null)
+              PlayerData.PatrolRoutes = new List<SerializableRoute>();
+
             if (playerId > 0)
             {
               var pkt = new AdminPacket(playerId, PlayerData.ShowHealthBars);
@@ -1036,15 +1047,20 @@ namespace AiEnabled
       _updateCounterAdmin = 0;
     }
 
-    public void UpdateConfig()
+    public void UpdateConfig(bool force = false)
     {
       try
       {
-        if (!_needsUpdate || ++_updateCounter < UpdateTime)
+        if (!force && (!_needsUpdate || ++_updateCounter < UpdateTime))
           return;
 
         if (PlayerData == null)
           PlayerData = new PlayerData();
+
+        if (PlayerData.PatrolRoutes == null)
+          PlayerData.PatrolRoutes = new List<SerializableRoute>();
+
+        CommandMenu.GetPatrolRoutes(PlayerData.PatrolRoutes);
 
         Config.WriteFileToLocalStorage($"AiEnabledPlayerConfig.cfg", typeof(PlayerData), PlayerData, Logger);
 
@@ -1074,6 +1090,9 @@ namespace AiEnabled
       CommandMenu.Register();
       PlayerMenu = new PlayerMenu(PlayerData);
       Input = new Inputs(PlayerData.Keybinds);
+
+      if (CommandMenu.Registered && PlayerData.PatrolRoutes.Count > 0)
+        CommandMenu.AddPatrolRoutes(PlayerData.PatrolRoutes);
 
       var pkt = new SettingRequestPacket();
       Network.SendToServer(pkt);
@@ -1349,7 +1368,11 @@ namespace AiEnabled
             continue;
 
           if (recallBots)
+          {
+            bot.PatrolMode = false;
+            bot.FollowMode = false;
             bot.UseAPITargets = false;
+          }
           else if (bot.UseAPITargets)
             continue;
 
@@ -1630,21 +1653,25 @@ namespace AiEnabled
         {
           var grinder = MyEntities.GetEntityById(info.AttackerId) as IMyAngleGrinder;
 
-          if (!Bots.ContainsKey(grinder.OwnerId))
+          if (grinder != null)
           {
-            if (!slim.IsDestroyed && slim.CubeGrid != null && !slim.CubeGrid.MarkedForClose)
-              CheckGrindTarget(slim, grinder.OwnerId);
+            if (!Bots.ContainsKey(grinder.OwnerId))
+            {
+              if (!slim.IsDestroyed && slim.CubeGrid != null && !slim.CubeGrid.MarkedForClose)
+                CheckGrindTarget(slim, grinder.OwnerId);
+            }
+            else if (slim.FatBlock is IMyDoor)
+            {
+              info.Amount = 0.005f;
+            }
           }
-          else if (slim.FatBlock is IMyDoor)
-          {
-            info.Amount = 0.005f;
-            return;
-          }
+
+          return;
         }
 
         var character = target as IMyCharacter;
         var charNull = character == null;
-        if (charNull || character.IsDead)
+        if (charNull || character.IsDead || character.MarkedForClose)
         {
           return;
         }
@@ -1813,7 +1840,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in BeforeDamageHandler: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in BeforeDamageHandler: Target = {target?.GetType().FullName ?? "NULL"}, Info = {info.Type}x{info.Amount} by {info.AttackerId}\nExeption: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1940,7 +1967,7 @@ namespace AiEnabled
                   var grid = gridGraph?.Grid ?? null;
                   var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
-                  playerData.AddHelper(bot.Character, botType, grid);
+                  playerData.AddHelper(bot.Character, botType, grid, bot._patrolList);
                 }
 
                 bot.Close();
@@ -1959,7 +1986,7 @@ namespace AiEnabled
               var grid = gridGraph?.Grid ?? null;
               var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
-              playerData.AddHelper(bot.Character, botType, grid);
+              playerData.AddHelper(bot.Character, botType, grid, bot._patrolList);
               bot.Close();
             }
 
@@ -2228,7 +2255,7 @@ namespace AiEnabled
     MyCommandLine _cli = new MyCommandLine();
     private void OnMessageEntered(string messageText, ref bool sendToOthers)
     {
-      if (!messageText.StartsWith("botai", StringComparison.OrdinalIgnoreCase) || !_cli.TryParse(messageText) || _cli.ArgumentCount < 2)
+      if (!Registered || !messageText.StartsWith("botai", StringComparison.OrdinalIgnoreCase) || !_cli.TryParse(messageText) || _cli.ArgumentCount < 2)
       {
         return;
       }
@@ -2426,9 +2453,17 @@ namespace AiEnabled
           }
         }
       }
+      else if (cmd.Equals("patrol", StringComparison.OrdinalIgnoreCase))
+      {
+        if (CommandMenu.Registered)
+        {
+          _drawPatrolMenu = !_drawPatrolMenu;
+          CommandMenu.SetPatrolMenuVisibility(_drawPatrolMenu);
+        }
+      }
     }
 
-    bool _drawMenu;
+    bool _drawMenu, _drawPatrolMenu;
     TimeSpan _lastClickTime = new TimeSpan(DateTime.Now.Ticks);
     public override void HandleInput()
     {
@@ -2437,13 +2472,12 @@ namespace AiEnabled
         if (MyAPIGateway.Utilities.IsDedicated || !Registered)
           return;
 
-        Input?.CheckKeys();
-
         var player = MyAPIGateway.Session?.Player?.Character;
         if (MyAPIGateway.Gui.IsCursorVisible || CommandMenu?.Registered != true || player == null)
           return;
 
-        bool uiDrawn = CommandMenu.ShowInventory || _drawMenu;
+        bool uiDrawn = _drawMenu || CommandMenu.ShowInventory || CommandMenu.ShowPatrol;
+        Input?.CheckKeys();
 
         if (MyParticlesManager.Paused)
         {
@@ -2461,33 +2495,64 @@ namespace AiEnabled
 
         if (CommandMenu.UseControl.IsNewPressed())
         {
-          if (CommandMenu.SendTo || CommandMenu.ShowInventory)
-            CommandMenu.ResetCommands();
-
-          if (_drawMenu)
-            _drawMenu = false;
-          else if (_selectedBot?.IsDead == false)
-            _drawMenu = true;
-        }
-        else if (CommandMenu.ShowInventory || CommandMenu.SendTo)
-        {
-          if (MyAPIGateway.Input.IsNewKeyPressed(MyKeys.Escape)
-            || MyAPIGateway.Input.IsNewKeyPressed(MyKeys.OemTilde)
-            || (MyAPIGateway.Gui.ChatEntryVisible && MyAPIGateway.Input.IsNewKeyPressed(MyKeys.F2))
-            || MyAPIGateway.Gui.GetCurrentScreen != MyTerminalPageEnum.None)
+          if (CommandMenu.SendTo || CommandMenu.PatrolTo)
           {
+            CommandMenu.PlayHudClick();
+            CommandMenu.ResetCommands();
+          }
+          else if (uiDrawn)
+          {
+            CommandMenu.PlayHudClick();
+
+            if (CommandMenu.ShowInventory)
+            {
+              CommandMenu.SetInventoryScreenVisibility(false);
+            }
+            else if (CommandMenu.ShowPatrol)
+            {
+              CommandMenu.SetPatrolMenuVisibility(false);
+            }
+            else if (_drawMenu)
+            {
+              _drawMenu = false;
+            }
+          }
+          else if (_selectedBot?.IsDead == false)
+          {
+            CommandMenu.PlayHudClick();
+            _drawMenu = true;
+          }
+        }
+        else if (CommandMenu.ShowInventory || CommandMenu.ShowPatrol || CommandMenu.SendTo || CommandMenu.PatrolTo)
+        {
+          var slot0 = MyAPIGateway.Input.GetGameControl(MyControlsSpace.SLOT0);
+          var unequipPri = slot0?.GetKeyboardControl();
+          var unequipSec = slot0?.GetSecondKeyboardControl();
+          var isEscape = MyAPIGateway.Input.IsNewKeyPressed(MyKeys.Escape);
+          var chatVis = MyAPIGateway.Gui.ChatEntryVisible;
+
+          if (isEscape || MyAPIGateway.Gui.GetCurrentScreen != MyTerminalPageEnum.None
+            || (!chatVis && unequipPri.HasValue && MyAPIGateway.Input.IsNewKeyPressed(unequipPri.Value))
+            || (!chatVis && unequipSec.HasValue && MyAPIGateway.Input.IsNewKeyPressed(unequipSec.Value))
+            || (chatVis && MyAPIGateway.Input.IsNewKeyPressed(MyKeys.F2)))
+          {
+            if (!isEscape)
+              CommandMenu.PlayHudClick();
+  
             CommandMenu.ResetCommands();
             _drawMenu = false;
           }
           else
           {
             var newLMBPress = MyAPIGateway.Input.IsNewLeftMousePressed();
-            if (CommandMenu.SendTo)
+            if (CommandMenu.SendTo || CommandMenu.PatrolTo)
             {
               if (newLMBPress)
                 CommandMenu.Activate(null);
+              else if (CommandMenu.PatrolTo && MyAPIGateway.Input.IsNewRightMousePressed())
+                CommandMenu.Activate(null, true);
             }
-            else // show inventory stuffs
+            else
             {
               var delta = MyAPIGateway.Input.GetCursorPositionDelta();
               if (!Vector2.IsZero(ref delta))
@@ -2497,36 +2562,52 @@ namespace AiEnabled
               if (deltaWheel != 0)
                 CommandMenu.ApplyMouseWheelMovement(Math.Sign(deltaWheel));
 
-              var doubleClick = false;
-              if (newLMBPress)
+              if (CommandMenu.ShowPatrol)
               {
-                var currentTime = TimeSpan.FromTicks(DateTime.Now.Ticks);
-                var elapsed = currentTime - _lastClickTime;
-                if (elapsed.TotalMilliseconds < 200)
-                  doubleClick = true;
-
-                _lastClickTime = currentTime;
+                if (newLMBPress)
+                  CommandMenu.ActivatePatrol();
               }
+              else // show inventory stuffs
+              {
+                var doubleClick = false;
+                if (newLMBPress)
+                {
+                  var currentTime = TimeSpan.FromTicks(DateTime.Now.Ticks);
+                  var elapsed = currentTime - _lastClickTime;
+                  if (elapsed.TotalMilliseconds < 200)
+                    doubleClick = true;
 
-              var leftPress = MyAPIGateway.Input.IsLeftMousePressed();
-              var rightPress = MyAPIGateway.Input.IsRightMousePressed();
-              var leftRelease = !leftPress && MyAPIGateway.Input.IsNewLeftMouseReleased();
-              var rightRelease = !leftPress && !rightPress && MyAPIGateway.Input.IsNewRightMouseReleased();
-              var anyPress = leftPress || rightPress;
+                  _lastClickTime = currentTime;
+                }
 
+                var leftPress = MyAPIGateway.Input.IsLeftMousePressed();
+                var rightPress = MyAPIGateway.Input.IsRightMousePressed();
+                var leftRelease = !leftPress && MyAPIGateway.Input.IsNewLeftMouseReleased();
+                var rightRelease = !leftPress && !rightPress && MyAPIGateway.Input.IsNewRightMouseReleased();
+                var anyPress = leftPress || rightPress;
 
-              if (anyPress || leftRelease || rightRelease)
-                CommandMenu.ActivateInventory(ref leftPress, ref rightPress, ref leftRelease, ref rightRelease, ref doubleClick);
+                if (anyPress || leftRelease || rightRelease)
+                  CommandMenu.ActivateInventory(ref leftPress, ref rightPress, ref leftRelease, ref rightRelease, ref doubleClick);
+              }
             }
           }
         }
         else if (_drawMenu)
         {
-          if (MyAPIGateway.Input.IsNewKeyPressed(MyKeys.Escape)
-            || MyAPIGateway.Input.IsNewKeyPressed(MyKeys.OemTilde)
-            || (MyAPIGateway.Gui.ChatEntryVisible && MyAPIGateway.Input.IsNewKeyPressed(MyKeys.F2))
-            || MyAPIGateway.Gui.GetCurrentScreen != MyTerminalPageEnum.None)
+          var slot0 = MyAPIGateway.Input.GetGameControl(MyControlsSpace.SLOT0);
+          var unequipPri = slot0?.GetKeyboardControl();
+          var unequipSec = slot0?.GetSecondKeyboardControl();
+          var isEscape = MyAPIGateway.Input.IsNewKeyPressed(MyKeys.Escape);
+          var chatVis = MyAPIGateway.Gui.ChatEntryVisible;
+
+          if (isEscape || MyAPIGateway.Gui.GetCurrentScreen != MyTerminalPageEnum.None
+            || (!chatVis && unequipPri.HasValue && MyAPIGateway.Input.IsNewKeyPressed(unequipPri.Value))
+            || (!chatVis && unequipSec.HasValue && MyAPIGateway.Input.IsNewKeyPressed(unequipSec.Value))
+            || (chatVis && MyAPIGateway.Input.IsNewKeyPressed(MyKeys.F2)))
           {
+            if (!isEscape)
+              CommandMenu.PlayHudClick();
+
             _drawMenu = false;
           }
           else if (MyAPIGateway.Input.IsNewLeftMousePressed())
@@ -2565,14 +2646,19 @@ namespace AiEnabled
         if (!Registered || CommandMenu?.Registered != true || player == null)
           return;
 
-        if (CommandMenu.ShowInventory || CommandMenu.SendTo)
+        if (CommandMenu.ShowInventory || CommandMenu.ShowPatrol || CommandMenu.SendTo || CommandMenu.PatrolTo)
         {
           if (CommandMenu.RadialVisible)
             CommandMenu.CloseMenu();
           else if (CommandMenu.InteractVisible)
             CommandMenu.CloseInteractMessage();
 
-          if (CommandMenu.ShowInventory)
+          if (CommandMenu.ShowPatrol)
+          {
+            if (!CommandMenu.PatrolVisible)
+              CommandMenu.DrawPatrolMenu();
+          }
+          else if (CommandMenu.ShowInventory)
             CommandMenu.DrawInventoryScreen(player);
           else
             CommandMenu.DrawSendTo(player);
@@ -2715,6 +2801,17 @@ namespace AiEnabled
               var item = items[k];
               helperData.InventoryItems.Add(new InventoryItem(item.Content.GetId(), item.Amount));
             }
+          }
+
+          if (bot._patrolList?.Count > 0)
+          {
+            if (helperData.PatrolRoute == null)
+              helperData.PatrolRoute = new List<SerializableVector3D>();
+            else
+              helperData.PatrolRoute.Clear();
+
+            for (int k = 0; k < bot._patrolList.Count; k++)
+              helperData.PatrolRoute.Add(bot._patrolList[k]);
           }
         }
       }
@@ -3491,9 +3588,13 @@ namespace AiEnabled
                 }
 
                 BotBase botBase;
-                if (Bots.TryGetValue(bot.EntityId, out botBase) && !string.IsNullOrWhiteSpace(botBase?.ToolSubtype))
+                if (Bots.TryGetValue(bot.EntityId, out botBase) && botBase != null)
                 {
-                  MyAPIGateway.Utilities.InvokeOnGameThread(botBase.EquipWeapon, "AiEnabled");
+                  if (info.PatrolRoute?.Count > 0)
+                    botBase.UpdatePatrolPoints(info.PatrolRoute);
+
+                  if (!string.IsNullOrWhiteSpace(botBase?.ToolSubtype))
+                    MyAPIGateway.Utilities.InvokeOnGameThread(botBase.EquipWeapon, "AiEnabled");
                 }
               }
               catch (Exception ex)
@@ -4042,7 +4143,7 @@ namespace AiEnabled
               var grid = gridGraph?.Grid ?? null;
               var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
-              helperData.AddHelper(bot.Character, botType, grid);
+              helperData.AddHelper(bot.Character, botType, grid, bot._patrolList);
             }
 
             var pkt = new ClientHelperPacket(helperData.Helpers);
@@ -4059,7 +4160,7 @@ namespace AiEnabled
           var grid = gridGraph?.Grid ?? null;
           var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
-          data.AddHelper(bot.Character, botType, grid);
+          data.AddHelper(bot.Character, botType, grid, bot._patrolList);
           ModSaveData.PlayerHelperData.Add(data);
 
           var pkt = new ClientHelperPacket(data.Helpers);
