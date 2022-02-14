@@ -15,6 +15,7 @@ namespace AiEnabled.ConfigData
     public int MaxBotHuntingDistanceFriendly = 150;
     public bool AllowBotMusic;
     public bool AllowEnemiesToFly;
+    public bool AllowNeutralTargets;
     public List<HelperData> PlayerHelperData = new List<HelperData>();
     public List<FactionData> FactionPairings = new List<FactionData>();
 

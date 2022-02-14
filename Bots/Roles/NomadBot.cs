@@ -64,16 +64,18 @@ namespace AiEnabled.Bots.Roles
     {
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack;
 
       if (_shouldMove)
       {
-        GetMovementAndRotation(isTgt, point, out movement, out rotation, out shouldAttack, distanceCheck);
+        GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
       }
       else
       {
         movement = Vector3.Zero;
         rotation = Vector2.Zero;
+        roll = 0;
         shouldAttack = false;
       }
 
@@ -85,13 +87,17 @@ namespace AiEnabled.Bots.Roles
         Attack();
       }
 
-      MoveToPoint(movement, rotation);
+      MoveToPoint(movement, rotation, roll);
     }
 
-    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out bool fistAttack, double distanceCheck = 4)
+    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out float roll, out bool fistAttack, double distanceCheck = 4)
     {
-      var botPosition = Position;
+      roll = 0;
+      var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
+      var graphMatrix = _currentGraph.WorldMatrix;
+      var graphUpVector = graphMatrix.Up;
+      var jpEnabled = JetpackEnabled;
 
       var vecToWP = waypoint - botPosition;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
@@ -108,10 +114,26 @@ namespace AiEnabled.Bots.Roles
       var flattenedLengthSquared = flattenedVector.LengthSquared();
       var distanceSqd = relVectorBot.LengthSquared();
 
+      if (jpEnabled)
+      {
+        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+        {
+          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+
+          if (botdotUp < 0)
+            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+          else
+            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+        }
+      }
+
       var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
       var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
-      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
+      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
 
       if (!WaitForStuckTimer && angleTwoOrLess)
       {
@@ -119,7 +141,25 @@ namespace AiEnabled.Bots.Roles
       }
       else
       {
-        rotation = new Vector2(0, (float)angle * Math.Sign(relVectorBot.X) * 75);
+        float xRot = 0;
+
+        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
+        {
+          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
+          {
+            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+
+            if (botDotUp < 0)
+              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+            else
+              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
+          }
+        }
+
+        rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }
 
       if (_currentGraph?.Ready == true)
@@ -209,14 +249,14 @@ namespace AiEnabled.Bots.Roles
         {
           if (CheckGraphNeeded && _currentGraph?.Ready == true)
           {
-            var position = Position;
+            var position = GetPosition();
             StartCheckGraph(ref position);
             return;
           }
 
           SimulateIdleMovement(true);
 
-          if (_botState.IsRunning)
+          if (_botState.IsRunning && Character.Definition.Id.SubtypeName.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) < 0)
             Character.SwitchWalk();
         }
 
@@ -237,16 +277,18 @@ namespace AiEnabled.Bots.Roles
 
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack;
 
       if (_shouldMove)
       {
-        GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out shouldAttack);
+        GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out roll, out shouldAttack);
       }
       else
       {
         movement = Vector3.Zero;
         rotation = Vector2.Zero;
+        roll = 0;
         shouldAttack = false;
       }
 
@@ -258,13 +300,26 @@ namespace AiEnabled.Bots.Roles
         Attack();
       }
 
-      Character.MoveAndRotate(movement, rotation, 0f);
+      Character.MoveAndRotate(movement, rotation, roll);
     }
 
     public void SetHostile(long attackerId)
     {
       var attacker = MyEntities.GetEntityById(attackerId) as IMyCharacter;
-      if (attacker != null)
+      if (attacker != null && Target.Entity == null)
+      {
+        Target.SetTarget(attacker);
+        Behavior.Perform("Whatever");
+        _performanceTimerTarget = 0;
+
+        if (!_botState.IsRunning)
+          Character.SwitchWalk();
+      }
+    }
+
+    public void SetHostile(IMyCharacter attacker)
+    {
+      if (attacker != null && Target.Entity == null)
       {
         Target.SetTarget(attacker);
         Behavior.Perform("Whatever");

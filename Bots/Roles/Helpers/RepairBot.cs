@@ -194,12 +194,16 @@ namespace AiEnabled.Bots.Roles.Helpers
             return;
         }
       }
+      else if (Target.IsInventory)
+      {
+        return;
+      }
 
       object tgt = null;
       var graph = _currentGraph as CubeGridMap;
-      var isGridGraph = graph?.Grid?.MarkedForClose == false;
+      var isGridGraph = graph?.MainGrid?.MarkedForClose == false;
       bool isInventory = false;
-      var botPosition = Position;
+      var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
 
       if (((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
@@ -207,9 +211,9 @@ namespace AiEnabled.Bots.Roles.Helpers
         if (isGridGraph && _pathCollection?.TempEntities != null) // path collection is null until first target assignment
         {
           // check for damaged blocks on grid
-          var grid = graph.Grid as IMyCubeGrid;
+          var mainGrid = graph.MainGrid as IMyCubeGrid;
 
-          var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : -1L;
+          var owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : -1L;
           var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
 
           if (relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies)
@@ -227,61 +231,91 @@ namespace AiEnabled.Bots.Roles.Helpers
             }
 
             _projectedGrids.Clear();
-            _cubes.Clear();
-            grid.GetBlocks(_cubes);
-            var gridSizeHalf = grid.GridSize * 0.5;
-            var gridUp = grid.WorldMatrix.GetClosestDirection(botMatrix.Up);
-            var upVec = grid.WorldMatrix.GetDirectionVector(gridUp);
-            var upAddVec = upVec * gridSizeHalf;
             var colorVec = new Vector3(360, 100, 100);
             var botId = Character.EntityId;
+            var gridList = graph.GridGroupList;
+            bool returnList = false;
 
-            for (int i = 0; i < _cubes.Count; i++)
+            if (gridList == null || gridList.Count == 0)
             {
-              var slim = _cubes[i];
-              if (slim == null || slim.IsDestroyed)
+              if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList) || gridList == null)
+                gridList = new List<IMyCubeGrid>();
+              else
+                gridList.Clear();
+
+              returnList = true;
+              graph.GridGroup.GetGrids(gridList);
+            }
+
+            for (int i = gridList.Count - 1; i >= 0; i--)
+            {
+              var connectedGrid = gridList[i];
+              if (connectedGrid?.Physics == null || ((MyCubeGrid)connectedGrid).IsPreview || connectedGrid.MarkedForClose)
                 continue;
 
-              var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
-              if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
-                continue;
+              _cubes.Clear();
+              connectedGrid.GetBlocks(_cubes);
+              bool isMainGrid = connectedGrid.EntityId == graph.MainGrid.EntityId;
 
-              var health = slim.GetBlockHealth();
-              if (!slim.HasDeformation && (health < 0 || health >= 1))
-                continue;
-
-              var node = slim.Position;
-              var slimGridId = slim.CubeGrid.EntityId;
-
-              if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, node) || graph.IsTileBeingRepaired(slimGridId, node, botId))
+              for (int j = 0; j < _cubes.Count; j++)
               {
-                continue;
-              }
+                var slim = _cubes[j];
+                if (slim == null || slim.IsDestroyed)
+                  continue;
 
-              Vector3I _;
-              if (_currentGraph.GetClosestValidNode(this, node, out _, isSlimBlock: true))
-              {
-                if (CheckBotInventoryForItems(slim))
+                var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
+                if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
+                  continue;
+
+                var health = slim.GetBlockHealth();
+                if (!slim.HasDeformation && (health < 0 || health >= 1))
+                  continue;
+
+                var node = slim.Position;
+                if (!isMainGrid)
                 {
-                  tgt = slim;
-                  graph.AddRepairTile(slimGridId, node, botId);
-                  break;
+                  var slimWorld = connectedGrid.GridIntegerToWorld(node);
+                  node = mainGrid.WorldToGridInteger(slimWorld);
                 }
-                else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
-                {
-                  var botLocal = grid.WorldToGridInteger(botPosition);
-                  var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
-                  if (inv != null)
-                  {
-                    Target.SetInventory(inv);
 
+                var slimGridId = slim.CubeGrid.EntityId;
+
+                if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, node) || graph.IsTileBeingRepaired(slimGridId, node, botId))
+                {
+                  continue;
+                }
+
+                Vector3I _;
+                if (_currentGraph.GetClosestValidNode(this, node, out _, isSlimBlock: true))
+                {
+                  if (CheckBotInventoryForItems(slim))
+                  {
                     tgt = slim;
                     graph.AddRepairTile(slimGridId, node, botId);
-                    isInventory = true;
+                    break;
                   }
-                  break;
+                  else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
+                  {
+                    var botLocal = mainGrid.WorldToGridInteger(botPosition);
+                    var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
+                    if (inv != null)
+                    {
+                      Target.SetInventory(inv);
+
+                      tgt = slim;
+                      graph.AddRepairTile(slimGridId, node, botId);
+                      isInventory = true;
+                    }
+                    break;
+                  }
                 }
               }
+            }
+
+            if (returnList)
+            {
+              gridList.Clear();
+              AiSession.Instance.GridGroupListStack.Push(gridList);
             }
 
             if (tgt == null)
@@ -314,7 +348,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 if (projector?.CubeGrid == null || projector.CubeGrid.MarkedForClose)
                   continue;
 
-                if (projector.CubeGrid.EntityId != grid.EntityId)
+                if (projector.CubeGrid.EntityId != mainGrid.EntityId)
                 {
                   _cubes.Clear();
                   projector.CubeGrid.GetBlocks(_cubes);
@@ -340,9 +374,9 @@ namespace AiEnabled.Bots.Roles.Helpers
                     {
                       continue;
                     }
-
+                    
                     var projectedWorld = projector.CubeGrid.GridIntegerToWorld(projectedLocal);
-                    var node = grid.WorldToGridInteger(projectedWorld);
+                    var node = mainGrid.WorldToGridInteger(projectedWorld);
 
                     Vector3I closestNode;
                     if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
@@ -355,7 +389,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                       }
                       else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
                       {
-                        var botLocal = grid.WorldToGridInteger(botPosition);
+                        var botLocal = mainGrid.WorldToGridInteger(botPosition);
                         var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
                         if (inv != null)
                         {
@@ -396,7 +430,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                     }
 
                     var projectedWorld = projectedGrid.GridIntegerToWorld(projectedLocal);
-                    var node = grid.WorldToGridInteger(projectedWorld);
+                    var node = mainGrid.WorldToGridInteger(projectedWorld);
 
                     Vector3I closestNode;
                     if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
@@ -409,7 +443,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                       }
                       else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
                       {
-                        var botLocal = grid.WorldToGridInteger(botPosition);
+                        var botLocal = mainGrid.WorldToGridInteger(botPosition);
                         var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
                         if (inv != null)
                         {
@@ -447,7 +481,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         var inv = Character.GetInventory() as MyInventory;
         if (inv != null)
         {
-          if (inv.IsFull)
+          if (isGridGraph && ((float)inv.CurrentVolume / (float)inv.MaxVolume) > 0.9f)
           {
             // inv too full, send bot to drop off current stock
 
@@ -511,7 +545,6 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
       }
-
 
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
 
@@ -669,10 +702,24 @@ namespace AiEnabled.Bots.Roles.Helpers
     Action _targetAction;
     public override void SetTarget()
     {
+      if (_targetTask.Exceptions != null)
+      {
+        AiSession.Instance.Logger.ClearCached();
+        AiSession.Instance.Logger.AddLine($"Exceptions found during RepairBot.SetTarget task!\n");
+        foreach (var ex in _targetTask.Exceptions)
+          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+
+        AiSession.Instance.Logger.LogAll();
+        MyAPIGateway.Utilities.ShowNotification($"Exception during RepairBot.SetTarget task!");
+      }
+
       if (_targetTask.IsComplete)
       {
         _targetTask = MyAPIGateway.Parallel.Start(_targetAction);
       }
+
+      // Testing only!
+      //_targetAction?.Invoke();
     }
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
@@ -682,151 +729,197 @@ namespace AiEnabled.Bots.Roles.Helpers
       float roll;
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, distanceCheck);
 
-      var isInv = Target.IsInventory;
-      var directToBlock = isTgt && Target.IsSlimBlock;
-      var directToFloater = !directToBlock && isTgt && Target.IsFloater;
-      bool ignoreRotation = false;
-
-      var botPosition = Position;
-      var actualPosition = Target.CurrentActualPosition;
-
-      if (_currentGraph.IsGridGraph)
+      if (Target.IsInventory || (Target.Entity != null && !(Target.Entity is IMyCharacter)))
       {
-        if (movement.Z != 0 || movement.Y != 0)
+        var isInv = Target.IsInventory;
+        var directToBlock = isTgt && Target.IsSlimBlock;
+        var directToFloater = !directToBlock && isTgt && Target.IsFloater;
+        bool ignoreRotation = false;
+
+        var botPosition = GetPosition();
+        var actualPosition = Target.CurrentActualPosition;
+
+        if (_currentGraph.IsGridGraph)
         {
-          if (isInv)
+          if (movement.Z != 0 || movement.Y != 0)
           {
-            var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
-            if (distance <= 15)
+            if (isInv || directToBlock || directToFloater)
             {
-              movement.Y = 0;
-              movement.Z = 0;
-            }
-          }
-          else if (directToBlock || directToFloater)
-          {
-            var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
-            var checkDistance = directToFloater ? 4 : 10;
-            if (distance <= checkDistance)
-            {
-              movement.Y = 0;
-              movement.Z = 0;
-            }
-          }
-        }
-        else if (rotation.Y != 0 && (isInv || directToBlock))
-        {
-          var graph = _currentGraph as CubeGridMap;
-          var localTgt = graph.WorldToLocal(actualPosition);
-          var localBot = graph.WorldToLocal(botPosition);
-          var dMan = Vector3I.DistanceManhattan(localBot, localTgt);
-
-          if (dMan < 2)
-          {
-            var diff = localTgt - localBot;
-            var upDir = graph.Grid.WorldMatrix.GetClosestDirection(Character.WorldMatrix.Up);
-            var botUp = Base6Directions.GetIntVector(upDir);
-
-            if (botUp.Dot(ref diff) != 0)
-              rotation = Vector2.Zero;
-          }
-          else if (dMan < 3)
-          {
-            ignoreRotation = true;
-          }
-        }
-      }
-      else if (movement.Z != 0 || movement.Y != 0)
-      { 
-        var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
-        var checkDistance = Target.IsFloater ? 4 : 10;
-        if (distance <= checkDistance)
-        {
-          movement.Y = 0;
-          movement.Z = 0;
-        }
-      }
-
-      var notMoving = Vector3.IsZero(ref movement);
-      var notRotating = ignoreRotation || Vector2.IsZero(ref rotation);
-
-      if (notMoving && notRotating)
-      {
-        var obj = Target.Entity as MyFloatingObject;
-        if (obj != null)
-        {
-          var d = Vector3D.DistanceSquared(botPosition, obj.PositionComp.WorldAABB.Center);
-          if (d < 4)
-          {
-            var inv = Character.GetInventory() as MyInventory;
-            if (inv != null && !inv.IsFull)
-            {
-              var item = obj.Item;
-              var amount = MyFixedPoint.Min(item.Amount, inv.ComputeAmountThatFits(item.Content.GetId()));
-              if (inv.AddItems(amount, item.Content))
+              var slim = isInv ? Target.Inventory : Target.Entity as IMySlimBlock;
+              if (slim != null)
               {
-                Target.RemoveTarget();
-
-                if (amount >= item.Amount)
-                  obj.Close();
+                if (slim.FatBlock != null)
+                {
+                  distanceCheck = slim.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 4f;
+                  distanceCheck *= distanceCheck;
+                }
                 else
-                  obj.Item.Amount -= amount;
+                {
+                  BoundingBoxD box;
+                  slim.GetWorldBoundingBox(out box, true);
+                  distanceCheck = (float)box.HalfExtents.AbsMax() + 4f;
+                  distanceCheck *= distanceCheck;
+                }
+              }
+              else
+              {
+                var cube = Target.Entity as IMyCubeBlock;
+                if (cube != null)
+                {
+                  distanceCheck = cube.PositionComp.LocalAABB.HalfExtents.AbsMax() + 4f;
+                  distanceCheck *= distanceCheck;
+                }
+                else
+                {
+                  distanceCheck = isInv ? 15 : directToFloater ? 6 : 10;
+                }
+              }
+
+              if (isInv)
+              {
+                var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
+                if (distance <= distanceCheck)
+                {
+                  movement.Y = 0;
+                  movement.Z = 0;
+                }
+              }
+              else // if (directToBlock || directToFloater)
+              {
+                var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
+                if (distance <= distanceCheck)
+                {
+                  movement.Y = 0;
+                  movement.Z = 0;
+                }
               }
             }
           }
-
-          return;
-        }
-
-        if (isInv)
-        {
-          var grid = _currentGraph as CubeGridMap;
-          if (grid != null)
+          else if (rotation.Y != 0 && (isInv || directToBlock))
           {
-            if (grid.InventoryCache.Locked)
-              return;
+            var graph = _currentGraph as CubeGridMap;
+            var localTgt = graph.WorldToLocal(actualPosition);
+            var localBot = graph.WorldToLocal(botPosition);
+            var dMan = Vector3I.DistanceManhattan(localBot, localTgt);
 
-            grid.InventoryCache.RemoveItemsFor(Target.Entity as IMySlimBlock, this);
-            Target.RemoveInventory();
-          }
-
-          return;
-        }
-
-        var slim = Target.Entity as IMySlimBlock;
-        if (slim != null && ((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
-        {
-          var myGrid = slim.CubeGrid as MyCubeGrid;
-          var projector = myGrid?.Projector as IMyProjector;
-
-          if (RepairBlockManually(slim, projector))
-          {
-            ParticlePacket pkt;
-            if (!_particlePacketSent && !BugZapped)
+            if (dMan < 2)
             {
-              _particlePacketSent = true;
-              var terminal = slim?.FatBlock as IMyTerminalBlock;
-              pkt = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Builder, terminal?.EntityId ?? 0L, slim.CubeGrid.EntityId, slim.Position, true);
+              var diff = localTgt - localBot;
+              var upDir = graph.MainGrid.WorldMatrix.GetClosestDirection(Character.WorldMatrix.Up);
+              var botUp = Base6Directions.GetIntVector(upDir);
 
-              if (MyAPIGateway.Session.Player != null)
-                pkt.Received(AiSession.Instance.Network);
-
-              if (MyAPIGateway.Multiplayer.MultiplayerActive)
-                AiSession.Instance.Network.RelayToClients(pkt);
+              if (botUp.Dot(ref diff) != 0)
+                rotation = Vector2.Zero;
+            }
+            else if (dMan < 3)
+            {
+              ignoreRotation = true;
             }
           }
-          
-          if (MyAPIGateway.Session?.SessionSettings?.EnableResearch == true && slim.BlockDefinition != null)
+        }
+        else if (movement.Z != 0 || movement.Y != 0)
+        {
+          var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
+          var checkDistance = Target.IsFloater ? 4 : 10;
+          if (distance <= checkDistance)
           {
-            var blockDef = slim.BlockDefinition.Id;
-            if (slim.BuildLevelRatio > 0.99f && _builtBlocks.Add(blockDef))
+            movement.Y = 0;
+            movement.Z = 0;
+          }
+        }
+
+        var notMoving = Vector3.IsZero(ref movement);
+        var notRotating = ignoreRotation || Vector2.IsZero(ref rotation);
+
+        if (notMoving && notRotating)
+        {
+          var obj = Target.Entity as MyFloatingObject;
+          if (obj != null)
+          {
+            var d = Vector3D.DistanceSquared(botPosition, obj.PositionComp.WorldAABB.Center);
+            if (d < 6)
             {
-              MyVisualScriptLogicProvider.PlayerResearchUnlock(Owner.IdentityId, blockDef);
+              var inv = Character.GetInventory() as MyInventory;
+              if (inv != null && !inv.IsFull)
+              {
+                var item = obj.Item;
+                var amount = MyFixedPoint.Min(item.Amount, inv.ComputeAmountThatFits(item.Content.GetId()));
+                if (inv.AddItems(amount, item.Content))
+                {
+                  Target.RemoveTarget();
+
+                  if (amount >= item.Amount)
+                    obj.Close();
+                  else
+                    obj.Item.Amount -= amount;
+                }
+              }
+            }
+
+            return;
+          }
+
+          if (isInv)
+          {
+            var grid = _currentGraph as CubeGridMap;
+            if (grid != null)
+            {
+              if (grid.InventoryCache.Locked)
+                return;
+
+              grid.InventoryCache.RemoveItemsFor(Target.Entity as IMySlimBlock, this);
+              Target.RemoveInventory();
+            }
+
+            return;
+          }
+
+          var slim = Target.Entity as IMySlimBlock;
+          if (slim != null && ((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
+          {
+            var myGrid = slim.CubeGrid as MyCubeGrid;
+            var projector = myGrid?.Projector as IMyProjector;
+
+            if (RepairBlockManually(slim, projector))
+            {
+              ParticlePacket pkt;
+              if (!_particlePacketSent && !BugZapped)
+              {
+                _particlePacketSent = true;
+                var terminal = slim?.FatBlock as IMyTerminalBlock;
+                pkt = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Builder, terminal?.EntityId ?? 0L, slim.CubeGrid.EntityId, slim.Position, true);
+
+                if (MyAPIGateway.Session.Player != null)
+                  pkt.Received(AiSession.Instance.Network);
+
+                if (MyAPIGateway.Multiplayer.MultiplayerActive)
+                  AiSession.Instance.Network.RelayToClients(pkt);
+              }
+            }
+
+            if (MyAPIGateway.Session?.SessionSettings?.EnableResearch == true && slim.BlockDefinition != null)
+            {
+              var blockDef = slim.BlockDefinition.Id;
+              if (slim.BuildLevelRatio > 0.99f && _builtBlocks.Add(blockDef))
+              {
+                MyVisualScriptLogicProvider.PlayerResearchUnlock(Owner.IdentityId, blockDef);
+              }
             }
           }
+        }
+        else if (!notMoving && _particlePacketSent)
+        {
+          _particlePacketSent = false;
+          var packet = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Builder, remove: true);
+
+          if (MyAPIGateway.Session.Player != null)
+            packet.Received(AiSession.Instance.Network);
+
+          if (AiSession.Instance.IsServer && MyAPIGateway.Multiplayer.MultiplayerActive)
+            AiSession.Instance.Network.RelayToClients(packet);
         }
       }
-      else if (!notMoving && _particlePacketSent)
+      else if (_particlePacketSent)
       {
         _particlePacketSent = false;
         var packet = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Builder, remove: true);
@@ -932,30 +1025,16 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out float roll, double distanceCheck = 5)
     {
-      var botPosition = Position;
+      var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
+      var graphMatrix = _currentGraph.WorldMatrix;
+      var graphUpVector = graphMatrix.Up;
+      var jpEnabled = JetpackEnabled;
 
       var vecToWP = waypoint - botPosition;
       var flatDistanceCheck = (isTarget && Target.IsFriendly()) ? _followDistanceSqd : distanceCheck;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
       roll = 0;
-
-      float interference;
-      var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(botPosition, out interference);
-      var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(botPosition, interference);
-      var totalGrav = nGrav + aGrav;
-      if (totalGrav.LengthSquared() > 0)
-      {
-        var positionAbove = botPosition - totalGrav * 5;
-        var vecToAbove = positionAbove - botPosition;
-        var projFwd = VectorUtils.Project(vecToAbove, botMatrix.Forward);
-        var rejection = vecToAbove - projFwd;
-        var deviationAngle = VectorUtils.GetAngleBetween(vecToAbove, rejection);
-        if (Math.Abs(deviationAngle) > MathHelper.ToRadians(2))
-        {
-          roll = (float)deviationAngle * Math.Sign(botMatrix.Left.Dot(totalGrav));
-        }
-      }
 
       if (_botState.IsOnLadder)
       {
@@ -964,27 +1043,51 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
+      if (jpEnabled)
+      {
+        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+        {
+          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+
+          if (botdotUp < 0)
+            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+          else
+            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+        }
+      }
+
       var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
       var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
-      var twoDeg = MathHelperD.ToRadians(2);
+      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
 
-      if (!WaitForStuckTimer && relVectorBot.Z < 0 && Math.Abs(angle) < twoDeg)
+      if (!WaitForStuckTimer && angleTwoOrLess)
       {
         rotation = Vector2.Zero;
       }
       else
       {
         float xRot = 0;
-        if (totalGrav.LengthSquared() > 0)
+
+        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
         {
-          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, totalGrav);
-          if (Math.Abs(angleFwd) > twoDeg)
+          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
           {
-            xRot = (float)angleFwd;
+            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+
+            if (botDotUp < 0)
+              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+            else
+              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
           }
         }
-        
+
         rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }
 

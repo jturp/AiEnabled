@@ -31,6 +31,19 @@ namespace AiEnabled.Projectiles
 {
   public class ProjectileInfo
   {
+    internal class WeaponEffect
+    {
+      internal MyParticleEffect ParticleEffect;
+      internal MyWeaponDefinition.MyWeaponEffect Effect;
+
+      internal void Set(MyParticleEffect pEff, MyWeaponDefinition.MyWeaponEffect wEff)
+      {
+        ParticleEffect = pEff;
+        Effect = wEff;
+      }
+    }
+
+    internal Stack<WeaponEffect> WeaponEffects = new Stack<WeaponEffect>(50);
     Stack<BotProjectile> _projectileStack = new Stack<BotProjectile>(50);
     List<BotProjectile> _activeProjectiles = new List<BotProjectile>(50);
 
@@ -260,12 +273,14 @@ namespace AiEnabled.Projectiles
 
     public void Close()
     {
+      WeaponEffects?.Clear();
       _activeWeaponEffects?.Clear();
       _activeProjectiles?.Clear();
       _projectileStack?.Clear();
       _effectStack?.Clear();
       _hitList?.Clear();
 
+      WeaponEffects = null;
       _activeWeaponEffects = null;
       _activeProjectiles = null;
       _projectileStack = null;

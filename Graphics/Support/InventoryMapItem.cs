@@ -23,32 +23,32 @@ namespace AiEnabled.Graphics.Support
     {
       InventoryItem = item;
       var defId = item.Content.GetId();
-      var itemDef = MyDefinitionManager.Static.GetDefinition(defId);
+      var itemDef = MyDefinitionManager.Static.GetDefinition(defId) as MyPhysicalItemDefinition;
+      var tmDef = MyDefinitionManager.Static.GetDefinition<MyTransparentMaterialDefinition>(defId.SubtypeName);
 
       var name = itemDef != null ? itemDef.DisplayNameText : item.Content.SubtypeName;
       ItemName = name.Length > 50 ? name.Substring(0, 50) : name;
 
-      if (itemDef.Context.IsBaseGame)
-        IconName = defId.ToString();
+      if (tmDef != null)
+        IconName = tmDef.Id.SubtypeName;
+      else if (itemDef == null)
+        IconName = "AiEnabled_GenericUnknown";
+      else if (itemDef.Context.IsBaseGame || (itemDef.Context.ModItem.PublishedFileId == 2344068716 && !itemDef.IsOre && !itemDef.IsIngot))
+        IconName = $"AiEnabled_{defId.ToString()}";
+      else if (itemDef is MyConsumableItemDefinition)
+        IconName = "AiEnabled_MyObjectBuilder_ConsumableItem/ClangCola";
+      else if (itemDef is MyAmmoMagazineDefinition)
+        IconName = "AiEnabled_GenericAmmo";
+      else if (itemDef is MyToolItemDefinition)
+        IconName = "AiEnabled_GenericTool";
+      else if (itemDef is MyComponentDefinition)
+        IconName = "AiEnabled_GenericComponent";
+      else if (itemDef.IsIngot)
+        IconName = "AiEnabled_GenericIngot";
+      else if (itemDef.IsOre)
+        IconName = "AiEnabled_GenericOre";
       else
-      {
-        if (itemDef is MyAmmoMagazineDefinition)
-          IconName = "GenericAmmo";
-        else if (itemDef is MyToolItemDefinition)
-          IconName = "GenericTool";
-        else if (itemDef is MyComponentDefinition)
-          IconName = "GenericComponent";
-        else
-        {
-          var invItem = itemDef as MyPhysicalItemDefinition;
-          if (invItem.IsIngot)
-            IconName = "GenericIngot";
-          else if (invItem.IsOre)
-            IconName = "GenericOre";
-          else
-            IconName = "GenericUnknown";
-        }
-      }
+        IconName = "AiEnabled_GenericUnknown";
     }
 
     public string GetItemAmountString()

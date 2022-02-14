@@ -141,7 +141,9 @@ namespace AiEnabled.Bots
           if (dot <= 0)
             position += seat.WorldMatrix.Forward * Math.Max(1, vec.Length());
 
-          position = voxelGraph.GetClosestSurfacePointFast(bot, position, bot.WorldMatrix.Up);
+          var voxelPosition = voxelGraph.GetClosestSurfacePointFast(bot, position, bot.WorldMatrix.Up);
+          if (voxelPosition.HasValue)
+            position = voxelPosition.Value;
         }
 
         bot.Character.SetPosition(position);
@@ -168,14 +170,19 @@ namespace AiEnabled.Bots
       BotBase bot;
       if (botChar != null && AiSession.Instance.Bots.TryGetValue(botChar.EntityId, out bot))
       {
-        bot.CanUseAirNodes = spawnData.CanUseAirNodes;
-        bot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
+        if (AiSession.Instance.ModSaveData.AllowEnemiesToFly)
+        {
+          bot.CanUseAirNodes = spawnData.CanUseAirNodes;
+          bot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
+        }
+
         bot.CanUseWaterNodes = spawnData.CanUseWaterNodes;
         bot.WaterNodesOnly = spawnData.WaterNodesOnly;
         bot.GroundNodesFirst = spawnData.UseGroundNodesFirst;
         bot.CanUseLadders = spawnData.CanUseLadders;
         bot.CanUseSeats = spawnData.CanUseSeats;
         bot.ShouldLeadTargets = spawnData.LeadTargets;
+        bot._lootContainerSubtype = spawnData.LootContainerSubtypeId;
         bot._shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(spawnData.ShotDeviationAngle));
 
         if (spawnData.DespawnTicks == 0)
@@ -254,21 +261,49 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnBotFromAPI(string subtype, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null)
     {
-      var position = positionAndOrientation.Position;
+      List<MyVoxelBase> vList;
+      if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
+        vList = new List<MyVoxelBase>();
+      else
+        vList.Clear();
 
-      float _;
-      var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out _);
-      if (gravity.LengthSquared() > 0)
+      var position = positionAndOrientation.Position;
+      var sphere = new BoundingSphereD(position, 10);
+      MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
+
+      if (vList.Count > 0)
       {
-        var planet = MyGamePruningStructure.GetClosestPlanet(position);
-        if (GridBase.PointInsideVoxel(position, planet))
+        MyVoxelBase voxel = null;
+        for (int i = 0; i < vList.Count; i++)
         {
-          gravity.Normalize();
+          voxel = vList[i]?.RootVoxel;
+          if (voxel != null)
+            break;
+        }
+
+        if (GridBase.PointInsideVoxel(position, voxel))
+        {
+          float _;
+          var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out _);
+
+          Vector3D upVector;
+          if (gravity.LengthSquared() > 0)
+          {
+            upVector = Vector3D.Normalize(-gravity);
+          }  
+          else
+          {
+            var matrix = MatrixD.CreateFromQuaternion(positionAndOrientation.Orientation);
+            upVector = matrix.Up;
+          }
 
           bool onGround;
-          positionAndOrientation.Position = GridBase.GetClosestSurfacePointFast(position, -gravity, planet, out onGround);
+          positionAndOrientation.Position = GridBase.GetClosestSurfacePointFast(position, -gravity, voxel, out onGround);
         }
       }
+
+      vList.Clear();
+      AiSession.Instance.VoxelMapListStack.Push(vList);
 
       if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
         return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color);
@@ -357,7 +392,7 @@ namespace AiEnabled.Bots
           else
             gridGroup.Clear();
 
-          MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroup);
+          grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroup);
 
           for (int i = 0; i < gridGroup.Count; i++)
           {
@@ -708,8 +743,14 @@ namespace AiEnabled.Bots
 
     public static BotRoleEnemy ParseEnemyBotRole(string role)
     {
+      role = role.ToUpperInvariant();
+      if (role.EndsWith("BOT"))
+      {
+        role = role.Substring(0, role.Length - 3);
+      }
+
       BotRoleEnemy br;
-      if (Enum.TryParse(role.ToUpperInvariant(), out br))
+      if (Enum.TryParse(role, out br))
         return br;
 
       return BotRoleEnemy.SOLDIER;
@@ -717,8 +758,14 @@ namespace AiEnabled.Bots
 
     public static BotRoleFriendly ParseFriendlyRole(string role)
     {
+      role = role.ToUpperInvariant();
+      if (role.EndsWith("BOT"))
+      {
+        role = role.Substring(0, role.Length - 3);
+      }
+
       BotRoleFriendly br;
-      if (Enum.TryParse(role.ToUpperInvariant(), out br))
+      if (Enum.TryParse(role, out br))
       {
         return br;
       }

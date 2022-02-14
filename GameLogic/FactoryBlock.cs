@@ -198,8 +198,12 @@ namespace AiEnabled.GameLogic
           botBase = new CombatBot(bot, gBase, ownerId);
           MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
           break;
-        //case AiSession.BotType.Scavenger:
-        //  return new ScavengerBot(bot, gBase, ownerId);
+        case AiSession.BotType.Scavenger:
+          botBase = new ScavengerBot(bot, gBase, ownerId);
+          break;
+        default:
+          SelectedHelper = null;
+          throw new ArgumentException($"Invalid value for SelectedRole, '{SelectedRole}'");
       }
 
       return botBase;
@@ -210,7 +214,7 @@ namespace AiEnabled.GameLogic
       try
       {
         base.UpdateAfterSimulation10();
-        if (_block == null)
+        if (_block == null || AiSession.Instance?.Registered != true)
           return;
 
         if (_soundPlaying)
@@ -237,7 +241,7 @@ namespace AiEnabled.GameLogic
               if (gridMap == null)
               {
                 _gridList.Clear();
-                MyAPIGateway.GridGroups.GetGroup(_block.CubeGrid, GridLinkTypeEnum.Logical, _gridList);
+                _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(_gridList);
                 MyCubeGrid grid = _block.CubeGrid as MyCubeGrid;
 
                 foreach (var g in _gridList)
@@ -260,8 +264,10 @@ namespace AiEnabled.GameLogic
             }
             catch (Exception ex)
             {
-              MyAPIGateway.Utilities.ShowNotification($"Error trying to spawn bot: {ex.Message}");
               AiSession.Instance.Logger.Log($"Error trying to spawn bot: {ex.Message}\n{ex.StackTrace}");
+
+              if (MyAPIGateway.Session?.Player != null)
+                MyAPIGateway.Utilities.ShowNotification($"Error trying to spawn bot: {ex.Message}");
             }
 
             _helperBot = null;
@@ -282,7 +288,9 @@ namespace AiEnabled.GameLogic
       catch (Exception ex)
       {
         AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim10: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
-        MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim10: {ex.Message}");
+
+        if (MyAPIGateway.Session?.Player != null)
+          MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim10: {ex.Message}");
       }
     }
 

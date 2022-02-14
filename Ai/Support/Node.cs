@@ -129,9 +129,9 @@ namespace AiEnabled.Ai.Support
       NodeType &= ~nType;
     }
 
-    public bool SetBlocked(Vector3I pos)
+    public bool SetBlocked(Vector3I dir)
     {
-      var mask = GetBlockedMask(pos);
+      var mask = GetBlockedMask(dir);
 
       if ((BlockedMask & mask) == 0)
       {

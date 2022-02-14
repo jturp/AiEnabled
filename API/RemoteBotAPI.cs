@@ -150,6 +150,13 @@ namespace AiEnabled.API
       /// If the bot is unable to use the specified type, the default type will be used instead.
       /// </summary>
       [ProtoMember(20)] public string ToolSubtypeId;
+
+      /// <summary>
+      /// Bots will receive the loot from the specified loot container, provided the subtype is valid.
+      /// If not, the bot will receive its default loot.
+      /// This is an SBC definition, so you can create your own custom loot containers and use those.
+      /// </summary>
+      [ProtoMember(21)] public string LootContainerSubtypeId;
     }
 
     /////////////////////////////////////////////
@@ -406,6 +413,14 @@ namespace AiEnabled.API
     /// <param name="phrase">The name of the phrase (leave null to use a random phrase)</param>
     public void Speak(long botEntityId, string phrase = null) => _speak?.Invoke(botEntityId, phrase);
 
+    /// <summary>
+    /// Determins if the bot role is allowed to use a given tool type
+    /// </summary>
+    /// <param name="botRole">the BotRole to check (ie SoldierBot, GrinderBot, etc)</param>
+    /// <param name="toolSubtype">the SubtypeId of the weapon or tool</param>
+    /// <returns>true if the role is allowed to use the item, otherwise false</returns>
+    public bool CanRoleUseTool(string botRole, string toolSubtype) => _canBotUseTool?.Invoke(botRole, toolSubtype) ?? false;
+
     /////////////////////////////////////////////
     //API Methods End
     /////////////////////////////////////////////
@@ -436,6 +451,7 @@ namespace AiEnabled.API
     private Func<long, bool> _isBot;
     private Func<long, List<Vector3D>, bool> _setBotPatrol;
     private Func<long, long, MyRelationsBetweenPlayerAndBlock> _getRelationshipBetween;
+    private Func<string, string, bool> _canBotUseTool;
     private Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>> _spawnBotQueued;
     private Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>> _spawnBotCustomQueued;
     private GetClosestNodeDelegate _getClosestValidNode;
@@ -483,6 +499,7 @@ namespace AiEnabled.API
         _spawnBotQueued = dict["SpawnBotQueued"] as Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>;
         _spawnBotCustomQueued = dict["SpawnBotCustomQueued"] as Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>;
         _setBotPatrol = dict["SetBotPatrol"] as Func<long, List<Vector3D>, bool>;
+        _canBotUseTool = dict["CanRoleUseTool"] as Func<string, string, bool>;
 
       }
       catch

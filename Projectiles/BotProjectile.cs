@@ -21,6 +21,11 @@ using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 using AiEnabled.API;
 using VRage.Game.Entity;
 using Sandbox.Common.ObjectBuilders;
+using AiEnabled.Bots.Roles;
+using AiEnabled.Utilities;
+using Sandbox.Game;
+using VRage.Game.ModAPI.Interfaces;
+using VRageRender;
 
 namespace AiEnabled.Projectiles
 {
@@ -120,6 +125,8 @@ namespace AiEnabled.Projectiles
       IHitInfo hitInfo = null;
       IMyEntity hitEntity = null;
       Vector3D hitPosition = Vector3D.Zero;
+      var line = new LineD(LastPosition, Position);
+      string effectName, soundName;
 
       if (AiSession.Instance.ShieldAPILoaded)
       {
@@ -132,7 +139,6 @@ namespace AiEnabled.Projectiles
         else
           lineList.Clear();
 
-        var line = new LineD(LastPosition, Position);
         MyGamePruningStructure.GetTopmostEntitiesOverlappingRay(ref line, lineList, MyEntityQueryType.Dynamic);
 
         bool shieldHit = false;
@@ -168,32 +174,31 @@ namespace AiEnabled.Projectiles
         {
           if (MyAPIGateway.Session.Player != null)
           {
-            string material, sound;
             if (_isMissile)
             {
-              material = MyParticleEffectsNameEnum.Explosion_Missile;
-              sound = "WepSmallMissileExpl";
+              effectName = MyParticleEffectsNameEnum.Explosion_Missile;
+              soundName = ProjectileConstants.ShieldHitSound_Missile.String;
             }
             else
             {
-              material = MyParticleEffectsNameEnum.MaterialHit_Metal;
-              sound = "WepPlayRifleImpGlass";
+              effectName = MyParticleEffectsNameEnum.MaterialHit_Metal;
+              soundName = ProjectileConstants.ShieldHitSound_Projectile.String;
             }
 
             var matrix = Owner.WorldMatrix;
             matrix.Translation = hitPosition;
 
             MyParticleEffect _;
-            MyParticlesManager.TryCreateParticleEffect(material, ref matrix, ref hitPosition, uint.MaxValue, out _);
+            MyParticlesManager.TryCreateParticleEffect(effectName, ref matrix, ref hitPosition, uint.MaxValue, out _);
 
             MyEntity3DSoundEmitter emitter = AiSession.Instance.GetEmitter();
             emitter.SetPosition(hitPosition);
 
             MySoundPair soundPair;
-            if (!AiSession.Instance.SoundPairDict.TryGetValue(sound, out soundPair))
+            if (!AiSession.Instance.SoundPairDict.TryGetValue(soundName, out soundPair))
             {
-              soundPair = new MySoundPair(sound);
-              AiSession.Instance.SoundPairDict[sound] = soundPair;
+              soundPair = new MySoundPair(soundName);
+              AiSession.Instance.SoundPairDict[soundName] = soundPair;
             }
 
             emitter.PlaySound(soundPair);
@@ -238,7 +243,7 @@ namespace AiEnabled.Projectiles
           {
             var tracerPos = Position - Direction * tracerLength;
             var clr = _trailColor.ToVector4();
-            MyTransparentGeometry.AddLineBillboard(MyStringId.GetOrCompute("ProjectileTrailLine"), clr, tracerPos, (Vector3)Direction, tracerLength, 0.01f, BlendTypeEnum.PostPP);
+            MyTransparentGeometry.AddLineBillboard(ProjectileConstants.ProjectileTrailLine, clr, tracerPos, (Vector3)Direction, tracerLength, 0.01f, BlendTypeEnum.PostPP);
           }
 
           return false;
@@ -250,7 +255,7 @@ namespace AiEnabled.Projectiles
         {
           var tracerPos = Position - Direction * tracerLength;
           var clr = _trailColor.ToVector4();
-          MyTransparentGeometry.AddLineBillboard(MyStringId.GetOrCompute("ProjectileTrailLine"), clr, tracerPos, (Vector3)Direction, tracerLength, 0.01f, BlendTypeEnum.PostPP);
+          MyTransparentGeometry.AddLineBillboard(ProjectileConstants.ProjectileTrailLine, clr, tracerPos, (Vector3)Direction, tracerLength, 0.01f, BlendTypeEnum.PostPP);
         }
 
         return false;
@@ -267,7 +272,17 @@ namespace AiEnabled.Projectiles
         tracerLength = (float)Math.Min(tracerLength, distanceGunToTarget);
         var tracerPos = hitPosition - Direction * tracerLength;
         var clr = _trailColor.ToVector4();
-        MyTransparentGeometry.AddLineBillboard(MyStringId.GetOrCompute("ProjectileTrailLine"), clr, tracerPos, (Vector3)Direction, tracerLength, 0.01f, BlendTypeEnum.PostPP);
+        MyTransparentGeometry.AddLineBillboard(ProjectileConstants.ProjectileTrailLine, clr, tracerPos, (Vector3)Direction, tracerLength, 0.01f, BlendTypeEnum.PostPP);
+      }
+
+      MySurfaceImpactEnum surfaceEnum;
+      MyStringHash materialType;
+      MyAPIGateway.Projectiles.GetSurfaceAndMaterial(hitEntity, ref line, ref hitPosition, 0, out surfaceEnum, out materialType);
+      
+      if (!ProjectileConstants.HitMaterialToEffect.TryGetValue(materialType, out effectName))
+      {
+        AiSession.Instance.Logger.Log($"BotProjectile.Update: MaterialType '{materialType.String}' not found in dictionary! Entity was {hitEntity?.GetType().FullName ?? "NULL"}", MessageType.WARNING);
+        materialType = MyMaterialType.METAL;
       }
 
       var ent = hitEntity;
@@ -280,10 +295,20 @@ namespace AiEnabled.Projectiles
           var headPosition = headMatrix.Translation + headMatrix.Backward * 0.2;
           var subtype = character.Definition.Id.SubtypeName;
 
-          if (subtype.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase) || subtype.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase))
-            Damage *= 5;
+          BotBase bot;
+          AiSession.Instance.Bots.TryGetValue(character.EntityId, out bot);
+
+          if (subtype.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase) || subtype.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase)
+            || (bot != null && subtype.StartsWith("default_astronaut", StringComparison.OrdinalIgnoreCase)))
+            Damage *= 2;
           else if (Vector3D.DistanceSquared(headPosition, hitPosition) < 0.1)
             Damage *= _headShotMultiplier;
+
+          var nomad = bot as NomadBot;
+          if (nomad != null && nomad.Target.Entity == null)
+          {
+            nomad.SetHostile(Owner);
+          }
 
           AiSession.Instance.DamageCharacter(Owner.EntityId, character, MyDamageType.Bullet, Damage);
         }
@@ -292,29 +317,7 @@ namespace AiEnabled.Projectiles
         {
           var matrix = character.WorldMatrix;
           matrix.Translation = hitPosition;
-
-          string effectName = "MaterialHit_Character";
-          string soundName = "WepPlayRifleImpPlay";
-          if (string.IsNullOrWhiteSpace(character.DisplayName) || character.IsBot)
-          {
-            var subtype = character.Definition.Id.SubtypeName;
-           
-            if (subtype == "Ghost_Bot")
-            {
-              effectName = "MaterialHit_Ice";
-            }
-            else if (subtype.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase))
-            {
-              effectName = "Blood_Spider";
-            }
-            else if (subtype != "Space_Zombie" && subtype != "Space_Skeleton" 
-              && !subtype.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase) 
-              && !subtype.StartsWith("default_astronaut", StringComparison.OrdinalIgnoreCase))
-            {
-              effectName = "MaterialHit_Metal";
-              soundName = "WepPlayRifleImpMetal";
-            }
-          }
+          soundName = ProjectileConstants.HitMaterialToSound[materialType];
 
           MyParticleEffect _;
           MyParticlesManager.TryCreateParticleEffect(effectName, ref matrix, ref hitPosition, uint.MaxValue, out _);
@@ -333,6 +336,15 @@ namespace AiEnabled.Projectiles
 
             soundComp.PlayActionSound(soundPair);
           }
+
+          MyHitInfo info = new MyHitInfo()
+          {
+            Normal = hitInfo.Normal,
+            Position = hitPosition,
+          };
+
+          //var defaultType = MyStringHash.GetOrCompute("Default");
+          MyDecals.HandleAddDecal(hitEntity, info, (Vector3)Direction, materialType, ProjectileConstants.DecalSource_Rifle, damage: (float)Damage, voxelMaterial: materialType, flags: MyDecalFlags.IgnoreOffScreenDeletion);
         }
 
         return true;
@@ -372,7 +384,6 @@ namespace AiEnabled.Projectiles
           block.DoDamage(BlockDamage, MyDamageType.Bullet, true);
         }
 
-        //AiSession.Instance.Logger.Log($"Block damage final = {BlockDamage}");
         block.DoDamage(BlockDamage * 0.5f, MyDamageType.Deformation, isServer);
 
         if (MyAPIGateway.Session.Player != null)
@@ -382,33 +393,36 @@ namespace AiEnabled.Projectiles
           MatrixD matrix = m;
           matrix.Translation = hitPosition;
 
-          string material, sound;
-          var blockDef = block.BlockDefinition.Id;
-          if (blockDef.SubtypeName.IndexOf("window", StringComparison.OrdinalIgnoreCase) >= 0
-            || blockDef.SubtypeName.IndexOf("transparent", StringComparison.OrdinalIgnoreCase) >= 0)
+          string material;
+          var skin = block.SkinSubtypeId;
+
+          if (skin == ProjectileConstants.BlockSkin_Concrete)
           {
-            material = "MaterialHit_Glass";
-            sound = "WepPlayRifleImpGlass";
+            material = ProjectileConstants.Material_Rock.String;
+            materialType = MyMaterialType.ROCK;
           }
-          else
+          else if (skin == ProjectileConstants.BlockSkin_Wood)
           {
-            var skin = block.SkinSubtypeId.String;
-            if (skin == "Wood_Armor")
+            material = ProjectileConstants.Material_Wood.String;
+            materialType = MyMaterialType.WOOD;
+          }
+          else if (!ProjectileConstants.HitMaterialToEffect.TryGetValue(materialType, out material))
+          {
+            var blockDef = block.BlockDefinition.Id;
+            if (blockDef.SubtypeName.IndexOf("window", StringComparison.OrdinalIgnoreCase) >= 0
+              || blockDef.SubtypeName.IndexOf("transparent", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-              material = "MaterialHit_Wood";
-              sound = "WepPlayRifleImpWood";
-            }
-            else if (skin == "Concrete_Armor")
-            {
-              material = "MaterialHit_Rock";
-              sound = "WepPlayRifleImpRock";
+              material = MyParticleEffectsNameEnum.MaterialHit_Glass;
+              materialType = MyStringHash.GetOrCompute("Glass");
             }
             else
             {
-              material = "MaterialHit_Metal";
-              sound = "WepPlayRifleImpMetal";
+              material = MyParticleEffectsNameEnum.MaterialHit_Metal; ;
+              materialType = MyMaterialType.METAL;
             }
           }
+
+          var sound = ProjectileConstants.HitMaterialToSound[materialType];
 
           MyParticleEffect _;
           MyParticlesManager.TryCreateParticleEffect(material, ref matrix, ref hitPosition, uint.MaxValue, out _);
@@ -425,34 +439,50 @@ namespace AiEnabled.Projectiles
 
           emitter.PlaySound(soundPair);
           AiSession.Instance.ReturnEmitter(emitter);
+
+          MyHitInfo info = new MyHitInfo()
+          {
+            Normal = hitInfo.Normal,
+            Position = hitPosition,
+          };
+
+          //var defaultType = MyStringHash.GetOrCompute("Default");
+          MyDecals.HandleAddDecal(hitEntity, info, (Vector3)Direction, materialType, ProjectileConstants.DecalSource_Rifle, damage: (float)Damage, voxelMaterial: materialType, flags: MyDecalFlags.IgnoreOffScreenDeletion);
         }
 
         return true;
       }
-
-      var voxel = ent as MyVoxelBase;
-      if (voxel != null && !MyAPIGateway.Utilities.IsDedicated)
+      else if (hitEntity != null && !hitEntity.MarkedForClose && MyAPIGateway.Session.Player != null)
       {
+        soundName = ProjectileConstants.HitMaterialToSound[materialType];
         var position = hitPosition;
         var matrix = MatrixD.Identity;
         matrix.Translation = position;
 
-        MyParticleEffect effect;
-        MyParticlesManager.TryCreateParticleEffect("MaterialHit_Sand", ref matrix, ref position, uint.MaxValue, out effect);
+        MyParticleEffect _;
+        MyParticlesManager.TryCreateParticleEffect(effectName, ref matrix, ref hitPosition, uint.MaxValue, out _);
 
         MyEntity3DSoundEmitter emitter = AiSession.Instance.GetEmitter();
         emitter.SetPosition(hitPosition);
 
         MySoundPair soundPair;
-        if (!AiSession.Instance.SoundPairDict.TryGetValue("WepPlayRifleImpSand", out soundPair))
+        if (!AiSession.Instance.SoundPairDict.TryGetValue(soundName, out soundPair))
         {
-          // WepPlayRifleImpSand
-          soundPair = new MySoundPair("WepPlayRifleImpSand");
-          AiSession.Instance.SoundPairDict["WepPlayRifleImpSand"] = soundPair;
+          soundPair = new MySoundPair(soundName);
+          AiSession.Instance.SoundPairDict[soundName] = soundPair;
         }
 
         emitter.PlaySound(soundPair);
         AiSession.Instance.ReturnEmitter(emitter);
+
+        MyHitInfo info = new MyHitInfo()
+        {
+          Normal = hitInfo.Normal,
+          Position = hitPosition,
+        };
+
+        //var defaultType = MyStringHash.GetOrCompute("Default");
+        MyDecals.HandleAddDecal(hitEntity, info, (Vector3)Direction, materialType, ProjectileConstants.DecalSource_Rifle, damage: (float)Damage, voxelMaterial: materialType, flags: MyDecalFlags.IgnoreOffScreenDeletion);
         return true;
       }
 

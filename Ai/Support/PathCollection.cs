@@ -160,7 +160,7 @@ namespace AiEnabled.Ai.Support
         }
 
         var next = Graph.LocalToWorld(NextNode.Position) + NextNode.Offset;
-        var dSquared = Vector3D.DistanceSquared(Bot.Position, next);
+        var dSquared = Vector3D.DistanceSquared(Bot.GetPosition(), next);
 
         if (_distanceToWaypointSquared.HasValue)
         {
@@ -242,25 +242,25 @@ namespace AiEnabled.Ai.Support
         Vector3D worldCurrent, worldResult;
 
         Node testNode;
-        if (Graph.OpenTileDict.TryGetValue(localCurrent, out testNode))
+        if (Graph.TryGetNodeForPosition(localCurrent, out testNode))
           worldCurrent = Graph.LocalToWorld(testNode.Position) + testNode.Offset;
         else
-          worldCurrent = worldCurrentNode;
+          worldCurrent = current;
 
-        if (Graph.OpenTileDict.TryGetValue(localResult, out testNode))
+        if (Graph.TryGetNodeForPosition(localResult, out testNode))
           worldResult = Graph.LocalToWorld(testNode.Position) + testNode.Offset;
         else
           worldResult = worldResultNode;
 
         if (Bot.CanUseLadders)
         {
-          var slim = gridGraph.Grid.GetCubeBlock(localResult) as IMySlimBlock;
+          var slim = gridGraph.GetBlockAtPosition(localResult); // gridGraph.MainGrid.GetCubeBlock(localResult) as IMySlimBlock;
           var cube = slim?.FatBlock as MyCubeBlock;
           nextIsLadder = cube != null && AiSession.Instance.LadderBlockDefinitions.Contains(cube.BlockDefinition.Id);
 
           if (!onLadder && nextIsLadder && Bot._ticksSinceLastDismount > 180)
           {
-            var curSlim = gridGraph.Grid.GetCubeBlock(localCurrent) as IMySlimBlock;
+            var curSlim = gridGraph.GetBlockAtPosition(localCurrent); // gridGraph.MainGrid.GetCubeBlock(localCurrent) as IMySlimBlock;
             if (curSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(curSlim.BlockDefinition.Id))
             {
               cube = curSlim.FatBlock as MyCubeBlock;
@@ -271,7 +271,7 @@ namespace AiEnabled.Ai.Support
               if (voxelBlocked || (blocked && !charBlocked))
               {
                 bool firstWasVoxelBlocked = voxelBlocked;
-                var nextSlim = gridGraph.Grid.GetCubeBlock(result.Position) as IMySlimBlock;
+                var nextSlim = gridGraph.GetBlockAtPosition(result.Position); // gridGraph.MainGrid.GetCubeBlock(result.Position) as IMySlimBlock;
                 if (nextSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(nextSlim.BlockDefinition.Id))
                 {
                   var nextCube = nextSlim.FatBlock as MyCubeBlock;
@@ -286,7 +286,7 @@ namespace AiEnabled.Ai.Support
                     if (PathToTarget.Count > 1 && firstWasVoxelBlocked && !charBlocked)
                     {
                       var afterNext = PathToTarget[1].Position;
-                      nextSlim = gridGraph.Grid.GetCubeBlock(afterNext) as IMySlimBlock;
+                      nextSlim = gridGraph.GetBlockAtPosition(afterNext); // gridGraph.MainGrid.GetCubeBlock(afterNext) as IMySlimBlock;
                       if (nextSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(nextSlim.BlockDefinition.Id))
                       {
                         nextCube = nextSlim.FatBlock as MyCubeBlock;
@@ -303,7 +303,7 @@ namespace AiEnabled.Ai.Support
                     if (!okay)
                     {
                       Node next;
-                      Graph.OpenTileDict.TryGetValue(localCurrent, out next);
+                      Graph.TryGetNodeForPosition(localCurrent, out next);
                       NextNode = next;
                       return;
                     }
@@ -377,7 +377,7 @@ namespace AiEnabled.Ai.Support
         if (!isTransition && Bot.HasLineOfSight && !isFlying && Math.Abs(transToTgt.Y) < allowedDiff)
         {
           _temp.Clear();
-          gridGraph.Grid.RayCastCells(worldCurrent, worldTarget, _temp);
+          gridGraph.MainGrid.RayCastCells(worldCurrent, worldTarget, _temp);
 
           bool goDirect = true;
           for (int i = 0; i < _temp.Count; i++)
@@ -393,7 +393,7 @@ namespace AiEnabled.Ai.Support
             }
 
             var worldPoint = Graph.LocalToWorld(point);
-            if (gridGraph.Grid.CubeExists(point) || !Graph.IsPositionUsable(Bot, worldPoint, out n))
+            if (gridGraph.MainGrid.CubeExists(point) || !Graph.IsPositionUsable(Bot, worldPoint, out n))
             {
               goDirect = false;
               break;
@@ -409,7 +409,7 @@ namespace AiEnabled.Ai.Support
             }
 
             Node nNext;
-            if (Graph.OpenTileDict.TryGetValue(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
+            if (Graph.TryGetNodeForPosition(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
             {
               goDirect = false;
               break;
@@ -420,13 +420,13 @@ namespace AiEnabled.Ai.Support
           {
             Vector3D? hit = null;
 
-            if (Graph.Planet != null)
+            if (Graph.RootVoxel != null)
             {
               var line = new LineD(worldCurrent, gotoPosition);
 
-              //using (Graph.Planet.Pin())
+              using (Graph.RootVoxel.Pin())
               {
-                Graph.Planet.RootVoxel.GetIntersectionWithLine(ref line, out hit);
+                Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
               }
             }
 
@@ -434,7 +434,7 @@ namespace AiEnabled.Ai.Support
             {
               CleanUp(true);
               Node next;
-              Graph.OpenTileDict.TryGetValue(localTarget, out next);
+              Graph.TryGetNodeForPosition(localTarget, out next);
               nextIsAirNode = next?.IsAirNode ?? false;
               NextNode = next;
               return;
@@ -465,7 +465,7 @@ namespace AiEnabled.Ai.Support
 
           if (i < 2 && checkY < 0 && Bot.CanUseLadders)
           {
-            IMySlimBlock slim = gridGraph.Grid.GetCubeBlock(next.Position);
+            IMySlimBlock slim = gridGraph.GetBlockAtPosition(next.Position); // gridGraph.MainGrid.GetCubeBlock(next.Position);
             if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
             {
               var cube = slim.FatBlock as MyCubeBlock;
@@ -476,13 +476,52 @@ namespace AiEnabled.Ai.Support
             }
           }
 
+          if (Graph.RootVoxel != null)
+          {
+            if (!curPoint.HasValue)
+              curPoint = worldCurrent;
+
+            if (!prevPoint.HasValue)
+              prevPoint = worldCurrent;
+
+            using (Graph.RootVoxel.Pin())
+            {
+              Vector3D? hit = null;
+
+              if (!Vector3D.IsZero(curPoint.Value - worldNext))
+              {
+                var testLine = new LineD(curPoint.Value, worldNext);
+                if (Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
+                {
+                  // having to do this here instead of during map init because GetIntersectionWithLine isn't thread safe :(
+
+                  gridGraph.AddToObstacles(prevPoint.Value, curPoint.Value, worldNext);
+                  findNewPath = true;
+
+                  ReturnTempNodes(PathToTarget);
+                  PathToTarget.Clear();
+                  break;
+                }
+              }
+
+              if (!Vector3D.IsZero(worldCurrent - worldNext))
+              {
+                var line = new LineD(worldCurrent, worldNext);
+                if (Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+                {
+                  break;
+                }
+              }
+            }
+          }
+
           if (checkY != 0)
             break;
 
           if (PathToTarget.Count > 1 && Bot.CanUseLadders)
           {
             var afterNext = PathToTarget[1].Position;
-            IMySlimBlock slim = gridGraph.Grid.GetCubeBlock(afterNext);
+            IMySlimBlock slim = gridGraph.GetBlockAtPosition(afterNext); // gridGraph.MainGrid.GetCubeBlock(afterNext);
             if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
             {
               var worldAfter = gridGraph.LocalToWorld(afterNext);
@@ -496,7 +535,7 @@ namespace AiEnabled.Ai.Support
           }
 
           _temp.Clear();
-          gridGraph.Grid.RayCastCells(worldCurrent, worldNext, _temp);
+          gridGraph.MainGrid.RayCastCells(worldCurrent, worldNext, _temp);
 
           bool goDirect = true;
           for (int j = 0; j < _temp.Count; j++)
@@ -506,7 +545,7 @@ namespace AiEnabled.Ai.Support
               break;
 
             Node n;
-            IMySlimBlock slim = gridGraph.Grid.GetCubeBlock(point);
+            IMySlimBlock slim = gridGraph.GetBlockAtPosition(point); // gridGraph.MainGrid.GetCubeBlock(point);
             if (slim != null || !Graph.IsPositionUsable(Bot, Graph.LocalToWorld(point), out n))
             {
               if (slim != null && Bot._botState.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
@@ -528,47 +567,10 @@ namespace AiEnabled.Ai.Support
             }
 
             Node nNext;
-            if (Graph.OpenTileDict.TryGetValue(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
+            if (Graph.TryGetNodeForPosition(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
             {
               goDirect = false;
               break;
-            }
-          }
-
-          if (Graph.Planet != null)
-          {
-            if (!curPoint.HasValue)
-              curPoint = worldCurrent;
-
-            if (!prevPoint.HasValue)
-              prevPoint = worldCurrent;
-
-            //using (Graph.Planet.Pin())
-            {
-              Vector3D? hit = null;
-
-              if (!Vector3D.IsZero(curPoint.Value - worldNext))
-              {
-                var testLine = new LineD(curPoint.Value, worldNext);
-                if (Graph.Planet.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
-                {
-                  // having to do this here instead of during map init because GetIntersectionWithLine isn't thread safe :(
-
-                  gridGraph.AddToObstacles(prevPoint.Value, curPoint.Value, worldNext);
-                  findNewPath = true;
-                  PathToTarget.Clear();
-                  break;
-                }
-              }
-
-              if (!Vector3D.IsZero(worldCurrent - worldNext))
-              {
-                var line = new LineD(worldCurrent, worldNext);
-                if (Graph.Planet.RootVoxel.GetIntersectionWithLine(ref line, out hit))
-                {
-                  break;
-                }
-              }
             }
           }
 
@@ -604,7 +606,7 @@ namespace AiEnabled.Ai.Support
       var localCurrent = Graph.WorldToLocal(current);
       var localTarget = Graph.WorldToLocal(actualTarget);
 
-      if (Graph.OpenTileDict.TryGetValue(localCurrent, out testNode))
+      if (Graph.TryGetNodeForPosition(localCurrent, out testNode))
       {
         worldCurrentNode = Graph.LocalToWorld(testNode.Position);
         worldCurrent = worldCurrentNode + testNode.Offset;
@@ -612,10 +614,10 @@ namespace AiEnabled.Ai.Support
       else
       {
         worldCurrentNode = Graph.LocalToWorld(localCurrent);
-        worldCurrent = worldCurrentNode;
+        worldCurrent = current;
       }
 
-      if (Graph.OpenTileDict.TryGetValue(localTarget, out testNode))
+      if (Graph.TryGetNodeForPosition(localTarget, out testNode))
       {
         worldTarget = Graph.LocalToWorld(testNode.Position) + testNode.Offset;
       }
@@ -639,7 +641,7 @@ namespace AiEnabled.Ai.Support
         bool goDirectToTarget = true;
         foreach (var point in _temp)
         {
-          if (Graph.OpenTileDict.ContainsKey(point) && !Graph.Obstacles.ContainsKey(point)
+          if (Graph.IsOpenTile(point) && !Graph.Obstacles.ContainsKey(point)
             && !Graph.TempBlockedNodes.ContainsKey(point) && !Graph.ObstacleNodes.ContainsKey(point))
             continue;
 
@@ -651,19 +653,19 @@ namespace AiEnabled.Ai.Support
         {
           Vector3D? hit = null;
 
-          if (voxelGrid.Planet != null)
+          if (voxelGrid.RootVoxel != null)
           {
             var line = new LineD(worldCurrent, worldTarget);
 
-            //using (voxelGrid.Planet.Pin())
-              voxelGrid.Planet.RootVoxel.GetIntersectionWithLine(ref line, out hit);
+            using (voxelGrid.RootVoxel.Pin())
+              voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
           }
 
           if (!hit.HasValue)
           {
             CleanUp(true);
             Node next;
-            voxelGrid.OpenTileDict.TryGetValue(localTarget, out next);
+            voxelGrid.TryGetNodeForPosition(localTarget, out next);
             nextIsAirNode = next?.IsAirNode ?? false;
             NextNode = next;
             return;
@@ -693,7 +695,7 @@ namespace AiEnabled.Ai.Support
         if (Math.Abs(localVector.Y) > allowedDiff && (nextNode == null || !nextNode.IsAirNode))
           break;
 
-        if (voxelGrid.Planet != null)
+        if (voxelGrid.RootVoxel != null)
         {
           if (!curPoint.HasValue)
           {
@@ -708,16 +710,18 @@ namespace AiEnabled.Ai.Support
           var line = new LineD(worldCurrent, nextNodeWorld);
           var testLine = new LineD(curPoint.Value, nextNodeWorld);
 
-          //using (voxelGrid.Planet.Pin())
+          using (voxelGrid.RootVoxel.Pin())
           {
-            if (voxelGrid.Planet.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
+            if (voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
             {
               voxelGrid.AddToObstacles(prevPoint.Value, curPointNode.Value, nextNodeWorld);
               findNewPath = true;
+
+              ReturnTempNodes(PathToTarget);
               PathToTarget.Clear();
               break;
             }
-            else if (voxelGrid.Planet.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+            else if (voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
             {
               break;
             }
@@ -731,7 +735,7 @@ namespace AiEnabled.Ai.Support
         bool keepGoing = true;
         foreach (var point in _temp)
         {
-          if (Graph.OpenTileDict.ContainsKey(point) && !Graph.Obstacles.ContainsKey(point)
+          if (Graph.IsOpenTile(point) && !Graph.Obstacles.ContainsKey(point)
             && !Graph.TempBlockedNodes.ContainsKey(point) && !Graph.ObstacleNodes.ContainsKey(point))
             continue;
 
@@ -889,10 +893,16 @@ namespace AiEnabled.Ai.Support
         if (includePath)
         {
           lock (PathToTarget)
+          {
+            ReturnTempNodes(PathToTarget);
             PathToTarget.Clear();
+          }
 
           lock (TempPath)
+          {
+            ReturnTempNodes(TempPath);
             TempPath.Clear();
+          }
 
           var temp = NextNode as TempNode;
           if (temp != null)
@@ -937,10 +947,10 @@ namespace AiEnabled.Ai.Support
       relation = MyRelationsBetweenPlayers.Neutral;
 
       var gridGraph = Graph as CubeGridMap;
-      if (gridGraph?.Grid == null || gridGraph.Dirty || Bot?.Character?.ControllerInfo == null)
+      if (gridGraph?.MainGrid == null || gridGraph.Dirty || Bot?.Character?.ControllerInfo == null)
         return;
 
-      var grid = gridGraph.Grid;
+      var grid = gridGraph.MainGrid;
       var botIdentityId = Bot.Character.ControllerInfo.ControllingIdentityId;
       var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0;
 
@@ -1011,6 +1021,19 @@ namespace AiEnabled.Ai.Support
       }
     }
 
+    public void ReturnTempNodes(MyQueue<Node> queue)
+    {
+      if (queue?.Count > 0)
+      {
+        for (int i = 0; i < queue.Count; i++)
+        {
+          var pn = queue[i] as TempNode;
+          if (pn != null)
+            AiSession.Instance.NodeStack.Push(pn);
+        }
+      }
+    }
+
     #region DebugOnly
     readonly HashSet<Vector3I> _tempDebug = new HashSet<Vector3I>(); // for debug only
     public void DrawFreeSpace(Vector3D start, Vector3D goal)
@@ -1039,7 +1062,7 @@ namespace AiEnabled.Ai.Support
           MyAPIGateway.Utilities.ShowNotification($"Camera: {localCamera}", 16);
         }
 
-        var botTile = Graph.OpenTileDict.GetValueOrDefault(current, null);
+        var botTile = Graph.GetValueOrDefault(current, null);
         MyAPIGateway.Utilities.ShowNotification($"Start: {current} | Next: {next?.Position.ToString() ?? "[NULL]"} | Transition: {transition?.ToString() ?? "[NULL]"} | Goal: {end}", 16);
         MyAPIGateway.Utilities.ShowNotification($"Obstacle count: {Graph.ObstacleNodes.Count}", 16);
 
@@ -1066,7 +1089,7 @@ namespace AiEnabled.Ai.Support
         {
           var point = iter.Current;
           Node tileNode;
-          if (point != current && point != end && !_tempDebug.Contains(point) && !Graph.Obstacles.ContainsKey(point) && Graph.OpenTileDict.TryGetValue(point, out tileNode))
+          if (point != current && point != end && !_tempDebug.Contains(point) && !Graph.Obstacles.ContainsKey(point) && Graph.TryGetNodeForPosition(point, out tileNode))
           {
             vec = Graph.LocalToWorld(point);
             var nodeColor = tileNode.IsAirNode ? Color.Blue : Color.Brown;
@@ -1082,7 +1105,7 @@ namespace AiEnabled.Ai.Support
 
         foreach (var point in Graph.TempBlockedNodes.Keys)
         {
-          if (Graph.OpenTileDict.ContainsKey(point))
+          if (Graph.IsOpenTile(point))
           {
             _tempDebug.Add(point);
             vec = Graph.LocalToWorld(point);
@@ -1119,7 +1142,7 @@ namespace AiEnabled.Ai.Support
         color = Color.Purple.ToVector4();
 
         Node node;
-        if (Graph.OpenTileDict.TryGetValue(end, out node))
+        if (Graph.TryGetNodeForPosition(end, out node))
           vec = Graph.LocalToWorld(node.Position) + node.Offset;
         else
           vec = Graph.LocalToWorld(end);
@@ -1159,7 +1182,7 @@ namespace AiEnabled.Ai.Support
           MySimpleObjectDraw.DrawLine(line.From, line.To, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
         }
 
-        if (Graph.OpenTileDict.TryGetValue(current, out node))
+        if (Graph.TryGetNodeForPosition(current, out node))
           vec = Graph.LocalToWorld(node.Position) + node.Offset;
         else
           vec = Graph.LocalToWorld(current);

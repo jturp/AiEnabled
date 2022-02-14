@@ -39,6 +39,7 @@ namespace AiEnabled.Bots.Roles
       Behavior = new EnemyBehavior(bot);
       ToolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
 
+      _sideNodeWaitTime = 60;
       _ticksSinceFoundTarget = 241;
       _ticksBetweenAttacks = 200;
       _blockDamagePerSecond = 175;
@@ -176,16 +177,22 @@ namespace AiEnabled.Bots.Roles
 
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack, shouldFire;
-      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out shouldAttack, out shouldFire);
+      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out roll, out shouldAttack, out shouldFire);
       CheckFire(shouldFire, shouldAttack, ref movement);
-      Character.MoveAndRotate(movement, rotation, 0f);
+      Character.MoveAndRotate(movement, rotation, roll);
     }
+
+    byte _sideNodeTimer, _sideNodeWaitTime;
 
     internal override bool Update()
     {
       if (!base.Update())
         return false;
+
+      if (_sideNodeTimer < byte.MaxValue)
+        ++_sideNodeTimer;
 
       if (_firePacketSent)
       {
@@ -304,7 +311,7 @@ namespace AiEnabled.Bots.Roles
         else
         {
           int ammoCount;
-          if (MyAPIGateway.Session.CreativeMode)
+          if (MyAPIGateway.Session.CreativeMode || AiSession.Instance.InfiniteAmmoEnabled)
           {
             if (ToolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -340,11 +347,16 @@ namespace AiEnabled.Bots.Roles
 
     bool _moveFromLadder;
 
-    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out bool fistAttack, out bool rifleAttack, double distanceCheck = 4)
+    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out float roll,
+      out bool fistAttack, out bool rifleAttack, double distanceCheck = 4)
     {
+      roll = 0;
       rifleAttack = false;
-      var botPosition = Position;
+      var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
+      var graphMatrix = _currentGraph.WorldMatrix;
+      var graphUpVector = graphMatrix.Up;
+      var jpEnabled = JetpackEnabled;
 
       var vecToWP = waypoint - botPosition;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
@@ -355,6 +367,54 @@ namespace AiEnabled.Bots.Roles
         rotation = Vector2.Zero;
         fistAttack = false;
         return;
+      }
+
+      if (jpEnabled)
+      {
+        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+        {
+          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+
+          if (botdotUp < 0)
+            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+          else
+            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+        }
+      }
+
+      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
+      var reject = vecToWP - projUp;
+      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
+      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
+
+      if (!WaitForStuckTimer && angleTwoOrLess)
+      {
+        rotation = Vector2.Zero;
+      }
+      else
+      {
+        float xRot = 0;
+
+        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
+        {
+          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
+          {
+            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+
+            if (botDotUp < 0)
+              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+            else
+              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
+          }
+        }
+
+        rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }
 
       var flattenedVector = new Vector3D(relVectorBot.X, 0, relVectorBot.Z);
@@ -386,25 +446,8 @@ namespace AiEnabled.Bots.Roles
           }
         }
       }
-      else if (!_moveFromLadder)
+      else if (!_moveFromLadder || (_sideNode.HasValue && Vector3D.DistanceSquared(botPosition, _sideNode.Value) > 400))
         _sideNode = null;
-
-      if (_sideNode.HasValue && Vector3D.DistanceSquared(botPosition, _sideNode.Value) > 400)
-        _sideNode = null;
-
-      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
-      var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
-      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
-
-      if (!WaitForStuckTimer && angleTwoOrLess)
-      {
-        rotation = Vector2.Zero;
-      }
-      else
-      {
-        rotation = new Vector2(0, (float)angle * Math.Sign(relVectorBot.X) * 75);
-      }
 
       if (_currentGraph?.Ready == true)
       {
@@ -453,7 +496,7 @@ namespace AiEnabled.Bots.Roles
           reject = vecToTgt - projUp;
           angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
 
-          if (relToTarget.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2))
+          if (relToTarget.Z < 0 && Math.Abs(angle) < _twoDegToRads)
           {
             rotation = Vector2.Zero;
           }
@@ -484,6 +527,7 @@ namespace AiEnabled.Bots.Roles
             Vector3I node;
             if (_sideNode.HasValue)
             {
+              _sideNodeTimer = 0;
               //if (_isShooting)
               //{
               //  movement = Vector3.Zero;
@@ -503,15 +547,11 @@ namespace AiEnabled.Bots.Roles
                 movement = new Vector3(xMove, 0, zMove);
               }
             }
-            else if (_currentGraph != null && _currentGraph.GetRandomNodeNearby(this, waypoint, out node))
+            else if (_currentGraph != null && _sideNodeTimer > _sideNodeWaitTime && _currentGraph.GetRandomNodeNearby(this, waypoint, out node))
             {
               var worldNode = _currentGraph.LocalToWorld(node);
               _sideNode = worldNode;
-
-              if (Vector3D.DistanceSquared(worldNode, botPosition) > 400)
-              {
-                AiSession.Instance.Logger.Log($"Side node set to something far far away! Node was {node}, WorldNode was {worldNode}, Distance = {Vector3D.Distance(worldNode, botPosition):0.##}");
-              }
+              _sideNodeTimer = 0;
 
               if (Vector3D.DistanceSquared(worldNode, actualPosition) < 10)
               {
@@ -646,6 +686,9 @@ namespace AiEnabled.Bots.Roles
           Character.CurrentMovementState = MyCharacterMovementEnum.Standing;
         }
 
+        if (_botState.IsRunning)
+          Character.SwitchWalk();
+
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())
         {
           IsShooting = true;
@@ -670,6 +713,9 @@ namespace AiEnabled.Bots.Roles
       }
       else
       {
+        if (!_moveFromLadder)
+          _sideNode = null;
+
         if (isCrouching)
         {
           Character.Crouch();
@@ -693,12 +739,13 @@ namespace AiEnabled.Bots.Roles
     {
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack, shouldFire;
       TrySwitchWalk();
 
-      GetMovementAndRotation(isTgt, point, out movement, out rotation, out shouldAttack, out shouldFire, distanceCheck);
+      GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, out shouldFire, distanceCheck);
       CheckFire(shouldFire, shouldAttack, ref movement);
-      MoveToPoint(movement, rotation);
+      MoveToPoint(movement, rotation, roll);
     }
   }
 }

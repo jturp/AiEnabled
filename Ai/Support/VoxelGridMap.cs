@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -38,14 +39,15 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     public const float DefaultCellSize = 1.25f;
 
-    public ulong Key;
+    ConcurrentDictionary<Vector3I, Node> _openTileDict = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
+
     public MatrixD MatrixNormalizedInv;
     readonly float _gridSizeR;
     Vector3D _upVector;
 
     public override float CellSize { get; internal set; } = DefaultCellSize;
 
-    public VoxelGridMap(Vector3D botStart)
+    public VoxelGridMap(Vector3D botStart, MatrixD botMatrix)
     {
       _upVector = Vector3D.Up;
       Vector3D fwd = Vector3D.Forward;
@@ -53,7 +55,7 @@ namespace AiEnabled.Ai.Support
 
       var vec = new Vector3I(DefaultHalfSize);
       BoundingBox = new BoundingBoxI(-vec, vec);
-      MyPlanet checkPlanet = null;
+      MyVoxelBase checkVoxel = null;
 
       float _;
       var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(botStart, out _);
@@ -62,46 +64,156 @@ namespace AiEnabled.Ai.Support
         _upVector = Vector3D.Normalize(-gravity);
         fwd = Vector3D.CalculatePerpendicularVector(_upVector);
 
-        checkPlanet = MyGamePruningStructure.GetClosestPlanet(botStart);
+        checkVoxel = MyGamePruningStructure.GetClosestPlanet(botStart);
       }
       else
       {
-        checkPlanet = null;
-        CellSize *= 2;
-        vec /= 2;
-        BoundingBox = new BoundingBoxI(-vec, vec);
+        List<MyVoxelBase> vList;
+        if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
+          vList = new List<MyVoxelBase>();
+        else
+          vList.Clear();
+
+        var halfSize = vec * CellSize;
+        var box = new BoundingBoxD(botStart - halfSize, botStart + halfSize);
+        MyGamePruningStructure.GetAllVoxelMapsInBox(ref box, vList);
+
+        if (vList.Count > 0)
+        {
+          MyVoxelBase vMap = null;
+          for (int i = 0; i < vList.Count; i++)
+          {
+            vMap = vList[i];
+            if (vMap?.RootVoxel != null)
+            {
+              checkVoxel = vMap.RootVoxel;
+              break;
+            }
+          }
+
+          if (checkVoxel != null)
+          {
+            Vector3I minVoxel, maxVoxel;
+            vMap.GetContainedVoxelCoords(ref box, out minVoxel, out maxVoxel);
+
+            Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref minVoxel, ref maxVoxel);
+            double distanceSqd = double.MaxValue;
+            Vector3D? closestVoxelPostion = null;
+
+            var checkPoint = botStart;
+            var directionToBot = Vector3D.Normalize(botMatrix.Translation - checkPoint);
+            while (PointInsideVoxel(checkPoint, checkVoxel) && OBB.Contains(ref checkPoint))
+            {
+              checkPoint += directionToBot * 2;
+            }
+
+            while (iter.IsValid())
+            {
+              var current = iter.Current;
+              iter.MoveNext();
+
+              Vector3D worldPosition;
+              MyVoxelCoordSystems.VoxelCoordToWorldPosition(vMap.PositionLeftBottomCorner, ref current, out worldPosition);
+
+              if (PointInsideVoxel(worldPosition, vMap.RootVoxel))
+              {
+                var dSqd = Vector3D.DistanceSquared(worldPosition, checkPoint);
+                if (dSqd < distanceSqd)
+                {
+                  distanceSqd = dSqd;
+                  closestVoxelPostion = worldPosition;
+                }
+              }
+            }
+
+            if (closestVoxelPostion.HasValue)
+            {
+              _upVector = Vector3D.Normalize(checkPoint - closestVoxelPostion.Value);
+              fwd = Vector3D.CalculatePerpendicularVector(_upVector);
+            }
+            else
+            {
+              List<IHitInfo> hitList;
+              if (!AiSession.Instance.HitListStack.TryPop(out hitList) || hitList == null)
+                hitList = new List<IHitInfo>();
+              else
+                hitList.Clear();
+
+              bool OK = false;
+              MyAPIGateway.Physics.CastRay(botStart, vMap.PositionComp.WorldVolume.Center, hitList, CollisionLayers.CharacterCollisionLayer);
+              if (hitList.Count > 0)
+              {
+                for (int i = 0; i < hitList.Count; i++)
+                {
+                  var hit = hitList[i];
+                  var voxel = hit?.HitEntity as MyVoxelBase;
+                  if (voxel != null)
+                  {
+                    OK = true;
+                    _upVector = hit.Normal;
+                    fwd = Vector3D.CalculatePerpendicularVector(_upVector);
+                    break;
+                  }
+                }
+              }
+
+              hitList.Clear();
+              AiSession.Instance.HitListStack.Push(hitList);
+
+              if (!OK)
+              {
+                var matrix = MatrixD.CreateWorld(botStart, _upVector, fwd);
+                var upDir = matrix.GetClosestDirection(botMatrix.Up);
+                var fwDir = matrix.GetClosestDirection(botMatrix.Forward);
+
+                _upVector = matrix.GetDirectionVector(upDir);
+                fwd = matrix.GetDirectionVector(fwDir);
+              }
+            }
+          }
+        }
+
+        vList.Clear();
+        AiSession.Instance.VoxelMapListStack.Push(vList);
+
+        if (checkVoxel == null)
+        {
+          CellSize *= 2;
+          vec /= 2;
+          BoundingBox = new BoundingBoxI(-vec, vec);
+        }
       }
 
       WorldMatrix = MatrixD.CreateWorld(botStart, fwd, _upVector);
       MatrixNormalizedInv = MatrixD.Normalize(MatrixD.Invert(WorldMatrix));
 
-      if (checkPlanet != null)
+      if (checkVoxel != null)
       {
-        var tuple = checkPlanet.GetVoxelContentInBoundingBox_Fast(BoundingBox, WorldMatrix, true);
+        var tuple = checkVoxel.GetVoxelContentInBoundingBox_Fast(BoundingBox, WorldMatrix, true);
 
         if (tuple.Item1 == 0 && tuple.Item2 == 0)
         {
-          checkPlanet = null;
+          checkVoxel = null;
           CellSize *= 2;
           vec /= 2;
           BoundingBox = new BoundingBoxI(-vec, vec);
         }
         else
         {
-          checkPlanet.RangeChanged += Planet_RangeChanged;
-          checkPlanet.OnMarkForClose += Planet_OnMarkForClose;
+          checkVoxel.RangeChanged += Planet_RangeChanged;
+          checkVoxel.OnMarkForClose += Planet_OnMarkForClose;
         }
       }
 
-      Planet = checkPlanet;
+      RootVoxel = checkVoxel;
       _gridSizeR = 1f / CellSize;
       Vector3D worldCenter;
 
-      if (Planet != null)
+      if (RootVoxel != null)
       {
         Vector3I voxelCoord;
-        MyVoxelCoordSystems.WorldPositionToVoxelCoord(Planet.PositionComp.WorldMatrixNormalizedInv, Vector3D.Zero, Planet.SizeInMetresHalf, ref botStart, out voxelCoord);
-        MyVoxelCoordSystems.VoxelCoordToWorldPosition(Planet.WorldMatrix, Vector3D.Zero, Planet.SizeInMetresHalf, ref voxelCoord, out worldCenter);
+        MyVoxelCoordSystems.WorldPositionToVoxelCoord(RootVoxel.PositionComp.WorldMatrixNormalizedInv, Vector3D.Zero, RootVoxel.SizeInMetresHalf, ref botStart, out voxelCoord);
+        MyVoxelCoordSystems.VoxelCoordToWorldPosition(RootVoxel.WorldMatrix, Vector3D.Zero, RootVoxel.SizeInMetresHalf, ref voxelCoord, out worldCenter);
       }
       else
       {
@@ -113,13 +225,12 @@ namespace AiEnabled.Ai.Support
       OBB = new MyOrientedBoundingBoxD(worldCenter, hExtents * CellSize, Quaternion.CreateFromRotationMatrix(WorldMatrix));
 
       AiSession.Instance.MapInitQueue.Enqueue(this);
-      //Init();
     }
 
     public override bool IsPositionValid(Vector3D position)
     {
       if (OBB.Contains(ref position))
-        return !PointInsideVoxel(position, Planet);
+        return !PointInsideVoxel(position, RootVoxel);
 
       return false;
     }
@@ -127,7 +238,7 @@ namespace AiEnabled.Ai.Support
     public override bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false)
     {
       node = testNode;
-      if (!currentIsDenied && OpenTileDict.ContainsKey(node) && !Obstacles.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
+      if (!currentIsDenied && _openTileDict.ContainsKey(node) && !Obstacles.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
       {
         return true;
       }
@@ -151,10 +262,9 @@ namespace AiEnabled.Ai.Support
       return localDistance < double.MaxValue;
     }
 
-    public override IEnumerable<Vector3I> GetBlockedNodeEdges(Node nodeBase)
+    public override void GetBlockedNodeEdges(Node nodeBase)
     {
       // not used here
-      yield break;
     }
 
     public override bool GetRandomNodeNearby(BotBase bot, Vector3D targetPosition, out Vector3I localPos)
@@ -165,14 +275,14 @@ namespace AiEnabled.Ai.Support
       else
         localNodes.Clear();
 
-      var botPosition = bot.Position;
+      var botPosition = bot.GetPosition();
       var botWorldMatrix = bot.WorldMatrix;
 
       localPos = WorldToLocal(botPosition);
       var upDir = WorldMatrix.GetClosestDirection(botWorldMatrix.Up);
       var intVec = Base6Directions.GetIntVector(upDir);
 
-      if (!OpenTileDict.ContainsKey(localPos))
+      if (!_openTileDict.ContainsKey(localPos))
         localPos -= intVec;
 
       foreach (var dir in AiSession.Instance.CardinalDirections)
@@ -183,7 +293,7 @@ namespace AiEnabled.Ai.Support
         var newNode = localPos + dir;
         Node node;
 
-        if (!OpenTileDict.ContainsKey(newNode) || Obstacles.ContainsKey(newNode) || !OpenTileDict.TryGetValue(localPos, out node) || node.IsBlocked(dir))
+        if (!_openTileDict.ContainsKey(newNode) || Obstacles.ContainsKey(newNode) || !_openTileDict.TryGetValue(localPos, out node) || node.IsBlocked(dir))
           continue;
 
         localNodes.Add(newNode);
@@ -198,13 +308,13 @@ namespace AiEnabled.Ai.Support
         var node2 = localPos + dir2;
         var newNode = localPos + dir;
 
-        if (!OpenTileDict.ContainsKey(newNode) || Obstacles.ContainsKey(newNode)
-          || !OpenTileDict.ContainsKey(node1) || Obstacles.ContainsKey(node1)
-          || !OpenTileDict.ContainsKey(node2) || Obstacles.ContainsKey(node2))
+        if (!_openTileDict.ContainsKey(newNode) || Obstacles.ContainsKey(newNode)
+          || !_openTileDict.ContainsKey(node1) || Obstacles.ContainsKey(node1)
+          || !_openTileDict.ContainsKey(node2) || Obstacles.ContainsKey(node2))
           continue;
 
         Node n;
-        if (!OpenTileDict.TryGetValue(localPos, out n))
+        if (!_openTileDict.TryGetValue(localPos, out n))
           continue;
 
         if (n.IsBlocked(dir1) || n.IsBlocked(dir2))
@@ -344,7 +454,7 @@ namespace AiEnabled.Ai.Support
       }
 
       Node nNext;
-      if (!OpenTileDict.TryGetValue(nextNode, out nNext))
+      if (!_openTileDict.TryGetValue(nextNode, out nNext))
       {
         return false;
       }
@@ -354,15 +464,15 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      if (Planet != null && Environment.CurrentManagedThreadId == AiSession.MainThreadId)
+      if (RootVoxel != null && Environment.CurrentManagedThreadId == AiSession.MainThreadId)
       {
-        using (Planet.Pin())
+        using (RootVoxel.Pin())
         {
           Vector3D worldCurrent;
           Vector3D worldNext = LocalToWorld(nNext.Position) + nNext.Offset;
 
           Node node;
-          if (OpenTileDict.TryGetValue(currentNode, out node))
+          if (_openTileDict.TryGetValue(currentNode, out node))
           {
             worldCurrent = LocalToWorld(node.Position) + node.Offset;
           }
@@ -376,7 +486,7 @@ namespace AiEnabled.Ai.Support
           var line = new LineD(worldCurrent, worldNext);
 
           Vector3D? _;
-          if (Planet.RootVoxel.GetIntersectionWithLine(ref line, out _))
+          if (RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out _))
             return false;
         }
       }
@@ -410,7 +520,7 @@ namespace AiEnabled.Ai.Support
 
     public void UpdateVoxels()
     {
-      if (Planet == null || Planet.MarkedForClose || !Ready)
+      if (RootVoxel == null || RootVoxel.MarkedForClose || !Ready)
         return;
 
       NeedsVoxelUpate = false;
@@ -424,8 +534,8 @@ namespace AiEnabled.Ai.Support
 
     void ApplyVoxelChanges()
     {
-      var minWorld = Vector3D.Transform(_pendingChanges.Value.Min - Planet.SizeInMetresHalf, Planet.WorldMatrix);
-      var maxWorld = Vector3D.Transform(_pendingChanges.Value.Max - Planet.SizeInMetresHalf, Planet.WorldMatrix);
+      var minWorld = Vector3D.Transform(_pendingChanges.Value.Min - RootVoxel.SizeInMetresHalf, RootVoxel.WorldMatrix);
+      var maxWorld = Vector3D.Transform(_pendingChanges.Value.Max - RootVoxel.SizeInMetresHalf, RootVoxel.WorldMatrix);
       _pendingChanges = null;
 
       if (!OBB.Contains(ref minWorld) && !OBB.Contains(ref maxWorld))
@@ -444,7 +554,7 @@ namespace AiEnabled.Ai.Support
         Node ptr;
         byte b;
 
-        OpenTileDict.TryRemove(current, out ptr);
+        _openTileDict.TryRemove(current, out ptr);
         ObstacleNodes.TryRemove(current, out b);
         Obstacles.TryRemove(current, out b);
       }
@@ -454,25 +564,27 @@ namespace AiEnabled.Ai.Support
 
     private void Planet_OnMarkForClose(MyEntity obj)
     {
-      if (Planet != null)
+      if (RootVoxel != null)
       {
-        Planet.OnMarkForClose -= Planet_OnMarkForClose;
-        Planet.RangeChanged -= Planet_RangeChanged;
+        RootVoxel.OnMarkForClose -= Planet_OnMarkForClose;
+        RootVoxel.RangeChanged -= Planet_RangeChanged;
       }
     }
 
     internal override void Init()
     {
-      if (_locked || !IsValid)
+      if (GraphLocked || !IsValid)
         return;
 
-      _locked = true;
+      GraphLocked = true;
       Ready = false;
       Dirty = false;
-      OpenTileDict.Clear();
+      _openTileDict.Clear();
       ObstacleNodes.Clear();
       Obstacles.Clear();
       MyAPIGateway.Parallel.StartBackground(InitGridArea, SetReady);
+
+      // Testing only
       //InitGridArea();
       //SetReady();
     }
@@ -498,13 +610,25 @@ namespace AiEnabled.Ai.Support
     HashSet<Node> _groundPoints = new HashSet<Node>();
     void CheckForPlanetTiles(ref Vector3I min, ref Vector3I max)
     {
+      bool createGroundNodes = false;
       bool checkForVoxel = false;
       bool checkForWater = false;
+      var planet = RootVoxel as MyPlanet;
 
-      if (Planet != null && !Planet.MarkedForClose)
+      if (RootVoxel != null && !RootVoxel.MarkedForClose)
       {
-        checkForWater = WaterAPI.Registered && WaterAPI.HasWater(Planet.EntityId);
+        checkForWater = planet != null && WaterAPI.Registered && WaterAPI.HasWater(RootVoxel.EntityId);
         checkForVoxel = true;
+
+        if (planet != null)
+        {
+          createGroundNodes = true;
+        }
+        else
+        {
+          var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, 0);
+          createGroundNodes = aGrav.LengthSquared() > 0;
+        }
       }
 
       var worldMatrix = WorldMatrix;
@@ -531,14 +655,14 @@ namespace AiEnabled.Ai.Support
 
         if (checkForVoxel)
         {
-          if (Planet == null || Planet.MarkedForClose)
+          if (RootVoxel == null || RootVoxel.MarkedForClose)
             checkForVoxel = false;
 
-          if (PointInsideVoxel(worldPoint, Planet))
+          if (PointInsideVoxel(worldPoint, RootVoxel))
             continue;
 
           var pointBelow = worldPoint + gravityNorm * cellSize;
-          if (PointInsideVoxel(pointBelow, Planet))
+          if (createGroundNodes && PointInsideVoxel(pointBelow, RootVoxel))
           {
             isGroundNode = true;
 
@@ -556,7 +680,7 @@ namespace AiEnabled.Ai.Support
               }
 
               var mid = (pointInAir + pointInVoxel) * 0.5;
-              if (PointInsideVoxel(mid, Planet))
+              if (PointInsideVoxel(mid, RootVoxel))
               {
                 pointInVoxel = mid;
               }
@@ -568,37 +692,50 @@ namespace AiEnabled.Ai.Support
 
             groundPoint = pointInAir - gravityNorm;
 
-            var surfacePoint = Planet.GetClosestSurfacePointGlobal(groundPoint) - gravityNorm;
-
-            while (PointInsideVoxel(surfacePoint, Planet))
-              surfacePoint -= gravityNorm;
-
-            var vector = groundPoint - surfacePoint;
-            if (vector.LengthSquared() > 9 && vector.Dot(worldMatrix.Down) > 0)
+            Vector3D? surfacePoint = null;
+            if (planet != null)
+              surfacePoint = planet.GetClosestSurfacePointGlobal(worldPoint) - gravityNorm;
+            else
             {
-              var line = new LineD(surfacePoint, groundPoint);
-              var lerpAmount = MathHelper.Clamp(1 / line.Length, 0, 1);
-              var point = Vector3D.Lerp(line.From, line.To, lerpAmount);
-              var testAmount = MathHelper.Clamp(lerpAmount * 2, 0, 1);
+              var closestPoint = GetClosestSurfacePointFast(null, worldPoint - gravityNorm * 20, -gravityNorm);
+              if (closestPoint.HasValue)
+                surfacePoint = closestPoint.Value - gravityNorm;
+            }
 
-              int testCount = 0;
-              int maxCount = (int)Math.Ceiling(line.Length) + 1;
+            if (surfacePoint.HasValue)
+            {
+              var surfaceValue = surfacePoint.Value;
 
-              while (Vector3D.DistanceSquared(point, line.To) > 9)
+              while (PointInsideVoxel(surfaceValue, RootVoxel) && OBB.Contains(ref surfaceValue))
+                surfaceValue -= gravityNorm;
+
+              var vector = groundPoint - surfaceValue;
+              if (vector.LengthSquared() > 9 && vector.Dot(worldMatrix.Down) > 0)
               {
-                if (PointInsideVoxel(point, Planet))
-                {
-                  isTunnelNode = true;
-                  tunnelCount++;
-                  break;
-                }
-                else if (++testCount > maxCount)
-                {
-                  break;
-                }
+                var line = new LineD(surfaceValue, groundPoint);
+                var lerpAmount = MathHelper.Clamp(1 / line.Length, 0, 1);
+                var point = Vector3D.Lerp(line.From, line.To, lerpAmount);
+                var testAmount = MathHelper.Clamp(lerpAmount * 2, 0, 1);
 
-                point = Vector3D.Lerp(line.From, line.To, testAmount);
-                testAmount = MathHelper.Clamp(testAmount + lerpAmount, 0, 1);
+                int testCount = 0;
+                int maxCount = (int)Math.Ceiling(line.Length) + 1;
+
+                while (Vector3D.DistanceSquared(point, line.To) > 9)
+                {
+                  if (PointInsideVoxel(point, RootVoxel))
+                  {
+                    isTunnelNode = true;
+                    tunnelCount++;
+                    break;
+                  }
+                  else if (++testCount > maxCount)
+                  {
+                    break;
+                  }
+
+                  point = Vector3D.Lerp(line.From, line.To, testAmount);
+                  testAmount = MathHelper.Clamp(testAmount + lerpAmount, 0, 1);
+                }
               }
             }
           }
@@ -626,13 +763,13 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        OpenTileDict[localPoint] = node;
+        _openTileDict[localPoint] = node;
 
         if (isGroundNode)
           _groundPoints.Add(node);
       }
 
-      _graphHasTunnel = tunnelCount > 25;
+      GraphHasTunnel = tunnelCount > 25;
 
       var upVec = Vector3I.Up;
       foreach (var node in _groundPoints)
@@ -640,7 +777,7 @@ namespace AiEnabled.Ai.Support
         var localAbove = node.Position + upVec;
 
         Node nAbove;
-        if (OpenTileDict.TryGetValue(localAbove, out nAbove) && !nAbove.IsGridNode)
+        if (_openTileDict.TryGetValue(localAbove, out nAbove) && !nAbove.IsGridNode)
         {
           nAbove.SetNodeType(NodeType.Ground);
 
@@ -658,10 +795,10 @@ namespace AiEnabled.Ai.Support
     public override bool GetRandomOpenNode(BotBase bot, Vector3D requestedPosition, out Node node)
     {
       node = null;
-      if (OpenTileDict.Count == 0 || (!bot.CanUseAirNodes && Planet == null))
+      if (_openTileDict.Count == 0 || (!bot.CanUseAirNodes && RootVoxel == null))
         return false;
 
-      var localBot = WorldToLocal(bot.Position);
+      var localBot = WorldToLocal(bot.GetPosition());
       var botPosition = LocalToWorld(localBot);
 
       var localReq = WorldToLocal(requestedPosition);
@@ -693,7 +830,7 @@ namespace AiEnabled.Ai.Support
 
     bool GetClosestGroundNode(Vector3I pos, out Node node)
     {
-      if (OpenTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
+      if (_openTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
         return true;
 
       if (GetClosestSurfacePointFast(LocalToWorld(pos), WorldMatrix.Up, out node))
@@ -705,7 +842,7 @@ namespace AiEnabled.Ai.Support
       {
         pos += Vector3I.Down;
 
-        if (OpenTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
+        if (_openTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
           return true;
       }
 
@@ -778,7 +915,7 @@ namespace AiEnabled.Ai.Support
           var graphLocal = iter.Current;
           iter.MoveNext();
 
-          if (!OpenTileDict.ContainsKey(graphLocal) || ObstacleNodesTemp.ContainsKey(graphLocal) || Obstacles.ContainsKey(graphLocal))
+          if (!_openTileDict.ContainsKey(graphLocal) || ObstacleNodesTemp.ContainsKey(graphLocal) || Obstacles.ContainsKey(graphLocal))
           {
             continue;
           }
@@ -805,6 +942,9 @@ namespace AiEnabled.Ai.Support
 
         _groundPoints?.Clear();
         _groundPoints = null;
+
+        _openTileDict?.Clear();
+        _openTileDict = null;
       }
       catch(Exception ex)
       {
@@ -819,7 +959,17 @@ namespace AiEnabled.Ai.Support
     public override Node GetReturnHomePoint(BotBase bot)
     {
       var surfacePoint = GetClosestSurfacePointFast(bot, OBB.Center, WorldMatrix.Up);
-      var localSurface = Vector3D.Transform(surfacePoint, MatrixNormalizedInv);
+      if (!surfacePoint.HasValue)
+      {
+        var origin = new Vector3I();
+        if (IsOpenTile(origin))
+          return _openTileDict[origin];
+
+        return null;
+      }
+
+      var surfaceValue = surfacePoint.Value;
+      var localSurface = Vector3D.Transform(surfaceValue, MatrixNormalizedInv);
       var localCenter = Vector3D.Transform(OBB.Center, MatrixNormalizedInv);
 
       List<Vector3I> localNodes;
@@ -838,21 +988,52 @@ namespace AiEnabled.Ai.Support
         if (IsPositionUsable(bot, LocalToWorld(localPosition), out node))
           break;
 
-        if (GetClosestValidNode(bot, localPosition, out localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
+        if (GetClosestValidNode(bot, localPosition, out localPosition) && _openTileDict.TryGetValue(localPosition, out node))
           break;
       }
 
       if (node == null)
       {
-        while (PointInsideVoxel(surfacePoint, Planet))
-          surfacePoint += WorldMatrix.Up * 0.1;
+        while (PointInsideVoxel(surfaceValue, RootVoxel) && OBB.Contains(ref surfaceValue))
+          surfaceValue += WorldMatrix.Up * 0.1;
 
-        IsPositionUsable(bot, surfacePoint, out node);
+        IsPositionUsable(bot, surfaceValue, out node);
       }
 
       localNodes.Clear();
       AiSession.Instance.LineListStack.Push(localNodes);
       return node;
     }
+
+    public override bool TryGetNodeForPosition(Vector3I position, out Node node)
+    {
+      return _openTileDict.TryGetValue(position, out node) && node != null;
+    }
+
+    public override bool IsOpenTile(Vector3I position)
+    {
+      return _openTileDict.ContainsKey(position);
+    }
+
+    public override bool IsObstacle(Vector3I position, bool includeTemp)
+    {
+      bool result = Obstacles.ContainsKey(position);
+
+      if (!includeTemp)
+        return result;
+
+      return result || ObstacleNodes.ContainsKey(position) || TempBlockedNodes.ContainsKey(position);
+    }
+
+    public override Node GetValueOrDefault(Vector3I position, Node defaultValue)
+    {
+      Node node;
+      if (_openTileDict.TryGetValue(position, out node))
+        return node;
+
+      return defaultValue;
+    }
+
+    public override IMySlimBlock GetBlockAtPosition(Vector3I localPosition) => null;
   }
 }

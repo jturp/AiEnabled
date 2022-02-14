@@ -75,6 +75,10 @@ namespace AiEnabled.Bots
             return cube.SlimBlock.BuildLevelRatio < blockDef.CriticalIntegrityRatio;
           }
 
+          var stator = cube as IMyMotorStator;
+          if (stator != null && (stator.MarkedForClose || !stator.Enabled || stator.Top == null))
+            return true;
+
           return cube?.SlimBlock?.IsDestroyed ?? true;
         }
 
@@ -148,7 +152,7 @@ namespace AiEnabled.Bots
         var localPos = gridGraph.WorldToLocal(actualPos);
 
         MyCube cube;
-        if (gridGraph.Grid.TryGetCube(localPos, out cube) && cube?.CubeBlock != null)
+        if (gridGraph.MainGrid.TryGetCube(localPos, out cube) && cube?.CubeBlock != null)
         {
           var slim = cube.CubeBlock as IMySlimBlock;
           ladder = slim.FatBlock as MyCubeBlock;
@@ -203,7 +207,7 @@ namespace AiEnabled.Bots
         if (graph.IsGridGraph)
         {
           var gridGraph = graph as CubeGridMap;
-          var localPos = gridGraph.Grid.WorldToGridInteger(goTo);
+          var localPos = gridGraph.MainGrid.WorldToGridInteger(goTo);
 
           Node node;
           float _;
@@ -212,24 +216,29 @@ namespace AiEnabled.Bots
             var cube = node.Block;
             if (cube?.FatBlock is IMyCockpit)
             {
-              position = gridGraph.Grid.GridIntegerToWorld(localPos);
+              position = gridGraph.MainGrid.GridIntegerToWorld(localPos);
             }
             else if (gridGraph.GetClosestValidNode(_base, localPos, out localPos, botMatrix.Up))
             {
-              position = gridGraph.Grid.GridIntegerToWorld(localPos);
+              position = gridGraph.MainGrid.GridIntegerToWorld(localPos);
             }
-            else if (gridGraph.Planet != null && MyAPIGateway.Physics.CalculateNaturalGravityAt(goTo, out _).LengthSquared() > 0)
+            else if (gridGraph.RootVoxel != null && MyAPIGateway.Physics.CalculateNaturalGravityAt(goTo, out _).LengthSquared() > 0)
             {
               var surfacePoint = gridGraph.GetClosestSurfacePointFast(_base, goTo, botMatrix.Up);
-              localPos = gridGraph.Grid.WorldToGridInteger(surfacePoint);
-              if (gridGraph.GetClosestValidNode(_base, localPos, out localPos))
+              if (surfacePoint.HasValue)
               {
-                position = gridGraph.Grid.GridIntegerToWorld(localPos);
+                localPos = gridGraph.MainGrid.WorldToGridInteger(surfacePoint.Value);
+                if (gridGraph.GetClosestValidNode(_base, localPos, out localPos))
+                {
+                  position = gridGraph.MainGrid.GridIntegerToWorld(localPos);
+                }
+                else
+                {
+                  position = surfacePoint.Value;
+                }
               }
               else
-              {
-                position = surfacePoint;
-              }
+                position = goTo;
             }
             else
             {
@@ -253,15 +262,20 @@ namespace AiEnabled.Bots
           else
           {
             var surfacePoint = graph.GetClosestSurfacePointFast(_base, goTo, botMatrix.Up);
-            localPos = graph.WorldToLocal(surfacePoint);
-            if (graph.GetClosestValidNode(_base, localPos, out localPos))
+            if (surfacePoint.HasValue)
             {
-              position = graph.LocalToWorld(localPos);
+              localPos = graph.WorldToLocal(surfacePoint.Value);
+              if (graph.GetClosestValidNode(_base, localPos, out localPos))
+              {
+                position = graph.LocalToWorld(localPos);
+              }
+              else
+              {
+                position = surfacePoint.Value;
+              }
             }
             else
-            {
-              position = surfacePoint;
-            }
+              position = goTo;
           }
         }
 
@@ -299,7 +313,7 @@ namespace AiEnabled.Bots
         if (!PositionsValid)
           return double.MaxValue;
 
-        return Vector3D.DistanceSquared(CurrentActualPosition, _base.Position);
+        return Vector3D.DistanceSquared(CurrentActualPosition, _base.GetPosition());
       }
 
       public void Update()
@@ -313,8 +327,11 @@ namespace AiEnabled.Bots
 
       bool GetTargetPosition(out Vector3D gotoPosition, out Vector3D actualPosition)
       {
-        gotoPosition = _base.Position;
+        gotoPosition = _base.GetPosition();
         actualPosition = gotoPosition;
+
+        if (_base._pathCollection == null)
+          return true;
 
         if (Entity == null && !Override.HasValue)
         {
@@ -330,11 +347,16 @@ namespace AiEnabled.Bots
 
         var botMatrix = _base.WorldMatrix;
 
-        var turret = Entity as IMyLargeTurretBase;
-        if (turret != null && turret.CubeGrid != null && !turret.CubeGrid.MarkedForClose && !(_base is RepairBot))
+        var cube = Entity as IMyCubeBlock;
+        var isTurretOrRotor = !(_base is RepairBot) && cube != null && !cube.MarkedForClose
+          && (AiSession.Instance.AllCoreWeaponDefinitions.Contains(cube.BlockDefinition)
+          || cube is IMyMotorStator || cube is IMyLargeTurretBase || cube is IMySmallGatlingGun
+          || cube is IMySmallMissileLauncher || cube is IMySmallMissileLauncherReload);
+
+        if (isTurretOrRotor && cube.CubeGrid != null && !cube.CubeGrid.MarkedForClose)
         {
-          var turretGrid = turret.CubeGrid;
-          actualPosition = turret.WorldAABB.Center + turret.WorldMatrix.Up * (turretGrid.GridSize > 1 ? 1 : 0.5);
+          var turretGrid = cube.CubeGrid;
+          actualPosition = cube.WorldAABB.Center + cube.WorldMatrix.Up * (turretGrid.GridSize > 1 ? 1 : 0.5);
           var cubePosition = actualPosition;
 
           CubeGridMap turretGraph;
@@ -345,10 +367,10 @@ namespace AiEnabled.Bots
               gridList = new List<IMyCubeGrid>();
             else
               gridList.Clear();
-  
-            MyAPIGateway.GridGroups.GetGroup(turretGrid, GridLinkTypeEnum.Logical, gridList);
 
-            MyCubeGrid biggest = turret.CubeGrid as MyCubeGrid;
+            turretGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridList);
+
+            MyCubeGrid biggest = cube.CubeGrid as MyCubeGrid;
             foreach (var g in gridList)
             {
               if (g == null || g.GridSize < 1 || g.MarkedForClose)
@@ -389,26 +411,30 @@ namespace AiEnabled.Bots
           cubePosition += reject * Math.Max(turretGrid.WorldAABB.HalfExtents.AbsMax(), 20);
 
           var graph = _base._currentGraph;
-          if (graph != null)
+          var currentPosition = graph?.GetClosestSurfacePointFast(_base, cubePosition, upVec);
+          if (currentPosition.HasValue)
           {
-            var currentPosition = graph.GetClosestSurfacePointFast(_base, cubePosition, upVec);
-
+            var currentValue = currentPosition.Value;
             var orientation = Quaternion.CreateFromRotationMatrix(turretGrid.WorldMatrix);
             var obb = new MyOrientedBoundingBoxD(turretGrid.WorldAABB.Center, turretGrid.LocalAABB.HalfExtents + 2, orientation);
 
-            while (!obb.Contains(ref currentPosition))
+            while (!obb.Contains(ref currentValue))
             {
-              var node = graph.WorldToLocal(currentPosition);
+              var node = graph.WorldToLocal(currentValue);
 
               if (!graph.ObstacleNodes.ContainsKey(node))
               {
                 break;
               }
 
-              currentPosition -= reject * graph.CellSize;
+              currentValue -= reject * graph.CellSize;
             }
 
-            gotoPosition = graph.GetClosestSurfacePointFast(_base, currentPosition, upVec) + upVec;
+            currentPosition = graph.GetClosestSurfacePointFast(_base, currentValue, upVec);
+            if (currentPosition.HasValue)
+              gotoPosition = currentPosition.Value + upVec;
+            else
+              gotoPosition = currentValue;
           }
           else
             gotoPosition = actualPosition;
@@ -423,7 +449,6 @@ namespace AiEnabled.Bots
           return true;
         }
 
-        var cube = Entity as IMyCubeBlock;
         if (cube != null)
         {
           var center = cube.WorldAABB.Center;
@@ -450,15 +475,21 @@ namespace AiEnabled.Bots
         if (ent != null)
         {
           var seat = Player?.Character?.Parent as IMyCockpit;
-          if (seat != null && _base.Owner != null && _base._currentGraph?.Planet != null && seat.CubeGrid.GridSize < 1 && Player.IdentityId == _base.Owner.IdentityId)
+          if (seat != null && _base.Owner != null && _base._currentGraph?.RootVoxel != null && seat.CubeGrid.GridSize < 1 && Player.IdentityId == _base.Owner.IdentityId)
           {
             var gridCenter = seat.CubeGrid.WorldAABB.Center;
             var surfacePoint = _base._currentGraph.GetClosestSurfacePointFast(_base, gridCenter, botMatrix.Up);
-            if (Vector3D.DistanceSquared(gridCenter, surfacePoint) < 100)
+            if (surfacePoint.HasValue && Vector3D.DistanceSquared(gridCenter, surfacePoint.Value) < 100)
             {
               var halfExt = seat.CubeGrid.LocalAABB.HalfExtents.AbsMax() * 1.5;
               var followPosition = gridCenter + seat.WorldMatrix.Backward * halfExt + seat.WorldMatrix.Left * halfExt;
-              gotoPosition = _base._currentGraph.GetClosestSurfacePointFast(_base, followPosition, botMatrix.Up);
+
+              var followSurface = _base._currentGraph.GetClosestSurfacePointFast(_base, followPosition, botMatrix.Up);
+              if (followSurface.HasValue)
+                gotoPosition = followSurface.Value;
+              else
+                gotoPosition = followPosition;
+
               actualPosition = gotoPosition;
             }
             else

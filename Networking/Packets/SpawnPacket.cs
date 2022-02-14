@@ -28,15 +28,19 @@ namespace AiEnabled.Networking
     [ProtoMember(1)] readonly SerializableVector3D Position;
     [ProtoMember(2)] readonly SerializableVector3D Forward;
     [ProtoMember(3)] readonly SerializableVector3D Up;
+    [ProtoMember(4)] readonly string Subtype;
+    [ProtoMember(5)] readonly string Role;
     [ProtoMember(6)] readonly long? OwnerId;
 
     public SpawnPacket() { }
 
-    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, long? ownerId = null)
+    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "CombatBot", long? ownerId = null)
     {
       Position = pos;
       Forward = forward;
       Up = up;
+      Subtype = subtype;
+      Role = role;
       OwnerId = ownerId;
     }
 
@@ -66,25 +70,18 @@ namespace AiEnabled.Networking
           netHandler.SendToPlayer(pkt, SenderId);
           return false;
         }
+      }
 
-        Vector3D pos = Position;
-        Vector3D fwd = Forward;
-        Vector3D up = Up;
+      Vector3D pos = Position;
+      Vector3D fwd = Forward;
+      Vector3D up = Up;
 
-        var posOr = new MyPositionAndOrientation((Vector3)pos, (Vector3)fwd, (Vector3)up);
-        var bot = BotFactory.CreateBotObject("Target_Dummy", "CombatBot", posOr, OwnerId);
-        if (bot != null)
-        {
-          var gridGraph = AiSession.Instance.GetVoxelGraph(bot.WorldAABB.Center);
-          var robot = new CombatBot(bot, gridGraph, OwnerId.Value);
-          AiSession.Instance.AddBot(robot, OwnerId.Value);
-        }
-        else
-        {
-          var pkt = new MessagePacket($"Bot was null after creation!");
-          netHandler.SendToPlayer(pkt, SenderId);
-          return false;
-        }
+      var posOr = new MyPositionAndOrientation((Vector3)pos, (Vector3)fwd, (Vector3)up);
+      var bot = BotFactory.SpawnBotFromAPI(Subtype, "", posOr, null, Role, OwnerId);
+      if (bot == null)
+      {
+        var pkt = new MessagePacket($"Bot was null after creation!");
+        netHandler.SendToPlayer(pkt, SenderId);
       }
 
       return false;

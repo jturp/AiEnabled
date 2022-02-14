@@ -45,12 +45,12 @@ namespace AiEnabled.Graphics.Support
 
     public ListBox(HudAPIv2.BillBoardHUDMessage bg, HudAPIv2.BillBoardHUDMessage border, Color buttonColor, MyEntity3DSoundEmitter emitter, MySoundPair mouseOverSound, double aspectRatio)
     {
-      var btnColor = buttonColor.ToVector4().ToLinearRGB();
+      var btnColor = buttonColor.ToVector4(); //.ToLinearRGB();
       var borderColor = new Color(200, 200, 200, 250);
       _emitter = emitter;
       _soundPair = mouseOverSound;
-      _selectedColor = (Color.LightCyan * 0.75f).ToVector4().ToLinearRGB();
-      _mouseOverColor = (Color.LightCyan * 0.5f).ToVector4().ToLinearRGB();
+      _selectedColor = (Color.LightCyan * 0.75f).ToVector4(); //.ToLinearRGB();
+      _mouseOverColor = (Color.LightCyan * 0.5f).ToVector4(); //.ToLinearRGB();
       _background = bg;
       _border = border;
 

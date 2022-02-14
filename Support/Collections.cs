@@ -201,6 +201,10 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockHeavyArmorHalfCorner"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockArmorHalfSlopedCorner"), // with a d
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockHeavyArmorHalfSlopedCorner"), // with a d
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block_Slope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block_Slope"),
     };
 
     public MyDefinitionId[] ArmorPanelFullDefinitions = new MyDefinitionId[]
@@ -284,7 +288,7 @@ namespace AiEnabled
     public Dictionary<BotType, long> BotPrices = new Dictionary<BotType, long>()
     {
       { BotType.Repair, 10000 },
-      //{ BotType.Scavenger, 5000 },
+      { BotType.Scavenger, 5000 },
       //{ BotType.Medic, 30000 },
       { BotType.Combat, 50000 },
     };
@@ -292,14 +296,15 @@ namespace AiEnabled
     public Dictionary<BotType, string> BotDescriptions = new Dictionary<BotType, string>()
     {
       { BotType.Repair, "A simple helper bot. The Repair Bot is capable of manuevering around a grid and collecting dropped components to be placed in a container, as well as performing light welding duty for any blocks that may need it. It will pull components from containers on the same grid as needed." },
-      //{ BotType.Scavenger, "The Scavenger Bot will follow you around and periodically may find items of interest in the environment. These items may include components, ammunition, ore, and space credits." },
+      { BotType.Scavenger, "The Scavenger Bot will follow you around and periodically may find items of interest in the environment. These items may include components, ammunition, ore, and space credits." },
       //{ BotType.Medic, "The Healer bot is well versed in the art of salves and poultices capable of mending all but the most grievous of wounds. Salves apply a healing over time effect and are applied automatically while the bot is active." },
       { BotType.Combat, "The latest in combat technology, the Combat Bot is equipped with a rapid fire rifle and a titanium exoskeleton capable of taking on small arms fire with ease. It will follow you and attack any nearby hostiles." },
     };
 
-    public enum BotType { Repair, /*Scavenger, /* Medic,*/ Combat };
-    public enum BotModel { Default, DroneBot, TargetBot };
+    public enum BotType { Repair, Scavenger, /* Medic,*/ Combat };
+    public enum BotModel { Default, DroneBot, TargetBot, AstronautMale, AstronautFemale };
 
+    public HashSet<MyDefinitionId> AllCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> CatwalkBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> SlopeBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> SlopedHalfBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
@@ -340,6 +345,7 @@ namespace AiEnabled
     public ConcurrentStack<RepairWorkData> RepairWorkStack = new ConcurrentStack<RepairWorkData>();
     public ConcurrentStack<List<IMySlimBlock>> SlimListStack = new ConcurrentStack<List<IMySlimBlock>>();
     public ConcurrentStack<List<IMyCubeGrid>> GridGroupListStack = new ConcurrentStack<List<IMyCubeGrid>>();
+    public ConcurrentStack<List<MyVoxelBase>> VoxelMapListStack = new ConcurrentStack<List<MyVoxelBase>>();
     public ConcurrentStack<List<Vector3I>> LineListStack = new ConcurrentStack<List<Vector3I>>();
     public ConcurrentStack<List<Vector3D>> PatrolListStack = new ConcurrentStack<List<Vector3D>>();
     public ConcurrentStack<List<IHitInfo>> HitListStack = new ConcurrentStack<List<IHitInfo>>();
@@ -398,12 +404,17 @@ namespace AiEnabled
 
     MyDefinitionId[] _validSlopedBlockDefs = new MyDefinitionId[]
     {
-      MyDefinitionId.Parse("MyObjectBuilder_CubeBlock/LargeBlockArmorSlope2Base"),
-      MyDefinitionId.Parse("MyObjectBuilder_CubeBlock/LargeBlockArmorSlope2Tip"),
-      MyDefinitionId.Parse("MyObjectBuilder_CubeBlock/LargeHeavyBlockArmorSlope2Base"),
-      MyDefinitionId.Parse("MyObjectBuilder_CubeBlock/LargeHeavyBlockArmorSlope2Tip"),
-      MyDefinitionId.Parse("MyObjectBuilder_CubeBlock/LargeBlockArmorSlope"),
-      MyDefinitionId.Parse("MyObjectBuilder_CubeBlock/LargeHeavyBlockArmorSlope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockArmorSlope2Base"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockArmorSlope2Tip"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeHeavyBlockArmorSlope2Base"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeHeavyBlockArmorSlope2Tip"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockArmorSlope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeHeavyBlockArmorSlope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockArmorSlope2Base"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Slope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Slope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block_Slope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block_Slope"),
     };
   }
 }

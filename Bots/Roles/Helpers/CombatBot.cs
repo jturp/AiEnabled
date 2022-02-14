@@ -46,6 +46,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       ToolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
       bool hasOwner = Owner != null;
 
+      _sideNodeWaitTime = 30;
       _followDistanceSqd = 25;
       _ticksSinceFoundTarget = 241;
       _ticksBetweenAttacks = 150;
@@ -80,6 +81,25 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
       _attackSoundStrings.Add("DroneLoopSmall");
+
+      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      if (jetpack != null)
+      {
+        if (RequiresJetpack)
+        {
+          if (!jetpack.TurnedOn)
+          {
+            var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+            jetpack.TurnOnJetpack(true);
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+          }
+        }
+        else if (jetpack.TurnedOn)
+        {
+          jetpack.SwitchThrusts();
+        }
+      }
     }
 
     public override void AddWeapon()
@@ -163,12 +183,13 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack, shouldFire;
       TrySwitchWalk();
 
-      GetMovementAndRotation(isTgt, point, out movement, out rotation, out shouldAttack, out shouldFire, distanceCheck);
+      GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, out shouldFire, distanceCheck);
       CheckFire(shouldFire, shouldAttack, ref movement);
-      MoveToPoint(movement, rotation);
+      MoveToPoint(movement, rotation, roll);
     }
 
     internal override void MoveToTarget()
@@ -195,17 +216,22 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack, shouldFire;
-      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out shouldAttack, out shouldFire);
+      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out roll, out shouldAttack, out shouldFire);
       CheckFire(shouldFire, shouldAttack, ref movement);
-      Character.MoveAndRotate(movement, rotation, 0f);
+      Character.MoveAndRotate(movement, rotation, roll);
     }
 
+    byte _sideNodeTimer, _sideNodeWaitTime;
     internal override bool Update()
     {
       if (!base.Update())
         return false;
       
+      if (_sideNodeTimer < byte.MaxValue)
+        ++_sideNodeTimer;
+
       if (_firePacketSent)
       {
         _ticksSinceFirePacket++;
@@ -281,7 +307,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      var botPosition = Position;
+      var botPosition = GetPosition();
       if (Target.IsDestroyed())
       {
         Target.RemoveTarget();
@@ -347,6 +373,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       IMyEntity tgt = null;
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
+      var ownerId = Owner?.IdentityId ?? Character.ControllerInfo.ControllingIdentityId;
 
       for (int i = 0; i < entities.Count; i++)
       {
@@ -473,86 +500,123 @@ namespace AiEnabled.Bots.Roles.Helpers
             }
           }
 
-          entOwnerId = ch.ControllerInfo.ControllingIdentityId;
+          var relation = MyIDModule.GetRelationPlayerPlayer(ownerId, ch.ControllerInfo.ControllingIdentityId, MyRelationsBetweenFactions.Neutral);
+          if (relation == MyRelationsBetweenPlayers.Enemies)
+          {
+            tgt = ch;
+            break;
+          }
         }
         else if (HasWeaponOrTool && blockDestroEnabled && grid?.Physics != null)
         {
-          if (grid.IsPreview || grid.MarkedAsTrash || grid.MarkedForClose)
+          if (grid.IsPreview || grid.MarkedAsTrash || grid.MarkedForClose || checkedGridIDs.Contains(grid.EntityId))
             continue;
-
-          if (checkedGridIDs.Contains(grid.EntityId))
-          {
-            continue;
-          }
 
           gridTurrets.Clear();
           gridGroups.Clear();
-          MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroups);
+          grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroups);
+          var thisGridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0;
 
           foreach (var g in gridGroups)
           {
-            checkedGridIDs.Add(g.EntityId);
-
             var myGrid = g as MyCubeGrid;
-            if (myGrid.BlocksCount > grid.BlocksCount)
-              grid = myGrid;
+            if (myGrid == null || myGrid.MarkedForClose)
+              continue;
 
-            var gatlings = myGrid.BlocksCounters.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0);
-            var missiles = myGrid.BlocksCounters.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0);
-            var interiors = myGrid.BlocksCounters.GetValueOrDefault(typeof(MyObjectBuilder_InteriorTurret), 0);
+            checkedGridIDs.Add(g.EntityId);
+            var myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0;
 
-            if (gatlings > 0 || missiles > 0 || interiors > 0)
+            if (myGridOwner != 0 && (thisGridOwner == 0 || grid.BlocksCount < myGrid.BlocksCount))
             {
-              var blocks = myGrid.GetFatBlocks();
-              for (int j = 0; j < blocks.Count; j++)
-              {
-                var turret = blocks[j] as IMyLargeTurretBase;
-                if (turret != null && !turret.MarkedForClose && turret.IsFunctional)
-                  gridTurrets.Add(turret as MyEntity);
-              }
+              thisGridOwner = myGridOwner;
+              grid = myGrid;
             }
           }
 
           var playerControlling = MyAPIGateway.Players.GetPlayerControllingEntity(ent);
           if (playerControlling != null)
             entOwnerId = playerControlling.IdentityId;
-          else if (grid.BigOwners?.Count > 0)
-            entOwnerId = grid.BigOwners[0];
-          else if (grid.SmallOwners?.Count > 0)
-            entOwnerId = grid.SmallOwners[0];
+          else if (thisGridOwner != 0)
+            entOwnerId = thisGridOwner;
           else
             continue;
 
-          var dToTurret = double.MaxValue;
-          MyEntity turretEnt = null;
+          var relation = MyIDModule.GetRelationPlayerPlayer(ownerId, entOwnerId);
+          if (relation != MyRelationsBetweenPlayers.Enemies)
+            continue;
 
-          // check for turrets only
-          for (int j = gridTurrets.Count - 1; j >= 0; j--)
+          foreach (var g in gridGroups)
           {
-            var turret = gridTurrets[j];
+            var myGrid = g as MyCubeGrid;
+            if (myGrid == null || myGrid.MarkedForClose)
+              continue;
 
-            var d = Vector3D.DistanceSquared(turret.PositionComp.GetPosition(), botPosition);
-            if (d < dToTurret)
+            var blockCounter = myGrid?.BlocksCounters;
+            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasGridAi(myGrid))
+              || (blockCounter != null
+              && (blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_InteriorTurret), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncher), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncherReload), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallGatlingGun), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorStator), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorAdvancedStator), 0) > 0));
+
+            if (hasTurretOrRotor)
             {
-              turretEnt = turret as MyEntity;
-              dToTurret = d;
+              var blocks = myGrid.GetFatBlocks();
+              for (int j = 0; j < blocks.Count; j++)
+              {
+                var b = blocks[j];
+                if (b == null || b.MarkedForClose)
+                  continue;
+
+                var stator = b as IMyMotorStator;
+                if (stator != null)
+                {
+                  if (!stator.MarkedForClose && stator.Enabled && stator.TopGrid != null)
+                    gridTurrets.Add(b);
+                }
+                else if (b.IsWorking && (AiSession.Instance.AllCoreWeaponDefinitions.Contains(b.BlockDefinition.Id)
+                  || b is IMyMotorStator || b is IMyLargeTurretBase || b is IMySmallGatlingGun
+                  || b is IMySmallMissileLauncher || b is IMySmallMissileLauncherReload))
+                {
+                  gridTurrets.Add(b);
+                }
+              }
             }
           }
 
-          if (turretEnt == null)
-            continue;
+          if (gridTurrets.Count > 0)
+          {
+            var dToTurret = double.MaxValue;
+            MyEntity turretEnt = null;
 
-          ent = turretEnt;
+            // check for weapons or rotors
+            for (int j = gridTurrets.Count - 1; j >= 0; j--)
+            {
+              var turret = gridTurrets[j];
+
+              var d = Vector3D.DistanceSquared(turret.PositionComp.GetPosition(), botPosition);
+              if (d < dToTurret)
+              {
+                turretEnt = turret;
+                dToTurret = d;
+              }
+            }
+
+            if (turretEnt == null)
+              continue;
+
+            tgt = turretEnt;
+          }
         }
         else
           continue;
 
-        var relationship = MyIDModule.GetRelationPlayerBlock(Owner.IdentityId, entOwnerId, MyOwnershipShareModeEnum.Faction);
-        if (relationship == MyRelationsBetweenPlayerAndBlock.Enemies)
-        {
-          tgt = ent;
+        if (tgt != null)
           break;
-        }
       }
 
       hitList.Clear();
@@ -660,7 +724,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         else
         {
           int ammoCount;
-          if (MyAPIGateway.Session.CreativeMode)
+          if (MyAPIGateway.Session.CreativeMode || AiSession.Instance.InfiniteAmmoEnabled)
           {
             if (ToolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -696,11 +760,16 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     bool _moveFromLadder;
 
-    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out bool fistAttack, out bool rifleAttack, double distanceCheck = 4)
+    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out float roll,
+      out bool fistAttack, out bool rifleAttack, double distanceCheck = 4)
     {
+      roll = 0;
       rifleAttack = false;
-      var botPosition = Position;
+      var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
+      var graphMatrix = _currentGraph.WorldMatrix;
+      var graphUpVector = graphMatrix.Up;
+      var jpEnabled = JetpackEnabled;
 
       var vecToWP = waypoint - botPosition;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
@@ -714,6 +783,54 @@ namespace AiEnabled.Bots.Roles.Helpers
         rotation = Vector2.Zero;
         fistAttack = false;
         return;
+      }
+
+      if (jpEnabled)
+      {
+        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+        {
+          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+
+          if (botdotUp < 0)
+            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+          else
+            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+        }
+      }
+
+      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
+      var reject = vecToWP - projUp;
+      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
+      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
+
+      if (!WaitForStuckTimer && angleTwoOrLess)
+      {
+        rotation = Vector2.Zero;
+      }
+      else
+      {
+        float xRot = 0;
+
+        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
+        {
+          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
+          {
+            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+
+            if (botDotUp < 0)
+              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+            else
+              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
+          }
+        }
+
+        rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }
 
       var flattenedVector = new Vector3D(relVectorBot.X, 0, relVectorBot.Z);
@@ -741,22 +858,8 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
       }
-      else if (!_moveFromLadder)
+      else if (!_moveFromLadder || (_sideNode.HasValue && Vector3D.DistanceSquared(botPosition, _sideNode.Value) > 400))
         _sideNode = null;
-
-      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
-      var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
-      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
-
-      if (!WaitForStuckTimer && angleTwoOrLess)
-      {
-        rotation = Vector2.Zero;
-      }
-      else
-      {
-        rotation = new Vector2(0, (float)angle * Math.Sign(relVectorBot.X) * 75);
-      }
 
       if (_currentGraph != null)
       {
@@ -805,7 +908,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           reject = vecToTgt - projUp;
           angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
 
-          if (relToTarget.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2))
+          if (relToTarget.Z < 0 && Math.Abs(angle) < _twoDegToRads)
           {
             rotation = Vector2.Zero;
           }
@@ -820,6 +923,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           Vector3I node;
           if (_sideNode.HasValue)
           {
+            _sideNodeTimer = 0;
             //if (_isShooting)
             //  movement = Vector3.Zero;
             //else
@@ -837,10 +941,11 @@ namespace AiEnabled.Bots.Roles.Helpers
               movement = new Vector3(xMove, 0, zMove);
             }
           }
-          else if (_currentGraph != null && _currentGraph.GetRandomNodeNearby(this, waypoint, out node))
+          else if (_currentGraph != null && _sideNodeTimer > _sideNodeWaitTime && _currentGraph.GetRandomNodeNearby(this, waypoint, out node))
           {
             var worldNode = _currentGraph.LocalToWorld(node);
             _sideNode = worldNode;
+            _sideNodeTimer = 0;
 
             if (Vector3D.DistanceSquared(worldNode, actualPosition) < 10)
             {
@@ -985,6 +1090,9 @@ namespace AiEnabled.Bots.Roles.Helpers
           Character.CurrentMovementState = MyCharacterMovementEnum.Standing;
         }
 
+        if (_botState.IsRunning)
+          Character.SwitchWalk();
+
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())
         {
           IsShooting = true;
@@ -1009,6 +1117,9 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       else
       {
+        if (!_moveFromLadder)
+          _sideNode = null;
+
         if (isCrouching)
         {
           Character.Crouch();

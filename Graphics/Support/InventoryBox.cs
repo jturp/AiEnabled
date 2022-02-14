@@ -47,9 +47,9 @@ namespace AiEnabled.Graphics.Support
     public InventoryBox(HudAPIv2.BillBoardHUDMessage bg, double aspectRatio, Color buttonColor,
       MyEntity3DSoundEmitter emitter, MySoundPair soundPair)
     {
-      _selectedColor = (Color.LightCyan * 0.75f).ToVector4().ToLinearRGB();
-      _mouseOverColor = (Color.LightCyan * 0.5f).ToVector4().ToLinearRGB();
-      _btnColor = buttonColor.ToVector4().ToLinearRGB();
+      _selectedColor = (Color.LightCyan * 0.75f).ToVector4(); //.ToLinearRGB();
+      _mouseOverColor = (Color.LightCyan * 0.5f).ToVector4(); //.ToLinearRGB();
+      _btnColor = buttonColor.ToVector4(); //.ToLinearRGB();
       _borderColor = new Color(200, 200, 200, 250);
       _emitter = emitter;
       _soundPair = soundPair;
@@ -315,7 +315,7 @@ namespace AiEnabled.Graphics.Support
         if (_btnStack.Count > 0)
         {
           btn = _btnStack.Pop();
-          btn.Icon.Material = MyStringId.GetOrCompute($"AiEnabled_{item.IconName}");
+          btn.Icon.Material = MyStringId.GetOrCompute(item.IconName);
           btn.UpdateText($"x{amount}", aspectRatio);
         }
         else
@@ -331,7 +331,7 @@ namespace AiEnabled.Graphics.Support
             Blend: BlendTypeEnum.PostPP);
 
           var icon = new HudAPIv2.BillBoardHUDMessage(
-            Material: MyStringId.GetOrCompute($"AiEnabled_{item.IconName}"),
+            Material: MyStringId.GetOrCompute(item.IconName),
             Origin: bg.Origin,
             BillBoardColor: Color.White,
             Width: iconSize,

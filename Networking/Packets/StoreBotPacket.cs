@@ -69,6 +69,8 @@ namespace AiEnabled.Networking
               {
                 if (helper.InventoryItems == null)
                   helper.InventoryItems = new List<InventoryItem>();
+                else
+                  helper.InventoryItems.Clear();
 
                 var items = inventory.GetItems();
                 for (int k = 0; k < items.Count; k++)

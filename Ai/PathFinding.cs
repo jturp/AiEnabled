@@ -109,18 +109,18 @@ namespace AiEnabled.Ai
       var queue = collection.Queue;
       var cameFrom = collection.CameFrom;
       var costSoFar = collection.CostSoFar;
-      var stackedStairs = collection.Graph.StackedStairsFound;
       var intermediatePoints = collection.IntermediatePoints;
 
       var bot = collection.Bot;
       var graph = collection.Graph;
-
-      var botPosition = bot.Position;
-      bool isGridGraph = graph.IsGridGraph;
+      var isGridGraph = graph.IsGridGraph;
+      var gridGraph = graph as CubeGridMap;
+      var stackedStairs = gridGraph?.StackedStairsFound;
+      var botPosition = bot.GetPosition();
 
       cameFrom.Clear();
       costSoFar.Clear();
-      stackedStairs.Clear();
+      stackedStairs?.Clear();
 
       queue.Clear();
       queue.Enqueue(start, 0);
@@ -173,7 +173,7 @@ namespace AiEnabled.Ai
         }
 
         Node currentNode;
-        if (!graph.OpenTileDict.TryGetValue(current, out currentNode))
+        if (!graph.TryGetNodeForPosition(current, out currentNode))
         {
           break;
         }
@@ -185,8 +185,6 @@ namespace AiEnabled.Ai
         bool checkDoors = true;
         if (isGridGraph)
         {
-          var gridGraph = graph as CubeGridMap;
-
           IMyDoor door;
           if (currentNode?.Block != null)
           {
@@ -229,8 +227,12 @@ namespace AiEnabled.Ai
         //AiSession.Instance.Logger.AddLine($" -> Checking neighbors for {current}");
         foreach (var next in graph.Neighbors(bot, previous, current, botPosition, checkDoors))
         {
+          Node node;
+          if (!graph.TryGetNodeForPosition(next, out node))
+            continue;
+
           var newCost = currentCost;
-          var node = graph.OpenTileDict[next];
+
           if (node.IsSpaceNode(graph))
           {
             if (!bot.CanUseSpaceNodes)
@@ -249,6 +251,14 @@ namespace AiEnabled.Ai
             if (!bot.CanUseLadders)
               continue;
           }
+          else if (node.IsGroundNode)
+          {
+            if (bot.WaterNodesOnly && !node.IsWaterNode)
+              continue;
+
+            if (bot.GroundNodesFirst && currentNode.IsAirNode)
+              newCost  = Math.Max(0, newCost - 1);
+          }
           else if (node.IsWaterNode)
           {
             if (!bot.CanUseWaterNodes)
@@ -263,7 +273,7 @@ namespace AiEnabled.Ai
           int nextCost;
           bool stackFound = false;
 
-          if (isGridGraph && stackedStairs.Count > 0) // we encountered a stacked half stair which the algo won't allow us to traverse
+          if (isGridGraph && stackedStairs?.Count > 0) // we encountered a stacked half stair which the algo won't allow us to traverse
           {
             lock (stackedStairs)
             {
@@ -305,7 +315,8 @@ namespace AiEnabled.Ai
     static void ConstructPathForVoxel(Vector3I start, Vector3I end, PathCollection collection)
     {
       var cameFrom = collection.CameFrom;
-      var openTiles = collection.Graph.OpenTileDict;
+      //var openTiles = collection.Graph.OpenTileDict;
+      var graph = collection.Graph;
       var path = collection.TempPath;
       var cache = collection.Cache;
       var optimizedCache = collection.Graph.OptimizedCache;
@@ -341,7 +352,7 @@ namespace AiEnabled.Ai
           var localVec = cache[i];
 
           Node pathNode;
-          if (openTiles.TryGetValue(localVec, out pathNode))
+          if (graph.TryGetNodeForPosition(localVec, out pathNode))
           {
             path.Enqueue(pathNode);
           }
@@ -434,9 +445,9 @@ namespace AiEnabled.Ai
 
       var gridGraph = collection.Graph as CubeGridMap;
       var tileDict = gridGraph.OpenTileDict;
-      var grid = gridGraph.Grid;
-      var gridMatrix = grid.WorldMatrix;
-      var gridSize = grid.GridSize;
+      var mainGrid = gridGraph.MainGrid;
+      var gridMatrix = mainGrid.WorldMatrix;
+      var gridSize = mainGrid.GridSize;
       var botMatrix = collection.Bot.WorldMatrix;
 
       var botMatrixTransposed = MatrixD.Transpose(botMatrix);
@@ -458,6 +469,8 @@ namespace AiEnabled.Ai
           }
 
           var localVec = cache[i];
+          MyCubeGrid grid = mainGrid;
+          var gridLocalVector = localVec;
 
           Node n;
           if (tileDict.TryGetValue(localVec, out n) && n != null)
@@ -470,6 +483,18 @@ namespace AiEnabled.Ai
 
             if (n.IsGridNodeUnderGround)
               continue;
+
+            var block = n.Block;
+            if (block != null)
+            {
+              grid = block.CubeGrid as MyCubeGrid;
+
+              if (grid.EntityId != mainGrid.EntityId)
+              {
+                var worldVec = mainGrid.GridIntegerToWorld(localVec);
+                gridLocalVector = grid.WorldToGridInteger(worldVec);
+              }
+            }
           }
 
           Node pathNode;
@@ -483,7 +508,7 @@ namespace AiEnabled.Ai
           bool thisIsHalfStair = false, thisisHalfPanelSlope = false, prevIsHalfStair = false, prevIsHalfPanelSlope = false;
           bool addOffsetStart = cache.Count <= i + 1;
 
-          IMySlimBlock thisBlock = grid.GetCubeBlock(localVec);
+          IMySlimBlock thisBlock = grid.GetCubeBlock(gridLocalVector);
           if (thisBlock != null)
           {
             var thisDef = thisBlock.BlockDefinition.Id;
@@ -494,8 +519,16 @@ namespace AiEnabled.Ai
           Vector3I fromVec = addOffsetStart ? start : cache[i + 1]; // If no previous in list, then previous is start position
           Vector3I fromToLocal = localVec - fromVec;
           Vector3D fwdTravelDir = gridMatrix.GetDirectionVector(Base6Directions.GetDirection(fromToLocal));
+          IMySlimBlock prevBlock = gridGraph.GetBlockAtPosition(fromVec); // grid.GetCubeBlock(fromVec);
 
-          IMySlimBlock prevBlock = grid.GetCubeBlock(fromVec);
+          if (prevBlock == null && tileDict.TryGetValue(fromVec, out n) && n?.Block != null)
+          {
+            var blockGrid = n.Block.CubeGrid;
+            var worldFrom = mainGrid.GridIntegerToWorld(fromVec);
+            var localFrom = blockGrid.WorldToGridInteger(worldFrom);
+            prevBlock = blockGrid.GetCubeBlock(localFrom);
+          }
+
           if (prevBlock != null)
           {
             var prevDef = prevBlock.BlockDefinition.Id;
@@ -510,7 +543,8 @@ namespace AiEnabled.Ai
             bool isDeadBody = cubeDef.SubtypeName.StartsWith("DeadBody");
             bool isDeco = !isDeadBody && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(cubeDef);
             bool isHalfWall = !isDeco && AiSession.Instance.HalfWallDefinitions.ContainsItem(cubeDef);
-            bool isHalfBlock = !isHalfWall && cubeDef.SubtypeName.StartsWith("Large") && cubeDef.SubtypeName.EndsWith("HalfArmorBlock");
+            bool isHalfBlock = !isHalfWall && ((cubeDef.SubtypeName.StartsWith("Large") && cubeDef.SubtypeName.EndsWith("HalfArmorBlock"))
+              || (cubeDef.SubtypeName.StartsWith("AQD_LG") && cubeDef.SubtypeName.EndsWith($"Concrete_Half_Block"))); 
             bool isFreight = !isHalfBlock && AiSession.Instance.FreightBlockDefinitions.ContainsItem(cubeDef);
             bool isRamp = !isFreight && AiSession.Instance.RampBlockDefinitions.Contains(cubeDef);
             bool isBeam = !isRamp && AiSession.Instance.BeamBlockDefinitions.ContainsItem(cubeDef);
@@ -525,7 +559,8 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -537,7 +572,8 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -589,7 +625,8 @@ namespace AiEnabled.Ai
                 offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.3;
               }
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -601,7 +638,8 @@ namespace AiEnabled.Ai
             {
               offset = -downTravelDir * gridSize * 0.25;
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -613,18 +651,29 @@ namespace AiEnabled.Ai
             {
               var upIsDown = thisBlock.Orientation.Up == botDownDir;
               if (upIsDown ||
-                (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock")
+                ((thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock") || thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Concrete_Half_Block_Slope"))
                 && Base6Directions.GetOppositeDirection(botDownDir) == thisBlock.Orientation.Forward))
               {
                 if (upIsDown && gridGraph.ExemptNodesUpper.Contains(localVec))
                   continue;
 
-                var blockBelow = grid.GetCubeBlock(localVec + intVecDown) as IMySlimBlock;
+                var positionBelow = localVec + intVecDown;
+                var blockBelow = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
+
+                if (blockBelow == null && tileDict.TryGetValue(positionBelow, out n) && n?.Block != null)
+                {
+                  var blockGrid = n.Block.CubeGrid;
+                  var worldFrom = mainGrid.GridIntegerToWorld(positionBelow);
+                  var localFrom = blockGrid.WorldToGridInteger(worldFrom);
+                  blockBelow = blockGrid.GetCubeBlock(localFrom);
+                }
+
                 if (blockBelow != null && AiSession.Instance.RampBlockDefinitions.Contains(blockBelow.BlockDefinition.Id))
                 {
                   offset = downTravelDir * gridSize * 0.25f;
 
-                  pathNode = tileDict[localVec];
+                  //pathNode = tileDict[localVec];
+                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                   pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                   optimizedCache[localVec] = pathNode;
@@ -644,7 +693,8 @@ namespace AiEnabled.Ai
                   offset = downTravelDir * gridSize * 0.25 + blockUp * gridSize * 0.5;
                 }
 
-                pathNode = tileDict[localVec];
+                //pathNode = tileDict[localVec];
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                 pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                 optimizedCache[localVec] = pathNode;
@@ -657,7 +707,8 @@ namespace AiEnabled.Ai
                 {
                   offset = -downTravelDir * gridSize * 0.5 - gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
 
-                  pathNode = tileDict[localVec];
+                  //pathNode = tileDict[localVec];
+                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                   pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                   optimizedCache[localVec] = pathNode;
@@ -674,7 +725,8 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5;
               }
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -703,7 +755,8 @@ namespace AiEnabled.Ai
                 offset = gridMatrix.GetDirectionVector(blockUp) * gridSize * 0.4 - gridMatrix.GetDirectionVector(blockFwd) * gridSize * 0.5;
               }
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -754,15 +807,19 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5f;
               }
 
-              var tempNode = tileDict[localVec];
+              //var tempNode = tileDict[localVec];
+
+              Node tempNode;
+              gridGraph.TryGetNodeForPosition(localVec, out tempNode);
+
               TempNode node;
               if (!AiSession.Instance.NodeStack.TryPop(out node))
                 node = new TempNode();
 
-              if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+              if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
               {                
                 var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                 {
                   if (offset.HasValue)
                     offset = offset.Value - downTravelDir * 0.5f;
@@ -787,7 +844,8 @@ namespace AiEnabled.Ai
               else
                 offset = blockFwd * gridSize * 0.4;
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -816,7 +874,8 @@ namespace AiEnabled.Ai
                 }
               }
 
-              pathNode = tileDict[localVec];
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
               optimizedCache[localVec] = pathNode;
@@ -857,12 +916,23 @@ namespace AiEnabled.Ai
                 }
                 else if (dotUp > 0 && isBlockTip) // block is upside down
                 {
-                  var blockBelow = grid.GetCubeBlock(localVec + intVecDown) as IMySlimBlock;
+                  var positionBelow = localVec + intVecDown;
+                  var blockBelow = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
+
+                  if (blockBelow == null && tileDict.TryGetValue(positionBelow, out n) && n?.Block != null)
+                  {
+                    var blockGrid = n.Block.CubeGrid;
+                    var worldFrom = mainGrid.GridIntegerToWorld(positionBelow);
+                    var localFrom = blockGrid.WorldToGridInteger(worldFrom);
+                    blockBelow = blockGrid.GetCubeBlock(localFrom);
+                  }
+
                   if (blockBelow != null && AiSession.Instance.RampBlockDefinitions.Contains(blockBelow.BlockDefinition.Id))
                   {
                     offset = downTravelDir * gridSize * 0.25f;
 
-                    pathNode = tileDict[localVec];
+                    //pathNode = tileDict[localVec];
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                     pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                     optimizedCache[localVec] = pathNode;
@@ -897,15 +967,19 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5f;
               }
 
-              var tempNode = tileDict[localVec];
+              //var tempNode = tileDict[localVec];
+
+              Node tempNode;
+              gridGraph.TryGetNodeForPosition(localVec, out tempNode);
+
               TempNode node;
               if (!AiSession.Instance.NodeStack.TryPop(out node))
                 node = new TempNode();
 
-              if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+              if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
               {
                 var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                 {
                   if (offset.HasValue)
                     offset = offset.Value - downTravelDir * 0.5f;
@@ -957,7 +1031,8 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                pathNode = tileDict[localVec];
+                //pathNode = tileDict[localVec];
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                 pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                 optimizedCache[localVec] = pathNode;
@@ -968,7 +1043,17 @@ namespace AiEnabled.Ai
           }
           else if (thisBlock == null)
           {
-            var blockBelowThis = grid.GetCubeBlock(localVec + intVecDown) as IMySlimBlock;
+            var positionBelow = localVec + intVecDown;
+            var blockBelowThis = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
+
+            if (blockBelowThis == null && tileDict.TryGetValue(positionBelow, out n) && n?.Block != null)
+            {
+              var blockGrid = n.Block.CubeGrid;
+              var worldFrom = mainGrid.GridIntegerToWorld(positionBelow);
+              var localFrom = blockGrid.WorldToGridInteger(worldFrom);
+              blockBelowThis = blockGrid.GetCubeBlock(localFrom);
+            }
+
             if (blockBelowThis != null)
             {
               var belowDef = blockBelowThis.BlockDefinition.Id;
@@ -1013,16 +1098,20 @@ namespace AiEnabled.Ai
                 else
                   offset = downTravelDir * gridSize * 0.5f;
 
-                var tempNode = tileDict[localVec];
+                //var tempNode = tileDict[localVec];
+
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(localVec, out tempNode);
+
 
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1048,15 +1137,19 @@ namespace AiEnabled.Ai
                   continue;
                 }
 
-                var tempNode = tileDict[localVec];
+                //var tempNode = tileDict[localVec];
+
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(localVec, out tempNode);
+
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1077,15 +1170,19 @@ namespace AiEnabled.Ai
                   continue;
                 }
 
-                var tempNode = tileDict[localVec];
+                //var tempNode = tileDict[localVec];
+
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(localVec, out tempNode);
+
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1137,7 +1234,8 @@ namespace AiEnabled.Ai
                     }
                   }
 
-                  pathNode = tileDict[localVec];
+                  //pathNode = tileDict[localVec];
+                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                   pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                   optimizedCache[localVec] = pathNode;
@@ -1156,7 +1254,15 @@ namespace AiEnabled.Ai
           if (i > 0)
           {
             next = cache[i - 1];
-            nextBlock = grid.GetCubeBlock(next);
+            nextBlock = gridGraph.GetBlockAtPosition(next); // grid.GetCubeBlock(next);
+
+            if (nextBlock == null && tileDict.TryGetValue(next, out n) && n?.Block != null)
+            {
+              var blockGrid = n.Block.CubeGrid;
+              var worldFrom = mainGrid.GridIntegerToWorld(next);
+              var localFrom = blockGrid.WorldToGridInteger(worldFrom);
+              nextBlock = blockGrid.GetCubeBlock(localFrom);
+            }
 
             if (nextBlock != null)
             {
@@ -1175,7 +1281,8 @@ namespace AiEnabled.Ai
                     var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
                     offset = blockBwd * gridSize * 0.3;
 
-                    pathNode = tileDict[localVec];
+                    //pathNode = tileDict[localVec];
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                     pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                     optimizedCache[localVec] = pathNode;
@@ -1215,7 +1322,8 @@ namespace AiEnabled.Ai
                     if (add)
                     {
 
-                      pathNode = tileDict[localVec];
+                      //pathNode = tileDict[localVec];
+                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                       pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                       optimizedCache[localVec] = pathNode;
@@ -1246,7 +1354,8 @@ namespace AiEnabled.Ai
                     if (add)
                     {
 
-                      pathNode = tileDict[localVec];
+                      //pathNode = tileDict[localVec];
+                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                       pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                       optimizedCache[localVec] = pathNode;
@@ -1263,7 +1372,8 @@ namespace AiEnabled.Ai
                     offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
 
 
-                    pathNode = tileDict[localVec];
+                    //pathNode = tileDict[localVec];
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                     pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
                     optimizedCache[localVec] = pathNode;
@@ -1279,7 +1389,17 @@ namespace AiEnabled.Ai
               var afterNext = cache[i - 2];
               toVec = afterNext;
 
-              afterNextBlock = grid.GetCubeBlock(afterNext);
+              afterNextBlock = gridGraph.GetBlockAtPosition(afterNext); // grid.GetCubeBlock(afterNext);
+
+              if (afterNextBlock == null && tileDict.TryGetValue(afterNext, out n) && n?.Block != null)
+              {
+                // afterNextBlock = n.block; // I think this is all I need for these ???
+
+                var blockGrid = n.Block.CubeGrid;
+                var worldFrom = mainGrid.GridIntegerToWorld(afterNext);
+                var localFrom = blockGrid.WorldToGridInteger(worldFrom);
+                afterNextBlock = blockGrid.GetCubeBlock(localFrom);
+              }
 
               if (afterNextBlock != null)
               {
@@ -1323,15 +1443,18 @@ namespace AiEnabled.Ai
                 else
                   extra = fwdTravelDir * gridSize * 0.5;
 
-                var tempNode = tileDict[start];
+                //var tempNode = tileDict[start];
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(start, out tempNode);
+
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1388,15 +1511,18 @@ namespace AiEnabled.Ai
                 var extra = dir * gridSize * 0.25;
 
                 //var extra = fwdTravelDir * gridSize * 0.5;
-                var tempNode = tileDict[start];
+                //var tempNode = tileDict[start];
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(start, out tempNode);
+
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1443,15 +1569,19 @@ namespace AiEnabled.Ai
               }
             }
 
-            var tempNode2 = tileDict[localVec];
+            //var tempNode2 = tileDict[localVec];
+
+            Node tempNode2;
+            gridGraph.TryGetNodeForPosition(localVec, out tempNode2);
+
             TempNode node2;
             if (!AiSession.Instance.NodeStack.TryPop(out node2))
               node2 = new TempNode();
 
-            if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+            if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
             {
               var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
               {
                 if (offset.HasValue)
                   offset = offset.Value - downTravelDir * 0.5f;
@@ -1492,15 +1622,18 @@ namespace AiEnabled.Ai
                 else
                   extra = fwdTravelDir * gridSize * 0.5;
 
-                var tempNode = tileDict[start];
+                //var tempNode = tileDict[start];
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(start, out tempNode);
+
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1555,15 +1688,19 @@ namespace AiEnabled.Ai
                   dir = -dir;
 
                 var extra = dir * gridSize * 0.25; // + fwdTravelDir * gridSize * 0.5;
-                var tempNode = tileDict[start];
+
+                //var tempNode = tileDict[start];
+                Node tempNode;
+                gridGraph.TryGetNodeForPosition(start, out tempNode);
+
                 TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
-                if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
                   var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
                       offset = offset.Value - downTravelDir * 0.5f;
@@ -1610,15 +1747,19 @@ namespace AiEnabled.Ai
               }
             }
 
-            var tempNode2 = tileDict[localVec];
+            //var tempNode2 = tileDict[localVec];
+
+            Node tempNode2;
+            gridGraph.TryGetNodeForPosition(localVec, out tempNode2);
+
             TempNode node2;
             if (!AiSession.Instance.NodeStack.TryPop(out node2))
               node2 = new TempNode();
 
-            if (gridGraph.Planet != null && !gridGraph.Planet.MarkedForClose)
+            if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
             {
               var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.Planet))
+              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
               {
                 if (offset.HasValue)
                   offset = offset.Value - downTravelDir * 0.5f;
@@ -1632,7 +1773,8 @@ namespace AiEnabled.Ai
           }
           else
           {
-            pathNode = tileDict[localVec];
+            //pathNode = tileDict[localVec];
+            gridGraph.TryGetNodeForPosition(localVec, out pathNode);
 
             if (offset.HasValue)
               pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);

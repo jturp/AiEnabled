@@ -801,7 +801,7 @@ namespace AiEnabled.Graphics
       }
       else if (PatrolTo)
       {
-        MyAPIGateway.Utilities.ShowNotification($"Press [LMB] to add waypoints, [RMB] to finish route.", 16);
+        MyAPIGateway.Utilities.ShowNotification($"Press [LMB] to add waypoints, [RMB] to finish route.", 32);
 
         if (patrolFinished)
         {
@@ -817,7 +817,7 @@ namespace AiEnabled.Graphics
             _patrolMenu.RouteBox.AddRoute(_patrolList, patrolName);
             AiSession.Instance.UpdateConfig(true);
 
-            // TODO: show Name Route pop -- waiting for Draygo to update API to allow this
+            // TODO: show Name Route pop up -- waiting for Draygo to update API to allow this
             // Remove packet and AddRoute call when done
             //_nameInput.OpenDialog;
           }
@@ -1269,6 +1269,8 @@ namespace AiEnabled.Graphics
       }
     }
 
+    Vector4 _invalidColor = new Color(255, 69, 0, 200).ToVector4();
+    Vector4 _validColor = new Color(154, 205, 50, 200).ToVector4();
     Vector3D? _worldPosition;
     public IMyCharacter ActiveBot { get; private set; }
     public void DrawSendTo(IMyCharacter ch)
@@ -1287,95 +1289,97 @@ namespace AiEnabled.Graphics
 
       IHitInfo hit;
       MyAPIGateway.Physics.CastRay(from, to, out hit, CollisionLayers.CharacterCollisionLayer);
-      var color = Color.OrangeRed;
-      color.A = 200;
-
-      Vector4 color4 = color.ToVector4();
-
-      var planet = MyGamePruningStructure.GetClosestPlanet(ActiveBot.WorldMatrix.Translation);
+      var color = _invalidColor;
 
       if (hit?.HitEntity != null)
       {
         to = hit.Position;
 
-        var voxel = hit.HitEntity as MyVoxelBase;
+        var voxel = (hit.HitEntity as MyVoxelBase)?.RootVoxel;
         if (voxel != null)
         {
-          if (voxel.RootVoxel.EntityId == planet?.EntityId)
-          {
-            float _;
-            var natGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(hit.Position, out _);
-            var upVec = natGrav.LengthSquared() > 0 ? Vector3D.Normalize(-natGrav) : ActiveBot.WorldMatrix.Up;
-            bool onGround;
+          Vector3D upVec = hit.Normal;
+          Vector3D fwdVec = Vector3D.CalculatePerpendicularVector(upVec);
 
-            var surfacePosition = GridBase.GetClosestSurfacePointFast(hit.Position, upVec, planet, out onGround);
+          bool onGround;
+          var surfacePosition = GridBase.GetClosestSurfacePointFast(hit.Position, upVec, voxel, out onGround);
 
-            if (onGround)
-              surfacePosition += upVec * 0.3;
-            else
-              surfacePosition -= upVec * 1.5;
+          if (onGround)
+            surfacePosition += upVec * 0.3;
+          else
+            surfacePosition -= upVec * 1.5;
 
-            to = surfacePosition;
+          to = surfacePosition;
 
-            var matrix = ActiveBot.WorldMatrix;
-            matrix.Translation = surfacePosition;
-            _worldPosition = surfacePosition;
+          var matrix = MatrixD.CreateWorld(surfacePosition, fwdVec, upVec);
+          _worldPosition = surfacePosition;
 
-            color = Color.YellowGreen;
-            color.A = 200;
-            color4 = color.ToVector4();
+          color = _validColor;
+          MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color, true, 25, 0.01f, _material_square);
 
-            MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, _material_square);
-
-            matrix.Translation -= upVec * 0.125;
-            DrawAxis(ref matrix, 0.75f, color, color, _material_square);
-          }
+          matrix.Translation -= upVec * 0.125;
+          DrawAxis(ref matrix, 0.75f, color, color, _material_square);
         }
         else
         {
           var grid = hit.HitEntity as MyCubeGrid;
           if (grid != null && grid.GridSize > 1)
           {
-            var pos = hit.Position + hit.Normal * 0.2f;
+            var upDir = grid.WorldMatrix.GetClosestDirection(ActiveBot.WorldMatrix.Up);
+            var pos = hit.Position + hit.Normal * grid.GridSize * 0.2f;
             var localPos = grid.WorldToGridInteger(pos);
             var cube = grid.GetCubeBlock(localPos) as IMySlimBlock;
-            var upVec = Base6Directions.GetIntVector(grid.WorldMatrix.GetClosestDirection(ActiveBot.WorldMatrix.Up));
 
             if (cube != null)
             {
+              var upVector = grid.WorldMatrix.GetDirectionVector(upDir);
+              var fwdVec = Vector3D.CalculatePerpendicularVector(upVector);
+              var matrix = MatrixD.CreateWorld(to, fwdVec, upVector);
+
               _worldPosition = grid.GridIntegerToWorld(localPos);
-              to = _worldPosition.Value - ActiveBot.WorldMatrix.Up * grid.GridSize * 0.36;
-              var matrix = ActiveBot.WorldMatrix;
+              to = _worldPosition.Value + matrix.Down * grid.GridSize * 0.36;
               matrix.Translation = to;
 
-              color = Color.YellowGreen;
-              color.A = 200;
-              color4 = color.ToVector4();
+              color = _validColor;
+              MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color, true, 25, 0.01f, _material_square);
 
-              MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, _material_square);
-
-              matrix.Translation -= ActiveBot.WorldMatrix.Up * 0.125;
+              matrix.Translation += matrix.Down * 0.125;
               DrawAxis(ref matrix, 0.75f, color, color, _material_square);
             }
             else
             {
+              var upVec = Base6Directions.GetIntVector(upDir);
               var posBelow = localPos - upVec;
               cube = grid.GetCubeBlock(posBelow);
 
-              if (cube != null || (planet != null && GridBase.PointInsideVoxel(grid.GridIntegerToWorld(posBelow), planet)))
+              if (cube != null || (voxel != null && GridBase.PointInsideVoxel(grid.GridIntegerToWorld(posBelow), voxel)))
               {
+                MatrixD matrix;
+                Vector3D upVector;
+                if (cube != null)
+                {
+                  upVector = grid.WorldMatrix.GetDirectionVector(upDir);
+                }
+                else if (voxel != null)
+                {
+                  upVector = hit.Normal;
+                }
+                else
+                {
+                  upVector = ActiveBot.WorldMatrix.Up;
+                }
+
+                Vector3D fwdVec = Vector3D.CalculatePerpendicularVector(upVector);
+                matrix = MatrixD.CreateWorld(to, fwdVec, upVector);
+
                 _worldPosition = grid.GridIntegerToWorld(localPos);
-                to = _worldPosition.Value - ActiveBot.WorldMatrix.Up * grid.GridSize * 0.36;
-                var matrix = ActiveBot.WorldMatrix;
+                to = _worldPosition.Value + matrix.Down * grid.GridSize * 0.36;
                 matrix.Translation = to;
 
-                color = Color.YellowGreen;
-                color.A = 200;
-                color4 = color.ToVector4();
+                color = _validColor;
+                MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color, true, 25, 0.01f, _material_square);
 
-                MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color4, true, 25, 0.01f, _material_square);
-
-                matrix.Translation -= ActiveBot.WorldMatrix.Up * 0.125;
+                matrix.Translation += matrix.Down * 0.125;
                 DrawAxis(ref matrix, 0.75f, color, color, _material_square);
               }
               else
@@ -1389,7 +1393,7 @@ namespace AiEnabled.Graphics
       else
         _worldPosition = null;
 
-      MySimpleObjectDraw.DrawLine(from, to, _material_square, ref color4, 0.01f);
+      MySimpleObjectDraw.DrawLine(from, to, _material_square, ref color, 0.01f);
     }
 
     public void UpdateCursorPosition(Vector2 mouseDelta) // TODO: need to include aspect ratio in delta calculation ???
@@ -1658,7 +1662,7 @@ namespace AiEnabled.Graphics
 
       Registered = Init();
 
-      AiSession.Instance.Logger.Log($"{GetType().FullName}: Registered Successfully = {Registered}");
+      AiSession.Instance.Logger.Log($"{GetType().Name} Registered Successfully = {Registered}");
     }
 
     private void GuiControlRemoved(object obj)
@@ -1684,7 +1688,7 @@ namespace AiEnabled.Graphics
       {
         AiSession.Instance.HudAPI.OnScreenDimensionsChanged = OnScreenDimensionsChanged;
 
-        // TODO: When Text Hud API is updated, uncomment this
+        // TODO: When Text Hud API is updated, uncomment this ->-> Nope, going to draw it myself
         //_nameInput = new HudAPIv2.MenuTextInput("Route Name", null, "Enter a route name", OnRouteName_Submitted);
         //_renameInput = new HudAPIv2.MenuTextInput("Route Name", null, "Enter new route name", OnRouteRename_Submitted);
         //_screenPX = HudAPIv2.APIinfo.ScreenPositionOnePX;
@@ -1710,7 +1714,7 @@ namespace AiEnabled.Graphics
 
         var borderColor = new Color(200, 200, 200, 250);
         var mouseOverColor = Color.LightCyan * 0.5f;
-        var cursorColor = new Color(112, 128, 144, 225); // Color.SlateGray;
+        var cursorColor = new Color(112, 128, 144, 225); // Color.SlateGray with less alpha;
         var logoColor = new Color(255, 255, 255, 225);
 
         _interactBB = new HudAPIv2.BillBoardHUDMessage(

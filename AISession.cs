@@ -47,11 +47,16 @@ using VRage.Input;
 using AiEnabled.Input;
 using Sandbox.ModAPI.Weapons;
 using AiEnabled.Projectiles;
+using VRage.Network;
+using VRage.Game.ModAPI.Network;
+using VRage.Sync;
+using Sandbox.ModAPI.Interfaces.Terminal;
+using SpaceEngineers.Game.ModAPI;
 
 namespace AiEnabled
 {
   [MySessionComponentDescriptor(MyUpdateOrder.BeforeSimulation)]
-  public partial class AiSession : MySessionComponentBase
+  public partial class AiSession : MySessionComponentBase, IMyEventProxy
   {
     public class ControlInfo
     {
@@ -69,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public string VERSION = "v0.11b";
+    public string VERSION = "v0.12b";
 
     public int MaxBots = 100;
     public int MaxHelpers = 2;
@@ -88,20 +93,24 @@ namespace AiEnabled
     public bool FactoryActionsCreated;
     public bool IsServer, IsClient;
     public bool DrawDebug;
-    public bool ShieldAPILoaded;
+    public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded;
+    public bool InfiniteAmmoEnabled;
     public MyStringHash ShieldHash = MyStringHash.GetOrCompute("DefenseShield");
 
     public List<HelperInfo> MyHelperInfo;
     public CommandMenu CommandMenu;
     public PlayerMenu PlayerMenu;
-    public HudAPIv2 HudAPI;
     public NetworkHandler Network;
     public SaveData ModSaveData;
     public PlayerData PlayerData;
     public Inputs Input;
     public ProjectileInfo Projectiles = new ProjectileInfo();
-    public DefenseShieldsAPI ShieldAPI = new DefenseShieldsAPI();
     public RepairDelay BlockRepairDelays = new RepairDelay();
+
+    // APIs
+    public HudAPIv2 HudAPI;
+    public DefenseShieldsAPI ShieldAPI = new DefenseShieldsAPI();
+    public WcApi WcAPI = new WcApi();
     LocalBotAPI _localBotAPI;
     IMyHudNotification _hudMsg;
     bool _isControlBot;
@@ -112,7 +121,7 @@ namespace AiEnabled
       if (grid != null)
         return GetGridGraph(grid, worldMatrix);
 
-      return GetVoxelGraph(newGraphPosition);
+      return GetVoxelGraph(newGraphPosition, worldMatrix);
     }
 
     public CubeGridMap GetGridGraph(MyCubeGrid grid, MatrixD worldMatrix)
@@ -128,9 +137,9 @@ namespace AiEnabled
       else
       {
         gridGroup.Clear();
-      }      
-        
-      MyAPIGateway.GridGroups.GetGroup(grid, GridLinkTypeEnum.Logical, gridGroup);
+      }
+
+      grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroup);
       foreach (var g in gridGroup)
       {
         if (g == null || g.MarkedForClose || g.EntityId == grid.EntityId || g.GridSizeEnum == MyCubeSize.Small)
@@ -163,7 +172,7 @@ namespace AiEnabled
     }
 
     ulong _lastVoxelId;
-    public VoxelGridMap GetVoxelGraph(Vector3D worldPosition, bool forceRefresh = false, bool returnFirstFound = true)
+    public VoxelGridMap GetVoxelGraph(Vector3D worldPosition, MatrixD worldMatrix, bool forceRefresh = false, bool returnFirstFound = true)
     {
       foreach (var voxelGraph in VoxelGraphDict.Values)
       {
@@ -195,7 +204,7 @@ namespace AiEnabled
         }
       }
 
-      var graph = new VoxelGridMap(worldPosition)
+      var graph = new VoxelGridMap(worldPosition, worldMatrix)
       {
         Key = _lastVoxelId
       };
@@ -417,6 +426,12 @@ namespace AiEnabled
         ShieldAPI?.Unload();
       }
 
+      if (WcAPILoaded)
+      {
+        WcAPILoaded = false;
+        WcAPI.Unload();
+      }
+
       BlockRepairDelays?.Close();
       CommandMenu?.Close();
       PlayerMenu?.Close();
@@ -425,6 +440,7 @@ namespace AiEnabled
       Projectiles?.Close();
       Network?.Unregister();
 
+      AllCoreWeaponDefinitions?.Clear();
       RepairWorkStack?.Clear();
       GraphWorkStack?.Clear();
       PathWorkStack?.Clear();
@@ -468,6 +484,7 @@ namespace AiEnabled
       AcceptedItemDict?.Clear();
       ItemOBDict?.Clear();
       PatrolListStack?.Clear();
+      VoxelMapListStack?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -488,6 +505,7 @@ namespace AiEnabled
       _botEntityIds?.Clear();
       _useObjList?.Clear();
 
+      AllCoreWeaponDefinitions = null;
       RepairWorkStack = null;
       GraphWorkStack = null;
       PathWorkStack = null;
@@ -561,6 +579,7 @@ namespace AiEnabled
       ItemOBDict = null;
       ShieldAPI = null;
       PatrolListStack = null;
+      VoxelMapListStack = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -586,7 +605,13 @@ namespace AiEnabled
       _useObjList = null;
       _localBotAPI = null;
 
-      Logger?.Close();
+      ProjectileConstants.Close();
+
+      if (Logger != null)
+      {
+        Logger.Log($"Mod unloaded successfully");
+        Logger.Close();
+      }
     }
 
     public override void BeforeStart()
@@ -605,7 +630,6 @@ namespace AiEnabled
         ControllerCacheNum = Math.Max(20, MyAPIGateway.Session.MaxPlayers * 2);
 
         bool sessionOK = MyAPIGateway.Session != null;
-
         if (sessionOK && MyAPIGateway.Session.Mods?.Count > 0)
         {
           foreach (var mod in MyAPIGateway.Session.Mods)
@@ -618,7 +642,15 @@ namespace AiEnabled
             }
             else if (mod.PublishedFileId == 2200451495)
             {
-              Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} Found");
+              Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} found");
+            }
+            else if (mod.PublishedFileId == 1918681825)
+            {
+              WcAPI.Load(WeaponCoreRegistered);
+            }
+            else if (mod.PublishedFileId == 2344068716)
+            {
+              IndOverhaulLoaded = true;
             }
           }
         }
@@ -642,9 +674,11 @@ namespace AiEnabled
           {
             if (MyAPIGateway.Session.SessionSettings != null)
             {
+              InfiniteAmmoEnabled = MyAPIGateway.Session.SessionSettings.InfiniteAmmo;
+
               MyAPIGateway.Session.SessionSettings.EnableWolfs = false;
               MyAPIGateway.Session.SessionSettings.EnableSpiders = false;
-              MyAPIGateway.Session.SessionSettings.MaxFactionsCount = 100;
+              MyAPIGateway.Session.SessionSettings.MaxFactionsCount = Math.Max(MyAPIGateway.Session.SessionSettings.MaxFactionsCount, 100);
             }
             else
               Logger.Log($"AiSession.BeforeStart: Unable to disable wolves and spiders, or adjust max factions - SessionSettings was null!", MessageType.WARNING);
@@ -977,8 +1011,6 @@ namespace AiEnabled
             _newPlayerIds[playerId] = player?.Character?.EntityId ?? 0L;
 
           MyAPIGateway.Utilities.MessageEntered += OnMessageEntered;
-          HudAPI = new HudAPIv2(HudAPICallback);
-          CommandMenu = new CommandMenu();
           PlayerData = Config.ReadFileFromLocalStorage<PlayerData>("AiEnabledPlayerConfig.cfg", typeof(PlayerData), Logger);
 
           if (PlayerData == null)
@@ -1001,6 +1033,10 @@ namespace AiEnabled
             else
               Logger.Log($"Player was null in BeforeStart!", MessageType.WARNING);
           }
+
+          CommandMenu = new CommandMenu();
+          PlayerMenu = new PlayerMenu(PlayerData);
+          HudAPI = new HudAPIv2(HudAPICallback);
         }
 
         MyEntities.OnEntityAdd += MyEntities_OnEntityAdd;
@@ -1023,6 +1059,13 @@ namespace AiEnabled
       {
         base.BeforeStart();
       }
+    }
+
+    void WeaponCoreRegistered()
+    {
+      WcAPILoaded = WcAPI.IsReady;
+      WcAPI.GetAllCoreWeapons(AllCoreWeaponDefinitions);
+      Logger.Log($"WeaponCore Mod found. API loaded successfully = {WcAPILoaded}");
     }
 
     bool _needsUpdate, _needsAdminUpdate;
@@ -1051,6 +1094,9 @@ namespace AiEnabled
     {
       try
       {
+        if (MyAPIGateway.Session?.Player == null)
+          return;
+
         if (!force && (!_needsUpdate || ++_updateCounter < UpdateTime))
           return;
 
@@ -1087,15 +1133,22 @@ namespace AiEnabled
 
     private void HudAPICallback()
     {
-      CommandMenu.Register();
-      PlayerMenu = new PlayerMenu(PlayerData);
-      Input = new Inputs(PlayerData.Keybinds);
+      try
+      {
+        CommandMenu.Register();
+        PlayerMenu.Register();
+        Input = new Inputs(PlayerData.Keybinds);
 
-      if (CommandMenu.Registered && PlayerData.PatrolRoutes.Count > 0)
-        CommandMenu.AddPatrolRoutes(PlayerData.PatrolRoutes);
+        if (CommandMenu.Registered && PlayerData.PatrolRoutes.Count > 0)
+          CommandMenu.AddPatrolRoutes(PlayerData.PatrolRoutes);
 
-      var pkt = new SettingRequestPacket();
-      Network.SendToServer(pkt);
+        var pkt = new SettingRequestPacket();
+        Network.SendToServer(pkt);
+      }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in HudAPICallback: {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     private void Factions_FactionAutoAcceptChanged(long factionId, bool autoAcceptMember, bool autoAcceptPeace)
@@ -1364,14 +1417,12 @@ namespace AiEnabled
             continue;
           }
 
-          if (!bot.CanUseSeats)
-            continue;
-
           if (recallBots)
           {
             bot.PatrolMode = false;
             bot.FollowMode = false;
             bot.UseAPITargets = false;
+            bot.Target?.RemoveOverride(false);
           }
           else if (bot.UseAPITargets)
             continue;
@@ -1435,7 +1486,9 @@ namespace AiEnabled
               if (relPosition.LengthSquared() < 2)
                 position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
 
-              position = voxelGraph.GetClosestSurfacePointFast(bot, position, up) + up;
+              var surfacePoint = voxelGraph.GetClosestSurfacePointFast(bot, position, up);
+              if (surfacePoint.HasValue)
+                position = surfacePoint.Value + up;
 
               if (botMatrix.Up.Dot(up) < 0)
               {
@@ -1453,7 +1506,7 @@ namespace AiEnabled
               }
               else
               {
-                Logger.Log($"{GetType().FullName}: Unable to find valid position upon exit from seat! Grid = {gridGraph.Grid?.DisplayName ?? "NULL"}", MessageType.WARNING);
+                Logger.Log($"{GetType().FullName}: Unable to find valid position upon exit from seat! Grid = {gridGraph.MainGrid?.DisplayName ?? "NULL"}", MessageType.WARNING);
               }
             }
             else if (relPosition.LengthSquared() < 2)
@@ -1538,7 +1591,7 @@ namespace AiEnabled
         else
           gridSeats.Clear();
 
-        MyAPIGateway.GridGroups.GetGroup(playerGrid, GridLinkTypeEnum.Logical, gridGroup);
+        playerGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroup);
 
         foreach (var grid in gridGroup)
         {
@@ -1576,7 +1629,9 @@ namespace AiEnabled
               continue;
             }
 
-            if (!bot.CanUseSeats || Vector3D.DistanceSquared(ownerPos, bot.Position) > 10000)
+            var botPosition = bot.GetPosition();
+
+            if (!bot.CanUseSeats || Vector3D.DistanceSquared(ownerPos, botPosition) > 10000)
               continue;
 
             if (gridSeats.Count == 0)
@@ -1585,7 +1640,7 @@ namespace AiEnabled
             if (bot.UseAPITargets || bot.Character.Parent is IMyCockpit)
               continue;
 
-            gridSeats.ShellSort(bot.Position, reverse: true);
+            gridSeats.ShellSort(botPosition, reverse: true);
 
             for (int j = gridSeats.Count - 1; j >= 0; j--)
             {
@@ -1596,27 +1651,27 @@ namespace AiEnabled
                 continue;
               }
 
+              var seatPosition = seat.GetPosition();
               CubeGridMap gridGraph;
               if (seat.CubeGrid.GridSize > 1 && GridGraphDict.TryGetValue(seat.CubeGrid.EntityId, out gridGraph) && gridGraph != null)
               {
                 if (!gridGraph.TempBlockedNodes.ContainsKey(seat.Position))
                 {
                   gridSeats.RemoveAtFast(i);
-                  var seatPos = seat.GetPosition();
+                  var seatPos = seatPosition;
                   bot.Target.SetOverride(seatPos);
                   break;
                 }
               }
 
-              // TODO: Save bot position relative to the seat and return bot to relative position when player exits
-              // Also need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
+              // TODO: Need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
 
               _useObjList.Clear();
               var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
               useComp?.GetInteractiveObjects(_useObjList);
               if (_useObjList.Count > 0)
               {
-                var relativePosition = Vector3D.Rotate(bot.Position - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+                var relativePosition = Vector3D.Rotate(botPosition - seatPosition, MatrixD.Transpose(seat.WorldMatrix));
                 BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
 
                 var useObj = _useObjList[0];
@@ -1678,11 +1733,18 @@ namespace AiEnabled
 
         BotBase bot;
         bool targetIsBot = false;
-        if (Bots.TryGetValue(character.EntityId, out bot))
+        bool targetisWildLife = false;
+        if (Bots.TryGetValue(character.EntityId, out bot) && bot != null)
         {
           targetIsBot = true;
-          if (bot?.Behavior?.PainSounds?.Count > 0)
+          if (bot.Behavior?.PainSounds?.Count > 0)
             bot.Behavior.ApplyPain();
+        }
+        else if (string.IsNullOrWhiteSpace(character.DisplayName) 
+          || character.Definition.Id.SubtypeName.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase)
+          || character.Definition.Id.SubtypeName.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase))
+        {
+          targetisWildLife = true;
         }
 
         long ownerId, ownerIdentityId = 0;
@@ -1762,9 +1824,10 @@ namespace AiEnabled
             {
               if (targetIsBot)
               {
-                var amount = info.Amount * 0.1f;
+                var modifier = turret is IMyLargeInteriorTurret ? 0.5f : 0.1f;
+                var amount = info.Amount * modifier;
                 info.Amount = 0;
-                DamageCharacter(turret.EntityId, character, info.Type, amount);
+                DamageCharacter(turret.EntityId, character, info.Type, amount, targetisWildLife);
               }
 
               return;
@@ -1807,7 +1870,7 @@ namespace AiEnabled
 
         if (!Bots.ContainsKey(ownerId))
         {
-          if (targetIsBot && Players.ContainsKey(ownerIdentityId))
+          if ((targetIsBot || targetisWildLife) && Players.ContainsKey(ownerIdentityId))
           {
             HealthInfoStat infoStat;
             if (!PlayerToHealthBars.TryGetValue(ownerIdentityId, out infoStat))
@@ -1824,7 +1887,7 @@ namespace AiEnabled
             if (subtype == "Default_Astronaut" || subtype == "Default_Astronaut_Female")
             {
               info.Amount = 0;
-              DamageCharacter(-1L, character, info.Type, damageAmount);
+              DamageCharacter(-1L, character, info.Type, damageAmount, targetisWildLife);
             }
           }
 
@@ -1835,7 +1898,7 @@ namespace AiEnabled
         if (owner != null)
         {
           info.Amount = 0;
-          DamageCharacter(owner.EntityId, character, info.Type, damageAmount);
+          DamageCharacter(owner.EntityId, character, info.Type, damageAmount, targetisWildLife);
         }
       }
       catch (Exception ex)
@@ -1871,12 +1934,12 @@ namespace AiEnabled
       }
     }
 
-    public void DamageCharacter(long shooterEntityId, IMyCharacter target, MyStringHash damageType, float damageAmount)
+    public void DamageCharacter(long shooterEntityId, IMyCharacter target, MyStringHash damageType, float damageAmount, bool isWildLife = false)
     {
       BotBase bot;
       if (Bots.TryGetValue(shooterEntityId, out bot) && bot != null)
       {
-        damageAmount *= bot.DamageModifier;
+        //damageAmount *= bot.DamageModifier;
 
         if (bot.Owner != null && string.IsNullOrWhiteSpace(target.DisplayName))
         {
@@ -1939,7 +2002,7 @@ namespace AiEnabled
                     helper.InventoryItems?.Clear();
 
                     var gridGraph = bot._currentGraph as CubeGridMap;
-                    var grid = gridGraph?.Grid ?? null;
+                    var grid = gridGraph?.MainGrid ?? null;
                     helper.GridEntityId = grid?.EntityId ?? 0L;
 
                     var inventory = botChar.GetInventory() as MyInventory;
@@ -1964,7 +2027,7 @@ namespace AiEnabled
                 if (!botFound)
                 {
                   var gridGraph = bot._currentGraph as CubeGridMap;
-                  var grid = gridGraph?.Grid ?? null;
+                  var grid = gridGraph?.MainGrid ?? null;
                   var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
                   playerData.AddHelper(bot.Character, botType, grid, bot._patrolList);
@@ -1983,7 +2046,7 @@ namespace AiEnabled
             foreach (var bot in botList)
             {
               var gridGraph = bot._currentGraph as CubeGridMap;
-              var grid = gridGraph?.Grid ?? null;
+              var grid = gridGraph?.MainGrid ?? null;
               var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
               playerData.AddHelper(bot.Character, botType, grid, bot._patrolList);
@@ -2250,88 +2313,286 @@ namespace AiEnabled
     }
 
     public bool AllowMusic = true;
-    bool? _allowEnemyFlight;
+    bool? _allowEnemyFlight, _allowNeutralTargets;
     int _maxHuntEnemy, _maxHuntFriendly, _maxProjectile;
     MyCommandLine _cli = new MyCommandLine();
     private void OnMessageEntered(string messageText, ref bool sendToOthers)
     {
-      if (!Registered || !messageText.StartsWith("botai", StringComparison.OrdinalIgnoreCase) || !_cli.TryParse(messageText) || _cli.ArgumentCount < 2)
+      try
       {
-        return;
-      }
-
-      sendToOthers = false;
-
-      var player = MyAPIGateway.Session.LocalHumanPlayer;
-      var character = player?.Character;
-      if (character == null || character.IsDead)
-      {
-        ShowMessage("Respawn and try again.", timeToLive: 5000);
-        return;
-      }
-
-      var cmd = _cli.Argument(1);
-      if (cmd.Equals("fix", StringComparison.OrdinalIgnoreCase))
-      {
-        List<BotBase> helpers;
-        PlayerToHelperDict.TryGetValue(player.IdentityId, out helpers);
-        ShowMessage($"Attempting to fix {helpers?.Count ?? 0} bots", timeToLive: 5000);
-
-        var pkt = new FixBotPacket(player.IdentityId);
-        Network.SendToServer(pkt);
-      }
-      else if (player.PromoteLevel < MyPromoteLevel.Admin)
-      {
-        ShowMessage("You must have admin privileges to use that command.", timeToLive: 5000);
-        return;
-      }
-      else if (cmd.Equals("maxbots", StringComparison.OrdinalIgnoreCase))
-      {
-        int num = MaxBots;
-        if (_cli.ArgumentCount > 2)
-          int.TryParse(_cli.Argument(2), out num);
-
-        ShowMessage($"Max bots set to {num}");
-
-        if (num != MaxBots)
+        if (!Registered || !messageText.StartsWith("botai", StringComparison.OrdinalIgnoreCase) || !_cli.TryParse(messageText) || _cli.ArgumentCount < 2)
         {
-          var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic);
-          Network.SendToServer(packet);
-        }
-      }
-      else if (cmd.Equals("music", StringComparison.OrdinalIgnoreCase))
-      {
-        bool on = !AllowMusic;
-        if (_cli.ArgumentCount > 2)
-          bool.TryParse(_cli.Argument(2), out on);
-
-        if (AllowMusic != on)
-        {
-          AllowMusic = on;
-          var pkt = new AdminPacket(AllowMusic, null);
-          Network.SendToServer(pkt);
-        }
-
-        ShowMessage($"AllowMusic set to {on}");
-      }
-      else if (cmd.Equals("debug", StringComparison.OrdinalIgnoreCase))
-      {
-        if (MyAPIGateway.Utilities.IsDedicated)
-        {
-          ShowMessage("Debug draw is not available on DS.", timeToLive: 5000);
           return;
         }
 
-        bool b;
-        if (_cli.ArgumentCount < 3 || !bool.TryParse(_cli.Argument(2), out b))
-          b = !DrawDebug;
+        sendToOthers = false;
 
-        MyAPIGateway.Utilities.ShowNotification($"DrawDebug set to {b}", 5000);
-        DrawDebug = b;
-      }
-      else if (cmd.Equals("spawn", StringComparison.OrdinalIgnoreCase))
-      {
-        if (IsServer)
+        var player = MyAPIGateway.Session.LocalHumanPlayer;
+        var character = player?.Character;
+        if (character == null || character.IsDead)
+        {
+          ShowMessage("Respawn and try again.", timeToLive: 5000);
+          return;
+        }
+
+        var cmd = _cli.Argument(1);
+        if (cmd.Equals("fix", StringComparison.OrdinalIgnoreCase))
+        {
+          List<BotBase> helpers;
+          PlayerToHelperDict.TryGetValue(player.IdentityId, out helpers);
+          ShowMessage($"Attempting to fix {helpers?.Count ?? 0} bots", timeToLive: 5000);
+
+          var pkt = new FixBotPacket(player.IdentityId);
+          Network.SendToServer(pkt);
+        }
+        else if (player.PromoteLevel < MyPromoteLevel.Admin)
+        {
+          ShowMessage("You must have admin privileges to use that command.", timeToLive: 5000);
+          return;
+        }
+        else if (cmd.Equals("maxbots", StringComparison.OrdinalIgnoreCase))
+        {
+          int num = MaxBots;
+          if (_cli.ArgumentCount > 2)
+            int.TryParse(_cli.Argument(2), out num);
+
+          ShowMessage($"Max bots set to {num}");
+
+          if (num != MaxBots)
+          {
+            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic);
+            Network.SendToServer(packet);
+          }
+        }
+        else if (cmd.Equals("music", StringComparison.OrdinalIgnoreCase))
+        {
+          bool on = !AllowMusic;
+          if (_cli.ArgumentCount > 2)
+            bool.TryParse(_cli.Argument(2), out on);
+
+          if (AllowMusic != on)
+          {
+            AllowMusic = on;
+            var pkt = new AdminPacket(AllowMusic, null);
+            Network.SendToServer(pkt);
+          }
+
+          ShowMessage($"AllowMusic set to {on}");
+        }
+        else if (cmd.Equals("debug", StringComparison.OrdinalIgnoreCase))
+        {
+          if (MyAPIGateway.Utilities.IsDedicated)
+          {
+            ShowMessage("Debug draw is not available on DS.", timeToLive: 5000);
+            return;
+          }
+
+          bool b;
+          if (_cli.ArgumentCount < 3 || !bool.TryParse(_cli.Argument(2), out b))
+            b = !DrawDebug;
+
+          MyAPIGateway.Utilities.ShowNotification($"DrawDebug set to {b}", 5000);
+          DrawDebug = b;
+        }
+        else if (cmd.Equals("spawn", StringComparison.OrdinalIgnoreCase))
+        {
+          if (IsServer)
+          {
+            if (!CanSpawn)
+            {
+              MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. Try again in a moment...");
+              return;
+            }
+
+            var ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(player.IdentityId);
+            if (ownerFaction == null)
+            {
+              MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. Owner is not in a faction!");
+              return;
+            }
+
+            IMyFaction botFaction;
+            if (!BotFactions.TryGetValue(ownerFaction.FactionId, out botFaction))
+            {
+              MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. There was no bot faction paired with owner's faction!");
+              return;
+            }
+          }
+
+          string role = null;
+          string subtype = null;
+          long? owner = null;
+
+          if (_cli.ArgumentCount > 2)
+            role = _cli.Argument(2);
+          else
+            role = "Combat";
+
+          if (_cli.ArgumentCount > 3)
+            subtype = _cli.Argument(3);
+
+          float num;
+          var grav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
+          var artGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(character.WorldAABB.Center, num);
+          grav += artGrav;
+
+          Vector3D forward, up;
+          if (grav.LengthSquared() > 0)
+          {
+            up = Vector3D.Normalize(-grav);
+            forward = Vector3D.CalculatePerpendicularVector(up);
+          }
+          else
+          {
+            up = character.WorldMatrix.Up;
+            forward = character.WorldMatrix.Forward;
+          }
+
+          var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 50;
+          var planet = MyGamePruningStructure.GetClosestPlanet(position);
+          if (planet != null)
+          {
+            var surfacePoint = planet.GetClosestSurfacePointGlobal(position);
+            var lineTo = surfacePoint - planet.PositionComp.GetPosition();
+            position = surfacePoint + Vector3D.Normalize(lineTo) * 5;
+          }
+
+          role = role.ToUpperInvariant();
+          if (role.EndsWith("BOT"))
+          {
+            role = role.Substring(0, role.Length - 3);
+          }
+
+          if (role != "NOMAD")
+          {
+            BotFactory.BotRoleEnemy br;
+            if (Enum.TryParse(role, out br))
+              role = br.ToString();
+            else
+              owner = player.IdentityId;
+          }
+
+          ShowMessage("Sending spawn message to server", "White");
+          var packet = new SpawnPacket(position, forward, up, subtype, role, owner);
+          Network.SendToServer(packet);
+        }
+        else if (cmd.Equals("maxhuntenemy", StringComparison.OrdinalIgnoreCase))
+        {
+          int distance;
+          if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
+          {
+            distance = Math.Max(50, Math.Min(1000, distance));
+
+            if (distance != _maxHuntEnemy)
+            {
+              _maxHuntEnemy = distance;
+
+              var pkt = new AdminPacket(distance, null, null);
+              Network.SendToServer(pkt);
+
+              ShowMessage($"Max Enemy Hunting Distance set to {distance}m");
+            }
+          }
+        }
+        else if (cmd.Equals("maxhuntfriendly", StringComparison.OrdinalIgnoreCase))
+        {
+          int distance;
+          if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
+          {
+            distance = Math.Max(50, Math.Min(1000, distance));
+
+            if (distance != _maxHuntFriendly)
+            {
+              _maxHuntFriendly = distance;
+
+              var pkt = new AdminPacket(null, distance, null);
+              Network.SendToServer(pkt);
+
+              ShowMessage($"Max Friendly Hunting Distance set to {distance}m");
+            }
+          }
+        }
+        else if (cmd.Equals("maxbulletdistance", StringComparison.OrdinalIgnoreCase))
+        {
+          int distance;
+          if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
+          {
+            distance = Math.Max(50, Math.Min(500, distance));
+
+            if (distance != _maxProjectile)
+            {
+              _maxProjectile = distance;
+
+              var pkt = new AdminPacket(null, null, distance);
+              Network.SendToServer(pkt);
+
+              ShowMessage($"Max Projectile Distance set to {distance}m");
+            }
+          }
+        }
+        else if (cmd.Equals("enemyflight", StringComparison.OrdinalIgnoreCase))
+        {
+          bool b;
+          if (_cli.ArgumentCount > 2 && bool.TryParse(_cli.Argument(2), out b))
+          {
+            if (_allowEnemyFlight == null || b != _allowEnemyFlight.Value)
+            {
+              _allowEnemyFlight = b;
+
+              var pkt = new AdminPacket(AllowMusic, b);
+              Network.SendToServer(pkt);
+
+              ShowMessage($"Allow Enemy Flight set to {b}");
+            }
+          }
+        }
+        else if (cmd.Equals("targetneutral", StringComparison.OrdinalIgnoreCase))
+        {
+          bool b;
+          if (_cli.ArgumentCount < 3 || !bool.TryParse(_cli.Argument(2), out b))
+            b = _allowNeutralTargets.HasValue && !_allowNeutralTargets.Value;
+
+          if (_allowNeutralTargets == null || b != _allowNeutralTargets.Value)
+          {
+            _allowNeutralTargets = b;
+
+            // TODO: sync<t> here
+          }
+        }
+        else if (cmd.Equals("voxel", StringComparison.OrdinalIgnoreCase))
+        {
+          List<MyVoxelBase> list;
+          if (!VoxelMapListStack.TryPop(out list) || list == null)
+            list = new List<MyVoxelBase>();
+          else
+            list.Clear();
+
+          var camera = MyAPIGateway.Session.Camera;
+          var sphere = new BoundingSphereD(camera.Position, 5);
+          MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, list);
+
+          if (list.Count > 0)
+          {
+            var voxel = list[0]?.RootVoxel;
+            if (voxel != null)
+            {
+              var inside = GridBase.PointInsideVoxel(camera.Position, voxel);
+
+              MyAPIGateway.Utilities.ShowNotification($"Voxel Name = {voxel.Name}, Storage Name = {voxel.StorageName}", 5000);
+              MyAPIGateway.Utilities.ShowNotification($"Point is inside = {inside}", 5000);
+            }
+            else
+              ShowMessage("Voxel was null after assignment!");
+          }
+          else
+          {
+            ShowMessage("No voxel found in sphere!");
+          }
+
+          list.Clear();
+          VoxelMapListStack.Push(list);
+        }
+        else if (cmd.Equals("apitest", StringComparison.OrdinalIgnoreCase))
         {
           if (!CanSpawn)
           {
@@ -2339,131 +2600,55 @@ namespace AiEnabled
             return;
           }
 
-          var ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(player.IdentityId);
-          if (ownerFaction == null)
+          var data = new RemoteBotAPI.SpawnData
           {
-            MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. Owner is not in a faction!");
-            return;
+            BotRole = "Soldier",
+            BotSubtype = "Default_Astronaut",
+            DisplayName = "Darth Vader",
+            Color = Color.Black,
+            ToolSubtypeId = "FullAutoPistolItem"
+          };
+
+          var bytes = MyAPIGateway.Utilities.SerializeToBinary(data);
+
+          float num;
+          var grav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
+          var artGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(character.WorldAABB.Center, num);
+          grav += artGrav;
+
+          Vector3D forward, up;
+          if (grav.LengthSquared() > 0)
+          {
+            up = Vector3D.Normalize(-grav);
+            forward = Vector3D.CalculatePerpendicularVector(up);
+          }
+          else
+          {
+            up = character.WorldMatrix.Up;
+            forward = character.WorldMatrix.Forward;
           }
 
-          IMyFaction botFaction;
-          if (!BotFactions.TryGetValue(ownerFaction.FactionId, out botFaction))
+          var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 50;
+          var planet = MyGamePruningStructure.GetClosestPlanet(position);
+          if (planet != null)
           {
-            MyAPIGateway.Utilities.ShowNotification($"Unable to spawn bot. There was no bot faction paired with owner's faction!");
-            return;
+            var surfacePoint = planet.GetClosestSurfacePointGlobal(position);
+            var lineTo = surfacePoint - planet.PositionComp.GetPosition();
+            position = surfacePoint + Vector3D.Normalize(lineTo) * 5;
           }
-        }
 
-        float num;
-        var grav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
-        var artGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(character.WorldAABB.Center, num);
-        grav += artGrav;
-
-        Vector3D forward, up;
-        if (grav.LengthSquared() > 0)
-        {
-          up = Vector3D.Normalize(-grav);
-          forward = Vector3D.CalculatePerpendicularVector(up);
-        }
-        else
-        {
-          up = character.WorldMatrix.Up;
-          forward = character.WorldMatrix.Forward;
-        }
-
-        var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 50;
-        var planet = MyGamePruningStructure.GetClosestPlanet(position);
-        if (planet != null)
-        {
-          var surfacePoint = planet.GetClosestSurfacePointGlobal(position);
-          var lineTo = surfacePoint - planet.PositionComp.GetPosition();
-          position = surfacePoint + Vector3D.Normalize(lineTo) * 5;
-        }
-
-        var packet = new SpawnPacket(position, forward, up, player.IdentityId);
-        Network.SendToServer(packet);
-      }
-      else if (cmd.Equals("maxhuntenemy", StringComparison.OrdinalIgnoreCase))
-      {
-        int distance;
-        if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
-        {
-          distance = Math.Max(50, Math.Min(1000, distance));
-
-          if (distance != _maxHuntEnemy)
-          {
-            _maxHuntEnemy = distance;
-
-            var pkt = new AdminPacket(distance, null, null);
-            Network.SendToServer(pkt);
-
-            ShowMessage($"Max Enemy Hunting Distance set to {distance}m");
-          }
+          var matrix = MatrixD.CreateWorld(position, forward, up); 
+          _localBotAPI.SpawnBotQueued(new MyPositionAndOrientation(matrix), bytes);
         }
       }
-      else if (cmd.Equals("maxhuntfriendly", StringComparison.OrdinalIgnoreCase))
+      catch (Exception ex)
       {
-        int distance;
-        if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
-        {
-          distance = Math.Max(50, Math.Min(1000, distance));
-
-          if (distance != _maxHuntFriendly)
-          {
-            _maxHuntFriendly = distance;
-
-            var pkt = new AdminPacket(null, distance, null);
-            Network.SendToServer(pkt);
-
-            ShowMessage($"Max Friendly Hunting Distance set to {distance}m");
-          }
-        }
-      }
-      else if (cmd.Equals("maxbulletdistance", StringComparison.OrdinalIgnoreCase))
-      {
-        int distance;
-        if (_cli.ArgumentCount > 2 && int.TryParse(_cli.Argument(2), out distance))
-        {
-          distance = Math.Max(50, Math.Min(500, distance));
-
-          if (distance != _maxProjectile)
-          {
-            _maxProjectile = distance;
-
-            var pkt = new AdminPacket(null, null, distance);
-            Network.SendToServer(pkt);
-
-            ShowMessage($"Max Projectile Distance set to {distance}m");
-          }
-        }
-      }
-      else if (cmd.Equals("enemyflight", StringComparison.OrdinalIgnoreCase))
-      {
-        bool b;
-        if (_cli.ArgumentCount > 2 && bool.TryParse(_cli.Argument(2), out b))
-        {
-          if (_allowEnemyFlight == null || b != _allowEnemyFlight.Value)
-          {
-            _allowEnemyFlight = b;
-
-            var pkt = new AdminPacket(AllowMusic, b);
-            Network.SendToServer(pkt);
-
-            ShowMessage($"Allow Enemy Flight set to {b}");
-          }
-        }
-      }
-      else if (cmd.Equals("patrol", StringComparison.OrdinalIgnoreCase))
-      {
-        if (CommandMenu.Registered)
-        {
-          _drawPatrolMenu = !_drawPatrolMenu;
-          CommandMenu.SetPatrolMenuVisibility(_drawPatrolMenu);
-        }
+        ShowMessage($"Error during command execution: {ex.Message}");
+        Logger.Log($"Exception during command execution: '{messageText}'\n {ex.Message}\n{ex.StackTrace}");
       }
     }
 
-    bool _drawMenu, _drawPatrolMenu;
+    bool _drawMenu;
     TimeSpan _lastClickTime = new TimeSpan(DateTime.Now.Ticks);
     public override void HandleInput()
     {
@@ -2725,19 +2910,19 @@ namespace AiEnabled
 
       if (MyDefinitionManager.Static.TryGetHandItemDefinition(ref definition) != null)
       {
-        if (botRole.Equals("RepairBot", StringComparison.OrdinalIgnoreCase))
+        if (botRole.IndexOf("Repair", StringComparison.OrdinalIgnoreCase) >= 0)
         {
           return toolSubtype.IndexOf("welder", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        if (botRole.Equals("CombatBot", StringComparison.OrdinalIgnoreCase) || botRole.Equals("SoldierBot", StringComparison.OrdinalIgnoreCase))
+        if (botRole.IndexOf("Combat", StringComparison.OrdinalIgnoreCase) >= 0 || botRole.IndexOf("Soldier", StringComparison.OrdinalIgnoreCase) >= 0)
         {
           return toolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0
           || toolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0
           || toolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        if (botRole.Equals("GrinderBot", StringComparison.OrdinalIgnoreCase))
+        if (botRole.IndexOf("Grinder", StringComparison.OrdinalIgnoreCase) >= 0)
         {
           return toolSubtype.IndexOf("grinder", StringComparison.OrdinalIgnoreCase) >= 0;
         }
@@ -2750,9 +2935,15 @@ namespace AiEnabled
     {
       try
       {
-        SaveModData(true);
-        _needsUpdate = true;
-        _updateCounter = UpdateTime - 2;
+        if (IsServer)
+          SaveModData(true);
+
+        if (!MyAPIGateway.Utilities.IsDedicated)
+          UpdateConfig(true);
+      }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in AiSession.SaveData(): {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {
@@ -2781,7 +2972,7 @@ namespace AiEnabled
 
           var botChar = bot.Character;
           var gridGraph = bot._currentGraph as CubeGridMap;
-          var grid = gridGraph?.Grid ?? null;
+          var grid = gridGraph?.MainGrid ?? null;
 
           helperData.GridEntityId = grid?.EntityId ?? 0L;
           helperData.Position = botChar.GetPosition();
@@ -2794,6 +2985,8 @@ namespace AiEnabled
           {
             if (helperData.InventoryItems == null)
               helperData.InventoryItems = new List<InventoryItem>();
+            else
+              helperData.InventoryItems.Clear();
 
             var items = inventory.GetItems();
             for (int k = 0; k < items.Count; k++)
@@ -3232,7 +3425,7 @@ namespace AiEnabled
         foreach (var kvp in GridGraphDict)
         {
           var gridGraph = kvp.Value;
-          if (gridGraph?.Ready == true && gridGraph.Grid?.IsStatic == false)
+          if (gridGraph?.Ready == true && gridGraph.MainGrid?.IsStatic == false)
             gridGraph.RecalculateOBB();
         }
 
@@ -3376,7 +3569,7 @@ namespace AiEnabled
       foreach (var kvp in GridGraphDict)
       {
         var graph = kvp.Value;
-        if (graph?.Grid == null || graph.Grid.MarkedForClose)
+        if (graph?.MainGrid == null || graph.MainGrid.MarkedForClose)
         {
           _graphRemovals.Add(kvp.Key);
           continue;
@@ -3413,7 +3606,7 @@ namespace AiEnabled
             if (!graph.PlanetTilesRemoved)
               graph.RemovePlanetTiles();
 
-            var grid = graph.Grid;
+            var grid = graph.MainGrid;
             if (grid.Physics.LinearVelocity.LengthSquared() < 0.01)
               graph.ResetMovement();
           }
@@ -3655,7 +3848,7 @@ namespace AiEnabled
 
         foreach (var graph in GridGraphDict.Values)
         {
-          if (graph._locked || !graph.IsActive)
+          if (graph.GraphLocked || !graph.IsActive)
             continue;
 
           if (checkPlanets)
@@ -3673,9 +3866,9 @@ namespace AiEnabled
         foreach (var kvp in VoxelGraphDict)
         {
           var graph = kvp.Value;
-          if (graph._locked || !graph.IsActive)
+          if (graph.GraphLocked || !graph.IsActive)
           {
-            if (!graph._locked && graph.LastActiveTicks > 200 && !removedGraphThisTick)
+            if (!graph.GraphLocked && graph.LastActiveTicks > 200 && !removedGraphThisTick)
             {
               removedGraphThisTick = true;
 
@@ -3926,7 +4119,7 @@ namespace AiEnabled
         if (bot == null || bot.IsDead || character == null || character.IsDead)
         {
           if (contains)
-            MyAPIGateway.Session.GPS.RemoveLocalGps(gps.Hash);
+            MyAPIGateway.Session.GPS.RemoveLocalGps(gps);
 
           continue;
         }
@@ -3934,22 +4127,23 @@ namespace AiEnabled
         var botPosition = bot.PositionComp.WorldAABB.Center + bot.WorldMatrix.Up * 0.25;
         var distanceSq = Vector3D.DistanceSquared(character.WorldAABB.Center, botPosition);
 
-        if (distanceSq > 62500)
+        if (distanceSq > 250 * 250)
         {
-          if (contains)
-            MyAPIGateway.Session.GPS.RemoveLocalGps(gps);
-
+          gps.ShowOnHud = false;
+          MyAPIGateway.Session.GPS.SetShowOnHud(player.IdentityId, gps.Hash, false);
           continue;
         }
 
-        if (contains)
-          MyAPIGateway.Session.GPS.RemoveLocalGps(gps.Hash);
-
         gps.Coords = botPosition;
         gps.ShowOnHud = true;
-        gps.UpdateHash();
 
-        MyAPIGateway.Session.GPS.AddLocalGps(gps);
+        if (!contains)
+        {
+          gps.UpdateHash();
+          MyAPIGateway.Session.GPS.AddLocalGps(gps);
+        }
+        else
+          MyAPIGateway.Session.GPS.SetShowOnHud(player.IdentityId, gps.Hash, true);
       }
     }
 
@@ -4110,7 +4304,7 @@ namespace AiEnabled
               {
                 var matrix = bot.WorldMatrix;
                 var gridGraph = bot._currentGraph as CubeGridMap;
-                var grid = gridGraph?.Grid ?? null;
+                var grid = gridGraph?.MainGrid ?? null;
 
                 helper.Orientation = Quaternion.CreateFromRotationMatrix(matrix);
                 helper.Position = matrix.Translation;
@@ -4140,8 +4334,8 @@ namespace AiEnabled
             if (add)
             {
               var gridGraph = bot._currentGraph as CubeGridMap;
-              var grid = gridGraph?.Grid ?? null;
-              var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
+              var grid = gridGraph?.MainGrid ?? null;
+              var botType = bot is RepairBot ? BotType.Repair : bot is CombatBot ? BotType.Combat : BotType.Scavenger;
 
               helperData.AddHelper(bot.Character, botType, grid, bot._patrolList);
             }
@@ -4157,7 +4351,7 @@ namespace AiEnabled
         {
           var data = new HelperData(ownerId, null);
           var gridGraph = bot._currentGraph as CubeGridMap;
-          var grid = gridGraph?.Grid ?? null;
+          var grid = gridGraph?.MainGrid ?? null;
           var botType = bot is RepairBot ? BotType.Repair : BotType.Combat;
 
           data.AddHelper(bot.Character, botType, grid, bot._patrolList);

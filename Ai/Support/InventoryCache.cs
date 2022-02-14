@@ -387,6 +387,10 @@ namespace AiEnabled.Ai.Support
         _workData.Block = block;
 
         _repairTask = MyAPIGateway.Parallel.Start(_workAction, _workCallBack, _workData);
+
+        // testing only
+        //RemoveItemsInternal(_workData);
+        //RemoveItemsComplete(_workData);
       }
     }
 
@@ -414,8 +418,8 @@ namespace AiEnabled.Ai.Support
         gridList = new List<IMyCubeGrid>();
       else
         gridList.Clear();
-  
-      MyAPIGateway.GridGroups.GetGroup(Grid, GridLinkTypeEnum.Logical, gridList);
+
+      Grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridList);
 
       for (int i = gridList.Count - 1; i >= 0; i--)
       {
@@ -477,11 +481,18 @@ namespace AiEnabled.Ai.Support
       for (int i = 0; i < blockList.Count; i++)
       {
         var terminal = blockList[i]?.FatBlock as IMyTerminalBlock;
-        if (terminal?.HasInventory != true)
+        if (terminal == null || !terminal.HasInventory)
           continue;
 
-        if (terminal is IMyRefinery)
+        if (!(terminal is IMyCargoContainer) && !(terminal is IMyShipConnector) && !(terminal is IMyShipToolBase))
           continue;
+
+        for (int j = 0; j < terminal.InventoryCount; j++)
+        {
+          var inv = terminal.GetInventory(j);
+          if (inv.MaxVolume == 0)
+            return;
+        }
 
         bool hookEvents = _terminals.Add(terminal.Position);
         if (hookEvents)

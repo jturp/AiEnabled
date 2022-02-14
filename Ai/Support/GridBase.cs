@@ -34,10 +34,19 @@ namespace AiEnabled.Ai.Support
     internal ConcurrentDictionary<Vector3I, byte> ObstacleNodesTemp = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
     internal ConcurrentDictionary<Vector3I, byte> TempBlockedNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
     internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
-    internal ConcurrentDictionary<Vector3I, Node> OpenTileDict = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
-    internal List<IMyCubeGrid> GridGroups;
-    internal bool _locked, _graphHasTunnel = false;
+    //internal ConcurrentDictionary<Vector3I, Node> OpenTileDict = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
+    internal bool GraphLocked, GraphHasTunnel = false;
     byte _refreshTimer;
+
+    /// <summary>
+    /// The dictionary key for this map
+    /// </summary>
+    public ulong Key;
+
+    /// <summary>
+    /// Used to cache the pathnodes for faster retrieval on subsequent pathfinding calls
+    /// </summary>
+    public ConcurrentDictionary<Vector3I, Node> OptimizedCache = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
 
     /// <summary>
     /// The matrix to use for alignment purposes
@@ -63,7 +72,7 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// The planet this graph on, if it's not in space.
     /// </summary>
-    public MyPlanet Planet { get; internal set; }
+    public MyVoxelBase RootVoxel { get; internal set; }
     
     /// <summary>
     /// Will be true once the grid has been processed
@@ -95,8 +104,34 @@ namespace AiEnabled.Ai.Support
     public virtual bool IsPositionAvailable(Vector3D position)
     {
       var node = WorldToLocal(position);
-      return IsPositionValid(position) && OpenTileDict.ContainsKey(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);        
+      //return IsPositionValid(position) && OpenTileDict.ContainsKey(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);
+      return IsPositionValid(position) && IsOpenTile(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);
     }
+
+    /// <summary>
+    /// Gets the <see cref="Node"/> associated with a given local position
+    /// </summary>
+    /// <param name="position">the intended <see cref="Node"/> position</param>
+    /// <param name="node">the <see cref="Node"/> associated with the <paramref name="position"/>, if there is one</param>
+    /// <returns>true if the position is a valid tile space, otherwise false</returns>
+    public abstract bool TryGetNodeForPosition(Vector3I position, out Node node);
+
+    /// <summary>
+    /// Determines if the supplied position is a valid tile
+    /// </summary>
+    /// <param name="position"></param>
+    /// <returns>true if the <paramref name="position"/> is a valid tile, otherwise false</returns>
+    public abstract bool IsOpenTile(Vector3I position);
+
+    /// <summary>
+    /// Determines if the supplied position is blocked in some way
+    /// </summary>
+    /// <param name="position">the <see cref="Node"/> position</param>
+    /// <param name="includeTemp">whether temporary blockages should be considered (ie a parked vehicle in the way)</param>
+    /// <returns></returns>
+    public abstract bool IsObstacle(Vector3I position, bool includeTemp);
+
+    public abstract Node GetValueOrDefault(Vector3I position, Node defaultValue);
 
     /// <summary>
     /// Determines whether the given position is usable by the bot
@@ -111,12 +146,19 @@ namespace AiEnabled.Ai.Support
 
       Node node;
       var localPosition = WorldToLocal(worldPosition);
+      //if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
+      //  && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
+        && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
-        if (!PointInsideVoxel(worldPosition, Planet))
+        if (!PointInsideVoxel(worldPosition, RootVoxel))
         {
-          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!node.IsWaterNode || bot.CanUseWaterNodes);
+          bool isWaterNode = node.IsWaterNode;
+
+          if (bot.WaterNodesOnly)
+            return isWaterNode;
+
+          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!isWaterNode || bot.CanUseWaterNodes);
         }
       }
 
@@ -129,7 +171,7 @@ namespace AiEnabled.Ai.Support
     /// <param name="bot">The bot to test usability for</param>
     /// <param name="worldPosition">The world position to check</param>
     /// <param name="node">If the position is a valid tile, this will contain the tile information</param>
-    /// <returns></returns>
+    /// <returns>true if <paramref name="worldPosition"/> is available AND if <paramref name="bot"/> can use the node type (air, water, etc)</returns>
     public virtual bool IsPositionUsable(BotBase bot, Vector3D worldPosition, out Node node)
     {
       node = null;
@@ -138,16 +180,20 @@ namespace AiEnabled.Ai.Support
         return false;
 
       var localPosition = WorldToLocal(worldPosition);
+      //if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
+      //  && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
+       && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
         var worldPoint = LocalToWorld(node.Position) + node.Offset;
-        if (!PointInsideVoxel(worldPoint, Planet))
+        if (!PointInsideVoxel(worldPoint, RootVoxel))
         {
-          if (bot.WaterNodesOnly)
-            return node.IsWaterNode;
+          bool isWaterNode = node.IsWaterNode;
 
-          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!node.IsWaterNode || bot.CanUseWaterNodes);
+          if (bot.WaterNodesOnly)
+            return isWaterNode;
+
+          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!isWaterNode || bot.CanUseWaterNodes);
         }
       }
 
@@ -159,20 +205,24 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     /// <param name="bot">The bot to test usability for</param>
     /// <param name="localPosition">The node position to check</param>
-    /// <returns></returns>
+    /// <returns>true if <paramref name="localPosition"/> is available AND if <paramref name="bot"/> can use the node type (air, water, etc)</returns>
     public virtual bool IsPositionUsable(BotBase bot, Vector3I localPosition)
     {
       Node node;
+      //if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
+      //  && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
+     && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
         var worldPoint = LocalToWorld(node.Position) + node.Offset;
-        if (!PointInsideVoxel(worldPoint, Planet))
+        if (!PointInsideVoxel(worldPoint, RootVoxel))
         {
-          if (bot.WaterNodesOnly)
-            return node.IsWaterNode;
+          bool isWaterNode = node.IsWaterNode;
 
-          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!node.IsWaterNode || bot.CanUseWaterNodes);
+          if (bot.WaterNodesOnly)
+            return isWaterNode;
+
+          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!isWaterNode || bot.CanUseWaterNodes);
         }
       }
 
@@ -180,13 +230,14 @@ namespace AiEnabled.Ai.Support
     }
 
     /// <summary>
-    /// Determines whether the given node is an available tile position
+    /// Determines whether the given position is an available tile position
     /// </summary>
     /// <param name="position">The local position to check</param>
-    /// <returns></returns>
-    public virtual bool IsPositionAvailable(Vector3I node)
+    /// <returns>true if the <paramref name="position"/> is available (is open tile and not blocked in any way)</returns>
+    public virtual bool IsPositionAvailable(Vector3I position)
     {
-      return OpenTileDict.ContainsKey(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);
+      //return OpenTileDict.ContainsKey(position) && !TempBlockedNodes.ContainsKey(position) && !ObstacleNodes.ContainsKey(position);
+      return IsOpenTile(position) && !TempBlockedNodes.ContainsKey(position) && !ObstacleNodes.ContainsKey(position) && !Obstacles.ContainsKey(position);
     }
 
     public Node GetBufferZoneTargetPositionFromPrunik(ref MyOrientedBoundingBoxD nextObb, ref Base6Directions.Direction forward, ref Vector3D goal, BotBase bot)
@@ -257,7 +308,7 @@ namespace AiEnabled.Ai.Support
       bool checkTunnelPoints = false;
       Vector3D gravity;
 
-      if (_graphHasTunnel && Planet != null && !Planet.MarkedForClose)
+      if (GraphHasTunnel && RootVoxel != null && !RootVoxel.MarkedForClose)
       {
         float _;
         gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(goal, out _);
@@ -267,26 +318,38 @@ namespace AiEnabled.Ai.Support
         else
           gravity = WorldMatrix.Down;
 
-        var surfacePoint = Planet.GetClosestSurfacePointGlobal(ref goal) - gravity;
+        Vector3D upVector = -gravity;
+        Vector3D? surfacePoint = null;
 
-        while (PointInsideVoxel(surfacePoint, Planet))
-          surfacePoint -= gravity;
+        var planet = RootVoxel as MyPlanet;
+        if (planet != null)
+          surfacePoint = planet.GetClosestSurfacePointGlobal(ref goal) + upVector;
+        else
+          surfacePoint = GetClosestSurfacePointFast(bot, goal + upVector * 20, upVector);
 
-        var goalPoint = goal;
-
-        while (PointInsideVoxel(goalPoint, Planet))
-          goalPoint -= gravity;
-
-        var line = new LineD(surfacePoint, goalPoint);
-        var maxCount = Math.Floor(line.Length) - 3;
-
-        for (int i = 0; i < maxCount; i++)
+        if (surfacePoint.HasValue)
         {
-          var point = surfacePoint + line.Direction * i;
-          if (PointInsideVoxel(point, Planet))
+          var surfaceValue = surfacePoint.Value;
+
+          while (PointInsideVoxel(surfaceValue, RootVoxel) && OBB.Contains(ref surfaceValue))
+            surfaceValue -= gravity;
+
+          var goalPoint = goal;
+
+          while (PointInsideVoxel(goalPoint, RootVoxel) && OBB.Contains(ref goalPoint))
+            goalPoint -= gravity;
+
+          var line = new LineD(surfaceValue, goalPoint);
+          var maxCount = Math.Floor(line.Length) - 3;
+
+          for (int i = 0; i < maxCount; i++)
           {
-            goalUnderGround = true;
-            break;
+            var point = surfaceValue + line.Direction * i;
+            if (PointInsideVoxel(point, RootVoxel))
+            {
+              goalUnderGround = true;
+              break;
+            }
           }
         }
 
@@ -296,32 +359,40 @@ namespace AiEnabled.Ai.Support
         }
         else
         {
-          var botPosition = bot.Position;
-          surfacePoint = Planet.GetClosestSurfacePointGlobal(ref botPosition) - gravity;
+          var botPosition = bot.GetPosition();
+          if (planet != null)
+            surfacePoint = planet.GetClosestSurfacePointGlobal(ref botPosition) + upVector;
+          else
+            surfacePoint = GetClosestSurfacePointFast(bot, botPosition + upVector * 20, upVector);
 
-          while (PointInsideVoxel(surfacePoint, Planet))
-            surfacePoint -= gravity;
-
-          goalPoint = botPosition;
-
-          while (PointInsideVoxel(goalPoint, Planet))
-            goalPoint -= gravity;
-
-          line = new LineD(surfacePoint, goalPoint);
-          maxCount = Math.Floor(line.Length) - 3;
-
-          for (int i = 0; i < maxCount; i++)
+          if (surfacePoint.HasValue)
           {
-            var point = surfacePoint + line.Direction * i;
-            if (PointInsideVoxel(point, Planet))
-            {
-              startUnderGound = true;
-              break;
-            }
-          }
+            var surfaceValue = surfacePoint.Value;
 
-          checkTunnelPoints = startUnderGound;
-        }
+            while (PointInsideVoxel(surfaceValue, RootVoxel) && OBB.Contains(ref surfaceValue))
+              surfaceValue -= gravity;
+
+            var goalPoint = botPosition;
+
+            while (PointInsideVoxel(goalPoint, RootVoxel) && OBB.Contains(ref goalPoint))
+              goalPoint -= gravity;
+
+            var line = new LineD(surfaceValue, goalPoint);
+            var maxCount = Math.Floor(line.Length) - 3;
+
+            for (int i = 0; i < maxCount; i++)
+            {
+              var point = surfaceValue + line.Direction * i;
+              if (PointInsideVoxel(point, RootVoxel))
+              {
+                startUnderGound = true;
+                break;
+              }
+            }
+
+            checkTunnelPoints = startUnderGound;
+          }
+        }        
       }
 
       var cellSize = CellSize;
@@ -398,7 +469,13 @@ namespace AiEnabled.Ai.Support
       return result;
     }
 
-    public void AddToObstacles(Vector3D prevNode, Vector3D curNode, Vector3D nextNode)
+    /// <summary>
+    /// Adds a blocked edge to known obstacles
+    /// </summary>
+    /// <param name="prevNode">Previous <see cref="Node"/> position</param>
+    /// <param name="curNode">Current <see cref="Node"/> position</param>
+    /// <param name="nextNode">Next <see cref="Node"/> position</param>
+    public virtual void AddToObstacles(Vector3D prevNode, Vector3D curNode, Vector3D nextNode)
     {
       var prev = WorldToLocal(prevNode);
       var curr = WorldToLocal(curNode);
@@ -406,7 +483,8 @@ namespace AiEnabled.Ai.Support
       bool addObstacle = true;
 
       Node node;
-      if (OpenTileDict.TryGetValue(prev, out node))
+      //if (OpenTileDict.TryGetValue(prev, out node))
+      if (TryGetNodeForPosition(prev, out node))
       {
         var dirPN = next - prev;
         var min = -Vector3I.One;
@@ -415,8 +493,9 @@ namespace AiEnabled.Ai.Support
         if (node.SetBlocked(dirPN))
           addObstacle = false;
       }
-      
-      if (addObstacle && OpenTileDict.TryGetValue(curr, out node))
+
+      //if (addObstacle && OpenTileDict.TryGetValue(curr, out node))
+      if (addObstacle && TryGetNodeForPosition(curr, out node))
       {
         var dirCN = next - curr;
         var min = -Vector3I.One;
@@ -448,12 +527,39 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     public virtual float CellSize { get; internal set; } = 2.5f;
 
+    /// <summary>
+    /// Converts local position to world position
+    /// </summary>
+    /// <param name="localVector">The local position to transform</param>
+    /// <returns></returns>
     public abstract Vector3D LocalToWorld(Vector3I localVector);
 
+    /// <summary>
+    /// Converts world position to local position
+    /// </summary>
+    /// <param name="worldVector">The world position to transform</param>
+    /// <returns></returns>
     public abstract Vector3I WorldToLocal(Vector3D worldVector);
 
-    public abstract IEnumerable<Vector3I> GetBlockedNodeEdges(Node nodeBase);
+    /// <summary>
+    /// Gets the node's blocked edges
+    /// </summary>
+    /// <param name="nodeBase">The <see cref="Node"/> the edges are requested for</param>
+    /// <returns></returns>
+    public abstract void GetBlockedNodeEdges(Node nodeBase);
 
+    /// <summary>
+    /// Gets all valid neighbors (open tiles) to a given node position
+    /// </summary>
+    /// <param name="bot">the <see cref="BotBase"/> requesting the neighbors</param>
+    /// <param name="previousNode">the previous <see cref="Node"/> position</param>
+    /// <param name="currentNode">the current <see cref="Node"/> position</param>
+    /// <param name="worldPosition">the <paramref name="bot"/>'s current world position</param>
+    /// <param name="checkDoors">whether doors should be considered (ie <see cref="CubeGridMap"/></param>
+    /// <param name="currentIsObstacle">whether the <paramref name="currentNode"/> is known to be blocked</param>
+    /// <param name="isSlimBlock">whether the <paramref name="currentNode"/> is known to be a slim block (ie repair target) </param>
+    /// <param name="up">if supplied, only lateral positions will be considered valid</param>
+    /// <returns></returns>
     public abstract IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null);
 
     public abstract bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false);
@@ -474,20 +580,12 @@ namespace AiEnabled.Ai.Support
 
     public abstract Node GetReturnHomePoint(BotBase bot);
 
-    /// <summary>
-    /// Used to cache the pathnodes for faster retrieval on subsequent pathfinding calls
-    /// </summary>
-    public ConcurrentDictionary<Vector3I, Node> OptimizedCache = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
-
-    /// <summary>
-    /// Item1 = stair coming from, Item2 = stair going to, Item3 = position to insert between them
-    /// </summary>
-    internal Queue<MyTuple<Vector3I, Vector3I, Vector3I>> StackedStairsFound { get; private set; } = new Queue<MyTuple<Vector3I, Vector3I, Vector3I>>();
+    public abstract IMySlimBlock GetBlockAtPosition(Vector3I localPosition);
 
     internal virtual void SetReady()
     {
       //MyAPIGateway.Utilities.ShowMessage("AiEnabled", "GridBase.SetReady()");
-      _locked = false;
+      GraphLocked = false;
       Ready = true;
     }
 
@@ -506,42 +604,54 @@ namespace AiEnabled.Ai.Support
       return result;
     }
 
-    internal Vector3D GetClosestSurfacePointFast(BotBase bot, Vector3D worldPosition, Vector3D upVec)
+    internal Vector3D? GetClosestSurfacePointFast(BotBase bot, Vector3D worldPosition, Vector3D upVec)
     {
-      if (Planet == null || Planet.MarkedForClose)
+      if (RootVoxel == null || RootVoxel.MarkedForClose)
       {
         return worldPosition;
       }
 
       var localPoint = WorldToLocal(worldPosition);
 
-      if (IsPositionUsable(bot, localPoint))
+      if (bot != null && IsPositionUsable(bot, localPoint))
         return worldPosition;
 
-      float _;
-      Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
-      if (gravity.LengthSquared() > 0)
-        upVec = Vector3D.Normalize(-gravity);
+      if (RootVoxel is MyPlanet)
+      {
+        float _;
+        Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
+        if (gravity.LengthSquared() > 0)
+          upVec = Vector3D.Normalize(-gravity);
+      }
 
       var closestSurfacePoint = LocalToWorld(localPoint);
       var addVec = upVec * CellSize;
-      //AiSession.Instance.Logger.Log($"Initial node: {localPoint}");
 
-      if (PointInsideVoxel(closestSurfacePoint, Planet))
+      if (PointInsideVoxel(closestSurfacePoint, RootVoxel))
       {
         closestSurfacePoint += addVec;
 
-        while (PointInsideVoxel(closestSurfacePoint, Planet))
+        while (PointInsideVoxel(closestSurfacePoint, RootVoxel))
+        {
+          if (!OBB.Contains(ref closestSurfacePoint))
+            return null;
+
           closestSurfacePoint += addVec;
+        }
       }
       else
       {
         closestSurfacePoint -= addVec;
 
-        while (!PointInsideVoxel(closestSurfacePoint, Planet))
-          closestSurfacePoint -= addVec;
+        while (!PointInsideVoxel(closestSurfacePoint, RootVoxel))
+        {
+          if (!OBB.Contains(ref closestSurfacePoint))
+            return null;
 
-        if (PointInsideVoxel(closestSurfacePoint, Planet))
+          closestSurfacePoint -= addVec;
+        }
+
+        if (PointInsideVoxel(closestSurfacePoint, RootVoxel))
           closestSurfacePoint += addVec;
       }
 
@@ -549,7 +659,8 @@ namespace AiEnabled.Ai.Support
       localPoint = WorldToLocal(closestSurfacePoint);
       //AiSession.Instance.Logger.Log($"Final node: {localPoint}");
 
-      if (OpenTileDict.TryGetValue(localPoint, out node))
+      //if (OpenTileDict.TryGetValue(localPoint, out node))
+      if (TryGetNodeForPosition(localPoint, out node))
       {
         closestSurfacePoint = LocalToWorld(node.Position) + node.Offset;
       }
@@ -560,56 +671,73 @@ namespace AiEnabled.Ai.Support
     internal bool GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, out Node node)
     {
       node = null;
-      if (Planet == null || Planet.MarkedForClose)
+      if (RootVoxel == null || RootVoxel.MarkedForClose)
       {
         return false;
       }
 
       var localPoint = WorldToLocal(worldPosition);
 
-      float _;
-      Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
-      if (gravity.LengthSquared() > 0)
-        upVec = Vector3D.Normalize(-gravity);
+      if (RootVoxel is MyPlanet)
+      {
+        float _;
+        Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
+        if (gravity.LengthSquared() > 0)
+          upVec = Vector3D.Normalize(-gravity);
+      }
 
       var closestSurfacePoint = LocalToWorld(localPoint);
       var addVec = upVec * CellSize;
 
-      if (PointInsideVoxel(closestSurfacePoint, Planet))
+      if (PointInsideVoxel(closestSurfacePoint, RootVoxel))
       {
         closestSurfacePoint += addVec;
 
-        while (PointInsideVoxel(closestSurfacePoint, Planet))
+        while (PointInsideVoxel(closestSurfacePoint, RootVoxel))
+        {
+          if (!OBB.Contains(ref closestSurfacePoint))
+            return false;
+
           closestSurfacePoint += addVec;
+        }
       }
       else
       {
         closestSurfacePoint -= addVec;
 
-        while (!PointInsideVoxel(closestSurfacePoint, Planet))
-          closestSurfacePoint -= addVec;
+        while (!PointInsideVoxel(closestSurfacePoint, RootVoxel))
+        {
+          if (!OBB.Contains(ref closestSurfacePoint))
+            return false;
 
-        if (PointInsideVoxel(closestSurfacePoint, Planet))
+          closestSurfacePoint -= addVec;
+        }
+
+        if (PointInsideVoxel(closestSurfacePoint, RootVoxel))
           closestSurfacePoint += addVec;
       }
 
       localPoint = WorldToLocal(closestSurfacePoint);
-      return OpenTileDict.TryGetValue(localPoint, out node) && node.IsGroundNode;
+      return TryGetNodeForPosition(localPoint, out node) && node.IsGroundNode;
     }
 
-    public static Vector3D GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, MyPlanet planet, out bool pointOnGround)
+    public static Vector3D GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, GridBase map, out bool pointOnGround)
     {
       pointOnGround = true;
+      var voxel = map?.RootVoxel;
 
-      if (planet == null || planet.MarkedForClose)
+      if (voxel == null || voxel.MarkedForClose)
       {
         return worldPosition;
       }
 
-      float _;
-      Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
-      if (gravity.LengthSquared() > 0)
-        upVec = Vector3D.Normalize(-gravity);
+      if (voxel is MyPlanet)
+      {
+        float _;
+        Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
+        if (gravity.LengthSquared() > 0)
+          upVec = Vector3D.Normalize(-gravity);
+      }
 
       var pointAbove = worldPosition + upVec;
       var pointBelow = worldPosition - upVec;
@@ -624,7 +752,7 @@ namespace AiEnabled.Ai.Support
         }
 
         var mid = (pointAbove + pointBelow) * 0.5;
-        if (PointInsideVoxel(mid, planet))
+        if (PointInsideVoxel(mid, voxel))
         {
           pointBelow = mid;
         }
@@ -634,7 +762,56 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (PointInsideVoxel(pointAbove, planet))
+      if (PointInsideVoxel(pointAbove, voxel))
+      {
+        pointOnGround = false;
+        return pointBelow;
+      }
+
+      return pointAbove;
+    }
+
+    public static Vector3D GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, MyVoxelBase voxel, out bool pointOnGround)
+    {
+      pointOnGround = true;
+
+      if (voxel == null || voxel.MarkedForClose)
+      {
+        return worldPosition;
+      }
+
+      if (voxel is MyPlanet)
+      {
+        float _;
+        Vector3D gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
+        if (gravity.LengthSquared() > 0)
+          upVec = Vector3D.Normalize(-gravity);
+      }
+
+      var pointAbove = worldPosition + upVec;
+      var pointBelow = worldPosition - upVec;
+      int count = 0;
+
+      while (Vector3D.DistanceSquared(pointAbove, pointBelow) > 0.1)
+      {
+        count++;
+        if (count > 500)
+        {
+          break;
+        }
+
+        var mid = (pointAbove + pointBelow) * 0.5;
+        if (PointInsideVoxel(mid, voxel))
+        {
+          pointBelow = mid;
+        }
+        else
+        {
+          pointAbove = mid;
+        }
+      }
+
+      if (PointInsideVoxel(pointAbove, voxel))
       {
         pointOnGround = false;
         return pointBelow;
@@ -648,18 +825,19 @@ namespace AiEnabled.Ai.Support
       if (voxel == null || voxel.MarkedForClose)
         return false;
 
-      float _;
-      var natGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(pos, out _);
-      if (natGrav.LengthSquared() == 0)
-        return false;
+      var planet = voxel as MyPlanet;
+      if (planet != null)
+      {
+        var maxRadius = planet.MaximumRadius;
+        if (Vector3D.DistanceSquared(planet.PositionComp.GetPosition(), pos) > maxRadius * maxRadius)
+          return false;
+      }
 
       MyStorageData tmpStorage;
       if (!AiSession.StorageStack.TryPop(out tmpStorage))
         tmpStorage = new MyStorageData();
 
       var voxelMatrix = voxel.PositionComp.WorldMatrixInvScaled;
-      var vecMax = new Vector3I(int.MaxValue);
-      var vecMin = new Vector3I(int.MinValue);
 
       Vector3D result;
       Vector3D.Transform(ref pos, ref voxelMatrix, out result);
@@ -669,7 +847,7 @@ namespace AiEnabled.Ai.Support
       var v2 = v1 + voxel.StorageMin;
       var v3 = v2 + 1;
 
-      if (v2 != vecMax && v3 != vecMin)
+      if (v2 != Vector3I.MaxValue && v3 != Vector3I.MinValue)
       {
         tmpStorage.Resize(v2, v3);
         using (voxel.Pin())
@@ -702,21 +880,11 @@ namespace AiEnabled.Ai.Support
       ObstacleNodes?.Clear();
       ObstacleNodesTemp?.Clear();
       TempBlockedNodes?.Clear();
-      GridGroups?.Clear();
-      StackedStairsFound?.Clear();
-
-      if (OpenTileDict != null)
-      {
-        OpenTileDict?.Clear();
-      }
 
       Obstacles = null;
       ObstacleNodes = null;
       ObstacleNodesTemp = null;
       TempBlockedNodes = null;
-      GridGroups = null;
-      OpenTileDict = null;
-      StackedStairsFound = null;
     }
 
     public override bool Equals(object obj)
@@ -730,7 +898,7 @@ namespace AiEnabled.Ai.Support
 
     public override int GetHashCode()
     {
-      return WorldMatrix.Translation.GetHashCode();
+      return Key.GetHashCode();
     }
 
     public bool Equals(GridBase x, GridBase y)
@@ -738,12 +906,12 @@ namespace AiEnabled.Ai.Support
       if (x == null || y == null)
         return false;
 
-      return Vector3D.IsZero(x.WorldMatrix.Translation - y.WorldMatrix.Translation);
+      return x.Key == y.Key;
     }
 
     public int GetHashCode(GridBase obj)
     {
-      return obj.WorldMatrix.Translation.GetHashCode();
+      return obj.Key.GetHashCode();
     }
   }
 }

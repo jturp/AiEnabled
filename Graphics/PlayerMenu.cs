@@ -54,8 +54,12 @@ namespace AiEnabled.Graphics
     public PlayerMenu(PlayerData playerData)
     {
       _playerData = playerData;
-      bool showHealthBars = playerData.ShowHealthBars;
-      float mouseSensitivity = playerData.MouseSensitivityModifier;
+    }
+
+    public void Register()
+    {
+      bool showHealthBars = _playerData.ShowHealthBars;
+      float mouseSensitivity = _playerData.MouseSensitivityModifier;
 
       Menu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.PlayerMenu, "Settings");
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);

@@ -71,6 +71,7 @@ namespace AiEnabled.API
         { "GetRelationshipBetween", new Func<long, long, MyRelationsBetweenPlayerAndBlock>(GetRelationshipBetween) },
         { "GetBotAndRelationTo", new GetBotAndRelationTo(CheckBotRelationTo) },
         { "SetBotPatrol", new Func<long, List<Vector3D>, bool>(SetBotPatrol) },
+        { "CanRoleUseTool", new Func<string, string, bool>(CanRoleUseTool) },
      };
 
       return dict;
@@ -120,6 +121,14 @@ namespace AiEnabled.API
 
       return AiSession.Instance.Bots?.ContainsKey(entityId) == true;
     }
+
+    /// <summary>
+    /// Determins if the bot role is allowed to use a given tool type
+    /// </summary>
+    /// <param name="role">the BotRole to check (ie SoldierBot, GrinderBot, etc)</param>
+    /// <param name="toolSubtype">the SubtypeId of the weapon or tool</param>
+    /// <returns>true if the role is allowed to use the item, otherwise false</returns>
+    public bool CanRoleUseTool(string role, string toolSubtype) => AiSession.Instance?.IsBotAllowedToUse(role, toolSubtype) ?? false;
 
     /// <summary>
     /// Retrieves the relationship between an AiEnabled bot and an identity
@@ -319,10 +328,10 @@ namespace AiEnabled.API
         return false;
 
       CubeGridMap gridMap;
-      if (!AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) || gridMap?.Grid == null || !gridMap.Ready)
+      if (!AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) || gridMap?.MainGrid == null || !gridMap.Ready)
         return false;
 
-      bool isSlim = gridMap.Grid.GetCubeBlock(startPosition) != null;
+      bool isSlim = gridMap.DoesBlockExist(startPosition); // gridMap.MainGrid.GetCubeBlock(startPosition) != null;
 
       BotBase bot;
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot))

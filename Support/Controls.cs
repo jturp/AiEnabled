@@ -278,12 +278,12 @@ namespace AiEnabled.Support
 
               subtype = "Target_Dummy";
               break;
-            //case AiSession.BotType.Scavenger:
-              //if (needsName)
-              //  displayName = "ScavengerBot";
-              //
-            //  subtype = "RoboDog";
-            //  break;
+            case AiSession.BotType.Scavenger:
+              if (needsName)
+                displayName = "ScavengerBot";
+
+              subtype = "RoboDog";
+              break;
             //case AiSession.BotType.Medic:
             // if (needsName)
             //   displayName = "MedicBot";
@@ -300,6 +300,20 @@ namespace AiEnabled.Support
             displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
 
           subtype = "Drone_Bot";
+        }
+        else if (botModel == AiSession.BotModel.AstronautMale)
+        {
+          if (needsName)
+            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+
+          subtype = "Default_Astronaut";
+        }
+        else if (botModel == AiSession.BotModel.AstronautFemale)
+        {
+          if (needsName)
+            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+
+          subtype = "Default_Astronaut_Female";
         }
         else // if (botModel == AiSession.BotModel.TargetBot)
         {

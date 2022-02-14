@@ -57,7 +57,9 @@ namespace AiEnabled.Networking
           }
 
           var botPos = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
+          var botMatrix = MatrixD.CreateWorld(botPos, block.WorldMatrix.Backward, block.WorldMatrix.Up);
           bot.Physics.SetSpeeds(Vector3.Zero, Vector3.Zero);
+          bot.SetWorldMatrix(botMatrix);
           bot.SetPosition(botPos);
 
           helper.UseAPITargets = false;

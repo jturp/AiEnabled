@@ -1,8 +1,10 @@
 ﻿using AiEnabled.Ai.Support;
 using AiEnabled.Bots.Behaviors;
+using AiEnabled.Support;
 using AiEnabled.Utilities;
 
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character.Components;
 using Sandbox.ModAPI;
 
 using System;
@@ -14,7 +16,9 @@ using System.Threading.Tasks;
 using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
+using VRage.Game.ModAPI.Interfaces;
 using VRage.ModAPI;
+using VRage.Utils;
 
 using VRageMath;
 
@@ -63,16 +67,84 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
       _attackSoundStrings.Add("DroneLoopSmall");
+
+      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      if (jetpack != null)
+      {
+        if (RequiresJetpack)
+        {
+          if (!jetpack.TurnedOn)
+          {
+            var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+            jetpack.TurnOnJetpack(true);
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+          }
+        }
+        else if (jetpack.TurnedOn)
+        {
+          jetpack.SwitchThrusts();
+        }
+      }
+    }
+
+    internal override void DoDamage(float amount = 0)
+    {
+      IMyDestroyableObject destroyable;
+      var cube = Target.Entity as IMyCubeBlock;
+      if (cube != null)
+      {
+        destroyable = cube.SlimBlock;
+        PlaySoundServer("ImpMetalMetalCat3", cube.EntityId);
+      }
+      else
+      {
+        destroyable = Target.Entity as IMyDestroyableObject;
+      }
+
+      if (destroyable == null || !destroyable.UseDamageSystem || destroyable.Integrity <= 0)
+        return;
+
+      var character = Target.Entity as IMyCharacter;
+      bool isCharacter = character != null;
+
+      var rand = amount > 0 ? amount : isCharacter ? MyUtils.GetRandomFloat(_minDamage, _maxDamage) : _blockDamagePerAttack;
+      if (isCharacter && amount == 0 && Owner != null && !AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId))
+        rand *= 4;
+
+      destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
+
+      if (!isCharacter)
+        return;
+
+      BotBase botTarget;
+      if (AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget != null)
+      {
+        botTarget._ticksSinceFoundTarget = 0;
+
+        if (Owner != null)
+        {
+          HealthInfoStat infoStat;
+          if (!AiSession.Instance.PlayerToHealthBars.TryGetValue(Owner.IdentityId, out infoStat))
+          {
+            infoStat = new HealthInfoStat();
+            AiSession.Instance.PlayerToHealthBars[Owner.IdentityId] = infoStat;
+          }
+
+          infoStat.BotEntityIds.Add(character.EntityId);
+        }
+      }
     }
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
     {
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack;
       TrySwitchWalk();
 
-      GetMovementAndRotation(isTgt, point, out movement, out rotation, out shouldAttack, distanceCheck);
+      GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
 
       if (shouldAttack)
       {
@@ -82,7 +154,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         Attack();
       }
 
-      MoveToPoint(movement, rotation);
+      MoveToPoint(movement, rotation, roll);
     }
 
     internal override void MoveToTarget()
@@ -109,8 +181,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       Vector3 movement;
       Vector2 rotation;
+      float roll;
       bool shouldAttack;
-      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out shouldAttack);
+      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out roll, out shouldAttack);
 
       if (shouldAttack)
       {
@@ -120,13 +193,17 @@ namespace AiEnabled.Bots.Roles.Helpers
         Attack();
       }
 
-      Character.MoveAndRotate(movement, rotation, 0f);
+      Character.MoveAndRotate(movement, rotation, roll);
     }
 
-    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out bool shouldAttack, double distanceCheck = 4)
+    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out float roll, out bool shouldAttack, double distanceCheck = 4)
     {
-      var botPosition = Position;
+      roll = 0;
+      var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
+      var graphMatrix = _currentGraph.WorldMatrix;
+      var graphUpVector = graphMatrix.Up;
+      var jpEnabled = JetpackEnabled;
 
       var vecToWP = waypoint - botPosition;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
@@ -146,10 +223,26 @@ namespace AiEnabled.Bots.Roles.Helpers
       var distanceSqd = relVectorBot.LengthSquared();
       var isOwnerTgt = Target.Player?.IdentityId == Owner.IdentityId;
 
+      if (jpEnabled)
+      {
+        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+        {
+          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+
+          if (botdotUp < 0)
+            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+          else
+            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+        }
+      }
+
       var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
       var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
-      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < MathHelperD.ToRadians(2);
+      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
 
       if (!WaitForStuckTimer && angleTwoOrLess)
       {
@@ -157,7 +250,25 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       else
       {
-        rotation = new Vector2(0, (float)angle * Math.Sign(relVectorBot.X) * 75);
+        float xRot = 0;
+
+        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
+        {
+          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+
+          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
+          {
+            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+
+            if (botDotUp < 0)
+              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+            else
+              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
+          }
+        }
+
+        rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }
 
       if (_currentGraph?.Ready == true)
@@ -264,6 +375,24 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (!shouldAttack && validTarget && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
+
+      if (JetpackEnabled)
+      {
+        var vecToTgt = Target.CurrentActualPosition - botPosition;
+        var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
+        var flatToTarget = new Vector3D(relToTarget.X, 0, relToTarget.Z);
+        if (flatToTarget.LengthSquared() <= flatDistanceCheck && Math.Abs(relToTarget.Y) > 0.5)
+        {
+          movement = Vector3.Zero;
+          relVectorBot = relToTarget;
+        }
+
+        if (Math.Abs(relVectorBot.Y) > 0.05)
+        {
+          bool towardBlock = isTarget && Target.IsSlimBlock;
+          AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition, towardBlock);
+        }
+      }
     }
 
     public override void SetTarget()
@@ -288,7 +417,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      var botPosition = Position;
+      var botPosition = GetPosition();
       if (Target.IsDestroyed())
       {
         Target.RemoveTarget();
@@ -337,6 +466,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
+      var ownerId = Owner?.IdentityId ?? Character.ControllerInfo.ControllingIdentityId;
 
       for (int i = 0; i < entities.Count; i++)
       {
@@ -344,25 +474,62 @@ namespace AiEnabled.Bots.Roles.Helpers
         if (ent?.MarkedForClose != false)
           continue;
 
-        long entOwnerId;
         var ch = ent as IMyCharacter;
-        if (ch != null)
+        if (ch == null || ch.IsDead || ch.MarkedForClose || ch.EntityId == character.EntityId || ch.EntityId == Character.EntityId)
+          continue;
+
+        BotBase bot;
+        if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot) && bot?._botState?.IsOnLadder == true)
+          continue;
+
+        var worldHeadPos = ch.GetHeadMatrix(true).Translation;
+
+        if (!onPatrol)
+          MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
+
+        if (onPatrol || hitList.Count > 0)
         {
-          if (ch.IsDead || ch.MarkedForClose || ch.EntityId == character.EntityId || ch.EntityId == Character.EntityId)
-            continue;
-
-          BotBase bot;
-          if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot) && bot?._botState?.IsOnLadder == true)
-            continue;
-
-          var worldHeadPos = ch.GetHeadMatrix(true).Translation;
-
-          if (!onPatrol)
-            MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
-
-          if (onPatrol || hitList.Count > 0)
+          bool valid = true;
+          foreach (var hit in hitList)
           {
-            bool valid = true;
+            var hitEnt = hit.HitEntity as IMyCharacter;
+            if (hitEnt != null)
+            {
+              if (hitEnt.EntityId == character.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
+                continue;
+
+              if (helpers != null)
+              {
+                bool found = false;
+                foreach (var otherBot in helpers)
+                {
+                  if (hitEnt.EntityId == otherBot.Character?.EntityId)
+                  {
+                    found = true;
+                    break;
+                  }
+                }
+
+                if (found)
+                  continue;
+              }
+
+              valid = false;
+              break;
+            }
+            else
+            {
+              valid = false;
+              break;
+            }
+          }
+
+          if (!valid)
+          {
+            hitList.Clear();
+            MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
+
+            valid = true;
             foreach (var hit in hitList)
             {
               var hitEnt = hit.HitEntity as IMyCharacter;
@@ -398,57 +565,12 @@ namespace AiEnabled.Bots.Roles.Helpers
             }
 
             if (!valid)
-            {
-              hitList.Clear();
-              MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
-
-              valid = true;
-              foreach (var hit in hitList)
-              {
-                var hitEnt = hit.HitEntity as IMyCharacter;
-                if (hitEnt != null)
-                {
-                  if (hitEnt.EntityId == character.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
-                    continue;
-
-                  if (helpers != null)
-                  {
-                    bool found = false;
-                    foreach (var otherBot in helpers)
-                    {
-                      if (hitEnt.EntityId == otherBot.Character?.EntityId)
-                      {
-                        found = true;
-                        break;
-                      }
-                    }
-
-                    if (found)
-                      continue;
-                  }
-
-                  valid = false;
-                  break;
-                }
-                else
-                {
-                  valid = false;
-                  break;
-                }
-              }
-
-              if (!valid)
-                continue;
-            }
+              continue;
           }
-
-          entOwnerId = ch.ControllerInfo.ControllingIdentityId;
         }
-        else
-          continue;
 
-        var relationship = MyIDModule.GetRelationPlayerBlock(Owner.IdentityId, entOwnerId, MyOwnershipShareModeEnum.Faction);
-        if (relationship == MyRelationsBetweenPlayerAndBlock.Enemies)
+        var relationship = MyIDModule.GetRelationPlayerPlayer(ownerId, ch.ControllerInfo.ControllingIdentityId, MyRelationsBetweenFactions.Neutral);
+        if (relationship == MyRelationsBetweenPlayers.Enemies)
         {
           tgt = ent;
           break;
