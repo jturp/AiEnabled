@@ -5,6 +5,7 @@ using AiEnabled.Utilities;
 using ParallelTasks;
 
 using Sandbox.Common.ObjectBuilders.Definitions;
+using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
@@ -141,6 +142,14 @@ namespace AiEnabled.Ai.Support
           continue;
         }
 
+        if (!kvp.Value.IsFunctional)
+          continue;
+
+        var block = kvp.Value.SlimBlock;
+        var blockDef = (MyCubeBlockDefinition)block.BlockDefinition;
+        if (block.BuildLevelRatio < blockDef.CriticalIntegrityRatio)
+          continue;
+
         var dist = Vector3I.DistanceManhattan(node, localBot);
 
         if (dist < range)
@@ -211,7 +220,7 @@ namespace AiEnabled.Ai.Support
 
       _invItems.Clear();
       botInv.GetItems(_invItems);
-      var tool = data.Bot.ToolSubtype;
+      var tool = data.Bot.ToolDefinition?.PhysicalItemId.SubtypeName;
 
       for (int i = _invItems.Count - 1; i >= 0; i--)
       {
@@ -394,16 +403,20 @@ namespace AiEnabled.Ai.Support
       }
     }
 
+    bool _inventoryRefresh;
     public void Update(bool refreshInventories)
     {
-      if (!_task.IsComplete || (!_needsUpdate && !refreshInventories))
+      _inventoryRefresh |= refreshInventories;
+
+      if (!_task.IsComplete || (!_needsUpdate && !_inventoryRefresh))
         return;
 
       _needsUpdate = false;
 
-      if (refreshInventories)
+      if (_inventoryRefresh)
         _refreshInvList = true;
 
+      _inventoryRefresh = false;
       _task = MyAPIGateway.Parallel.Start(CheckGrids);
     }
 

@@ -106,7 +106,7 @@ namespace AiEnabled.Networking
               if (AiSession.Instance.IsBotAllowedToUse(bot, itemDef.SubtypeName, out reason) && controlEnt.CanSwitchToWeapon(itemDef))
               {
                 controlEnt.SwitchToWeapon(itemDef);
-                bot.ToolSubtype = itemDef.SubtypeName;
+                bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(itemDef); // itemDef.SubtypeName;
                 bot.HasWeaponOrTool = true;
                 bot.SetShootInterval();
               }

@@ -319,27 +319,24 @@ namespace AiEnabled.Graphics
       }
       else if (BtnRename.IsMouseOver)
       {
-        AiSession.Instance.ShowMessage($"This feature requires an update to Text Hud API and is not yet implemented. Coming soon...", timeToLive: 5000);
-        PlaySound(_errorSoundPair);
-        //if (RouteBox.SelectedItem != null)
-        //{
-        //  var idx = RouteBox.GetRouteIndex();
-        //  if (idx >= 0)
-        //  {
-        //    renamePatrol = true;
-        //    PlaySound(_hudClickSoundPair);
-        //    _routeIndexAwaitingName = idx;
-        //    // TODO: redo name pop up
-        //  }
-        //  else
-        //  {
-        //    PlaySound(_errorSoundPair);
-        //  }
-        //}
-        //else
-        //{
-        //  PlaySound(_errorSoundPair);
-        //}
+        if (RouteBox.SelectedItem != null)
+        {
+          var idx = RouteBox.GetRouteIndex();
+          if (idx >= 0)
+          {
+            renamePatrol = true;
+            PlaySound(_hudClickSoundPair);
+            _routeIndexAwaitingName = idx;
+          }
+          else
+          {
+            PlaySound(_errorSoundPair);
+          }
+        }
+        else
+        {
+          PlaySound(_errorSoundPair);
+        }
       }
     }
 

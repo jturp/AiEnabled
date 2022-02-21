@@ -181,7 +181,7 @@ namespace AiEnabled.Projectiles
       }
     }
 
-    public void Update()
+    public void UpdateWeaponEffects()
     {
       if (MyAPIGateway.Session.Player != null)
       {
@@ -196,7 +196,10 @@ namespace AiEnabled.Projectiles
           }
         }
       }
+    }
 
+    public void UpdateProjectiles()
+    {
       var step = _timeStep;
       for (int i = _activeProjectiles.Count - 1; i >= 0; i--)
       {

@@ -875,16 +875,23 @@ namespace AiEnabled.Ai.Support
 
     public virtual void Close()
     {
-      IsValid = false;
-      Obstacles?.Clear();
-      ObstacleNodes?.Clear();
-      ObstacleNodesTemp?.Clear();
-      TempBlockedNodes?.Clear();
+      try
+      {
+        IsValid = false;
+        Obstacles?.Clear();
+        ObstacleNodes?.Clear();
+        ObstacleNodesTemp?.Clear();
+        TempBlockedNodes?.Clear();
 
-      Obstacles = null;
-      ObstacleNodes = null;
-      ObstacleNodesTemp = null;
-      TempBlockedNodes = null;
+        Obstacles = null;
+        ObstacleNodes = null;
+        ObstacleNodesTemp = null;
+        TempBlockedNodes = null;
+      }
+      catch(Exception ex)
+      {
+        AiSession.Instance?.Logger?.Log($"Exception during GridBase.Close(): {ex.Message}\n{ex.StackTrace}");
+      }
     }
 
     public override bool Equals(object obj)

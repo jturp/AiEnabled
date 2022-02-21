@@ -48,7 +48,10 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       Owner = AiSession.Instance.Players[ownerId];
       Behavior = new WorkerBehavior(bot);
-      ToolSubtype = toolType ?? "Welder2Item";
+      //ToolSubtype = toolType ?? "Welder2Item";
+      var toolSubtype = toolType ?? "Welder2Item";
+      ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
+
       _targetAction = new Action(SetTargetInternal);
       _followDistanceSqd = 25;
 
@@ -138,7 +141,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      var welderDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
+      var welderDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "Welder2Item");
       _toolInfo.CheckMultiplier(welderDefinition);
 
       if (inventory.CanItemsBeAdded(1, welderDefinition))
@@ -233,7 +236,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             _projectedGrids.Clear();
             var colorVec = new Vector3(360, 100, 100);
             var botId = Character.EntityId;
-            var gridList = graph.GridGroupList;
+            var gridList = graph.GridCollection;
             bool returnList = false;
 
             if (gridList == null || gridList.Count == 0)
@@ -244,7 +247,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 gridList.Clear();
 
               returnList = true;
-              graph.GridGroup.GetGrids(gridList);
+              graph.MainGrid?.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
             }
 
             for (int i = gridList.Count - 1; i >= 0; i--)
@@ -310,6 +313,9 @@ namespace AiEnabled.Bots.Roles.Helpers
                   }
                 }
               }
+
+              if (tgt != null)
+                break;
             }
 
             if (returnList)

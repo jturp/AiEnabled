@@ -21,8 +21,10 @@ namespace AiEnabled.Projectiles
       { MyMaterialType.THRUSTER_SMALL, MyParticleEffectsNameEnum.MaterialHit_Metal },
       { MyMaterialType.WOOD, MyParticleEffectsNameEnum.MaterialHit_Wood },
       { MyMaterialType.AMMO, MyParticleEffectsNameEnum.MaterialHit_Metal },
+      { MyStringHash.GetOrCompute("Wheel"), MyParticleEffectsNameEnum.MaterialHit_Metal },
       { MyStringHash.GetOrCompute("Wolf"), MyParticleEffectsNameEnum.MaterialHit_Character },
       { MyStringHash.GetOrCompute("Spider"), MyParticleEffectsNameEnum.Blood_Spider },
+      { MyStringHash.GetOrCompute("GlassOpaque"), MyParticleEffectsNameEnum.MaterialHit_Glass },
       { MyStringHash.GetOrCompute("Glass"), MyParticleEffectsNameEnum.MaterialHit_Glass },
       { MyStringHash.GetOrCompute("Snow"), MyParticleEffectsNameEnum.MaterialHit_Snow },
       { MyStringHash.GetOrCompute("Ice"), MyParticleEffectsNameEnum.MaterialHit_Ice },
@@ -76,7 +78,6 @@ namespace AiEnabled.Projectiles
     public static MyStringHash Material_Wood = MyStringHash.GetOrCompute("MaterialHit_Wood");
     public static MyStringHash Material_Rock = MyStringHash.GetOrCompute("MaterialHit_Rock");
     public static MyStringHash DecalSource_Rifle = MyStringHash.GetOrCompute("RifleBullet");
-
     public static MyStringHash ShieldHitSound_Projectile = MyStringHash.GetOrCompute("WepPlayRifleImpGlass");
     public static MyStringHash ShieldHitSound_Missile = MyStringHash.GetOrCompute("WepSmallMissileExpl");
 

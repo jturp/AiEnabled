@@ -43,7 +43,9 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       Owner = AiSession.Instance.Players[ownerId];
       Behavior = new FriendlyBehavior(bot);
-      ToolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
+      var toolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
+      ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
+
       bool hasOwner = Owner != null;
 
       _sideNodeWaitTime = 30;
@@ -111,7 +113,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      var weaponDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
+      var weaponDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "RapidFireAutomaticRifleItem");
 
       if (inventory.CanItemsBeAdded(1, weaponDefinition))
       {
@@ -135,17 +137,19 @@ namespace AiEnabled.Bots.Roles.Helpers
         {
           AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
 
-          if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
+          if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
+          //if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "NATO_5p56x45mm";
           }
-          else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
+          else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
+          //else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "Missile200mm";
           }
-          else if (ToolSubtype.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+          else if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
           {
-            ammoSubtype = ToolSubtype.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+            ammoSubtype = ToolDefinition.PhysicalItemId.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
           }
           else
           {
@@ -185,7 +189,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       Vector2 rotation;
       float roll;
       bool shouldAttack, shouldFire;
-      TrySwitchWalk();
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, out shouldFire, distanceCheck);
       CheckFire(shouldFire, shouldAttack, ref movement);
@@ -390,9 +393,13 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (ch.IsDead || ch.MarkedForClose || ch.EntityId == character.EntityId || ch.EntityId == Character.EntityId)
             continue;
 
+          long ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
           BotBase bot;
-          if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot) && bot != null && !bot.IsDead)
+          if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot))
           {
+            if (bot == null || bot.IsDead)
+              continue;
+
             if (bot._botState?.IsOnLadder == true)
               continue;
 
@@ -411,6 +418,30 @@ namespace AiEnabled.Bots.Roles.Helpers
               if (found)
                 continue;
             }
+
+            if (bot.Owner != null)
+              ownerIdentityId = bot.Owner.IdentityId;
+          }
+          else if (ch.IsPlayer)
+          {
+            IMyPlayer player;
+            if (!AiSession.Instance.Players.TryGetValue(ownerIdentityId, out player) || player == null)
+              continue;
+
+            MyAdminSettingsEnum adminSettings;
+            if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
+            {
+              if ((adminSettings & MyAdminSettingsEnum.Invulnerable) != 0 || (adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+              {
+                continue;
+              }
+            }
+          }
+
+          var relation = MyIDModule.GetRelationPlayerPlayer(ownerId, ownerIdentityId, MyRelationsBetweenFactions.Neutral);
+          if (relation != MyRelationsBetweenPlayers.Enemies)
+          {
+            continue;
           }
 
           var worldHeadPos = ch.GetHeadMatrix(true).Translation;
@@ -500,12 +531,8 @@ namespace AiEnabled.Bots.Roles.Helpers
             }
           }
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(ownerId, ch.ControllerInfo.ControllingIdentityId, MyRelationsBetweenFactions.Neutral);
-          if (relation == MyRelationsBetweenPlayers.Enemies)
-          {
-            tgt = ch;
-            break;
-          }
+          tgt = ch;
+          break;
         }
         else if (HasWeaponOrTool && blockDestroEnabled && grid?.Physics != null)
         {
@@ -715,7 +742,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           _randoms.Add(rand);
         }
 
-        bool isLauncher = ToolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool isLauncher = ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher; // ToolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
 
         if (isLauncher)
         {
@@ -726,9 +753,9 @@ namespace AiEnabled.Bots.Roles.Helpers
           int ammoCount;
           if (MyAPIGateway.Session.CreativeMode || AiSession.Instance.InfiniteAmmoEnabled)
           {
-            if (ToolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-              ammoCount = ToolSubtype.IndexOf("fullauto", StringComparison.OrdinalIgnoreCase) >= 0 ? 20 : 10;
+              ammoCount = ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("fullauto", StringComparison.OrdinalIgnoreCase) >= 0 ? 20 : 10;
             }
             else
             {

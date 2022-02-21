@@ -43,13 +43,20 @@ namespace AiEnabled.Ai
           return;
         }
 
-        bool pathFound = RunAlgorithm(start, goal, collection);
+        bool groundNodesFirst = AiSession.Instance.ModSaveData.EnforceGroundNodesFirst && !collection.Bot.RequiresJetpack;
+        bool pathFound = RunAlgorithm(start, goal, collection, groundNodesFirst);
+
+        if (groundNodesFirst && !pathFound)
+        {
+          collection.PathTimer.Reset();
+          pathFound = RunAlgorithm(start, goal, collection, false);
+        }
 
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
-        if (collection.Dirty || currentMS > 10000)
+        if (collection.Dirty || currentMS > 15000)
         {
-          if (currentMS > 10000)
-            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded 10000 ms", MessageType.WARNING);
+          if (currentMS > 15000)
+            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded 15000 ms", MessageType.WARNING);
 
           collection.Locked = false;
           return;
@@ -104,7 +111,7 @@ namespace AiEnabled.Ai
       }
     }
 
-    static bool RunAlgorithm(Vector3I start, Vector3I goal, PathCollection collection)
+    static bool RunAlgorithm(Vector3I start, Vector3I goal, PathCollection collection, bool groundNodesFirst)
     {
       var queue = collection.Queue;
       var cameFrom = collection.CameFrom;
@@ -131,16 +138,14 @@ namespace AiEnabled.Ai
       MyRelationsBetweenPlayers relation;
       collection.CheckDoors(out relation);
 
-      //AiSession.Instance.Logger.ClearCached();
-      //AiSession.Instance.Logger.Log($"Running FindPath for Start = {start} and End = {goal}");
       bool pathFound = false;
       while (queue.Count > 0)
       {
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
-        if (collection.Dirty || currentMS > 10000)
+        if (collection.Dirty || currentMS > 15000)
         {
-          if (currentMS > 10000)
-            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded 10000 ms. Breaking out of RunAlgorithm", MessageType.WARNING);
+          if (currentMS > 15000)
+            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded 15000 ms. Breaking out of RunAlgorithm", MessageType.WARNING);
 
           break;
         }
@@ -224,7 +229,6 @@ namespace AiEnabled.Ai
           }
         }
 
-        //AiSession.Instance.Logger.AddLine($" -> Checking neighbors for {current}");
         foreach (var next in graph.Neighbors(bot, previous, current, botPosition, checkDoors))
         {
           Node node;
@@ -232,6 +236,9 @@ namespace AiEnabled.Ai
             continue;
 
           var newCost = currentCost;
+
+          if (groundNodesFirst && !node.IsGroundNode)
+            continue;
 
           if (node.IsSpaceNode(graph))
           {
@@ -248,7 +255,7 @@ namespace AiEnabled.Ai
           }
           else if (node.IsLadder)
           {
-            if (!bot.CanUseLadders)
+            if (!bot.CanUseLadders && !bot._botState.IsFlying)
               continue;
           }
           else if (node.IsGroundNode)
@@ -294,21 +301,14 @@ namespace AiEnabled.Ai
             costSoFar[next] = newCost;
             cameFrom[next] = current;
 
-            //AiSession.Instance.Logger.AddLine($" ->-> Adding {next} to queue with priority of {priority}");
-
             if (isGoal)
             {
-              //AiSession.Instance.Logger.AddLine($" -> Path found - exiting");
-
               break;
             }
           }
         }
-
-        //AiSession.Instance.Logger.LogAll();
       }
 
-      //AiSession.Instance.Logger.LogAll();
       return pathFound;
     }
 
@@ -325,7 +325,7 @@ namespace AiEnabled.Ai
       Vector3I current = end;
       while (current != start)
       {
-        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 10000)
+        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
         {
           return;
         }
@@ -344,7 +344,7 @@ namespace AiEnabled.Ai
 
         for (int i = cache.Count - 1; i >= 0; i--)
         {
-          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 10000)
+          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
           {
             break;
           }
@@ -379,7 +379,7 @@ namespace AiEnabled.Ai
       Vector3I next = end;
       while (current != start)
       {
-        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 10000)
+        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
         {
           cache.Clear();
           return;
@@ -420,7 +420,7 @@ namespace AiEnabled.Ai
       // only happens when you start on a half stair.
       for (int i = intermediatePoints.Count - 1; i >= 0; i--)
       {
-        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 10000)
+        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
         {
           cache.Clear();
           return;
@@ -463,7 +463,7 @@ namespace AiEnabled.Ai
 
         for (int i = cache.Count - 1; i >= 0; i--)
         {
-          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 10000)
+          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
           {
             break;
           }
@@ -1689,7 +1689,6 @@ namespace AiEnabled.Ai
 
                 var extra = dir * gridSize * 0.25; // + fwdTravelDir * gridSize * 0.5;
 
-                //var tempNode = tileDict[start];
                 Node tempNode;
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
@@ -1787,6 +1786,14 @@ namespace AiEnabled.Ai
         lock (collection.PathToTarget)
           Interlocked.CompareExchange(ref collection.PathToTarget, path, collection.PathToTarget);
       }
+
+      //AiSession.Instance.Logger.ClearCached();
+      //AiSession.Instance.Logger.AddLine($"Path from {start} to {end}");
+      //for (int i = 0; i < collection.PathToTarget.Count; i++)
+      //{
+      //  AiSession.Instance.Logger.AddLine($" -> {collection.PathToTarget[i].Position}");
+      //}
+      //AiSession.Instance.Logger.LogAll();
 
       cache.Clear();
     }

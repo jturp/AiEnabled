@@ -434,6 +434,11 @@ namespace AiEnabled.Graphics.Support
         Route rte;
         if (_patrolRoutes.TryGetValue(kvp.Key, out rte))
         {
+          var pts = $"[{rte.Waypoints.Count} Waypoints]";
+
+          if (name.IndexOf(pts, StringComparison.OrdinalIgnoreCase) < 0)
+            name = $"{name.Trim()} {pts}";
+
           var stringId = MyStringId.GetOrCompute(name);
 
           int num = 0;

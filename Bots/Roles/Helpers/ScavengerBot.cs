@@ -142,7 +142,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       Vector2 rotation;
       float roll;
       bool shouldAttack;
-      TrySwitchWalk();
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
 
@@ -152,6 +151,10 @@ namespace AiEnabled.Bots.Roles.Helpers
         _stuckTimer = 0;
         _ticksSinceFoundTarget = 0;
         Attack();
+      }
+      else
+      {
+        TrySwitchWalk();
       }
 
       MoveToPoint(movement, rotation, roll);
@@ -478,9 +481,56 @@ namespace AiEnabled.Bots.Roles.Helpers
         if (ch == null || ch.IsDead || ch.MarkedForClose || ch.EntityId == character.EntityId || ch.EntityId == Character.EntityId)
           continue;
 
+        long ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
         BotBase bot;
-        if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot) && bot?._botState?.IsOnLadder == true)
+        if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot))
+        {
+          if (bot == null || bot.IsDead)
+            continue;
+
+          if (bot._botState?.IsOnLadder == true)
+            continue;
+
+          if (helpers != null)
+          {
+            bool found = false;
+            foreach (var otherBot in helpers)
+            {
+              if (ch.EntityId == otherBot.Character?.EntityId)
+              {
+                found = true;
+                break;
+              }
+            }
+
+            if (found)
+              continue;
+          }
+
+          if (bot.Owner != null)
+            ownerIdentityId = bot.Owner.IdentityId;
+        }
+        else if (ch.IsPlayer)
+        {
+          IMyPlayer player;
+          if (!AiSession.Instance.Players.TryGetValue(ownerIdentityId, out player) || player == null)
+            continue;
+
+          MyAdminSettingsEnum adminSettings;
+          if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
+          {
+            if ((adminSettings & MyAdminSettingsEnum.Invulnerable) != 0 || (adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+            {
+              continue;
+            }
+          }
+        }
+
+        var relation = MyIDModule.GetRelationPlayerPlayer(ownerId, ownerIdentityId, MyRelationsBetweenFactions.Neutral);
+        if (relation != MyRelationsBetweenPlayers.Enemies)
+        {
           continue;
+        }
 
         var worldHeadPos = ch.GetHeadMatrix(true).Translation;
 
@@ -569,12 +619,8 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
 
-        var relationship = MyIDModule.GetRelationPlayerPlayer(ownerId, ch.ControllerInfo.ControllingIdentityId, MyRelationsBetweenFactions.Neutral);
-        if (relationship == MyRelationsBetweenPlayers.Enemies)
-        {
-          tgt = ent;
-          break;
-        }
+        tgt = ent;
+        break;
       }
 
       hitList.Clear();

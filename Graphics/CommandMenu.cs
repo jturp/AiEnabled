@@ -53,32 +53,39 @@ namespace AiEnabled.Graphics
     public bool RadialVisible { get; private set; }
     public bool InteractVisible { get; private set; }
     public bool PatrolVisible { get; private set; }
+    public bool NameInputVisible { get; private set; }
+    public bool AwaitingName { get; private set; }
+    public bool AwaitingRename { get; private set; }
     public double AspectRatio { get; private set; }
     public IMyControl UseControl { get; private set; }
     public Quadrant SelectedQuadrant { get; private set; } = Quadrant.None;
 
-    //Vector2D _screenPX;
-    Vector2 _cursorPosition = new Vector2(0, 50);
-
-    HudAPIv2.MenuTextInput _nameInput, _renameInput;
     HudAPIv2.BillBoardHUDMessage _interactBB, _radialArrow, _invBackground, _invBgBorder, _cursor;
     HudAPIv2.BillBoardHUDMessage _radialBracket1, _radialBracket2;
     HudAPIv2.BillBoardHUDMessage _radialBBTop, _radialBBBottom, _radialBBTopLeft, _radialBBTopRight, _radialBBBottomLeft, _radialBBBottomRight;
-    HudAPIv2.HUDMessage _interactMsg;
+    HudAPIv2.HUDMessage _interactMsg, _factionMsgHeader, _factionMsgBody;
     HudAPIv2.HUDMessage _radialMsgTop, _radialMsgTopLeft, _radialMsgTopRight, _radialMsgBottom, _radialMsgBottomLeft, _radialMsgBottomRight;
     Button _invAddToBot, _invAddToPlayer, _invClose, _moveButton, _equipWeaponBtn;
     TextBox _logoBox;
     PatrolMenu _patrolMenu;
     MyEntity3DSoundEmitter _emitter;
     MySoundPair _mouseOverSoundPair, _hudClickSoundPair, _errorSoundPair, _moveItemSoundPair;
-    List<MyMouseButtonsEnum> _mouseButtonList;
-    string _lastControlString;
     MyStringId _material_square = MyStringId.GetOrCompute("Square");
     MyStringId _material_cursor = MyStringId.GetOrCompute("AiEnabled_Cursor");
 
+    // Patrol Name items
+    HudAPIv2.BillBoardHUDMessage _patrolNameBG;
+    HudAPIv2.HUDMessage _patrolNameLabel;
+    Button _patrolNameAcceptBtn;
+    TextBox _patrolNameInput;
+
+    //Vector2D _screenPX;
+    Vector2 _cursorPosition = new Vector2(0, 50);
     Vector4 _billboardColor, _highlightColor, _radialColor;
     Vector2D _minCursorPosition, _maxCursorPosition;
     List<Vector3D> _patrolList = new List<Vector3D>(10);
+    List<MyMouseButtonsEnum> _mouseButtonList;
+    string _lastControlString;
 
     public CommandMenu()
     {
@@ -117,6 +124,34 @@ namespace AiEnabled.Graphics
       var ratio = AspectRatio;
       _patrolMenu.RenameRoute(name, ref ratio);
       AiSession.Instance.UpdateConfig(true);
+    }
+
+    public void SubmitRouteName()
+    {
+      if (_patrolNameAcceptBtn.IsMouseOver)
+      {
+        if (_patrolNameInput.Text.Message.Length > 0)
+        {
+          var name = _patrolNameInput.Text.Message.ToString();
+          _patrolNameInput.Text.Message.Clear();
+
+          if (AwaitingName)
+            OnRouteName_Submitted(name);
+          else
+            OnRouteRename_Submitted(name);
+
+          _patrolList.Clear();
+          PlaySound(_hudClickSoundPair);
+          SetNameInputVisibility(false);
+
+          if (!ShowPatrol)
+          {
+            ActiveBot = null;
+          }
+        }
+        else
+          PlaySound(_errorSoundPair);
+      }
     }
 
     public void AddPatrolRoutes(List<SerializableRoute> routeList)
@@ -270,6 +305,7 @@ namespace AiEnabled.Graphics
     }
 
     bool _allKeysAllows = true;
+
     public bool UpdateBlacklist(bool enable)
     {
       try
@@ -278,7 +314,9 @@ namespace AiEnabled.Graphics
           return false;
 
         var identityId = MyAPIGateway.Session.Player.IdentityId;
-        var controlString = MyControlsSpace.USE.String;
+        string controlString;
+
+        controlString = MyControlsSpace.USE.String;
 
         if (controlString != null)
           MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
@@ -301,7 +339,10 @@ namespace AiEnabled.Graphics
             MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
         }
 
-        for (int i = 48; i < 58; i++)
+        int min = NameInputVisible ? byte.MinValue : 48;
+        int max = NameInputVisible ? byte.MaxValue : 58;
+
+        for (int i = min; i < max; i++)
         {
           var key = (MyKeys)i;
           controlString = MyAPIGateway.Input?.GetControl(key)?.GetGameControlEnum().String;
@@ -332,8 +373,12 @@ namespace AiEnabled.Graphics
         if (!Registered)
           return;
 
+        if (MyAPIGateway.Utilities != null)
+          MyAPIGateway.Utilities.MessageEnteredSender -= OnMessageEnteredSender;
+
         SetRadialVisibility(false);
         SetInventoryScreenVisibility(false);
+        SetNameInputVisibility(false);
 
         Registered = false;
 
@@ -342,22 +387,6 @@ namespace AiEnabled.Graphics
 
         if (_interactMsg != null)
           _interactMsg.Visible = false;
-
-        if (_nameInput != null)
-        {
-          _nameInput.Text = null;
-          _nameInput.OnSubmitAction = null;
-          _nameInput.BackingObject = null;
-          _nameInput = null;
-        }
-
-        if (_renameInput != null)
-        {
-          _renameInput.Text = null;
-          _renameInput.OnSubmitAction = null;
-          _renameInput.BackingObject = null;
-          _renameInput = null;
-        }
 
         _patrolList?.Clear();
         _emitter?.Cleanup();
@@ -379,7 +408,9 @@ namespace AiEnabled.Graphics
         _radialMsgTop?.DeleteMessage();
         _radialMsgTopLeft?.DeleteMessage();
         _radialMsgTopRight?.DeleteMessage();
-        
+        _patrolNameBG?.DeleteMessage();
+        _patrolNameLabel?.DeleteMessage();
+
         _logoBox?.Close();
         _invAddToBot?.Close();
         _invAddToPlayer?.Close();
@@ -387,6 +418,8 @@ namespace AiEnabled.Graphics
         _playerInvBox?.Close();
         _botInvBox?.Close();
         _equipWeaponBtn?.Close();
+        _patrolNameInput?.Close();
+        _patrolNameAcceptBtn?.Close();
 
         _patrolList = null;
         _hudClickSoundPair = null;
@@ -396,6 +429,10 @@ namespace AiEnabled.Graphics
         _invItems = null;
         _emitter = null;
         _mouseButtonList = null;
+        _patrolNameBG = null;
+        _patrolNameInput = null;
+        _patrolNameLabel = null;
+        _patrolNameAcceptBtn = null;
 
         AiSession.Instance.HudAPI.OnScreenDimensionsChanged = null;
         MyAPIGateway.Gui.GuiControlRemoved -= GuiControlRemoved;
@@ -480,8 +517,7 @@ namespace AiEnabled.Graphics
       }
       else if (renamePatrol)
       {
-        // TODO: Uncomment when Text Hud API is updated
-        //_renameInput?.OpenDialog();
+        AwaitingRename = true;
       }
       else if (_patrolList.Count > 0)
       {
@@ -492,6 +528,43 @@ namespace AiEnabled.Graphics
         SetPatrolMenuVisibility(false);
         AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
       }
+    }
+
+    public void DrawNameInput()
+    {
+      if (!NameInputVisible)
+      {
+        SetNameInputVisibility(true);
+      }
+    }
+
+    public void SetNameInputVisibility(bool show)
+    {
+      NameInputVisible = show;
+      _cursor.Visible = show || ShowPatrol;
+      _patrolNameBG.Visible = show;
+      _patrolNameLabel.Visible = show;
+      _patrolNameAcceptBtn.SetVisibility(ref show);
+      _patrolNameInput.SetVisibility(ref show);
+      _patrolNameInput.Text.Message.Clear();
+
+      if (!show)
+      {
+        AwaitingName = false;
+        AwaitingRename = false;
+      }
+    }
+
+    private void OnMessageEnteredSender(ulong sender, string messageText, ref bool sendToOthers)
+    {
+      if (!NameInputVisible)
+        return;
+
+      sendToOthers = false;
+      var ratio = AspectRatio;
+      var offset = _patrolNameInput.Background.Offset;
+      _patrolNameInput.UpdateText(messageText, ratio, false);
+      _patrolNameInput.SetPositionAligned(ref offset, ref ratio, TextAlignment.Left);
     }
 
     public void DrawPatrolMenu()
@@ -764,8 +837,16 @@ namespace AiEnabled.Graphics
         SetPatrolMenuVisibility(false);
       }
 
+      if (NameInputVisible)
+      {
+        SetNameInputVisibility(false);
+        _patrolNameInput.Text.Message.Clear();
+      }
+
       SendTo = false;
       PatrolTo = false;
+      AwaitingName = false;
+      AwaitingRename = false;
       ActiveBot = null;
       SelectedQuadrant = Quadrant.None;
       _worldPosition = null;
@@ -801,8 +882,6 @@ namespace AiEnabled.Graphics
       }
       else if (PatrolTo)
       {
-        MyAPIGateway.Utilities.ShowNotification($"Press [LMB] to add waypoints, [RMB] to finish route.", 32);
-
         if (patrolFinished)
         {
           if (_patrolList.Count > 0 && ActiveBot != null)
@@ -810,16 +889,13 @@ namespace AiEnabled.Graphics
             PlaySound(_hudClickSoundPair);
             var patrolName = $"Route for {ActiveBot.Name}";
 
-            pkt = new CommandPacket(ActiveBot.EntityId, patrol: true, patrolList: _patrolList);
-            AiSession.Instance.Network.SendToServer(pkt);
-            AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
-
-            _patrolMenu.RouteBox.AddRoute(_patrolList, patrolName);
-            AiSession.Instance.UpdateConfig(true);
-
-            // TODO: show Name Route pop up -- waiting for Draygo to update API to allow this
-            // Remove packet and AddRoute call when done
-            //_nameInput.OpenDialog;
+            DrawNameInput();
+            AwaitingName = true;
+            AwaitingRename = false;
+            var ratio = AspectRatio;
+            var offset = _patrolNameInput.Background.Offset;
+            _patrolNameInput.UpdateText(patrolName, ratio, false);
+            _patrolNameInput.SetPositionAligned(ref offset, ref ratio, TextAlignment.Left);
           }
           else
           {
@@ -827,9 +903,6 @@ namespace AiEnabled.Graphics
           }
 
           PatrolTo = false;
-          ActiveBot = null;
-          _patrolList.Clear();
-
           UpdateBlacklist(true);
         }
         else if (_worldPosition.HasValue && ActiveBot != null)
@@ -1283,6 +1356,9 @@ namespace AiEnabled.Graphics
         return;
       }
 
+      if (PatrolTo)
+        MyAPIGateway.Utilities.ShowNotification($"Press [LMB] to add waypoints, [RMB] to finish and name.", 16);
+
       var headMatrix = ch.GetHeadMatrix(true);
       var from = headMatrix.Translation + ch.WorldMatrix.Forward * 0.25 + ch.WorldMatrix.Down * 0.25;
       var to = from + headMatrix.Forward * 20;
@@ -1465,6 +1541,10 @@ namespace AiEnabled.Graphics
         _invAddToBot.SetMouseOver(overBotBtn);
         _invClose.SetMouseOver(overClsBtn);
       }
+      else if (NameInputVisible)
+      {
+        _patrolNameAcceptBtn.SetMouseOver(_cursor.IsWithinButton(_patrolNameAcceptBtn, AspectRatio));
+      }
       else if (ShowPatrol)
       {
         if (lmbPressed && _patrolMenu.RouteBox.ScrollBar.IsMouseOver)
@@ -1623,9 +1703,11 @@ namespace AiEnabled.Graphics
         var screenPx = HudAPIv2.APIinfo.ScreenPositionOnePX;
         var aspectRatio = AspectRatio;
         var val = false;
+
+        _factionMsgHeader.Visible = enable;
+        _factionMsgBody.Visible = enable;
         _playerInvBox?.SetVisibility(enable, ref aspectRatio, ref screenPx);
         _botInvBox?.SetVisibility(enable, ref aspectRatio, ref screenPx);
-
         _equipWeaponBtn.SetVisibility(ref val);
         _logoBox?.SetVisibility(ref enable);
         _invAddToBot?.SetVisibility(ref enable);
@@ -1634,7 +1716,25 @@ namespace AiEnabled.Graphics
         _invRetrieved = enable;
         _invRetrievedPreviously = enable;
 
-        if (!enable)
+        if (enable)
+        {
+          string info;
+          var botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ActiveBot.ControllerInfo.ControllingIdentityId);
+          if (botFaction != null)
+          {
+            info = $"[{botFaction.Tag}] {botFaction.Name}";
+          }
+          else
+          {
+            info = "[UNK] Unknown";
+          }
+
+          _factionMsgBody.Message.Clear().Append(info);
+          var length = _factionMsgBody.GetTextLength();
+          var height = length.Y * -2;
+          _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 2) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
+        }
+        else
         {
           var botInv = ActiveBot?.GetInventory() as MyInventory;
           var plrInv = MyAPIGateway.Session.Player?.Character?.GetInventory() as MyInventory;
@@ -1658,6 +1758,8 @@ namespace AiEnabled.Graphics
     public void Register()
     {
       MyAPIGateway.Gui.GuiControlRemoved += GuiControlRemoved;
+      MyAPIGateway.Utilities.MessageEnteredSender += OnMessageEnteredSender;
+
       _uiOpacityMultiplier = MyAPIGateway.Session?.Config?.UIBkOpacity ?? 0.8f;
 
       Registered = Init();
@@ -1687,10 +1789,6 @@ namespace AiEnabled.Graphics
       try
       {
         AiSession.Instance.HudAPI.OnScreenDimensionsChanged = OnScreenDimensionsChanged;
-
-        // TODO: When Text Hud API is updated, uncomment this ->-> Nope, going to draw it myself
-        //_nameInput = new HudAPIv2.MenuTextInput("Route Name", null, "Enter a route name", OnRouteName_Submitted);
-        //_renameInput = new HudAPIv2.MenuTextInput("Route Name", null, "Enter new route name", OnRouteRename_Submitted);
         //_screenPX = HudAPIv2.APIinfo.ScreenPositionOnePX;
 
         Vector2? viewport = MyAPIGateway.Session?.Camera.ViewportSize;
@@ -2047,6 +2145,18 @@ namespace AiEnabled.Graphics
 
         _invClose = new Button(invCloseBB, invCloseMsg, AspectRatio, _billboardColor, borderColor, mouseOverColor, mouseOverColor, _emitter, _mouseOverSoundPair);
 
+        _factionMsgHeader = new HudAPIv2.HUDMessage(new StringBuilder("~ Faction Info ~"), _invBackground.Origin + _invBackground.Offset, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
+        length = _factionMsgHeader.GetTextLength();
+        _factionMsgHeader.Offset = new Vector2D(0, height * -1.75 * 2) - length * 0.5;
+        _factionMsgHeader.Options |= options;
+        _factionMsgHeader.Visible = false;
+
+        _factionMsgBody = new HudAPIv2.HUDMessage(new StringBuilder("[PREN] Perceptive Encoding"), _invBackground.Origin + _invBackground.Offset, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
+        length = _factionMsgBody.GetTextLength();
+        _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 2) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
+        _factionMsgBody.Options |= options;
+        _factionMsgBody.Visible = false;
+
         height *= 1.25;
         var iconHeight = (float)height * 0.6f;
 
@@ -2125,6 +2235,59 @@ namespace AiEnabled.Graphics
         _equipWeaponBtn = new Button(equipBB, equipMsg, AspectRatio, equipBB.BillBoardColor, Color.Transparent, Color.LightCyan, Color.LightCyan, _emitter, _mouseOverSoundPair, false);
 
         _patrolMenu = new PatrolMenu(AspectRatio, _billboardColor, _emitter, _mouseOverSoundPair, _hudClickSoundPair, _errorSoundPair);
+
+        _patrolNameBG = new HudAPIv2.BillBoardHUDMessage(
+          Material: _material_square,
+          Origin: new Vector2D(0, 0.2),
+          Width: (float)(0.5 / AspectRatio),
+          Height: 0.25f,
+          BillBoardColor: new Color(0, 0, 0, 250),
+          Blend: BlendTypeEnum.PostPP);
+
+        _patrolNameBG.Options |= options;
+        _patrolNameBG.Visible = false;
+
+        _patrolNameLabel = new HudAPIv2.HUDMessage(new StringBuilder("Enter Route Name"), _patrolNameBG.Origin, Scale: 1f, Blend: BlendTypeEnum.PostPP);
+        length = _patrolNameLabel.GetTextLength() * 0.5;
+        _patrolNameLabel.Offset = new Vector2D(-length.X, _patrolNameBG.Height * 0.45 + length.Y);
+        _patrolNameLabel.Options |= options;
+        _patrolNameLabel.Visible = false;
+
+        var nameInputBg = new HudAPIv2.BillBoardHUDMessage(
+          Material: _material_square,
+          Origin: _patrolNameBG.Origin,
+          Width: _patrolNameBG.Width * 0.95f,
+          Height: _patrolNameBG.Height * 0.25f,
+          BillBoardColor: _billboardColor,
+          Blend: BlendTypeEnum.PostPP);
+        nameInputBg.Options |= options;
+        nameInputBg.Visible = false;
+
+        var nameInputMsg = new HudAPIv2.HUDMessage(new StringBuilder(128), nameInputBg.Origin, Scale: 1f, Blend: BlendTypeEnum.PostPP);
+        nameInputMsg.Options |= options;
+        nameInputMsg.Visible = false;
+
+        _patrolNameInput = new TextBox(nameInputBg, nameInputMsg, AspectRatio, borderColor);
+
+        var nameBtnBg = new HudAPIv2.BillBoardHUDMessage(
+          Material: _material_square,
+          Origin: _patrolNameBG.Origin,
+          BillBoardColor: _billboardColor,
+          Blend: BlendTypeEnum.PostPP);
+        nameBtnBg.Options |= options;
+        nameBtnBg.Visible = false;
+
+        var nameBtnMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Accept ~"), nameInputBg.Origin, Scale: 1f, Blend: BlendTypeEnum.PostPP);
+        nameBtnMsg.Options |= options;
+        nameBtnMsg.Visible = false;
+
+        length = nameBtnMsg.GetTextLength();
+        nameBtnBg.Width = (float)(length.X * 1.25 / AspectRatio);
+        nameBtnBg.Height = (float)length.Y * -2;
+        nameBtnBg.Offset = new Vector2D((_patrolNameBG.Width * 0.475 - nameBtnBg.Width * 0.5) * AspectRatio, _patrolNameBG.Height * -0.45 + nameBtnBg.Height * 0.5);
+        nameBtnMsg.Offset = nameBtnBg.Offset - length * 0.5;
+
+        _patrolNameAcceptBtn = new Button(nameBtnBg, nameBtnMsg, AspectRatio, _billboardColor, borderColor, mouseOverColor, mouseOverColor, _emitter, _mouseOverSoundPair);
 
         _cursor = new HudAPIv2.BillBoardHUDMessage(
           Material: _material_cursor,

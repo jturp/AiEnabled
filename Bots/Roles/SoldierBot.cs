@@ -37,7 +37,8 @@ namespace AiEnabled.Bots.Roles
     public SoldierBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
     {
       Behavior = new EnemyBehavior(bot);
-      ToolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
+      var toolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
+      ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
       _sideNodeWaitTime = 60;
       _ticksSinceFoundTarget = 241;
@@ -85,7 +86,7 @@ namespace AiEnabled.Bots.Roles
         return;
       }
 
-      var weaponDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
+      var weaponDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "RapidFireAutomaticRifleItem");
 
       if (inventory.CanItemsBeAdded(1, weaponDefinition))
       {
@@ -109,17 +110,19 @@ namespace AiEnabled.Bots.Roles
         {
           AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
 
-          if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
+          if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
+          //if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "NATO_5p56x45mm";
           }
-          else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
+          else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
+          //else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "Missile200mm";
           }
-          else if (ToolSubtype.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+          else if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
           {
-            ammoSubtype = ToolSubtype.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+            ammoSubtype = ToolDefinition.PhysicalItemId.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
           }
           else
           {
@@ -221,17 +224,19 @@ namespace AiEnabled.Bots.Roles
           {
             var inventory = Character.GetInventory();
             string ammoSubtype;
-            if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
+            //if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
             {
               ammoSubtype = "NATO_5p56x45mm";
             }
-            else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
+            else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
+            //else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
             {
               ammoSubtype = "Missile200mm";
             }
-            else if (ToolSubtype.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+            else if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-              ammoSubtype = ToolSubtype.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+              ammoSubtype = ToolDefinition.PhysicalItemId.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
             }
             else
             {
@@ -302,7 +307,7 @@ namespace AiEnabled.Bots.Roles
           _randoms.Add(rand);
         }
 
-        bool isLauncher = ToolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool isLauncher = ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher; // ToolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
 
         if (isLauncher)
         {
@@ -313,9 +318,9 @@ namespace AiEnabled.Bots.Roles
           int ammoCount;
           if (MyAPIGateway.Session.CreativeMode || AiSession.Instance.InfiniteAmmoEnabled)
           {
-            if (ToolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-              ammoCount = ToolSubtype.IndexOf("fullauto", StringComparison.OrdinalIgnoreCase) >= 0 ? 20 : 10;
+              ammoCount = ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("fullauto", StringComparison.OrdinalIgnoreCase) >= 0 ? 20 : 10;
             }
             else
             {
@@ -741,7 +746,6 @@ namespace AiEnabled.Bots.Roles
       Vector2 rotation;
       float roll;
       bool shouldAttack, shouldFire;
-      TrySwitchWalk();
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, out shouldFire, distanceCheck);
       CheckFire(shouldFire, shouldAttack, ref movement);

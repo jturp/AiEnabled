@@ -42,7 +42,7 @@ namespace AiEnabled.ConfigData
     [ProtoMember(101)] public long GridEntityId;
     [ProtoMember(102)] public string CharacterSubtype;
     [ProtoMember(103)] public string DisplayName;
-    [ProtoMember(104)] public string ToolSubtype;
+    [ProtoMember(104)] public SerializableDefinitionId? ToolPhyiscalItem;
     [ProtoMember(105)] public bool IsActiveHelper;
     [ProtoMember(106)] public SerializableVector3D Position;
     [ProtoMember(107)] public SerializableQuaternion Orientation;
@@ -58,7 +58,7 @@ namespace AiEnabled.ConfigData
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
       CharacterSubtype = bot.Definition.Id.SubtypeName;
-      ToolSubtype = (bot.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.DefinitionId.SubtypeName ?? null;
+      ToolPhyiscalItem = (bot.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.DefinitionId;
       DisplayName = bot.Name ?? "";
       Position = bot.GetPosition();
       Orientation = Quaternion.CreateFromRotationMatrix(bot.WorldMatrix);

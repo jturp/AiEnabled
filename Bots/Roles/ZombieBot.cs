@@ -76,7 +76,7 @@ namespace AiEnabled.Bots.Roles
 
       _consumable = new MyConsumableItemDefinition
       {
-        Stats = new List<MyConsumableItemDefinition.StatValue>() { new MyConsumableItemDefinition.StatValue("Health", -0.02f, 5) }
+        Stats = new List<MyConsumableItemDefinition.StatValue>() { new MyConsumableItemDefinition.StatValue("Health", -0.01f, 5) }
       };
     }
 
@@ -316,6 +316,7 @@ namespace AiEnabled.Bots.Roles
       if (cube != null)
       {
         destroyable = cube.SlimBlock;
+        amount = _blockDamagePerAttack;
       }
       else
       {
@@ -326,17 +327,31 @@ namespace AiEnabled.Bots.Roles
         return;
 
       var character = destroyable as IMyCharacter;
-      if (character == null)
+      bool isCharacter = character != null;
+      var rand = amount > 0 ? amount : isCharacter ? MyUtils.GetRandomFloat(_minDamage, _maxDamage) : _blockDamagePerAttack;
+
+      BotBase botTarget = null;
+
+      if (cube != null || (isCharacter && AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId)))
+      {
+        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+      }
+      else if (isCharacter && AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget?.Owner != null)
+      {
+        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+      }
+
+      if (!isCharacter)
       {
         PlaySoundServer("ImpMetalMetalCat3", cube.EntityId);
-        destroyable.DoDamage(_blockDamagePerAttack, MyStringHash.GetOrCompute("Punch"), true);
+        destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
       }
       else
       {
         var statComp = character.Components.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
         var health = statComp?.Health.Value;
 
-        base.DoDamage(amount);
+        base.DoDamage(rand);
         if (health == statComp?.Health.Value)
           return;
 
@@ -344,6 +359,12 @@ namespace AiEnabled.Bots.Roles
           PlaySoundServer("PlayVocPain", character.EntityId);
 
         AddDamageOverTime(statComp);
+
+        var nomad = botTarget as NomadBot;
+        if (nomad != null && nomad.Target.Entity == null)
+        {
+          nomad.SetHostile(Character);
+        }
       }
     }
 
@@ -351,6 +372,17 @@ namespace AiEnabled.Bots.Roles
     {
       if (_consumable == null || statComp == null)
         return;
+
+      //if (_consumable.Stats?.Count > 0)
+      //{
+      //  var value = 0.01f * AiSession.Instance.ModSaveData.BotDamageModifier;
+      //  var stat = _consumable.Stats[0];
+      //  if (stat.Value != value)
+      //  {
+      //    stat.Value = value;
+      //    _consumable.Stats[0] = stat;
+      //  }
+      //}
 
       statComp.Consume(1, _consumable);
 

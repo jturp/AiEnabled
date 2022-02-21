@@ -83,7 +83,6 @@ namespace AiEnabled.Bots.Roles
       Vector2 rotation;
       float roll;
       bool shouldAttack;
-      TrySwitchWalk();
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
 
@@ -93,6 +92,10 @@ namespace AiEnabled.Bots.Roles
         _stuckTimer = 0;
         _ticksSinceFoundTarget = 0;
         Attack();
+      }
+      else
+      {
+        TrySwitchWalk();
       }
 
       MoveToPoint(movement, rotation, roll);

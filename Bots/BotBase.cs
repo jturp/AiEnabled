@@ -93,7 +93,8 @@ namespace AiEnabled.Bots
     public TargetInfo Target;
     public float DamageModifier;
     public int TicksBetweenProjectiles = 10;
-    public string ToolSubtype;
+    //public string ToolSubtype;
+    public MyHandItemDefinition ToolDefinition;
 
     public bool HasWeaponOrTool
     {
@@ -1307,7 +1308,8 @@ namespace AiEnabled.Bots
           if (tool == null)
           {
             var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
-            charController?.SwitchToWeapon(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype));
+            //charController?.SwitchToWeapon(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype));
+            charController?.SwitchToWeapon(ToolDefinition.PhysicalItemId);
           }
         }
 
@@ -1416,11 +1418,25 @@ namespace AiEnabled.Bots
 
     void SetVelocity()
     {
+      var velocity = Character.Physics?.LinearVelocity ?? Vector3.Zero;
+
+      if (Vector3.IsZero(velocity))
+        return;
+
       var maxVelocity = 4f;
+      var gridLinearVelocity = Vector3.Zero;
 
       if (_currentGraph != null)
       {
-        var desiredVelocity = _currentGraph.RootVoxel == null ? 25f : 10f;
+        var botPosition = GetPosition();
+        var positionInTwo = botPosition + velocity;
+
+        float desiredVelocity;
+        if (!_currentGraph.OBB.Contains(ref positionInTwo))
+          desiredVelocity = 7f;
+        else
+          desiredVelocity = _currentGraph.RootVoxel == null ? 25f : 10f;
+
         var ch = Target.Entity as IMyCharacter;
         bool isOwner = ch != null && ch.EntityId == Owner?.Character?.EntityId;
 
@@ -1429,7 +1445,7 @@ namespace AiEnabled.Bots
           var pathNode = _pathCollection.NextNode;
           var tgtPos = _currentGraph.LocalToWorld(pathNode.Position) + pathNode.Offset;
 
-          var distanceTo = Vector3D.DistanceSquared(tgtPos, GetPosition());
+          var distanceTo = Vector3D.DistanceSquared(tgtPos, botPosition);
           var ratio = (float)MathHelper.Clamp(distanceTo / 25, 0, 1);
           maxVelocity = MathHelper.Lerp(4f, desiredVelocity, ratio);
         }
@@ -1439,41 +1455,34 @@ namespace AiEnabled.Bots
           if (isOwner)
           {
             var minDistance = _followDistanceSqd * 2;
-            var distanceTo = Vector3D.DistanceSquared(tgtEnt.WorldAABB.Center, GetPosition()) - minDistance;
+            var distanceTo = Vector3D.DistanceSquared(tgtEnt.WorldAABB.Center, botPosition) - minDistance;
             var ratio = (float)MathHelper.Clamp(distanceTo / minDistance, 0, 1);
             maxVelocity = MathHelper.Lerp(4f, 25f, ratio);
           }
           else if (Target.PositionsValid)
           {
             var tgtPos = Target.CurrentGoToPosition;
-            var distanceTo = Vector3D.DistanceSquared(tgtPos, GetPosition());
+            var distanceTo = Vector3D.DistanceSquared(tgtPos, botPosition);
             var ratio = (float)MathHelper.Clamp(distanceTo / 25, 0, 1);
             maxVelocity = MathHelper.Lerp(4f, desiredVelocity, ratio);
           }
           else if (tgtEnt != null)
           {
             var tgtPos = tgtEnt.WorldAABB.Center;
-            var distanceTo = Vector3D.DistanceSquared(tgtPos, GetPosition());
+            var distanceTo = Vector3D.DistanceSquared(tgtPos, botPosition);
             var ratio = (float)MathHelper.Clamp(distanceTo / 25, 0, 1);
             maxVelocity = MathHelper.Lerp(4f, desiredVelocity, ratio);
           }
         }
-      }
 
-      var velocity = Character.Physics?.LinearVelocity ?? Vector3.Zero;
-
-      if (Vector3.IsZero(velocity))
-        return;
-
-      var gridLinearVelocity = Vector3.Zero;
-
-      if (_currentGraph.IsGridGraph)
-      {
-        var grid = ((CubeGridMap)_currentGraph).MainGrid;
-        if (!grid.IsStatic)
+        if (_currentGraph.IsGridGraph)
         {
-          gridLinearVelocity = grid.Physics.LinearVelocity;
-          velocity -= gridLinearVelocity;
+          var grid = ((CubeGridMap)_currentGraph).MainGrid;
+          if (!grid.IsStatic)
+          {
+            gridLinearVelocity = grid.Physics.LinearVelocity;
+            velocity -= gridLinearVelocity;
+          }
         }
       }
 
@@ -1531,13 +1540,23 @@ namespace AiEnabled.Bots
       bool isCharacter = character != null;
       var rand = amount > 0 ? amount : isCharacter ? MyUtils.GetRandomFloat(_minDamage, _maxDamage) : _blockDamagePerAttack;
 
+      BotBase botTarget = null;
+
+      if (cube != null || (isCharacter && AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId)))
+      {
+        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+      }
+      else if (isCharacter && AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget?.Owner != null)
+      {
+        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+      }
+
       destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
 
       if (!isCharacter)
         return;
 
-      BotBase botTarget;
-      if (AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget != null)
+      if (botTarget != null)
       {
         botTarget._ticksSinceFoundTarget = 0;
 
@@ -1573,10 +1592,13 @@ namespace AiEnabled.Bots
 
     public virtual void EquipWeapon()
     {
-      if (string.IsNullOrWhiteSpace(ToolSubtype))
+      if (ToolDefinition == null)
         return;
+      //if (string.IsNullOrWhiteSpace(ToolSubtype))
+      //  return;
 
-      var weaponDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
+      //var weaponDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
+      var weaponDefinition = ToolDefinition.PhysicalItemId;
 
       var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
       if (charController.CanSwitchToWeapon(weaponDefinition))
@@ -1650,7 +1672,33 @@ namespace AiEnabled.Bots
           if (ch.IsDead || ch.MarkedForClose || ch.EntityId == Character.EntityId)
             continue;
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(ch.ControllerInfo.ControllingIdentityId, Character.ControllerInfo.ControllingIdentityId);
+          long ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
+          BotBase bot;
+          if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot))
+          {
+            if (bot == null || bot.IsDead)
+              continue;
+
+            if (bot.Owner != null)
+              ownerIdentityId = bot.Owner.IdentityId;
+          }
+          else if (ch.IsPlayer)
+          {
+            IMyPlayer player;
+            if (!AiSession.Instance.Players.TryGetValue(ownerIdentityId, out player) || player == null)
+              continue;
+
+            MyAdminSettingsEnum adminSettings;
+            if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
+            {
+              if ((adminSettings & MyAdminSettingsEnum.Invulnerable) != 0 || (adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+              {
+                continue;
+              }
+            }
+          }
+
+          var relation = MyIDModule.GetRelationPlayerPlayer(ownerIdentityId, Character.ControllerInfo.ControllingIdentityId);
           if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
             continue;
           else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
@@ -1859,11 +1907,13 @@ namespace AiEnabled.Bots
       {
         if (!_botState.IsRunning)
           Character.SwitchWalk();
-
-        return;
       }
-
-      if (SwitchWalk)
+      else if (PatrolMode && Target.Entity == null && AiSession.Instance.ModSaveData.EnforceWalkingOnPatrol)
+      {
+        if (_botState.IsRunning)
+          Character.SwitchWalk();
+      }
+      else if (SwitchWalk)
       {
         SwitchWalk = false;
 
@@ -2129,9 +2179,20 @@ namespace AiEnabled.Bots
         {
           var gridGraph = _currentGraph as CubeGridMap;
           var localTarget = gridGraph.WorldToLocal(targetPosition);
+
+          if (PatrolMode)
+          {
+            Node node;
+            if (gridGraph.TryGetNodeForPosition(localTarget, out node))
+            {
+              var checkPosition = _currentGraph.LocalToWorld(node.Position) + node.Offset;
+              var distanceSqd = Vector3D.DistanceSquared(checkPosition, botPos);
+              shouldReturn = distanceSqd < 1.75;
+              return shouldReturn;
+            }
+          }
+
           var cube = gridGraph.GetBlockAtPosition(localTarget);
-          // var cube = gridGraph.MainGrid.GetCubeBlock(gridGraph.MainGrid.WorldToGridInteger(targetPosition)) as IMySlimBlock;
-          
           var seat = cube?.FatBlock as IMyCockpit;
           if (seat != null)
           {
@@ -2295,9 +2356,10 @@ namespace AiEnabled.Bots
 
             if (Target.Entity is IMyDoor && Vector3D.IsZero(doorPos - targetPosition))
             {
-              if (!string.IsNullOrWhiteSpace(ToolSubtype)
-                && ToolSubtype.IndexOf("grinder", StringComparison.OrdinalIgnoreCase) < 0
-                && ToolSubtype.IndexOf("welder", StringComparison.OrdinalIgnoreCase) < 0)
+              if (ToolDefinition != null && ToolDefinition.WeaponType != MyItemWeaponType.None)
+              //if (!string.IsNullOrWhiteSpace(ToolSubtype)
+              //  && ToolSubtype.IndexOf("grinder", StringComparison.OrdinalIgnoreCase) < 0
+              //  && ToolSubtype.IndexOf("welder", StringComparison.OrdinalIgnoreCase) < 0)
               {
                 var vecToDoor = doorPos - botPos;
                 Vector3D newPos;

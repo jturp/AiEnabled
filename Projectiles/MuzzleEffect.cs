@@ -51,7 +51,6 @@ namespace AiEnabled.Projectiles
           _effects.Add(effect);
         }
       }
-
     }
 
     private void EquippedTool_OnMarkForClose(IMyEntity obj)

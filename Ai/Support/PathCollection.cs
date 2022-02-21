@@ -1054,7 +1054,7 @@ namespace AiEnabled.Ai.Support
         var owner = Bot?.Owner?.Character;
         if (owner != null)
         {
-          var ownerNode = Graph.WorldToLocal(owner.WorldMatrix.Translation);
+          var ownerNode = Graph.WorldToLocal(owner.WorldAABB.Center);
           MyAPIGateway.Utilities.ShowNotification($"Owner: {ownerNode}", 16);
           
           var camPosition = MyAPIGateway.Session.Camera.Position;

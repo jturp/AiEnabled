@@ -27,6 +27,7 @@ using MyItemInfo = VRage.Game.ModAPI.Ingame.MyItemInfo;
 using VRage.Voxels;
 using AiEnabled.API;
 using AiEnabled.Parallel;
+using VRage.Input;
 
 namespace AiEnabled
 {
@@ -201,6 +202,9 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockHeavyArmorHalfCorner"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockArmorHalfSlopedCorner"), // with a d
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockHeavyArmorHalfSlopedCorner"), // with a d
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "WindowWall"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "WindowWallLeft"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "WindowWallRight"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block_Slope"),
@@ -389,6 +393,7 @@ namespace AiEnabled
     List<IMyPlayer> _tempPlayers = new List<IMyPlayer>(16);
     List<IMyPlayer> _tempPlayersAsync = new List<IMyPlayer>(16);
     List<IMyCharacter> _botCharsToClose = new List<IMyCharacter>();
+    List<MyKeys> _keyPresses = new List<MyKeys>();
     Dictionary<long, long> _newPlayerIds = new Dictionary<long, long>(); // bot identityId to bot entityId
     HashSet<long> _iconRemovals = new HashSet<long>();
     HashSet<long> _hBarRemovals = new HashSet<long>();

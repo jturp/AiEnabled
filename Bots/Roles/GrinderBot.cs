@@ -10,6 +10,7 @@ using AiEnabled.Networking;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
 
+using Sandbox.Definitions;
 using Sandbox.Game.Entities;
 using Sandbox.Game.EntityComponents;
 using Sandbox.Game.Weapons;
@@ -32,7 +33,8 @@ namespace AiEnabled.Bots.Roles
     public GrinderBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
     {
       Behavior = new ZombieBehavior(bot);
-      ToolSubtype = toolType ?? "AngleGrinder2Item";
+      var toolSubtype = toolType ?? "AngleGrinder2Item";
+      ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
       _ticksBeforeDamage = 63;
       _ticksBetweenAttacks = 200;
@@ -86,7 +88,7 @@ namespace AiEnabled.Bots.Roles
         return;
       }
 
-      var grinderDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
+      var grinderDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "AngleGrinder2Item");
       if (inventory.CanItemsBeAdded(1, grinderDefinition))
       {
         var welder = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(grinderDefinition);
@@ -112,7 +114,6 @@ namespace AiEnabled.Bots.Roles
       Vector2 rotation;
       float roll;
       bool shouldAttack;
-      TrySwitchWalk();
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
       
@@ -123,6 +124,10 @@ namespace AiEnabled.Bots.Roles
         _ticksSinceFoundTarget = 0;
 
         Attack();
+      }
+      else
+      {
+        TrySwitchWalk();
       }
 
       MoveToPoint(movement, rotation, roll);
@@ -143,15 +148,35 @@ namespace AiEnabled.Bots.Roles
         var seat = Target.Entity as IMyCockpit;
         if (tgtEnt != null)
         {
-          tgtEnt.DoDamage(0.2f, MyDamageType.Grind, true);
+          BotBase botTarget;
+          var damage = 0.2f;
+          if (AiSession.Instance.Players.ContainsKey(tgtEnt.ControllerInfo.ControllingIdentityId))
+          {
+            damage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+          }
+          else if (AiSession.Instance.Bots.TryGetValue(tgtEnt.EntityId, out botTarget) && botTarget != null)
+          {
+            var nomad = botTarget as NomadBot;
+            if (nomad != null && nomad.Target.Entity == null)
+            {
+              nomad.SetHostile(Character);
+            }
+            else if (botTarget.Owner != null)
+            {
+              damage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+            }
+          }
+
+          tgtEnt.DoDamage(damage, MyDamageType.Grind, true);
         }
         else if (seat != null)
         {
+          var damage = 5f * AiSession.Instance.ModSaveData.BotDamageModifier;
           var casterComp = tool.Components?.Get<MyCasterComponent>();
           if (casterComp != null && casterComp.HitBlock == null)
           {
             casterComp.SetPointOfReference(seat.CenterOfMass);
-            seat.SlimBlock.DoDamage(5f, MyDamageType.Grind, true);
+            seat.SlimBlock.DoDamage(damage, MyDamageType.Grind, true);
           }
         }
       }

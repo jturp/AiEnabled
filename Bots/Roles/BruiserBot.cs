@@ -68,7 +68,6 @@ namespace AiEnabled.Bots.Roles
       Vector2 rotation;
       float roll;
       bool shouldAttack;
-      TrySwitchWalk();
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
 
@@ -307,6 +306,7 @@ namespace AiEnabled.Bots.Roles
       if (cube != null)
       {
         destroyable = cube.SlimBlock;
+        amount = _blockDamagePerAttack;
       }
       else
       {
@@ -317,22 +317,42 @@ namespace AiEnabled.Bots.Roles
         return;
 
       var character = destroyable as IMyCharacter;
-      if (character == null)
+      bool isCharacter = character != null;
+      var rand = amount > 0 ? amount : isCharacter ? MyUtils.GetRandomFloat(_minDamage, _maxDamage) : _blockDamagePerAttack;
+
+      BotBase botTarget = null;
+
+      if (cube != null || (isCharacter && AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId)))
+      {
+        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+      }
+      else if (isCharacter && AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget?.Owner != null)
+      {
+        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+      }
+
+      if (!isCharacter)
       {
         PlaySoundServer("ImpMetalMetalCat3", cube.EntityId);
-        destroyable.DoDamage(_blockDamagePerAttack, MyStringHash.GetOrCompute("Punch"), true);
+        destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
       }
       else
       {
         var statComp = character.Components.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
         var health = statComp?.Health.Value;
 
-        base.DoDamage(amount);
+        base.DoDamage(rand);
         if (health == statComp?.Health.Value)
           return;
 
         if (Target.Player != null)
           PlaySoundServer("PlayVocPain", character.EntityId);
+
+        var nomad = botTarget as NomadBot;
+        if (nomad != null && nomad.Target.Entity == null)
+        {
+          nomad.SetHostile(Character);
+        }
       }
     }
   }
