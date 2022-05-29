@@ -26,6 +26,7 @@ using AiEnabled.Networking;
 using AiEnabled.Utilities;
 using AiEnabled.Particles;
 using AiEnabled.ConfigData;
+using Sandbox.Definitions;
 
 namespace AiEnabled.GameLogic
 {
@@ -241,7 +242,7 @@ namespace AiEnabled.GameLogic
               if (gridMap == null)
               {
                 _gridList.Clear();
-                _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(_gridList);
+                _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(_gridList);
                 MyCubeGrid grid = _block.CubeGrid as MyCubeGrid;
 
                 foreach (var g in _gridList)
@@ -278,7 +279,7 @@ namespace AiEnabled.GameLogic
           return;
 
         ++_controlTicks;
-        if (_controlTicks > 9)
+        if (_controlTicks > 29)
         {
           _controlTicks = 0;
           ButtonPressed = false;
@@ -345,11 +346,35 @@ namespace AiEnabled.GameLogic
 
       sb.Append("Selected Bot: ")
         .Append(SelectedRole)
-        .Append('\n');
+        .Append('\n', 2);
 
-      sb.Append("Price: ")
-        .Append(AiSession.Instance.BotPrices[SelectedRole].ToString("#,###,##0"))
-        .Append(" SC\n\n");
+      List<SerialId> comps;
+      if (AiSession.Instance.BotComponents.TryGetValue(SelectedRole, out comps) && comps?.Count > 0)
+      {
+        sb.Append("Build Requirements:\n")
+          .Append(" - ")
+          .Append(AiSession.Instance.BotPrices[SelectedRole].ToString("#,###,##0"))
+          .Append(" Space Credits");
+
+        foreach (var c in comps)
+        {
+          var id = c.DefinitionId;
+          MyDefinitionBase def;
+          if (!id.TypeId.IsNull && AiSession.Instance.AllGameDefinitions.TryGetValue(id, out def) && def != null)
+          {
+            sb.Append("\n - ")
+              .Append(c.Amount)
+              .Append(" ")
+              .Append(def.DisplayNameText);
+          }
+        }
+
+        sb.Append('\n', 2);
+      }
+      else
+      {
+        sb.Append("Component Requirements: None\n\n");
+      }
 
       sb.Append("Description:\n")
         .Append(AiSession.Instance.BotDescriptions[SelectedRole]);

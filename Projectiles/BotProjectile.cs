@@ -43,6 +43,7 @@ namespace AiEnabled.Projectiles
     public Vector3D LastPosition;
     public Vector3D Position;
     public Vector3D Direction;
+    public Vector3 ShooterVelocity;
     float _headShotMultiplier;
     bool _firstCheck;
     bool _isMissile;
@@ -81,9 +82,10 @@ namespace AiEnabled.Projectiles
       Target = target;
       Damage = damage;
       WeaponId = bot.EquippedTool.EntityId;
-      Start = start;
-      LastPosition = start;
-      Position = start;
+      ShooterVelocity = (bot?.Physics.LinearVelocity ?? Vector3.Zero) / 60;
+      Start = start + ShooterVelocity;
+      LastPosition = Start;
+      Position = Start;
       Direction = dir;
 
       if (!_isMissile && MyAPIGateway.Session.Player != null)
@@ -105,7 +107,7 @@ namespace AiEnabled.Projectiles
     public bool Update(double timeStep)
     {
       LastPosition = Position;
-      Position += Direction * ProjectileSpeed * timeStep;
+      Position += Direction * ProjectileSpeed * timeStep + ShooterVelocity;
 
       if (_isMissile)
       {
@@ -146,7 +148,7 @@ namespace AiEnabled.Projectiles
         {
           var lineResult = lineList[i];
           var shieldent = lineResult.Element;
-          if (AiSession.Instance.ShieldHash == shieldent?.DefinitionId?.SubtypeId && shieldent.Render.Visible)
+          if (ProjectileConstants.ShieldHash == shieldent?.DefinitionId?.SubtypeId && shieldent.Render.Visible)
           {
             var shieldInfo = AiSession.Instance.ShieldAPI.MatchEntToShieldFastExt(shieldent, true);
             if (shieldInfo != null && shieldInfo.Value.Item2.Item1 && Vector3D.Transform(Start, shieldInfo.Value.Item3.Item1).LengthSquared() > 1)

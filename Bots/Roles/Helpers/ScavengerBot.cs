@@ -1,8 +1,10 @@
 ﻿using AiEnabled.Ai.Support;
 using AiEnabled.Bots.Behaviors;
+using AiEnabled.Networking;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
 
+using Sandbox.Definitions;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.ModAPI;
@@ -18,6 +20,7 @@ using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.Game.ModAPI.Interfaces;
 using VRage.ModAPI;
+using VRage.ObjectBuilders;
 using VRage.Utils;
 
 using VRageMath;
@@ -29,9 +32,14 @@ namespace AiEnabled.Bots.Roles.Helpers
   public class ScavengerBot : BotBase
   {
     bool _moveFromLadder;
+    bool _performing;
+    bool _sitting;
+    bool _awaitItem;
+    int _performTimer;
 
     public ScavengerBot(IMyCharacter bot, GridBase gridBase, long ownerId) : base(bot, 10, 15, gridBase)
     {
+      BotType = AiSession.BotType.Scavenger;
       Owner = AiSession.Instance.Players[ownerId];
       Behavior = new ScavengerBehavior(bot);
 
@@ -84,6 +92,102 @@ namespace AiEnabled.Bots.Roles.Helpers
         else if (jetpack.TurnedOn)
         {
           jetpack.SwitchThrusts();
+        }
+      }
+    }
+
+    internal override bool Update()
+    {
+      if (!base.Update())
+        return false;
+
+      if (_performing)
+      {
+        _performTimer++;
+
+        if (_performTimer > 240)
+        {
+          if (_awaitItem)
+          {
+            var items = AiSession.Instance.ScavengerItemList;
+            var rand = MyUtils.GetRandomInt(0, items.Count);
+            var id = items[rand];
+
+            var item = new MyPhysicalInventoryItem()
+            {
+              Amount = 1,
+              Content = MyObjectBuilderSerializer.CreateNewObject(id) as MyObjectBuilder_PhysicalObject
+            };
+
+            var matrix = WorldMatrix;
+            matrix.Translation += matrix.Up + GetTravelDirection() * 1.5;
+
+            MyFloatingObjects.Spawn(item, matrix, Character.Physics, null);
+            _awaitItem = false;
+
+            if (Owner?.SteamUserId > 0)
+            {
+              var pkt = new MessagePacket($"[{Character.Name}] has found something!");
+              AiSession.Instance.Network.SendToPlayer(pkt, Owner.SteamUserId);
+            }
+
+            Behavior.Perform("RoboDog_Spin");
+            Behavior.Speak();
+            _performTimer = 60;
+          }
+          else
+          {
+            _performing = false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    internal override void UseBehavior()
+    {
+      if (Target.Entity != null && Target.GetDistanceSquared() < 2500 && !Target.IsFriendly())
+      {
+        if (AiSession.Instance?.GlobalSpeakTimer > 1000)
+        {
+          AiSession.Instance.GlobalSpeakTimer = 0;
+          Behavior?.Speak();
+        }
+      }
+      else if (Owner?.Character != null && Vector3D.DistanceSquared(Owner.Character.WorldAABB.Center, GetPosition()) < 2500)
+      {
+        _performTimer = 0;
+        var rand = MyUtils.GetRandomInt(0, 100);
+
+        if (rand < 40)
+        {
+          // sit and pant
+          Behavior.Speak("RoboDogPant001");
+
+          if (!_sitting && Character.LastMotionIndicator == Vector3.Zero && Character.LastRotationIndicator == Vector3.Zero)
+          {
+            Behavior.Perform("RoboDog_Sitting");
+            _sitting = true;
+            _performing = true;
+          }
+        }
+        else
+        {
+          // dig, sniff and find something
+
+          if (_sitting)
+          {
+            _sitting = false;
+            Behavior.Perform("RoboDog_Sitting");
+          }
+
+          Behavior.Speak("RoboDogSniff001");
+          Behavior.Perform("RoboDog_Digging");
+
+          rand = MyUtils.GetRandomInt(1, 101);
+          _awaitItem = rand > 30;
+          _performing = true;
         }
       }
     }
@@ -145,15 +249,30 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, distanceCheck);
 
-      if (shouldAttack)
+      if (shouldAttack || _performing)
       {
         movement = Vector3.Zero;
         _stuckTimer = 0;
         _ticksSinceFoundTarget = 0;
-        Attack();
+
+        if (_performing)
+        {
+          rotation = Vector2.Zero;
+          roll = 0;
+        }
+        else if (shouldAttack)
+        {
+          Attack();
+        }
       }
-      else
+      else if (movement != Vector3.Zero)
       {
+        if (_sitting)
+        {
+          _sitting = false;
+          Behavior.Perform("RoboDog_Sitting");
+        }
+
         TrySwitchWalk();
       }
 
@@ -188,12 +307,21 @@ namespace AiEnabled.Bots.Roles.Helpers
       bool shouldAttack;
       GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out roll, out shouldAttack);
 
-      if (shouldAttack)
+      if (shouldAttack || _performing)
       {
         movement = Vector3.Zero;
         _stuckTimer = 0;
         _ticksSinceFoundTarget = 0;
-        Attack();
+
+        if (_performing)
+        {
+          rotation = Vector2.Zero;
+          roll = 0;
+        }
+        else if (shouldAttack)
+        {
+          Attack();
+        }
       }
 
       Character.MoveAndRotate(movement, rotation, roll);
@@ -519,7 +647,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           MyAdminSettingsEnum adminSettings;
           if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
           {
-            if ((adminSettings & MyAdminSettingsEnum.Invulnerable) != 0 || (adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+            if ((adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
             {
               continue;
             }

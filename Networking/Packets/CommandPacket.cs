@@ -9,8 +9,11 @@ using AiEnabled.Bots.Roles.Helpers;
 
 using ProtoBuf;
 
+using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.ModAPI;
+
+using VRage.Game.Entity;
 
 using VRageMath;
 
@@ -46,6 +49,42 @@ namespace AiEnabled.Networking
       if (!AiSession.Instance.Bots.TryGetValue(BotEntityId, out bot) || bot?.Character == null || bot.Character.MarkedForClose || bot.Character.IsDead)
         return false;
 
+      if (GoTo.HasValue)
+      {
+        // turning GoTo into a patrol with one waypoint if the position isn't a seat (otherwise bot should sit down)
+
+        List<MyEntity> entList;
+        if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
+          entList = new List<MyEntity>();
+        else
+          entList.Clear();
+
+        var sphere = new BoundingSphereD(GoTo.Value, 1);
+        MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, entList);
+
+        bool shouldSit = false;
+
+        for (int i = 0; i < entList.Count; i++)
+        {
+          var ent = entList[i] as IMyCockpit;
+          if (ent == null || Vector3D.DistanceSquared(ent.WorldAABB.Center, GoTo.Value) > 1)
+            continue;
+
+          shouldSit = true;
+          break;
+        }
+
+        entList.Clear();
+        AiSession.Instance.EntListStack.Push(entList);
+
+        if (!shouldSit)
+        {
+          Patrol = true;
+          PatrolNodes = new List<Vector3D>() { GoTo.Value };
+          GoTo = null;
+        }
+      }
+
       if (Stay || GoTo.HasValue)
       {
         bot.Target.RemoveTarget();
@@ -60,11 +99,32 @@ namespace AiEnabled.Networking
           if (seat != null)
           {
             seat.RemovePilot();
-            Vector3D position = seat.WorldAABB.Center + seat.WorldMatrix.Forward * 2;
+            Vector3D relPosition;
+            if (!AiSession.Instance.BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition))
+              relPosition = Vector3D.Forward * 2.5 + Vector3D.Up;
+
+            var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
             bot.Character.SetPosition(position);
+
+            var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
+            if (jetpack != null)
+            {
+              if (bot.RequiresJetpack)
+              {
+                if (!jetpack.TurnedOn)
+                {
+                  var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+                  MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+                  jetpack.TurnOnJetpack(true);
+                  MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+                }
+              }
+              else if (jetpack.TurnedOn)
+                jetpack.SwitchThrusts();
+            }
           }
 
-          bot.Target.SetOverride(GoTo.Value);
+          bot.Target.SetOverride(GoTo.Value);          
         }
       }
       else if (Resume)

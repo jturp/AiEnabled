@@ -78,9 +78,9 @@ namespace AiEnabled.Ai.Support
 
     /// <summary>
     /// If repair bots are present on the grid, this will hold any tiles they are actively reparing or building.
-    /// Key is grid entity id, value is a Dictionary where Key is bot entity id and Value is block position on grid.
+    /// Key is grid entity id, value is a Dictionary where Key is block position on grid and Value is  bot entity id.
     /// </summary>
-    public ConcurrentDictionary<long, Dictionary<long, Vector3I>> SelectedRepairTiles = new ConcurrentDictionary<long, Dictionary<long, Vector3I>>(5, 10);
+    public ConcurrentDictionary<long, ConcurrentDictionary<Vector3I, long>> SelectedRepairTiles = new ConcurrentDictionary<long, ConcurrentDictionary<Vector3I, long>>(5, 10);
 
     /// <summary>
     /// Doors that are currently closed and non-functional will be in this collection
@@ -114,11 +114,15 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     internal Queue<MyTuple<Vector3I, Vector3I, Vector3I>> StackedStairsFound { get; private set; } = new Queue<MyTuple<Vector3I, Vector3I, Vector3I>>(); // TODO: Need to make this part of the PathCollection to avoid threading issues
 
-    internal ConcurrentDictionary<Vector3I, Node> OpenTileDict = new ConcurrentDictionary<Vector3I, Node>(5, 100, Vector3I.Comparer);
+    //internal ConcurrentDictionary<Vector3I, Node> OpenTileDict = new ConcurrentDictionary<Vector3I, Node>(5, 100, Vector3I.Comparer);
+    //ConcurrentDictionary<Vector3I, Node> _planetTileDictionary = new ConcurrentDictionary<Vector3I, Node>(5, 100, Vector3I.Comparer);
 
-    ConcurrentDictionary<Vector3I, Node> _planetTileDictionary = new ConcurrentDictionary<Vector3I, Node>(5, 100, Vector3I.Comparer);
+    internal Dictionary<Vector3I, Node> OpenTileDict = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
+    Dictionary<Vector3I, Node> _planetTileDictionary = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
+
     ConcurrentStack<Node> _nodeStack = new ConcurrentStack<Node>();
 
+    ParallelTasks.Task _asyncTileTask;
     Vector3D _worldPosition;
     List<CubeGridMap> _additionalMaps2;
     List<IMyCubeGrid> _gridsToAdd;
@@ -137,7 +141,7 @@ namespace AiEnabled.Ai.Support
           return;
         }
 
-        var gridGroup = grid.GetGridGroup(GridLinkTypeEnum.Logical);
+        var gridGroup = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
         if (gridGroup == null)
         {
           AiSession.Instance.Logger.Log($"CubeGridMap.ctor: GridGroup was null for '{grid.DisplayName}'", MessageType.WARNING);
@@ -211,6 +215,7 @@ namespace AiEnabled.Ai.Support
           matrixSet = true;
         }
         else if ((grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_Cockpit), out numSeats) && numSeats > 0)
+          || (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_RemoteControl), out numSeats) && numSeats > 0)
           || (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_ConveyorSorter), out numFactories) && numFactories > 0))
         {
           foreach (var b in grid.GetFatBlocks())
@@ -301,6 +306,9 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        if (grid != null && !grid.IsSameConstructAs(MainGrid))
+          return;
+
         Dirty = true;
         Ready = false;
 
@@ -324,6 +332,9 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        if (grid == null || !grid.IsSameConstructAs(MainGrid))
+          return;
+
         Dirty = true;
         Ready = false;
 
@@ -347,6 +358,8 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        //AiSession.Instance.Logger.Log($"GridGroup_OnReleased: Group = {gridGroup?.LinkType.ToString() ?? "NULL"}");
+
         Dirty = true;
         Ready = false;
 
@@ -369,7 +382,7 @@ namespace AiEnabled.Ai.Support
 
         if (MainGrid != null && !MainGrid.MarkedForClose)
         {
-          gridGroup = MainGrid.GetGridGroup(GridLinkTypeEnum.Logical);
+          gridGroup = MainGrid.GetGridGroup(GridLinkTypeEnum.Mechanical);
 
           if (gridGroup != null)
           {
@@ -607,16 +620,11 @@ namespace AiEnabled.Ai.Support
     /// <returns>true if a DIFFERENT bot is currently planning to repair the given block, otherwise false</returns>
     public bool IsTileBeingRepaired(long gridEntityId, Vector3I position, long botId)
     {
-      Dictionary<long, Vector3I> repairDict;
-      if (!SelectedRepairTiles.TryGetValue(gridEntityId, out repairDict))
+      ConcurrentDictionary<Vector3I, long> repairDict;
+      if (SelectedRepairTiles.TryGetValue(gridEntityId, out repairDict))
       {
-        return false;
-      }
-
-      foreach (var kvp in repairDict)
-      {
-        if (kvp.Value == position)
-          return kvp.Key != botId;
+        long id;
+        return repairDict.TryGetValue(position, out id) && id == botId;
       }
 
       return false;
@@ -628,27 +636,48 @@ namespace AiEnabled.Ai.Support
     /// <param name="gridEntityId">The EntityId of the grid</param>
     /// <param name="position">Block position on the grid</param>
     /// <param name="botId">Entity Id of the asking repair bot</param>
-    public void AddRepairTile(long gridEntityId, Vector3I position, long botId)
+    /// <param name="botRepairTiles">The repair bot's repair dictionary</param>
+    public void AddRepairTile(long gridEntityId, Vector3I position, long botId, Dictionary<long, HashSet<Vector3I>> botRepairTiles)
     {
-      Dictionary<long, Vector3I> repairDict;
+      ConcurrentDictionary<Vector3I, long> repairDict;
       if (!SelectedRepairTiles.TryGetValue(gridEntityId, out repairDict))
       {
-        repairDict = new Dictionary<long, Vector3I>();
+        repairDict = new ConcurrentDictionary<Vector3I, long>(Vector3I.Comparer);
         SelectedRepairTiles[gridEntityId] = repairDict;
       }
 
-      repairDict[botId] = position;
+      repairDict[position] = botId;
+
+      HashSet<Vector3I> tiles;
+      if (!botRepairTiles.TryGetValue(gridEntityId, out tiles))
+      {
+        tiles = new HashSet<Vector3I>(Vector3I.Comparer);
+        botRepairTiles[gridEntityId] = tiles;
+      }
+
+      tiles.Add(position);
     }
 
     /// <summary>
     /// Clears all repair tiles for the a bot
     /// </summary>
-    /// <param name="botId">Entity Id of the asking repair bot</param>
-    public void RemoveRepairTiles(long botId)
+    /// <param name="tiles">The repair bot's current repair dictionary</param>
+    public void RemoveRepairTiles(Dictionary<long, HashSet<Vector3I>> tiles)
     {
-      foreach (var kvp in SelectedRepairTiles)
+      ConcurrentDictionary<Vector3I, long> repairDict;
+
+      foreach (var kvp in tiles)
       {
-        kvp.Value.Remove(botId);
+        if (SelectedRepairTiles.TryGetValue(kvp.Key, out repairDict))
+        {
+          foreach (var tile in kvp.Value)
+          {
+            long id;
+            repairDict.TryRemove(tile, out id);
+          }
+
+          kvp.Value.Clear();
+        }
       }
     }
 
@@ -689,10 +718,28 @@ namespace AiEnabled.Ai.Support
 
     public void RemovePlanetTiles()
     {
-      PlanetTilesRemoved = true;
-      Ready = false;
-      GraphLocked = true;
-      MyAPIGateway.Parallel.Start(RemovePlanetTilesAsync, SetReady);
+      if (!_asyncTileTask.IsComplete)
+        return;
+
+      if (_asyncTileTask.Exceptions != null)
+      {
+        AiSession.Instance.Logger.ClearCached();
+        AiSession.Instance.Logger.AddLine($"Exceptions found during RemovePlanetTiles task!\n");
+        foreach (var ex in _asyncTileTask.Exceptions)
+          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+
+        AiSession.Instance.Logger.LogAll();
+        MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
+      }
+
+      if (!GraphLocked)
+      {
+        Ready = false;
+        GraphLocked = true;
+        PlanetTilesRemoved = true;
+
+        _asyncTileTask = MyAPIGateway.Parallel.Start(RemovePlanetTilesAsync, SetReady);
+      }
     }
 
     void RemovePlanetTilesAsync()
@@ -712,8 +759,11 @@ namespace AiEnabled.Ai.Support
       foreach (var position in nodeList)
       {
         Node node;
-        if (_planetTileDictionary.TryRemove(position, out node))
+        if (_planetTileDictionary.TryGetValue(position, out node))
+        {
           _nodeStack.Push(node);
+          _planetTileDictionary.Remove(position);
+        }
       }
 
       nodeList.Clear();
@@ -837,17 +887,20 @@ namespace AiEnabled.Ai.Support
 
     public override bool InBounds(Vector3I node) => BoundingBox.Contains(node) != ContainmentType.Disjoint;
 
-    public override bool GetClosestValidNode(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false)
+    public override bool GetClosestValidNode(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true)
     {
       Node node;
       TryGetNodeForPosition(testPosition, out node);
 
       localPosition = testPosition;
-      if (node != null && !currentIsDenied && !isSlimBlock && !BlockedDoors.ContainsKey(localPosition) && !ObstacleNodes.ContainsKey(localPosition)
+      if (node != null && !currentIsDenied && !isSlimBlock
+        && !BlockedDoors.ContainsKey(localPosition)
+        && !ObstacleNodes.ContainsKey(localPosition)
         && !TempBlockedNodes.ContainsKey(localPosition))
       {
+        var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
-        if ((!isWater || bot.CanUseWaterNodes) && (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes))
+        if ((allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
         {
           if (!bot.WaterNodesOnly || !isWater)
             return true;
@@ -885,7 +938,7 @@ namespace AiEnabled.Ai.Support
               var current = iter.Current;
               iter.MoveNext();
 
-              if (GetClosestNodeInternal(bot, current, out localPosition, up, isSlimBlock, currentIsDenied))
+              if (GetClosestNodeInternal(bot, current, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes))
                 return true;
             }
 
@@ -894,18 +947,34 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      return GetClosestNodeInternal(bot, testPosition, out localPosition, up, isSlimBlock, currentIsDenied);
+      return GetClosestNodeInternal(bot, testPosition, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes);
     }
 
-    bool GetClosestNodeInternal(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false)
+    public bool CanBotUseTile(BotBase bot, Node node, bool allowAirNodes = true)
+    {
+      if (node == null || bot?.Character == null || bot.IsDead)
+        return false;
+
+      var isAir = node.IsAirNode;
+      var isWater = node.IsWaterNode;
+      if ((allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
+      {
+        return !bot.WaterNodesOnly || !isWater;
+      }
+
+      return false;
+    }
+
+    bool GetClosestNodeInternal(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true)
     {
       localPosition = testPosition;
       Node node;
       if (!currentIsDenied && !isSlimBlock && !BlockedDoors.ContainsKey(localPosition) && !ObstacleNodes.ContainsKey(localPosition)
         && !TempBlockedNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
+        var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
-        if ((!isWater || bot.CanUseWaterNodes) && (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes))
+        if ((allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
         {
           if (!bot.WaterNodesOnly || !isWater)
             return true;
@@ -918,6 +987,9 @@ namespace AiEnabled.Ai.Support
 
       foreach (var point in Neighbors(bot, center, center, worldPosition, true, true, isSlimBlock, up))
       {
+        if (!allowAirNodes && TryGetNodeForPosition(point, out node) && node.IsAirNode)
+          continue;
+
         var testPositionWorld = MainGrid.GridIntegerToWorld(point);
         var dist = Vector3D.DistanceSquared(testPositionWorld, worldPosition);
 
@@ -931,12 +1003,13 @@ namespace AiEnabled.Ai.Support
       if (!BlockedDoors.ContainsKey(localPosition) && !ObstacleNodes.ContainsKey(localPosition)
         && !TempBlockedNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
+        var isAirNode = node.IsAirNode;
         var isWaterNode = node.IsWaterNode;
 
         if (bot.WaterNodesOnly)
           return isWaterNode;
 
-        return (!node.IsAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes);
+        return (allowAirNodes || !isAirNode) && (!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes);
       }
 
       return false;
@@ -1115,17 +1188,19 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      if (RootVoxel != null && !nCur.IsGridNodeUnderGround && !nNext.IsGridNodeUnderGround && Environment.CurrentManagedThreadId == AiSession.MainThreadId)
+      if (RootVoxel != null && !nCur.IsGridNodeUnderGround && !nNext.IsGridNodeUnderGround)
       {
         Vector3D worldCurrent = MainGrid.GridIntegerToWorld(nCur.Position) + nCur.Offset;
         Vector3D worldNext = MainGrid.GridIntegerToWorld(nNext.Position) + nNext.Offset;
-        var line = new LineD(worldCurrent, worldNext);
+        //var line = new LineD(worldCurrent, worldNext);
 
         using (RootVoxel.Pin())
         {
-          Vector3D? hit;
-          if (RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+          if (LineIntersectsVoxel(worldCurrent, worldNext, RootVoxel))
             return false;
+          //Vector3D? hit;
+          //if (RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+          //  return false;
         }
       }
 
@@ -2559,8 +2634,7 @@ namespace AiEnabled.Ai.Support
           pos = MainGrid.WorldToGridInteger(grid.GridIntegerToWorld(pos));
 
         bool isOpen = false;
-        var blockDef = (MyCubeBlockDefinition)door.SlimBlock.BlockDefinition;
-        if (door.SlimBlock.BuildLevelRatio < blockDef.CriticalIntegrityRatio)
+        if (door.SlimBlock.IsBlockUnbuilt())
           isOpen = true;
 
         if (isOpen || door.MarkedForClose || door.Enabled || door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
@@ -2875,7 +2949,6 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        //if (addNodeBelow && OpenTileDict.TryGetValue(localBelow, out node))
         if (addNodeBelow && _planetTileDictionary.TryGetValue(localBelow, out node))
         {
           NodeType nType = NodeType.None;
@@ -2890,7 +2963,6 @@ namespace AiEnabled.Ai.Support
           addNodeBelow = false;
         }
 
-        //if (OpenTileDict.TryGetValue(localPoint, out node))
         if (_planetTileDictionary.TryGetValue(localPoint, out node))
         {
           NodeType nType = NodeType.None;
@@ -2936,54 +3008,93 @@ namespace AiEnabled.Ai.Support
 
         if (add)
         {
-          for (int i = GridCollection.Count - 1; i >= 0; i--)
+          if (addNodeBelow && DoesBlockExist(localBelow, false))
           {
-            if (Dirty)
-            {
-              return;
-            }
+            addNodeBelow = false;
+          }
 
-            var otherGrid = GridCollection[i];
-            if (otherGrid == null || otherGrid.MarkedForClose)
-              continue;
+          if (Dirty)
+          {
+            return;
+          }
 
-            if (addNodeBelow)
+          if (DoesBlockExist(localPoint, false))
+          {
+            add = false;
+          }
+          else if (isGroundNode)
+          {
+            var localAbove = localPoint + upVec;
+            var slim = GetBlockAtPosition(localAbove);
+            if (slim != null)
             {
-              var localBelowOther = otherGrid.WorldToGridInteger(worldBelow);
-              var slimBelow = otherGrid.GetCubeBlock(localBelowOther) as IMySlimBlock;
-              if (slimBelow != null && ((MyCubeBlockDefinition)slimBelow.BlockDefinition).HasPhysics)
-                addNodeBelow = false;
-            }
-
-            var localPointOther = otherGrid.WorldToGridInteger(worldPoint);
-            var slim = otherGrid.GetCubeBlock(localPointOther) as IMySlimBlock;
-            if (slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics)
-            {
-              add = false;
-              break;
-            }
-
-            if (isGroundNode)
-            {
-              var worldAbove = worldPoint - gravityNorm;
-              var localAbove = otherGrid.WorldToGridInteger(worldAbove);
-              var cubeAbove = otherGrid.GetCubeBlock(localAbove);
-              if (cubeAbove != null)
+              if (!AiSession.Instance.CatwalkBlockDefinitions.Contains(slim.BlockDefinition.Id) || Base6Directions.GetIntVector(slim.Orientation.Up) != -upVec)
               {
-                if (!AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id) || Base6Directions.GetIntVector(cubeAbove.Orientation.Up) != -upVec)
+                var actualSurface = groundPoint + gravityNorm;
+                var direction = Base6Directions.GetDirection(-upVec);
+                var downVec = slim.CubeGrid.WorldMatrix.GetDirectionVector(direction);
+                var bottomEdge = slim.CubeGrid.GridIntegerToWorld(localAbove) + downVec * slim.CubeGrid.GridSize * 0.5;
+                if (Vector3D.DistanceSquared(actualSurface, bottomEdge) < 7)
                 {
-                  var downVec = otherGrid.WorldMatrix.GetDirectionVector(Base6Directions.GetDirection(-upVec));
-                  var actualSurface = groundPoint + gravityNorm;
-                  var bottomEdge = otherGrid.GridIntegerToWorld(localAbove) + downVec * otherGrid.GridSize * 0.5;
-                  if (Vector3D.DistanceSquared(actualSurface, bottomEdge) < 5)
-                  {
-                    add = false;
-                    break;
-                  }
+                  add = false;
                 }
               }
             }
           }
+
+          if (Dirty)
+          {
+            return;
+          }
+
+          //for (int i = GridCollection.Count - 1; i >= 0; i--)
+          //{
+          //  if (Dirty)
+          //  {
+          //    return;
+          //  }
+
+          //  var otherGrid = GridCollection[i];
+          //  if (otherGrid == null || otherGrid.MarkedForClose)
+          //    continue;
+
+          //  if (addNodeBelow)
+          //  {
+          //    var localBelowOther = otherGrid.WorldToGridInteger(worldBelow);
+          //    var slimBelow = otherGrid.GetCubeBlock(localBelowOther) as IMySlimBlock;
+          //    if (slimBelow != null && ((MyCubeBlockDefinition)slimBelow.BlockDefinition).HasPhysics)
+          //      addNodeBelow = false;
+          //  }
+
+          //  var localPointOther = otherGrid.WorldToGridInteger(worldPoint);
+          //  var slim = otherGrid.GetCubeBlock(localPointOther) as IMySlimBlock;
+          //  if (slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics)
+          //  {
+          //    add = false;
+          //    break;
+          //  }
+
+          //  if (isGroundNode)
+          //  {
+          //    var worldAbove = worldPoint - gravityNorm;
+          //    var localAbove = otherGrid.WorldToGridInteger(worldAbove);
+          //    var cubeAbove = otherGrid.GetCubeBlock(localAbove);
+          //    if (cubeAbove != null)
+          //    {
+          //      if (!AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id) || Base6Directions.GetIntVector(cubeAbove.Orientation.Up) != -upVec)
+          //      {
+          //        var downVec = otherGrid.WorldMatrix.GetDirectionVector(Base6Directions.GetDirection(-upVec));
+          //        var actualSurface = groundPoint + gravityNorm;
+          //        var bottomEdge = otherGrid.GridIntegerToWorld(localAbove) + downVec * otherGrid.GridSize * 0.5;
+          //        if (Vector3D.DistanceSquared(actualSurface, bottomEdge) < 5)
+          //        {
+          //          add = false;
+          //          break;
+          //        }
+          //      }
+          //    }
+          //  }
+          //}
 
           if (add)
           {
@@ -3119,15 +3230,24 @@ namespace AiEnabled.Ai.Support
           iter.MoveNext();
 
           Node node;
-          //if (OpenTileDict.TryGetValue(current, out node) && node.IsGridNodePlanetTile)
-          if (_planetTileDictionary.TryRemove(current, out node))
+          if (_planetTileDictionary.TryGetValue(current, out node))
           {
-            byte b;
             _nodeStack.Push(node);
-            //OpenTileDict.TryRemove(current, out node);
-            ObstacleNodes.TryRemove(current, out b);
-            Obstacles.TryRemove(current, out b);
+            _planetTileDictionary.Remove(current);
           }
+
+          byte b;
+          ObstacleNodes.TryRemove(current, out b);
+          Obstacles.TryRemove(current, out b);
+
+          //Node node;
+          //if (_planetTileDictionary.TryRemove(current, out node))
+          //{
+          //  byte b;
+          //  _nodeStack.Push(node);
+          //  ObstacleNodes.TryRemove(current, out b);
+          //  Obstacles.TryRemove(current, out b);
+          //}
         }
 
         float _;
@@ -3154,10 +3274,6 @@ namespace AiEnabled.Ai.Support
           if (_planetTileDictionary.TryGetValue(current, out node))
           {
             GetBlockedNodeEdges(node);
-            //foreach (var edge in GetBlockedNodeEdges(node))
-            //{
-            //  node.SetBlocked(edge);
-            //}
           }
         }
       }
@@ -3908,6 +4024,14 @@ namespace AiEnabled.Ai.Support
                   continue;
                 }
               }
+              else if (door.BlockDefinition.SubtypeName == "RotaryAirlockCorner")
+              {
+                if (oppositeDir != door.Orientation.Left && dir != door.Orientation.Forward)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
               else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
               {
                 // Large DLC gate
@@ -4003,6 +4127,14 @@ namespace AiEnabled.Ai.Support
               if (dir != thisBlock.Orientation.Up && oppositeDir != thisBlock.Orientation.Up)
               {
                 node.SetBlocked(dirVec); 
+                continue;
+              }
+            }
+            else if (thisBlock.BlockDefinition.Id.SubtypeName == "RotaryAirlockCorner")
+            {
+              if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
                 continue;
               }
             }
@@ -4109,6 +4241,14 @@ namespace AiEnabled.Ai.Support
                   if (dir != door.Orientation.Up && oppositeDir != door.Orientation.Up)
                   {
                     node.SetBlocked(dirVec); 
+                    continue;
+                  }
+                }
+                else if (door.BlockDefinition.SubtypeName == "RotaryAirlockCorner")
+                {
+                  if (oppositeDir != door.Orientation.Left && dir != door.Orientation.Forward)
+                  {
+                    node.SetBlocked(dirVec);
                     continue;
                   }
                 }
@@ -4659,6 +4799,14 @@ namespace AiEnabled.Ai.Support
                       continue;
                     }
                   }
+                  else if (door.BlockDefinition.SubtypeName == "RotaryAirlockCorner")
+                  {
+                    if (oppositeDir != door.Orientation.Left && dir != door.Orientation.Forward)
+                    {
+                      node.SetBlocked(dirVec);
+                      continue;
+                    }
+                  }
                   else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
                   {
                     // Large DLC gate
@@ -4721,6 +4869,14 @@ namespace AiEnabled.Ai.Support
                   if (dir != door.Orientation.Up && oppositeDir != door.Orientation.Up)
                   {
                     node.SetBlocked(dirVec); 
+                    continue;
+                  }
+                }
+                else if (door.BlockDefinition.SubtypeName == "RotaryAirlockCorner")
+                {
+                  if (oppositeDir != door.Orientation.Left && dir != door.Orientation.Forward)
+                  {
+                    node.SetBlocked(dirVec);
                     continue;
                   }
                 }
@@ -5136,6 +5292,14 @@ namespace AiEnabled.Ai.Support
               if (dir != nextBlock.Orientation.Up && oppositeDir != nextBlock.Orientation.Up)
               {
                 node.SetBlocked(dirVec); 
+                continue;
+              }
+            }
+            else if (nextBlock.BlockDefinition.Id.SubtypeName == "RotaryAirlockCorner")
+            {
+              if (oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
                 continue;
               }
             }
@@ -5965,6 +6129,40 @@ namespace AiEnabled.Ai.Support
       return result;
     }
 
+    public bool GetRandomOpenTile(BotBase bot, out Node node, bool allowAirNodes = true, bool allowPlanetTiles = true, bool interiorFirst = true)
+    {
+      node = null;
+      if (OpenTileDict.Count == 0 && (!allowPlanetTiles || _planetTileDictionary.Count == 0))
+        return false;
+
+      foreach (var tile in OpenTileDict)
+      {
+        if (tile.Value != null && tile.Value.Block == null && CanBotUseTile(bot, tile.Value, allowAirNodes))
+        {
+          node = tile.Value;
+
+          if (!interiorFirst || (node.IsGridNode && node.Grid?.IsRoomAtPositionAirtight(node.Position) == true))
+          {
+            break;
+          }
+        }
+      }
+
+      if (node == null && allowPlanetTiles)
+      {
+        foreach (var tile in _planetTileDictionary)
+        {
+          if (tile.Value != null && tile.Value.Block == null && CanBotUseTile(bot, tile.Value, allowAirNodes))
+          {
+            node = tile.Value;
+            break;
+          }
+        }
+      }
+
+      return node != null;
+    }
+
     public override bool GetRandomOpenNode(BotBase bot, Vector3D requestedPosition, out Node node)
     {
       node = null;
@@ -6318,11 +6516,15 @@ namespace AiEnabled.Ai.Support
           Planet_OnMarkForClose(RootVoxel);
 
         RootVoxel = newPlanet;
-        RootVoxel.RangeChanged -= Planet_RangeChanged;
-        RootVoxel.OnMarkForClose -= Planet_OnMarkForClose;
 
-        RootVoxel.RangeChanged += Planet_RangeChanged;
-        RootVoxel.OnMarkForClose += Planet_OnMarkForClose;
+        if (RootVoxel != null)
+        {
+          RootVoxel.RangeChanged -= Planet_RangeChanged;
+          RootVoxel.OnMarkForClose -= Planet_OnMarkForClose;
+
+          RootVoxel.RangeChanged += Planet_RangeChanged;
+          RootVoxel.OnMarkForClose += Planet_OnMarkForClose;
+        }
       }
       else if (RootVoxel != null)
       {
@@ -6404,13 +6606,16 @@ namespace AiEnabled.Ai.Support
       return block;
     }
 
-    public bool DoesBlockExist(Vector3I mainGridPosition)
+    public bool DoesBlockExist(Vector3I mainGridPosition, bool checkPhysics = true)
     {
-      if (Dirty || !Ready || MainGrid == null || MainGrid.MarkedAsTrash)
+      if (MainGrid == null || MainGrid.MarkedAsTrash)
         return false;
 
-      if (MainGrid.CubeExists(mainGridPosition))
-        return true;
+      IMySlimBlock slim = MainGrid.GetCubeBlock(mainGridPosition);
+      if (slim != null)
+      {
+        return !checkPhysics || ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics;
+      }
 
       var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
 
@@ -6421,37 +6626,14 @@ namespace AiEnabled.Ai.Support
           continue;
 
         var localPosition = grid.WorldToGridInteger(worldPosition);
-        if (grid.CubeExists(localPosition))
-          return true;
+        slim = grid.GetCubeBlock(localPosition);
+        if (slim != null)
+        {
+          return !checkPhysics || ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics;
+        }
       }
 
       return false;
     }
-
-    //internal class CubeGridComparer : IEqualityComparer<MyCubeGrid>, IComparer<MyCubeGrid>
-    //{
-    //  public int Compare(MyCubeGrid x, MyCubeGrid y)
-    //  {
-    //    if (x == null || y == null)
-    //      return -1;
-
-    //    return x.EntityId.CompareTo(y.EntityId);
-    //  }
-
-    //  public bool Equals(MyCubeGrid x, MyCubeGrid y)
-    //  {
-    //    if (x == null || y == null)
-    //      return false;
-
-    //    return x.EntityId == y.EntityId;
-    //  }
-
-    //  public int GetHashCode(MyCubeGrid obj)
-    //  {
-    //    return obj.EntityId.GetHashCode();
-    //  }
-    //}
-
-    //internal static CubeGridComparer GridComparer = new CubeGridComparer();
   }
 }

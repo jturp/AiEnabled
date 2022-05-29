@@ -61,14 +61,62 @@ namespace AiEnabled.Bots
         useComp?.GetInteractiveObjects(useObjs);
         if (useObjs.Count > 0)
         {
+          if (bot.HasWeaponOrTool)
+          {
+            var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+            controlEnt?.SwitchToWeapon(null);
+          }
+
+          var seatCube = seat as MyCubeBlock;
           var useObj = useObjs[0];
-          useObj.Use(UseActionEnum.Manipulate, bot.Character);
-          bot._pathCollection?.CleanUp(true);
-          bot.Target.RemoveTarget();
-          return true;
+
+          if (useObj != null)
+          {
+            var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+            bool changeBack = false;
+
+            if (shareMode != MyOwnershipShareModeEnum.All)
+            {
+              var owner = bot.Owner?.IdentityId ?? bot.Character.ControllerInfo.ControllingIdentityId;
+              var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+              var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+              if (relation != MyRelationsBetweenPlayers.Enemies)
+              {
+                changeBack = true;
+                seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+              }
+            }
+
+            if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+            {
+              var freeSpace = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5);
+              if (freeSpace.HasValue)
+              {
+                var offset = Vector3D.Rotate(freeSpace.Value - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+                AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = offset;
+                bot.Character.SetPosition(freeSpace.Value);
+              }
+
+              var mapGrid = GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
+              bot._currentGraph = AiSession.Instance.GetNewGraph(mapGrid, bot.GetPosition(), bot.WorldMatrix);
+              useObj.Use(UseActionEnum.Manipulate, bot.Character);
+            }
+
+            if (changeBack)
+              seatCube.IDModule.ShareMode = shareMode;
+
+            bot._pathCollection?.CleanUp(true);
+            bot.Target.RemoveTarget();
+            seats.Clear();
+            useObjs.Clear();
+            return true;
+          }
         }
       }
 
+      seats.Clear();
+      useObjs.Clear();
       return false;
     }
 
@@ -82,22 +130,105 @@ namespace AiEnabled.Bots
 
       if (list.Count > 0)
       {
-        var useObj = list[0];
-
         var currentSeat = bot.Character.Parent as IMyCockpit;
         if (currentSeat != null)
           currentSeat.RemovePilot();
 
-        useObj.Use(UseActionEnum.Manipulate, bot.Character);
-        bot._pathCollection?.CleanUp(true);
-        bot.Target.RemoveTarget();
-        return true;
+        if (bot.HasWeaponOrTool)
+        {
+          var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+          controlEnt?.SwitchToWeapon(null);
+        }
+
+        var seatCube = seat as MyCubeBlock;
+        var useObj = list[0];
+
+        if (useObj != null)
+        {
+          var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+          bool changeBack = false;
+
+          if (shareMode != MyOwnershipShareModeEnum.All)
+          {
+            var owner = bot.Owner?.IdentityId ?? bot.Character.ControllerInfo.ControllingIdentityId;
+            var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+            var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+            if (relation != MyRelationsBetweenPlayers.Enemies)
+            {
+              changeBack = true;
+              seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+            }
+          }
+
+          if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+          {
+            var freeSpace = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5);
+            if (freeSpace.HasValue)
+            {
+              var offset = Vector3D.Rotate(freeSpace.Value - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+              AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = offset;
+              bot.Character.SetPosition(freeSpace.Value);
+            }
+
+            var grid = GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
+            bot._currentGraph = AiSession.Instance.GetNewGraph(grid, bot.GetPosition(), bot.WorldMatrix);
+            useObj.Use(UseActionEnum.Manipulate, bot.Character);
+          }
+
+          if (changeBack)
+            seatCube.IDModule.ShareMode = shareMode;
+
+          bot._pathCollection?.CleanUp(true);
+          bot.Target.RemoveTarget();
+          list.Clear();
+          return true;
+        }
       }
 
+      list.Clear();
       return false;
     }
 
-    public static bool RemoveBotFromSeat(BotBase bot)
+    public static IMyCubeGrid GetLargestGridForMap(IMyCubeGrid initialGrid)
+    {
+      try
+      {
+        if (initialGrid == null)
+          return null;
+
+        List<IMyCubeGrid> gridList;
+        if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
+          gridList = new List<IMyCubeGrid>();
+        else
+          gridList.Clear();
+
+        var biggest = initialGrid;
+        initialGrid?.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
+
+        for (int i = 0; i < gridList.Count; i++)
+        {
+          var g = gridList[i];
+          if (g == null || g.MarkedForClose || g.Closed || g.GridSizeEnum == MyCubeSize.Small)
+            continue;
+
+          if (biggest.GridSizeEnum == MyCubeSize.Small || g.WorldAABB.Volume > biggest.WorldAABB.Volume)
+            biggest = g;
+        }
+
+        gridList.Clear();
+        AiSession.Instance.GridGroupListStack.Push(gridList);
+
+        return (biggest.GridSize > 1) ? biggest : null;
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in BotFactory.GetLargestGridForMap: {ex.Message}\n{ex.StackTrace}");
+        return null;
+      }
+    }
+
+    public static bool RemoveBotFromSeat(BotBase bot, bool checkTarget = true)
     {
       var seat = bot.Character.Parent as IMyCockpit;
       if (seat != null)
@@ -107,7 +238,7 @@ namespace AiEnabled.Bots
         var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
         if (jetpack != null)
         {
-          if (bot.RequiresJetpack)
+          if (bot.RequiresJetpack || bot.CanUseAirNodes)
           {
             if (!jetpack.TurnedOn)
             {
@@ -117,20 +248,57 @@ namespace AiEnabled.Bots
               MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
             }
           }
-          else if (jetpack.TurnedOn)
-            jetpack.SwitchThrusts();
         }
 
-        bot.Target.RemoveTarget();
+        if (checkTarget)
+        {
+          bot.Target.RemoveTarget();
 
-        if (!bot.UseAPITargets)
-          bot.SetTarget();
+          if (!bot.UseAPITargets)
+            bot.SetTarget();
 
-        Vector3D actualPosition = bot.Target.CurrentActualPosition;
-        bot.StartCheckGraph(ref actualPosition, true);
-        Vector3D position = seat.WorldAABB.Center + seat.WorldMatrix.Forward * 2;
+          Vector3D actualPosition = bot.Target.CurrentActualPosition;
+          bot.StartCheckGraph(ref actualPosition, true);
+        }
 
-        var voxelGraph = bot._currentGraph as VoxelGridMap;
+        Vector3D position = seat.WorldAABB.Center;
+        Vector3D offset;
+
+        var map = bot._currentGraph;
+        if (map == null)
+        {
+          var grid = GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
+          map = AiSession.Instance.GetNewGraph(grid, position, seat.WorldMatrix);
+        }
+
+        var localPoint = map.WorldToLocal(position);
+        Node node;
+
+        if (map.GetClosestValidNode(bot, localPoint, out localPoint, seat.WorldMatrix.Up, true, true, false))
+        {
+          position = map.LocalToWorld(localPoint);
+        }
+        else if (AiSession.Instance.BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out offset))
+        {
+          position += Vector3D.Rotate(offset, seat.WorldMatrix);
+        }
+        else
+        {
+          offset = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5) ?? seat.WorldMatrix.Forward * 2;
+          position += offset;
+        }
+
+        localPoint = map.WorldToLocal(position);
+        if (map.TryGetNodeForPosition(localPoint, out node) && node != null && node.IsAirNode)
+        {
+          var gridMap = map as CubeGridMap;
+          if (gridMap != null && gridMap.GetRandomOpenTile(bot, out node, false, false))
+          {
+            position = map.LocalToWorld(node.Position) + node.Offset;
+          }
+        }
+
+        var voxelGraph = map as VoxelGridMap;
         if (voxelGraph != null)
         {
           var grid = seat.CubeGrid;
@@ -141,13 +309,28 @@ namespace AiEnabled.Bots
           if (dot <= 0)
             position += seat.WorldMatrix.Forward * Math.Max(1, vec.Length());
 
-          var voxelPosition = voxelGraph.GetClosestSurfacePointFast(bot, position, bot.WorldMatrix.Up);
-          if (voxelPosition.HasValue)
-            position = voxelPosition.Value;
+          if (!bot.CanUseAirNodes)
+          {
+            var voxelPosition = voxelGraph.GetClosestSurfacePointFast(bot, position, bot.WorldMatrix.Up);
+            if (voxelPosition.HasValue)
+              position = voxelPosition.Value;
+          }
         }
 
-        bot.Character.SetPosition(position);
+        var matrix = seat.WorldMatrix;
+        matrix.Translation = position;
+        bot.Character.SetWorldMatrix(matrix);
         return true;
+      }
+
+      var gridGraph = bot._currentGraph as CubeGridMap;
+      if (gridGraph != null)
+      {
+        var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+        var grid = gridGraph.MainGrid;
+
+        if (controlEnt.RelativeDampeningEntity != grid)
+          controlEnt.RelativeDampeningEntity = grid;
       }
 
       return false;
@@ -156,7 +339,22 @@ namespace AiEnabled.Bots
     public static IMyCharacter SpawnBotFromAPI(MyPositionAndOrientation positionAndOrientation, RemoteBotAPI.SpawnData spawnData, MyCubeGrid grid = null, long? owner = null)
     {
       string toolType = null;
-      if (!string.IsNullOrWhiteSpace(spawnData.ToolSubtypeId) && AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, spawnData.ToolSubtypeId))
+      if (spawnData.ToolSubtypeIdList?.Count > 0)
+      {
+        for (int i = spawnData.ToolSubtypeIdList.Count - 1; i >= 0; i--)
+        {
+          var subtype = spawnData.ToolSubtypeIdList[i];
+          if (!AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, subtype))
+            spawnData.ToolSubtypeIdList.RemoveAtFast(i);
+        }
+
+        if (spawnData.ToolSubtypeIdList.Count > 0)
+        {
+          var num = MyUtils.GetRandomInt(0, spawnData.ToolSubtypeIdList.Count);
+          toolType = spawnData.ToolSubtypeIdList[num];
+        }
+      }
+      else if (!string.IsNullOrWhiteSpace(spawnData.ToolSubtypeId) && AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, spawnData.ToolSubtypeId))
       {
         toolType = spawnData.ToolSubtypeId;
       }
@@ -319,6 +517,15 @@ namespace AiEnabled.Bots
         var gridMap = AiSession.Instance.GetNewGraph(grid, bot.WorldAABB.Center, bot.WorldMatrix);
         bool needsName = string.IsNullOrWhiteSpace(displayName);
 
+        if (grid?.Physics != null && !grid.IsStatic)
+        {
+          bot.Physics.LinearVelocity = grid.Physics.LinearVelocity;
+
+          var controlEnt = bot as Sandbox.Game.Entities.IMyControllableEntity;
+          if (controlEnt != null && controlEnt.RelativeDampeningEntity?.EntityId != grid.EntityId)
+            controlEnt.RelativeDampeningEntity = grid;
+        }
+
         BotRoleFriendly botRole;
         if (string.IsNullOrWhiteSpace(role))
         {
@@ -392,7 +599,7 @@ namespace AiEnabled.Bots
           else
             gridGroup.Clear();
 
-          grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroup);
+          grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
 
           for (int i = 0; i < gridGroup.Count; i++)
           {
@@ -405,6 +612,15 @@ namespace AiEnabled.Bots
 
           gridGroup.Clear();
           AiSession.Instance.GridGroupListStack.Push(gridGroup);
+        }
+
+        if (biggestGrid?.Physics != null && !biggestGrid.IsStatic)
+        {
+          bot.Physics.LinearVelocity = biggestGrid.Physics.LinearVelocity;
+
+          var controlEnt = bot as Sandbox.Game.Entities.IMyControllableEntity;
+          if (controlEnt != null && controlEnt.RelativeDampeningEntity?.EntityId != biggestGrid.EntityId)
+            controlEnt.RelativeDampeningEntity = biggestGrid;
         }
 
         gridMap = AiSession.Instance.GetNewGraph(biggestGrid, bot.WorldAABB.Center, bot.WorldMatrix);
@@ -456,13 +672,21 @@ namespace AiEnabled.Bots
             bot.Name = GetUniqueName("NomadBot");
           }
 
-          var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag("NOMAD");
-          if (faction != null)
+          var botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag("NOMAD");
+          if (botFaction != null)
           {
-            if (!faction.AutoAcceptMember)
-              MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
+            if (!botFaction.AutoAcceptMember)
+              MyAPIGateway.Session.Factions.ChangeAutoAccept(botFaction.FactionId, botId, true, botFaction.AutoAcceptPeace);
 
             MyVisualScriptLogicProvider.SetPlayersFaction(botId, "NOMAD");
+            
+            botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
+            if (botFaction == null)
+            {
+              AiSession.Instance.Logger.Log($"BotFactory.SpawnNPC: Faction was null after assignment. Closing bot!", MessageType.WARNING);
+              bot.Close();
+              return null;
+            }
           }
 
           robot = new NomadBot(bot, gridMap);
@@ -470,6 +694,27 @@ namespace AiEnabled.Bots
         }
         else
         {
+          var botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
+          if (botFaction == null)
+          {
+            botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag("SPRT");
+            if (botFaction != null)
+            {
+              if (!botFaction.AutoAcceptMember)
+                MyAPIGateway.Session.Factions.ChangeAutoAccept(botFaction.FactionId, botId, true, botFaction.AutoAcceptPeace);
+
+              MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
+            }
+
+            botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
+            if (botFaction == null)
+            {
+              AiSession.Instance.Logger.Log($"BotFactory.SpawnNPC: Faction was null after assignment. Closing bot!", MessageType.WARNING);
+              bot.Close();
+              return null;
+            }
+          }
+
           BotRoleEnemy botRole;
           if (string.IsNullOrWhiteSpace(role))
           {
@@ -545,19 +790,6 @@ namespace AiEnabled.Bots
           }
         }
 
-        var botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
-        if (botFaction == null)
-        {
-          botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag("SPRT");
-          if (botFaction != null)
-          {
-            if (!botFaction.AutoAcceptMember)
-              MyAPIGateway.Session.Factions.ChangeAutoAccept(botFaction.FactionId, botId, true, botFaction.AutoAcceptPeace);
-
-            MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
-          }
-        }
-
         AiSession.Instance.AddBot(robot);
 
         if (runNeutral)
@@ -577,7 +809,9 @@ namespace AiEnabled.Bots
         var info = AiSession.Instance.GetBotIdentity();
         if (info == null)
         {
-          AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: Attempted to create a bot, but ControlInfo returned null. Please try again in a few moments.", MessageType.WARNING);
+          if (!AiSession.Instance.EemLoaded)
+            AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: Attempted to create a bot, but ControlInfo returned null. Please try again in a few moments.", MessageType.WARNING);
+  
           return null;
         }
 

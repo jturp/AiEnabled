@@ -44,11 +44,27 @@ namespace AiEnabled.GameLogic
   [MyEntityComponentDescriptor(typeof(MyObjectBuilder_UpgradeModule), false, "BotSpawner")]
   public class Spawner : MyGameLogicComponent
   {
+    internal class WeaponInfo
+    {
+      internal string Subtype;
+      internal int UseChanceThreshold;
+
+      internal void SetInfo(string subtype, int threshold)
+      {
+        Subtype = subtype;
+        UseChanceThreshold = threshold;
+      }
+    }
+
     List<MyIniKey> _iniKeys = new List<MyIniKey>();
+    List<string> _iniLines = new List<string>();
     Dictionary<string, KeyValuePair<string, string>> _subtypeToRole = new Dictionary<string, KeyValuePair<string, string>>(10);
+    Stack<WeaponInfo> _wepInfoStack = new Stack<WeaponInfo>(10);
     List<string> _allSubtypes = new List<string>(10);
     List<string> _creatureTypes = new List<string>(5);
     List<string> _nomadTypes = new List<string>(5);
+    List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
+    string _soldierColor, _zombieColor, _grinderColor;
 
     int _minSecondsBetweenSpawns = 60;
     int _maxSecondsBetweenSpawns = 180;
@@ -69,19 +85,25 @@ namespace AiEnabled.GameLogic
       {
         _ini?.Clear();
         _iniKeys?.Clear();
+        _iniLines?.Clear();
         _allSubtypes?.Clear();
         _subtypeToRole?.Clear();
         _creatureTypes?.Clear();
         _nomadTypes?.Clear();
+        _weaponSubtypes?.Clear();
+        _wepInfoStack?.Clear();
 
         _fakeBlock = null;
         _allSubtypes = null;
         _block = null;
         _ini = null;
         _iniKeys = null;
+        _iniLines = null;
         _subtypeToRole = null;
         _creatureTypes = null;
         _nomadTypes = null;
+        _weaponSubtypes = null;
+        _wepInfoStack = null;
       }
       catch(Exception ex)
       {
@@ -109,7 +131,7 @@ namespace AiEnabled.GameLogic
         _isServer = MyAPIGateway.Multiplayer.IsServer;
         _isClient = !_isServer;
 
-        if (_isClient || _block.CubeGrid?.Physics == null)
+        if (_isClient || _block?.CubeGrid?.Physics == null)
           return;
 
         SetupIni();
@@ -131,9 +153,14 @@ namespace AiEnabled.GameLogic
         return;
       }
 
+      var defaultColor = Color.Red;
+      var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
+      _soldierColor = _zombieColor = _grinderColor = hexColor;
+
       _allSubtypes.Clear();
       _creatureTypes.Clear();
       _nomadTypes.Clear();
+      _weaponSubtypes.Clear();
 
       _allSubtypes.Add("Police_Bot");
       _allSubtypes.Add("Space_Skeleton");
@@ -148,24 +175,30 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       _ini.Set("AiEnabled", "Allow SoldierBot", true);
+      _ini.Set("AiEnabled", "SoldierBot Color", hexColor);
       _ini.Set("AiEnabled", "Allow GrinderBot", true);
+      _ini.Set("AiEnabled", "GrinderBot Color", hexColor);
       _ini.Set("AiEnabled", "Allow ZombieBot", true);
+      _ini.Set("AiEnabled", "ZombieBot Color", hexColor);
       _ini.Set("AiEnabled", "Allow GhostBot", true);
       _ini.Set("AiEnabled", "Allow BruiserBot", true);
       _ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       _ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
 
-      _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE \n ");
+      _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
       _ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds betweeen spawns. (min = 1)\n ");
       _ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       _ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
       _ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
-      _ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n ");
-      _ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch.\n ");
+      _ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n Not colorable.\n ");
+      _ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch. Not colorable.\n ");
       _ini.SetComment("AiEnabled", "NomadBots Only", " \n The NomadBot is a neutral encounter that will only attack when\n provoked. Enabling this will disable all others.\n ");
       _ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including NomadBot.\n ");
+
+      _ini.Set("SoldierBot Weapon Subtypes", "AddWeaponSubtypeHere", 100);
+      _ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
 
       _ini.Set("Additional Subtypes", "Subtype", "BotRole;#112233");
       _ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
@@ -181,8 +214,18 @@ namespace AiEnabled.GameLogic
       _allSubtypes.Clear();
       _creatureTypes.Clear();
       _nomadTypes.Clear();
+      _iniLines.Clear();
+
+      for (int i = 0; i < _weaponSubtypes.Count; i++)
+        _wepInfoStack.Push(_weaponSubtypes[i]);
+
+      _weaponSubtypes.Clear();
+
+      var defaultColor = Color.Red;
+      var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
 
       var allowSoldier = ini.Get("AiEnabled", "Allow SoldierBot").ToBoolean(true);
+      _soldierColor = ini.Get("AiEnabled", "SoldierBot Color").ToString(hexColor);
       if (!allowSoldier)
       {
         _allSubtypes.Remove("Police_Bot");
@@ -193,6 +236,7 @@ namespace AiEnabled.GameLogic
       }
 
       var allowGrinder = ini.Get("AiEnabled", "Allow GrinderBot").ToBoolean(true);
+      _grinderColor = ini.Get("AiEnabled", "GrinderBot Color").ToString(hexColor);
       if (!allowGrinder)
       {
         _allSubtypes.Remove("Space_Skeleton");
@@ -203,6 +247,7 @@ namespace AiEnabled.GameLogic
       }
 
       var allowZombie = ini.Get("AiEnabled", "Allow ZombieBot").ToBoolean(true);
+      _zombieColor = ini.Get("AiEnabled", "ZombieBot Color").ToString(hexColor);
       if (!allowZombie)
       {
         _allSubtypes.Remove("Space_Zombie");
@@ -245,6 +290,37 @@ namespace AiEnabled.GameLogic
       if (_maxSecondsBetweenSpawns * 60 > _nextSpawnTime)
       {
         _spawnTimer = _nextSpawnTime - 300;
+      }
+
+      _iniKeys.Clear();
+      ini.GetKeys("SoldierBot Weapon Subtypes", _iniKeys);
+
+      foreach (var iniKey in _iniKeys)
+      {
+        var subtype = iniKey.Name;
+        var threshold = ini.Get("SoldierBot Weapon Subtypes", subtype).ToInt32(-1);
+        if (threshold < 0 || threshold > 100)
+          continue;
+
+        if (AiSession.Instance.IsBotAllowedToUse("Soldier", subtype))
+        {
+          bool found = false;
+          for (int j = 0; j < _weaponSubtypes.Count; j++)
+          {
+            if (_weaponSubtypes[j].Subtype == subtype)
+            {
+              found = true;
+              break;
+            }
+          }
+
+          if (!found)
+          {
+            var info = _wepInfoStack.Count > 0 ? _wepInfoStack.Pop() : new WeaponInfo();
+            info.SetInfo(subtype, (int)threshold);
+            _weaponSubtypes.Add(info);
+          }
+        }
       }
 
       _iniKeys.Clear();
@@ -380,24 +456,40 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       ini.Set("AiEnabled", "Allow SoldierBot", allowSoldier);
+      ini.Set("AiEnabled", "SoldierBot Color", _soldierColor);
       ini.Set("AiEnabled", "Allow GrinderBot", allowGrinder);
+      ini.Set("AiEnabled", "GrinderBot Color", _grinderColor);
       ini.Set("AiEnabled", "Allow ZombieBot", allowZombie);
+      ini.Set("AiEnabled", "ZombieBot Color", _zombieColor);
       ini.Set("AiEnabled", "Allow GhostBot", allowGhost);
       ini.Set("AiEnabled", "Allow BruiserBot", _allowBossBot);
       ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
 
-      ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE \n ");
+      ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
       ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds betweeen spawns. (min = 1)\n ");
       ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
       ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
-      ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n ");
-      ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch.\n ");
+      ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n Not colorable.\n ");
+      ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch. Not colorable.\n ");
       ini.SetComment("AiEnabled", "NomadBots Only", " \n The NomadBot is a neutral encounter that will only attack when\n provoked. Enabling this will disable all others.\n ");
       ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including NomadBot.\n ");
+
+      if (_weaponSubtypes.Count > 0)
+      {
+        for (int i = 0; i < _weaponSubtypes.Count; i++)
+        {
+          var weapon = _weaponSubtypes[i];
+          ini.Set("SoldierBot Weapon Subtypes", weapon.Subtype, weapon.UseChanceThreshold);
+        }
+      }
+      else
+      {
+        ini.Set("SoldierBot Weapon Subtypes", "AddWeaponSubtypeHere", 100);
+      }
 
       if (_subtypeToRole.Count > 0)
       {
@@ -411,6 +503,8 @@ namespace AiEnabled.GameLogic
         ini.Set("Additional Subtypes", "Subtype", "BotRole;#112233");
       }
 
+      ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
+
       ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
 
       _lastConfig = ini.ToString();
@@ -421,16 +515,10 @@ namespace AiEnabled.GameLogic
     {
       try
       {
-        if (_isClient || AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn)
+        if (_isClient || AiSession.Instance?.Registered != true)
           return;
 
-        if (_block == null || _block.MarkedForClose || !_block.Enabled || !_block.IsFunctional || !_block.IsWorking || AiSession.Instance.Players.Count == 0)
-          return;
-
-        if (_fakeBlock.GridResourceDistributor.ResourceState == MyResourceStateEnum.NoPower)
-          return;
-
-        if (AiSession.Instance.BotNumber >= AiSession.Instance.MaxBots)
+        if (_block == null || _block.MarkedForClose)
           return;
 
         var data = _block.CustomData;
@@ -438,6 +526,15 @@ namespace AiEnabled.GameLogic
           SetupIni(false);
         else if (_ini.ToString() != _lastConfig)
           ParseConfig(_ini);
+
+        if (!_block.Enabled || !_block.IsFunctional || !_block.IsWorking || _fakeBlock.GridResourceDistributor.ResourceState == MyResourceStateEnum.NoPower)
+          return;
+
+        if (AiSession.Instance.BotNumber >= AiSession.Instance.MaxBots || AiSession.Instance.Players.Count == 0 || !AiSession.Instance.CanSpawn)
+          return;
+
+        if (AiSession.Instance.FutureBotQueue.Count > 0) // make sure we spawn all saved helpers first
+          return;
 
         if (_currentSpawnCount >= _maxSimultaneousSpawns || AiSession.Instance.GlobalSpawnTimer < 60 || (_hasSpawned && CheckSpawnTimer()))
           return;
@@ -450,7 +547,7 @@ namespace AiEnabled.GameLogic
           else
             list.Clear();
 
-          _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(list);
+          _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(list);
 
           MyCubeGrid biggest = _block.CubeGrid as MyCubeGrid;
           foreach (var g in list)
@@ -532,6 +629,58 @@ namespace AiEnabled.GameLogic
   
               color = ColorExtensions.FromHtml(roleAndColor.Value);
             }
+            else
+            {
+              switch (botType)
+              {
+                case "Police_Bot":
+                  color = ColorExtensions.FromHtml(_soldierColor);
+                  break;
+                case "Space_Zombie":
+                  color = ColorExtensions.FromHtml(_zombieColor);
+                  break;
+                case "Space_Skeleton":
+                  color = ColorExtensions.FromHtml(_grinderColor);
+                  break;
+                default:
+                  color = null;
+                  break;
+              }
+            }
+
+            string toolType = null;
+            if (_weaponSubtypes.Count > 0)
+            {
+              bool setTool = false;
+              if (!string.IsNullOrWhiteSpace(role))
+                setTool = role.Equals("soldier", StringComparison.OrdinalIgnoreCase);
+              else
+                setTool = (botType == "Police_Bot");
+
+              if (setTool)
+              {
+                var random = MyUtils.GetRandomInt(0, 101);
+                var num = -1;
+
+                for (int i = 0; i < _weaponSubtypes.Count; i++)
+                {
+                  var weapon = _weaponSubtypes[i];
+
+                  if (random > weapon.UseChanceThreshold)
+                  {
+                    if (weapon.UseChanceThreshold > num)
+                    {
+                      num = weapon.UseChanceThreshold;
+                      toolType = weapon.Subtype;
+                    }
+                    else if (weapon.UseChanceThreshold == num && MyUtils.GetRandomInt(0, 10) > 5)
+                    {
+                      toolType = weapon.Subtype;
+                    }
+                  }
+                }
+              }
+            }
 
             var intVecFwd = -Base6Directions.GetIntVector(_block.Orientation.Forward);
             var localPoint = _block.Position + intVecFwd;
@@ -542,7 +691,7 @@ namespace AiEnabled.GameLogic
             var spawnPoint = _block.CubeGrid.GridIntegerToWorld(localPoint);
             var posOr = new MyPositionAndOrientation(spawnPoint, (Vector3)_block.WorldMatrix.Backward, (Vector3)_block.WorldMatrix.Up);
 
-            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid, role, color: color);
+            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid, role, toolType, color: color);
             if (bot != null)
             {
               AiSession.Instance.GlobalSpawnTimer = 0;

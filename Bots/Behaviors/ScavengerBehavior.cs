@@ -12,7 +12,16 @@ namespace AiEnabled.Bots.Behaviors
   {
     public ScavengerBehavior(IMyCharacter bot) : base(bot)
     {
-      // TODO
+      Phrases.Add("RoboDogBark001");
+      Phrases.Add("RoboDogBark002");
+      Phrases.Add("RoboDogBark003");
+      Phrases.Add("RoboDogSnarl001");
+      //Phrases.Add("RoboDogPant001");
+      //Phrases.Add("RoboDogSniff001");
+
+      Actions.Add("RoboDog_Sitting");
+      Actions.Add("RoboDog_Digging");
+      Actions.Add("RoboDog_Spinning");
     }
   }
 }

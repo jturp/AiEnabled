@@ -83,6 +83,12 @@ namespace AiEnabled.Networking
         var pkt = new MessagePacket($"Bot was null after creation!");
         netHandler.SendToPlayer(pkt, SenderId);
       }
+      else
+      {
+        BotBase b;
+        if (AiSession.Instance.Bots.TryGetValue(bot.EntityId, out b) && b?.ToolDefinition != null)
+          b.AddWeapon();
+      }
 
       return false;
     }

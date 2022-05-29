@@ -18,6 +18,7 @@ namespace AiEnabled.Projectiles
     public int Duration;
     MyGunBase _gun;
     IMyEntity _tool;
+    IMyCharacter _bot;
     readonly List<ProjectileInfo.WeaponEffect> _effects = new List<ProjectileInfo.WeaponEffect>();
 
     public void Start(MyGunBase gun, IMyCharacter bot)
@@ -26,6 +27,7 @@ namespace AiEnabled.Projectiles
       //gun.CreateEffects(MyWeaponDefinition.WeaponEffectAction.Shoot);
 
       _gun = gun;
+      _bot = bot;
       _tool = bot.EquippedTool;
       _tool.OnMarkForClose += EquippedTool_OnMarkForClose;
       _tool.NeedsUpdate |= MyEntityUpdateEnum.EACH_FRAME;
@@ -43,6 +45,9 @@ namespace AiEnabled.Projectiles
         MyParticleEffect particle;
         var matrix = gun.GetMuzzleWorldMatrix();
         var position = gun.GetMuzzleWorldPosition();
+
+        matrix.Translation += bot.Physics.LinearVelocity / 60f;
+
         if (MyParticlesManager.TryCreateParticleEffect(eff.Particle, ref matrix, ref position, renderId, out particle) && particle.Loop)
         {
           var effect = AiSession.Instance.Projectiles.WeaponEffects.Count > 0 ? AiSession.Instance.Projectiles.WeaponEffects.Pop() : new ProjectileInfo.WeaponEffect();
@@ -68,6 +73,8 @@ namespace AiEnabled.Projectiles
       _tool.NeedsWorldMatrix = true;
 
       var matrix = _gun.GetMuzzleWorldMatrix();
+      matrix.Translation += _bot?.Physics != null ? _bot.Physics.LinearVelocity / 60f : Vector3.Zero;
+
       //var position = _gun.GetMuzzleWorldPosition();
 
       for (int i = 0; i < _effects.Count; i++)

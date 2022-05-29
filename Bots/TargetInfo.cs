@@ -69,10 +69,10 @@ namespace AiEnabled.Bots
         var cube = Entity as IMyCubeBlock;
         if (cube != null)
         {
-          if (cube is IMyDoor && !cube.IsFunctional && cube.SlimBlock != null)
+          var door = cube as IMyDoor;
+          if (door != null && !cube.IsFunctional && cube.SlimBlock != null)
           {
-            var blockDef = (MyCubeBlockDefinition)cube.SlimBlock.BlockDefinition;
-            return cube.SlimBlock.BuildLevelRatio < blockDef.CriticalIntegrityRatio;
+            return door.SlimBlock.IsBlockUnbuilt();
           }
 
           var stator = cube as IMyMotorStator;
@@ -368,7 +368,7 @@ namespace AiEnabled.Bots
             else
               gridList.Clear();
 
-            turretGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridList);
+            turretGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridList);
 
             MyCubeGrid biggest = cube.CubeGrid as MyCubeGrid;
             foreach (var g in gridList)

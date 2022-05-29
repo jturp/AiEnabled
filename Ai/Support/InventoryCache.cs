@@ -43,7 +43,6 @@ namespace AiEnabled.Ai.Support
     ConcurrentDictionary<IMyInventory, List<MyInventoryItem>> _inventories = new ConcurrentDictionary<IMyInventory, List<MyInventoryItem>>();
     ConcurrentDictionary<Vector3I, IMyTerminalBlock> _inventoryPositions = new ConcurrentDictionary<Vector3I, IMyTerminalBlock>(Vector3I.Comparer);
     Dictionary<string, float> _itemCounts = new Dictionary<string, float>(); // component subtype to count
-    Dictionary<string, int> _missingComps = new Dictionary<string, int>();
     HashSet<Vector3I> _terminals = new HashSet<Vector3I>(Vector3I.Comparer);
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     ParallelTasks.Task _task;
@@ -75,7 +74,6 @@ namespace AiEnabled.Ai.Support
       _inventories.Clear();
       _inventoryPositions.Clear();
       _itemCounts.Clear();
-      _missingComps.Clear();
       _terminals.Clear();
       _invItems.Clear();
     }
@@ -114,9 +112,6 @@ namespace AiEnabled.Ai.Support
       _terminals?.Clear();
       _terminals = null;
 
-      _missingComps?.Clear();
-      _missingComps = null;
-
       _itemCounts?.Clear();
       _itemCounts = null;
 
@@ -146,8 +141,7 @@ namespace AiEnabled.Ai.Support
           continue;
 
         var block = kvp.Value.SlimBlock;
-        var blockDef = (MyCubeBlockDefinition)block.BlockDefinition;
-        if (block.BuildLevelRatio < blockDef.CriticalIntegrityRatio)
+        if (block.IsBlockUnbuilt())
           continue;
 
         var dist = Vector3I.DistanceManhattan(node, localBot);
@@ -169,24 +163,39 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      _missingComps.Clear();
-      block.GetMissingComponents(_missingComps);
+      Dictionary<string, int> missingComps;
+      if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
+      {
+        missingComps = new Dictionary<string, int>();
+      }
 
-      if (_missingComps.Count == 0)
+      bool valid = true;
+
+      missingComps.Clear();
+      block.GetMissingComponents(missingComps);
+
+      if (missingComps.Count == 0)
       {
         var myGrid = block.CubeGrid as MyCubeGrid;
         var projector = myGrid?.Projector as IMyProjector;
         if (projector?.CanBuild(block, true) == BuildCheckResult.OK)
         {
-          block.GetMissingComponentsProjected(_missingComps, null);
-          if (_missingComps.Count == 0)
-            return false;
+          block.GetMissingComponentsProjected(missingComps, null);
+          if (missingComps.Count == 0)
+            valid = false;
         }
         else
-          return false;
+          valid = false;
       }
 
-      foreach (var kvp in _missingComps)
+      if (!valid)
+      {
+        missingComps.Clear();
+        AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+        return false;
+      }
+
+      foreach (var kvp in missingComps)
       {
         float needed = kvp.Value;
 
@@ -201,11 +210,14 @@ namespace AiEnabled.Ai.Support
         ItemCounts.TryGetValue(kvp.Key, out num);
         if (num < needed)
         {
-          return false;
+          valid = false;
+          break;
         }
       }
 
-      return true;
+      missingComps.Clear();
+      AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+      return valid;
     }
 
     void RemoveItemsInternal(WorkData workData)
@@ -291,26 +303,41 @@ namespace AiEnabled.Ai.Support
         return;
       }
 
-      _missingComps.Clear();
-      block.GetMissingComponents(_missingComps);
+      Dictionary<string, int> missingComps;
+      if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
+      {
+        missingComps = new Dictionary<string, int>();
+      }
 
-      if (_missingComps.Count == 0)
+      bool valid = true;
+
+      missingComps.Clear();
+      block.GetMissingComponents(missingComps);
+
+      if (missingComps.Count == 0)
       {
         var myGrid = block.CubeGrid as MyCubeGrid;
         var projector = myGrid?.Projector as IMyProjector;
         if (projector?.CanBuild(block, true) == BuildCheckResult.OK)
         {
-          block.GetMissingComponentsProjected(_missingComps, null);
-          if (_missingComps.Count == 0)
-            return;
+          block.GetMissingComponentsProjected(missingComps, null);
+          if (missingComps.Count == 0)
+            valid = false;
         }
         else
-          return;
+          valid = false;
+      }
+
+      if (!valid)
+      {
+        missingComps.Clear();
+        AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+        return;
       }
 
       var myBotInv = botInv as MyInventory;
 
-      foreach (var kvp in _missingComps)
+      foreach (var kvp in missingComps)
       {
         float needed = kvp.Value;
 
@@ -378,6 +405,9 @@ namespace AiEnabled.Ai.Support
           }
         }
       }
+
+      missingComps.Clear();
+      AiSession.Instance.MissingCompsDictStack.Push(missingComps);
     }
 
     void RemoveItemsComplete(WorkData workData)
@@ -432,7 +462,7 @@ namespace AiEnabled.Ai.Support
       else
         gridList.Clear();
 
-      Grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridList);
+      Grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridList);
 
       for (int i = gridList.Count - 1; i >= 0; i--)
       {

@@ -34,7 +34,7 @@ namespace AiEnabled.Ai.Support
     internal ConcurrentDictionary<Vector3I, byte> ObstacleNodesTemp = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
     internal ConcurrentDictionary<Vector3I, byte> TempBlockedNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
     internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
-    //internal ConcurrentDictionary<Vector3I, Node> OpenTileDict = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
+
     internal bool GraphLocked, GraphHasTunnel = false;
     byte _refreshTimer;
 
@@ -564,7 +564,7 @@ namespace AiEnabled.Ai.Support
 
     public abstract bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false);
 
-    public abstract bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false);
+    public abstract bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true);
 
     public abstract bool GetRandomNodeNearby(BotBase bot, Vector3D targetPosition, out Vector3I node);
 
@@ -871,6 +871,27 @@ namespace AiEnabled.Ai.Support
 
       AiSession.StorageStack.Push(tmpStorage);
       return num13 + (num14 - num13) * r.Z >= sbyte.MaxValue;
+    }
+
+    public bool LineIntersectsVoxel(Vector3D from, Vector3D to, MyVoxelBase voxel)
+    {
+      if (voxel == null || voxel.MarkedForClose)
+        return false;
+
+      if (PointInsideVoxel(from, voxel) || PointInsideVoxel(to, voxel))
+        return true;
+
+      var line = new LineD(from, to);
+      var num = Math.Floor(line.Length);
+
+      for (int i = 1; i < num; i++)
+      {
+        var point = from + line.Direction * i;
+        if (PointInsideVoxel(point, voxel))
+          return true;
+      }
+
+      return false;
     }
 
     public virtual void Close()

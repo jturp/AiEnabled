@@ -14,7 +14,11 @@ namespace AiEnabled.Networking
     public SettingRequestPacket() { }
     public override bool Received(NetworkHandler netHandler)
     {
-      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers, AiSession.Instance.ModSaveData.MaxBotProjectileDistance, AiSession.Instance.AllowMusic);
+      var repairReqs = AiSession.Instance.BotComponents[AiSession.BotType.Repair];
+      var combatReqs = AiSession.Instance.BotComponents[AiSession.BotType.Combat];
+      var scavReqs = AiSession.Instance.BotComponents[AiSession.BotType.Scavenger];
+
+      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers, AiSession.Instance.ModSaveData.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, repairReqs, combatReqs, scavReqs);
       netHandler.SendToPlayer(pkt, SenderId);
 
       return false;

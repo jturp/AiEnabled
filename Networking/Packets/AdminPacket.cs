@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.ConfigData;
 using AiEnabled.Support;
 
 using ProtoBuf;
@@ -26,21 +27,32 @@ namespace AiEnabled.Networking
     [ProtoMember(9)] bool? AllowMusic;
     [ProtoMember(10)] bool? AllowEnemyFlight;
     [ProtoMember(11)] bool? ShowHealthBars;
+    [ProtoMember(12)] bool? AllowNeutralTargets;
+    [ProtoMember(13)] bool? IsBotMultiplier;
+    [ProtoMember(14)] float? DamageMultiplier;
+    [ProtoMember(15)] List<SerialId> RepairBotRequirements;
+    [ProtoMember(16)] List<SerialId> CombatBotRequirements;
+    [ProtoMember(17)] List<SerialId> ScavengerBotRequirements;
+
 
     public AdminPacket() { }
 
-    public AdminPacket(bool allowMusic, bool? allowEnemyFlight)
+    public AdminPacket(bool allowMusic, bool? allowEnemyFlight, bool? allowNeutral)
     {
       AllowMusic = allowMusic;
       AllowEnemyFlight = allowEnemyFlight;
+      AllowNeutralTargets = allowNeutral;
     }
 
-    public AdminPacket(int numBots, int numHelpers, int projectileDistance, bool allowMusic)
+    public AdminPacket(int numBots, int numHelpers, int projectileDistance, bool allowMusic, List<SerialId> repairReqs, List<SerialId> combatReqs, List<SerialId> scavengerReqs)
     {
       MaxBots = numBots;
       MaxHelpers = numHelpers;
       MaxProjectileDistance = projectileDistance;
       AllowMusic = allowMusic;
+      RepairBotRequirements = repairReqs;
+      CombatBotRequirements = combatReqs;
+      ScavengerBotRequirements = scavengerReqs;
     }
 
     public AdminPacket(long identityId, bool showHealthBars)
@@ -61,6 +73,12 @@ namespace AiEnabled.Networking
       MaxHuntDistanceEnemy = maxHuntE;
       MaxHuntDistanceFriendly = maxHuntF;
       MaxProjectileDistance = maxBulletDist;
+    }
+
+    public AdminPacket(float damageMultiplier, bool isBotMulti)
+    {
+      DamageMultiplier = damageMultiplier;
+      IsBotMultiplier = isBotMulti;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -110,8 +128,18 @@ namespace AiEnabled.Networking
 
           if (AllowEnemyFlight.HasValue)
             AiSession.Instance.ModSaveData.AllowEnemiesToFly = AllowEnemyFlight.Value;
+
+          if (AllowNeutralTargets.HasValue)
+            AiSession.Instance.ModSaveData.AllowNeutralTargets = AllowNeutralTargets.Value;
   
           AiSession.Instance.SaveModData(true);
+        }
+        else if (DamageMultiplier.HasValue)
+        {
+          if (IsBotMultiplier == true)
+            AiSession.Instance.ModSaveData.BotDamageModifier = DamageMultiplier.Value;
+          else
+            AiSession.Instance.ModSaveData.PlayerDamageModifier = DamageMultiplier.Value;
         }
         else if (ShowHealthBars.HasValue && PlayerId > 0)
         {
@@ -140,16 +168,28 @@ namespace AiEnabled.Networking
         else
           AiSession.Instance.CheckControllerForPlayer(PlayerId.Value, 0L);
       }
-      else if (MaxBots >= 0 && MaxHelpers >= 0 && AiSession.Instance?.PlayerMenu != null)
+      else if (MaxBots >= 0 && MaxHelpers >= 0 && AiSession.Instance != null)
       {
-        AiSession.Instance.PlayerMenu.UpdateMaxBots(MaxBots.Value);
-        AiSession.Instance.PlayerMenu.UpdateMaxHelpers(MaxHelpers.Value);
+        if (AiSession.Instance.PlayerMenu != null)
+        {
+          AiSession.Instance.PlayerMenu.UpdateMaxBots(MaxBots.Value);
+          AiSession.Instance.PlayerMenu.UpdateMaxHelpers(MaxHelpers.Value);
+        }
+        else
+        {
+          AiSession.Instance.MaxBots = MaxBots.Value;
+          AiSession.Instance.MaxHelpers = MaxHelpers.Value;
+        }
 
         if (MaxProjectileDistance.HasValue)
           AiSession.Instance.MaxBotProjectileDistance = MaxProjectileDistance.Value;
 
         if (AllowMusic.HasValue)
           AiSession.Instance.AllowMusic = AllowMusic.Value;
+
+        AiSession.Instance.BotComponents[AiSession.BotType.Repair] = RepairBotRequirements ?? new List<SerialId>();
+        AiSession.Instance.BotComponents[AiSession.BotType.Combat] = CombatBotRequirements ?? new List<SerialId>();
+        AiSession.Instance.BotComponents[AiSession.BotType.Scavenger] = ScavengerBotRequirements ?? new List<SerialId>();
       }
 
       return false;

@@ -25,6 +25,7 @@ using System.Diagnostics;
 using VRage.ModAPI;
 using Sandbox.Definitions;
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
+using AiEnabled.Utilities;
 
 namespace AiEnabled.Ai.Support
 {
@@ -420,15 +421,15 @@ namespace AiEnabled.Ai.Support
           {
             Vector3D? hit = null;
 
-            if (Graph.RootVoxel != null)
-            {
-              var line = new LineD(worldCurrent, gotoPosition);
+            //if (Graph.RootVoxel != null)
+            //{
+            //  var line = new LineD(worldCurrent, gotoPosition);
 
-              using (Graph.RootVoxel.Pin())
-              {
-                Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
-              }
-            }
+            //  using (Graph.RootVoxel.Pin())
+            //  {
+            //    Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
+            //  }
+            //}
 
             if (!hit.HasValue)
             {
@@ -476,44 +477,44 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          if (Graph.RootVoxel != null)
-          {
-            if (!curPoint.HasValue)
-              curPoint = worldCurrent;
+          //if (Graph.RootVoxel != null)
+          //{
+          //  if (!curPoint.HasValue)
+          //    curPoint = worldCurrent;
 
-            if (!prevPoint.HasValue)
-              prevPoint = worldCurrent;
+          //  if (!prevPoint.HasValue)
+          //    prevPoint = worldCurrent;
 
-            using (Graph.RootVoxel.Pin())
-            {
-              Vector3D? hit = null;
+          //  using (Graph.RootVoxel.Pin())
+          //  {
+          //    Vector3D? hit = null;
 
-              if (!Vector3D.IsZero(curPoint.Value - worldNext))
-              {
-                var testLine = new LineD(curPoint.Value, worldNext);
-                if (Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
-                {
-                  // having to do this here instead of during map init because GetIntersectionWithLine isn't thread safe :(
+          //    if (!Vector3D.IsZero(curPoint.Value - worldNext))
+          //    {
+          //      var testLine = new LineD(curPoint.Value, worldNext);
+          //      if (Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
+          //      {
+          //        // having to do this here instead of during map init because GetIntersectionWithLine isn't thread safe :(
 
-                  gridGraph.AddToObstacles(prevPoint.Value, curPoint.Value, worldNext);
-                  findNewPath = true;
+          //        gridGraph.AddToObstacles(prevPoint.Value, curPoint.Value, worldNext);
+          //        findNewPath = true;
 
-                  ReturnTempNodes(PathToTarget);
-                  PathToTarget.Clear();
-                  break;
-                }
-              }
+          //        ReturnTempNodes(PathToTarget);
+          //        PathToTarget.Clear();
+          //        break;
+          //      }
+          //    }
 
-              if (!Vector3D.IsZero(worldCurrent - worldNext))
-              {
-                var line = new LineD(worldCurrent, worldNext);
-                if (Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
-                {
-                  break;
-                }
-              }
-            }
-          }
+          //    if (!Vector3D.IsZero(worldCurrent - worldNext))
+          //    {
+          //      var line = new LineD(worldCurrent, worldNext);
+          //      if (Graph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+          //      {
+          //        break;
+          //      }
+          //    }
+          //  }
+          //}
 
           if (checkY != 0)
             break;
@@ -653,13 +654,13 @@ namespace AiEnabled.Ai.Support
         {
           Vector3D? hit = null;
 
-          if (voxelGrid.RootVoxel != null)
-          {
-            var line = new LineD(worldCurrent, worldTarget);
+          //if (voxelGrid.RootVoxel != null)
+          //{
+          //  var line = new LineD(worldCurrent, worldTarget);
 
-            using (voxelGrid.RootVoxel.Pin())
-              voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
-          }
+          //  using (voxelGrid.RootVoxel.Pin())
+          //    voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
+          //}
 
           if (!hit.HasValue)
           {
@@ -695,38 +696,38 @@ namespace AiEnabled.Ai.Support
         if (Math.Abs(localVector.Y) > allowedDiff && (nextNode == null || !nextNode.IsAirNode))
           break;
 
-        if (voxelGrid.RootVoxel != null)
-        {
-          if (!curPoint.HasValue)
-          {
-            curPointNode = worldCurrentNode;
-            curPoint = worldCurrent;
-          }
+        //if (voxelGrid.RootVoxel != null)
+        //{
+        //  if (!curPoint.HasValue)
+        //  {
+        //    curPointNode = worldCurrentNode;
+        //    curPoint = worldCurrent;
+        //  }
 
-          if (!prevPoint.HasValue)
-            prevPoint = worldCurrentNode;
+        //  if (!prevPoint.HasValue)
+        //    prevPoint = worldCurrentNode;
 
-          Vector3D? hit;
-          var line = new LineD(worldCurrent, nextNodeWorld);
-          var testLine = new LineD(curPoint.Value, nextNodeWorld);
+        //  Vector3D? hit;
+        //  var line = new LineD(worldCurrent, nextNodeWorld);
+        //  var testLine = new LineD(curPoint.Value, nextNodeWorld);
 
-          using (voxelGrid.RootVoxel.Pin())
-          {
-            if (voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
-            {
-              voxelGrid.AddToObstacles(prevPoint.Value, curPointNode.Value, nextNodeWorld);
-              findNewPath = true;
+        //  using (voxelGrid.RootVoxel.Pin())
+        //  {
+        //    if (voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
+        //    {
+        //      voxelGrid.AddToObstacles(prevPoint.Value, curPointNode.Value, nextNodeWorld);
+        //      findNewPath = true;
 
-              ReturnTempNodes(PathToTarget);
-              PathToTarget.Clear();
-              break;
-            }
-            else if (voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
-            {
-              break;
-            }
-          }
-        }
+        //      ReturnTempNodes(PathToTarget);
+        //      PathToTarget.Clear();
+        //      break;
+        //    }
+        //    else if (voxelGrid.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+        //    {
+        //      break;
+        //    }
+        //  }
+        //}
 
         _temp.Clear();
         var nextTransformed = Vector3D.Transform(nextNodeWorld, voxelGrid.MatrixNormalizedInv);
@@ -960,7 +961,7 @@ namespace AiEnabled.Ai.Support
         foreach (var kvp in gridGraph.BlockedDoors)
         {
           var slim = kvp.Value.SlimBlock;
-          if (slim.BuildLevelRatio < ((MyCubeBlockDefinition)slim.BlockDefinition).CriticalIntegrityRatio)
+          if (slim.IsBlockUnbuilt())
           {
             gridGraph.Door_EnabledChanged(kvp.Value);
           }

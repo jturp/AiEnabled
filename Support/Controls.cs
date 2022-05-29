@@ -255,6 +255,58 @@ namespace AiEnabled.Support
         }
       }
 
+      var reqs = AiSession.Instance.BotComponents[botRole];
+      if (reqs?.Count > 0)
+      {
+        var blockInv = block.GetInventory() as MyInventory;
+
+        for (int i = 0; i < reqs.Count; i++)
+        {
+          var req = reqs[i];
+          var amount = req.Amount;
+
+          if (amount > 0)
+          {
+            var id = req.DefinitionId;
+            var def = AiSession.Instance.AllGameDefinitions[id];
+
+            var amountInBlock = (int)(blockInv?.GetItemAmount(id) ?? 0);
+            var amountInPlayer = (int)(inv?.GetItemAmount(id) ?? 0);
+            var needed = amount - amountInBlock - amountInPlayer;
+
+            if (needed > 0)
+            {
+              SetContextMessage(block, $"Missing {needed:#,###,###} {def?.DisplayNameText ?? id.SubtypeName}");
+              return;
+            }
+          }
+        }
+
+        for (int i = 0; i < reqs.Count; i++)
+        {
+          var req = reqs[i];
+          var amount = req.Amount;
+
+          if (amount > 0)
+          {
+            var id = req.DefinitionId;
+            var amountInBlock = (int)(blockInv?.GetItemAmount(id) ?? 0);
+            var amountInPlayer = (int)(inv?.GetItemAmount(id) ?? 0);
+
+            var amountToRemove = Math.Min(amount, amountInBlock);
+            blockInv?.RemoveItemsOfType((MyFixedPoint)amountToRemove, id);
+
+            amount -= amountToRemove;
+
+            if (amount > 0)
+            {
+              amountToRemove = Math.Min(amount, amountInPlayer);
+              inv.RemoveItemsOfType((MyFixedPoint)amountToRemove, id);
+            }
+          }
+        }
+      }
+
       var displayName = gameLogic.BotName?.ToString() ?? "";
       var needsName = string.IsNullOrWhiteSpace(displayName);
 
@@ -395,6 +447,7 @@ namespace AiEnabled.Support
       var pkt = new FactoryDismissPacket(helperInfo.HelperId, player.IdentityId);
       AiSession.Instance.Network.SendToServer(pkt);
 
+      gameLogic.SelectedHelper = null;
       SetContextMessage(block, $"Dismissing {helperInfo.DisplayName}...");
     }
 
@@ -602,7 +655,7 @@ namespace AiEnabled.Support
       var helpers = AiSession.Instance.MyHelperInfo;
       if (helpers == null || helpers.Count == 0)
       {
-        SetContextMessage(block, "You have no helpers...");
+        //SetContextMessage(block, "You have no helpers...");
         return;
       }
 
@@ -651,8 +704,8 @@ namespace AiEnabled.Support
       var helpers = AiSession.Instance.MyHelperInfo;
       if (helpers == null || helpers.Count == 0)
       {
-        gameLogic.ButtonPressed = true;
-        SetContextMessage(block, "You have no helpers...");
+        //gameLogic.ButtonPressed = true;
+        //SetContextMessage(block, "You have no helpers...");
         return 0L;
       }
 

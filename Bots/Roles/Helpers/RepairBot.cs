@@ -40,15 +40,16 @@ namespace AiEnabled.Bots.Roles.Helpers
     Dictionary<IMyProjector, IMyCubeGrid> _projectedGrids = new Dictionary<IMyProjector, IMyCubeGrid>();
     Dictionary<string, int> _missingComps = new Dictionary<string, int>();
     HashSet<MyDefinitionId> _builtBlocks = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
+    Dictionary<long, HashSet<Vector3I>> _repairedBlocks = new Dictionary<long, HashSet<Vector3I>>();
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     List<IMySlimBlock> _cubes = new List<IMySlimBlock>();
     BuildBotToolInfo _toolInfo = new BuildBotToolInfo();
 
     public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 1, 1, gridBase)
     {
+      BotType = AiSession.BotType.Repair;
       Owner = AiSession.Instance.Players[ownerId];
       Behavior = new WorkerBehavior(bot);
-      //ToolSubtype = toolType ?? "Welder2Item";
       var toolSubtype = toolType ?? "Welder2Item";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
@@ -93,7 +94,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
     }
 
-    internal override void Close(bool cleanConfig = false)
+    internal override void Close(bool cleanConfig = false, bool removeBot = true)
     {
       try
       {
@@ -113,6 +114,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _invItems?.Clear();
         _cubes?.Clear();
         _builtBlocks?.Clear();
+        _repairedBlocks?.Clear();
 
         _projectedGrids = null;
         _missingComps = null;
@@ -121,6 +123,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _cubes = null;
         _builtBlocks = null;
         _targetAction = null;
+        _repairedBlocks = null;
       }
       catch(Exception ex)
       {
@@ -128,7 +131,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       finally
       {
-        base.Close(cleanConfig);
+        base.Close(cleanConfig, removeBot);
       }
     }
 
@@ -167,7 +170,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     void SetTargetInternal()
     {
-      if (_currentGraph == null || Target == null || !WantsTarget)
+      if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || !WantsTarget)
         return;
 
       var character = Owner?.Character;
@@ -209,6 +212,9 @@ namespace AiEnabled.Bots.Roles.Helpers
       var botPosition = GetPosition();
       var botMatrix = WorldMatrix;
 
+      if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+        return;
+
       if (((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
       {
         if (isGridGraph && _pathCollection?.TempEntities != null) // path collection is null until first target assignment
@@ -247,11 +253,14 @@ namespace AiEnabled.Bots.Roles.Helpers
                 gridList.Clear();
 
               returnList = true;
-              graph.MainGrid?.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
+              graph.MainGrid?.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
             }
 
             for (int i = gridList.Count - 1; i >= 0; i--)
             {
+              if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+                return;
+
               var connectedGrid = gridList[i];
               if (connectedGrid?.Physics == null || ((MyCubeGrid)connectedGrid).IsPreview || connectedGrid.MarkedForClose)
                 continue;
@@ -294,7 +303,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                   if (CheckBotInventoryForItems(slim))
                   {
                     tgt = slim;
-                    graph.AddRepairTile(slimGridId, node, botId);
+                    graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
                     break;
                   }
                   else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
@@ -306,7 +315,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                       Target.SetInventory(inv);
 
                       tgt = slim;
-                      graph.AddRepairTile(slimGridId, node, botId);
+                      graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
                       isInventory = true;
                     }
                     break;
@@ -384,13 +393,16 @@ namespace AiEnabled.Bots.Roles.Helpers
                     var projectedWorld = projector.CubeGrid.GridIntegerToWorld(projectedLocal);
                     var node = mainGrid.WorldToGridInteger(projectedWorld);
 
+                    if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+                      return;
+
                     Vector3I closestNode;
                     if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
                     {
                       if (CheckBotInventoryForItems(slim))
                       {
                         tgt = slim;
-                        graph.AddRepairTile(slimGridId, projectedLocal, botId);
+                        graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
                         break;
                       }
                       else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
@@ -402,7 +414,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                           Target.SetInventory(inv);
 
                           tgt = slim;
-                          graph.AddRepairTile(slimGridId, projectedLocal, botId);
+                          graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
                           isInventory = true;
                         }
                         break;
@@ -438,13 +450,16 @@ namespace AiEnabled.Bots.Roles.Helpers
                     var projectedWorld = projectedGrid.GridIntegerToWorld(projectedLocal);
                     var node = mainGrid.WorldToGridInteger(projectedWorld);
 
+                    if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+                      return;
+
                     Vector3I closestNode;
                     if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
                     {
                       if (CheckBotInventoryForItems(slim))
                       {
                         tgt = slim;
-                        graph.AddRepairTile(slimGridId, projectedLocal, botId);
+                        graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
                         break;
                       }
                       else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
@@ -456,7 +471,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                           Target.SetInventory(inv);
 
                           tgt = slim;
-                          graph.AddRepairTile(slimGridId, projectedLocal, botId);
+                          graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
                           isInventory = true;
                         }
                         break;
@@ -475,9 +490,12 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (tgt == null)
       {
+        if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+          return;
+
         if (isGridGraph)
         {
-          graph.RemoveRepairTiles(Character.EntityId);
+          graph.RemoveRepairTiles(_repairedBlocks);
         }
 
         var floatingObj = Target.Entity as MyFloatingObject;
@@ -532,6 +550,9 @@ namespace AiEnabled.Bots.Roles.Helpers
                 }
                 break;
               }
+
+              if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+                break;
 
               var floaterPos = floater.PositionComp.GetPosition();
               if (_currentGraph.IsPositionValid(floaterPos))
@@ -622,40 +643,69 @@ namespace AiEnabled.Bots.Roles.Helpers
         return false;
       }
 
-      _missingComps.Clear();
-      block.GetMissingComponents(_missingComps);
-      if (_missingComps.Count == 0)
+      var gridGraph = _currentGraph as CubeGridMap;
+      if (gridGraph == null)
+      {
+        return false;
+      }
+
+      Dictionary<string, int> missingComps;
+      if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
+      {
+        missingComps = new Dictionary<string, int>();
+      }
+
+      bool valid = true;
+      bool returnNow = false;
+
+      missingComps.Clear();
+      block.GetMissingComponents(missingComps);
+      if (missingComps.Count == 0)
       {
         var myGrid = block.CubeGrid as MyCubeGrid;
         var projector = myGrid?.Projector as IMyProjector;
         if (projector?.CanBuild(block, true) == BuildCheckResult.OK)
         {
-          if (!block.GetMissingComponentsProjected(_missingComps, inv))
-            return false;
-
-          if (_missingComps.Count == 0)
-            return true;
+          if (!block.GetMissingComponentsProjected(missingComps, inv))
+          {
+            valid = false;
+          }
+          else if (missingComps.Count == 0)
+          {
+            returnNow = true;
+          }
         }
         else
-          return true;
+        {
+          returnNow = true;
+        }
       }
 
-      _invItems.Clear();
-      inv.GetItems(_invItems);
-
-      if (_invItems.Count == 0)
+      if (valid && !returnNow)
       {
-        return false;
+        _invItems.Clear();
+        inv.GetItems(_invItems);
+
+        valid = _invItems.Count > 0;
       }
 
-      foreach (var kvp in _missingComps)
+      if (!valid || returnNow)
+      {
+        missingComps.Clear();
+        AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+        return valid;
+      }
+
+      valid = false;
+
+      foreach (var kvp in missingComps)
       {
         for (int i = 0; i < _invItems.Count; i++)
         {
           var item = _invItems[i];
           if (item.Type.SubtypeId == kvp.Key)
           {
-            var amount =  item.Amount;
+            var amount = item.Amount;
             if (amount < 1)
             {
               VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
@@ -672,12 +722,19 @@ namespace AiEnabled.Bots.Roles.Helpers
                 inv.AddItems(1 - amount, obj);
               }
             }
-            return true;
+
+            valid = true;
+            break;
           }
         }
+
+        if (valid)
+          break;
       }
 
-      return false;
+      missingComps.Clear();
+      AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+      return valid;
     }
 
     int _ticks;
@@ -950,11 +1007,15 @@ namespace AiEnabled.Bots.Roles.Helpers
       var isProjection = projector?.CanBuild(block, true) == BuildCheckResult.OK;
       if (!isProjection)
       {
-        _missingComps.Clear();
-        block.GetMissingComponents(_missingComps);
+        var gridGraph = _currentGraph as CubeGridMap;
+        if (gridGraph != null)
+        {
+          _missingComps.Clear();
+          block.GetMissingComponents(_missingComps);
 
-        if (_missingComps.Count == 0 && !block.HasDeformation && block.GetBlockHealth() >= 1)
-          return false;
+          if (_missingComps.Count == 0 && !block.HasDeformation && block.GetBlockHealth() >= 1)
+            return false;
+        }
       }
       else if (projector != null)
       {
@@ -1170,6 +1231,13 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       var gun = Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>;
       if (gun == null)
+        return false;
+
+      //MyGunStatusEnum gunStatus;
+      //if (!gun.CanShoot(MyShootActionEnum.PrimaryAction, Character.ControllerInfo.ControllingIdentityId, out gunStatus))
+      //  return false;
+
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, CastHax(MySessionComponentSafeZones.AllowedActions, 8)))
         return false;
 
       if (MyAPIGateway.Multiplayer.MultiplayerActive)

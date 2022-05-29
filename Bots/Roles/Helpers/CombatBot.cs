@@ -18,6 +18,8 @@ using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
+using SpaceEngineers.Game.ModAPI;
+
 using VRage;
 using VRage.Game;
 using VRage.Game.Entity;
@@ -41,6 +43,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     public CombatBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 3, 10, gridBase)
     {
+      BotType = AiSession.BotType.Combat;
       Owner = AiSession.Instance.Players[ownerId];
       Behavior = new FriendlyBehavior(bot);
       var toolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
@@ -138,12 +141,10 @@ namespace AiEnabled.Bots.Roles.Helpers
           AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
 
           if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
-          //if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "NATO_5p56x45mm";
           }
           else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
-          //else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "Missile200mm";
           }
@@ -159,7 +160,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
         var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
         var amountThatFits = ((MyInventory)inventory).ComputeAmountThatFits(ammoDefinition);
-        var amount = MyFixedPoint.Min(amountThatFits, 25);
+        var amount = Math.Min((int)amountThatFits, 25);
 
         if (inventory.CanItemsBeAdded(amount, ammoDefinition))
         {
@@ -318,9 +319,23 @@ namespace AiEnabled.Bots.Roles.Helpers
       else if (Target.Entity != null && HasLineOfSight)
       {
         // if the current target is viable there's not reason to keep trying to switch targets
-        var ch = Target.Entity as IMyCharacter;
-        if (ch != null && ch.EntityId != character.EntityId && Vector3D.DistanceSquared(ch.WorldAABB.Center, botPosition) < 3000)
-          return;
+        var ent = Target.Entity as IMyEntity;
+        if (ent != null && !ent.MarkedForClose && ent.EntityId != character.EntityId)
+        {
+          var maxRange = (double)AiSession.Instance.ModSaveData.MaxBotHuntingDistanceFriendly * 0.5;
+          if (Vector3D.DistanceSquared(ent.WorldAABB.Center, botPosition) < maxRange * maxRange)
+          {
+            var cube = ent as MyCubeBlock;
+
+            if (cube != null)
+            {
+              if (cube.IsFunctional && !cube.SlimBlock.IsBlockUnbuilt())
+                return;
+            }
+            else
+              return;
+          }
+        }
       }
 
       List<IHitInfo> hitList;
@@ -335,9 +350,9 @@ namespace AiEnabled.Bots.Roles.Helpers
       else
         entities.Clear();
 
-      List<MyEntity> gridTurrets;
-      if (!AiSession.Instance.EntListStack.TryPop(out gridTurrets))
-        gridTurrets = new List<MyEntity>();
+      List<MyEntity> blockTargets;
+      if (!AiSession.Instance.EntListStack.TryPop(out blockTargets))
+        blockTargets = new List<MyEntity>();
 
       List<IMyCubeGrid> gridGroups;
       if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups))
@@ -376,7 +391,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       IMyEntity tgt = null;
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
-      var ownerId = Owner?.IdentityId ?? Character.ControllerInfo.ControllingIdentityId;
+      var ownerId = Owner?.IdentityId ?? character.ControllerInfo.ControllingIdentityId;
 
       for (int i = 0; i < entities.Count; i++)
       {
@@ -431,7 +446,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             MyAdminSettingsEnum adminSettings;
             if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
             {
-              if ((adminSettings & MyAdminSettingsEnum.Invulnerable) != 0 || (adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+              if ((adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
               {
                 continue;
               }
@@ -539,9 +554,9 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (grid.IsPreview || grid.MarkedAsTrash || grid.MarkedForClose || checkedGridIDs.Contains(grid.EntityId))
             continue;
 
-          gridTurrets.Clear();
+          blockTargets.Clear();
           gridGroups.Clear();
-          grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroups);
+          grid.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridGroups);
           var thisGridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0;
 
           foreach (var g in gridGroups)
@@ -587,6 +602,7 @@ namespace AiEnabled.Bots.Roles.Helpers
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncher), 0) > 0
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncherReload), 0) > 0
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallGatlingGun), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_TurretControlBlock), 0) > 0
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorStator), 0) > 0
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorAdvancedStator), 0) > 0));
 
@@ -599,44 +615,51 @@ namespace AiEnabled.Bots.Roles.Helpers
                 if (b == null || b.MarkedForClose)
                   continue;
 
+                if (!b.IsWorking || b.SlimBlock.IsBlockUnbuilt())
+                  continue;
+
                 var stator = b as IMyMotorStator;
                 if (stator != null)
                 {
-                  if (!stator.MarkedForClose && stator.Enabled && stator.TopGrid != null)
-                    gridTurrets.Add(b);
+                  if (stator.Enabled && stator.TopGrid != null)
+                    blockTargets.Add(b);
                 }
-                else if (b.IsWorking && (AiSession.Instance.AllCoreWeaponDefinitions.Contains(b.BlockDefinition.Id)
-                  || b is IMyMotorStator || b is IMyLargeTurretBase || b is IMySmallGatlingGun
-                  || b is IMySmallMissileLauncher || b is IMySmallMissileLauncherReload))
+                else if (AiSession.Instance.AllCoreWeaponDefinitions.Contains(b.BlockDefinition.Id)
+                  || b is IMyLargeTurretBase || b is IMySmallGatlingGun
+                  || b is IMySmallMissileLauncher || b is IMySmallMissileLauncherReload
+                  || b is IMyTurretControlBlock)
                 {
-                  gridTurrets.Add(b);
+                  blockTargets.Add(b);
                 }
               }
             }
           }
 
-          if (gridTurrets.Count > 0)
+          if (blockTargets.Count > 0)
           {
-            var dToTurret = double.MaxValue;
-            MyEntity turretEnt = null;
+            blockTargets.ShellSort(centerPoint);
 
             // check for weapons or rotors
-            for (int j = gridTurrets.Count - 1; j >= 0; j--)
+            for (int j = 0; j < blockTargets.Count; j++)
             {
-              var turret = gridTurrets[j];
+              var blockTgt = blockTargets[j];
+              var blockPos = blockTgt.PositionComp.WorldAABB.Center;
 
-              var d = Vector3D.DistanceSquared(turret.PositionComp.GetPosition(), botPosition);
-              if (d < dToTurret)
+              IHitInfo hit;
+              MyAPIGateway.Physics.CastRay(botPosition, blockPos, out hit, CollisionLayers.CharacterCollisionLayer);
+
+              var hitGrid = hit?.HitEntity as IMyCubeGrid;
+              if (hitGrid != null)
               {
-                turretEnt = turret;
-                dToTurret = d;
+                var allowedDistance = hitGrid.GridSizeEnum == MyCubeSize.Large ? 2.5 : 10;
+                var d = Vector3D.DistanceSquared(blockPos, hit.Position);
+                if (d < allowedDistance * allowedDistance)
+                {
+                  tgt = blockTgt;
+                  break;
+                }
               }
             }
-
-            if (turretEnt == null)
-              continue;
-
-            tgt = turretEnt;
           }
         }
         else
@@ -648,13 +671,13 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       hitList.Clear();
       entities.Clear();
-      gridTurrets.Clear();
+      blockTargets.Clear();
       gridGroups.Clear();
       checkedGridIDs.Clear();
 
       AiSession.Instance.HitListStack.Push(hitList);
       AiSession.Instance.EntListStack.Push(entities);
-      AiSession.Instance.EntListStack.Push(gridTurrets);
+      AiSession.Instance.EntListStack.Push(blockTargets);
       AiSession.Instance.GridGroupListStack.Push(gridGroups);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
 
@@ -698,7 +721,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       _pathCollection?.CleanUp(true);
     }
 
-    internal override void Close(bool cleanConfig = false)
+    internal override void Close(bool cleanConfig = false, bool removeBot = true)
     {
       try
       {
@@ -711,7 +734,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       finally
       {
-        base.Close(cleanConfig);
+        base.Close(cleanConfig, removeBot);
       }
     }
 
@@ -719,6 +742,13 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
       if (gun == null)
+        return false;
+
+      //MyGunStatusEnum gunStatus;
+      //if (!gun.CanShoot(MyShootActionEnum.PrimaryAction, Character.ControllerInfo.ControllingIdentityId, out gunStatus))
+      //  return false;
+
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
 
       var targetEnt = Target.Entity as IMyEntity;
@@ -742,7 +772,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           _randoms.Add(rand);
         }
 
-        bool isLauncher = ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher; // ToolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool isLauncher = ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher;
 
         if (isLauncher)
         {

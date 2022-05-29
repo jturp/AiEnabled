@@ -60,7 +60,7 @@ namespace AiEnabled.Bots.Roles
         _attackSoundStrings.Clear();
     }
 
-    internal override void Close(bool cleanConfig = false)
+    internal override void Close(bool cleanConfig = false, bool removeBot = true)
     {
       try
       {
@@ -73,7 +73,7 @@ namespace AiEnabled.Bots.Roles
       }
       finally
       {
-        base.Close(cleanConfig);
+        base.Close(cleanConfig, removeBot);
       }
     }
 

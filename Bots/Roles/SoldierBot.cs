@@ -111,12 +111,10 @@ namespace AiEnabled.Bots.Roles
           AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
 
           if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
-          //if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "NATO_5p56x45mm";
           }
           else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
-          //else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             ammoSubtype = "Missile200mm";
           }
@@ -132,7 +130,7 @@ namespace AiEnabled.Bots.Roles
 
         var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
         var amountThatFits = ((MyInventory)inventory).ComputeAmountThatFits(ammoDefinition);
-        var amount = MyFixedPoint.Min(amountThatFits, 10);
+        var amount = Math.Min((int)amountThatFits, 10);
 
         if (inventory.CanItemsBeAdded(amount, ammoDefinition))
         {
@@ -224,13 +222,19 @@ namespace AiEnabled.Bots.Roles
           {
             var inventory = Character.GetInventory();
             string ammoSubtype;
-            if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
-            //if (ToolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0)
+
+            var weaponDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "RapidFireAutomaticRifleItem");
+            var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(weaponDefinition) as MyWeaponItemDefinition;
+            if (weaponItemDef != null)
+            {
+              var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
+              ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
+            }
+            else if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
             {
               ammoSubtype = "NATO_5p56x45mm";
             }
             else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
-            //else if (ToolSubtype.IndexOf("launcher", StringComparison.OrdinalIgnoreCase) >= 0)
             {
               ammoSubtype = "Missile200mm";
             }
@@ -244,11 +248,13 @@ namespace AiEnabled.Bots.Roles
             }
 
             var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
+            var amountThatFits = ((MyInventory)inventory).ComputeAmountThatFits(ammoDefinition);
+            var amount = Math.Min((int)amountThatFits, 10);
 
-            if (inventory.CanItemsBeAdded(10, ammoDefinition))
+            if (inventory.CanItemsBeAdded(amount, ammoDefinition))
             {
               var ammo = (MyObjectBuilder_AmmoMagazine)MyObjectBuilderSerializer.CreateNewObject(ammoDefinition);
-              inventory.AddItems(10, ammo);
+              inventory.AddItems(amount, ammo);
             }
           }
           else if (Target.HasTarget && !(Character.Parent is IMyCockpit))
@@ -263,7 +269,7 @@ namespace AiEnabled.Bots.Roles
       return true;
     }
 
-    internal override void Close(bool cleanConfig = false)
+    internal override void Close(bool cleanConfig = false, bool removeBot = true)
     {
       try
       {
@@ -276,7 +282,7 @@ namespace AiEnabled.Bots.Roles
       }
       finally
       {
-        base.Close(cleanConfig);
+        base.Close(cleanConfig, removeBot);
       }
     }
 
@@ -284,6 +290,13 @@ namespace AiEnabled.Bots.Roles
     {
       var gun = Character?.EquippedTool as IMyHandheldGunObject<MyGunBase>;
       if (gun == null)
+        return false;
+
+      //MyGunStatusEnum gunStatus;
+      //if (!gun.CanShoot(MyShootActionEnum.PrimaryAction, Character.ControllerInfo.ControllingIdentityId, out gunStatus))
+      //  return false;
+
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
 
       var targetEnt = Target.Entity as IMyEntity;

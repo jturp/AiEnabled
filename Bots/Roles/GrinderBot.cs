@@ -20,6 +20,7 @@ using Sandbox.ModAPI.Weapons;
 using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.Game.ModAPI.Interfaces;
+using VRage.Game.ObjectBuilders.Components;
 using VRage.ModAPI;
 using VRage.ObjectBuilders;
 using VRage.Utils;
@@ -141,7 +142,9 @@ namespace AiEnabled.Bots.Roles
         if (_ticksSinceLastAttack >= 60)
         {
           _ticksSinceLastAttack = 0;
-          FireWeapon();
+
+          if (!FireWeapon())
+            return;
         }
 
         var tgtEnt = Target.Entity as IMyCharacter;
@@ -374,6 +377,13 @@ namespace AiEnabled.Bots.Roles
     {
       var gun = Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>;
       if (gun == null)
+        return false;
+
+      //MyGunStatusEnum gunStatus;
+      //if (!gun.CanShoot(MyShootActionEnum.PrimaryAction, Character.ControllerInfo.ControllingIdentityId, out gunStatus))
+      //  return false;
+
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, CastHax(MySessionComponentSafeZones.AllowedActions, 16)))
         return false;
 
       var targetEnt = Target.Entity as IMyEntity;

@@ -80,7 +80,7 @@ namespace AiEnabled.Bots.Roles
       };
     }
 
-    internal override void CleanUp(bool cleanConfig = false)
+    internal override void CleanUp(bool cleanConfig = false, bool removeBot = true)
     {
       try
       {
@@ -104,7 +104,7 @@ namespace AiEnabled.Bots.Roles
       }
       finally
       {
-        base.CleanUp(cleanConfig);
+        base.CleanUp(cleanConfig, removeBot);
       }
     }
 

@@ -39,7 +39,8 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     public const float DefaultCellSize = 1.25f;
 
-    ConcurrentDictionary<Vector3I, Node> _openTileDict = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
+    //ConcurrentDictionary<Vector3I, Node> _openTileDict = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
+    Dictionary<Vector3I, Node> _openTileDict = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
 
     public MatrixD MatrixNormalizedInv;
     readonly float _gridSizeR;
@@ -235,12 +236,14 @@ namespace AiEnabled.Ai.Support
       return false;
     }
 
-    public override bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false)
+    public override bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true)
     {
       node = testNode;
-      if (!currentIsDenied && _openTileDict.ContainsKey(node) && !Obstacles.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
+      Node n;
+      if (!currentIsDenied && _openTileDict.TryGetValue(node, out n) && !Obstacles.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
       {
-        return true;
+        if (allowAirNodes || !n.IsAirNode)
+          return true;
       }
 
       var center = node;
@@ -249,6 +252,9 @@ namespace AiEnabled.Ai.Support
 
       foreach (var point in Neighbors(bot, center, center, worldPosition, false, currentIsObstacle: true, up: up))
       {
+        if (!allowAirNodes && _openTileDict.TryGetValue(point, out n) && n.IsAirNode)
+          continue;
+
         var testPosition = LocalToWorld(point);
         var dist = Vector3D.DistanceSquared(testPosition, worldPosition);
 
@@ -464,7 +470,7 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      if (RootVoxel != null && Environment.CurrentManagedThreadId == AiSession.MainThreadId)
+      if (RootVoxel != null)
       {
         using (RootVoxel.Pin())
         {
@@ -483,11 +489,15 @@ namespace AiEnabled.Ai.Support
 
           var direction = Vector3D.Normalize(worldNext - worldCurrent);
           worldCurrent += direction * CellSize * 0.5;
-          var line = new LineD(worldCurrent, worldNext);
 
-          Vector3D? _;
-          if (RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out _))
+          if (LineIntersectsVoxel(worldCurrent, worldNext, RootVoxel))
             return false;
+
+          //var line = new LineD(worldCurrent, worldNext);
+
+          //Vector3D? _;
+          //if (RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out _))
+          //  return false;
         }
       }
 
@@ -551,10 +561,11 @@ namespace AiEnabled.Ai.Support
         var current = iter.Current;
         iter.MoveNext();
 
-        Node ptr;
-        byte b;
+        //Node ptr;
+        //_openTileDict.TryRemove(current, out ptr);
+        _openTileDict.Remove(current);
 
-        _openTileDict.TryRemove(current, out ptr);
+        byte b;
         ObstacleNodes.TryRemove(current, out b);
         Obstacles.TryRemove(current, out b);
       }

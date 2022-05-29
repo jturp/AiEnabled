@@ -43,7 +43,7 @@ namespace AiEnabled.Ai
           return;
         }
 
-        bool groundNodesFirst = AiSession.Instance.ModSaveData.EnforceGroundNodesFirst && !collection.Bot.RequiresJetpack;
+        bool groundNodesFirst = AiSession.Instance.ModSaveData.EnforceGroundPathingFirst && !collection.Bot.RequiresJetpack;
         bool pathFound = RunAlgorithm(start, goal, collection, groundNodesFirst);
 
         if (groundNodesFirst && !pathFound)
@@ -53,10 +53,11 @@ namespace AiEnabled.Ai
         }
 
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
-        if (collection.Dirty || currentMS > 15000)
+        var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
+        if (collection.Dirty || currentMS > maxTimeMS)
         {
-          if (currentMS > 15000)
-            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded 15000 ms", MessageType.WARNING);
+          if (currentMS > maxTimeMS)
+            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded {maxTimeMS} ms", MessageType.WARNING);
 
           collection.Locked = false;
           return;
@@ -124,6 +125,7 @@ namespace AiEnabled.Ai
       var gridGraph = graph as CubeGridMap;
       var stackedStairs = gridGraph?.StackedStairsFound;
       var botPosition = bot.GetPosition();
+      var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
       cameFrom.Clear();
       costSoFar.Clear();
@@ -142,10 +144,10 @@ namespace AiEnabled.Ai
       while (queue.Count > 0)
       {
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
-        if (collection.Dirty || currentMS > 15000)
+        if (collection.Dirty || currentMS > maxTimeMS)
         {
-          if (currentMS > 15000)
-            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded 15000 ms. Breaking out of RunAlgorithm", MessageType.WARNING);
+          if (currentMS > maxTimeMS)
+            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded {maxTimeMS} ms. Breaking out of RunAlgorithm", MessageType.WARNING);
 
           break;
         }
@@ -201,8 +203,7 @@ namespace AiEnabled.Ai
 
               if (!isOpen)
               {
-                var blockDef = (MyCubeBlockDefinition)door.SlimBlock.BlockDefinition;
-                if (door.SlimBlock.BuildLevelRatio < blockDef.CriticalIntegrityRatio)
+                if (door.SlimBlock.IsBlockUnbuilt())
                 {
                   isOpen = true;
                 }
@@ -320,12 +321,13 @@ namespace AiEnabled.Ai
       var path = collection.TempPath;
       var cache = collection.Cache;
       var optimizedCache = collection.Graph.OptimizedCache;
+      var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
       cache.Clear();
       Vector3I current = end;
       while (current != start)
       {
-        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
+        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > maxTimeMS)
         {
           return;
         }
@@ -344,7 +346,7 @@ namespace AiEnabled.Ai
 
         for (int i = cache.Count - 1; i >= 0; i--)
         {
-          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
+          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > maxTimeMS)
           {
             break;
           }
@@ -372,6 +374,7 @@ namespace AiEnabled.Ai
       var cache = collection.Cache;
       var optimizedCache = collection.Graph.OptimizedCache;
       var intermediatePoints = collection.IntermediatePoints;
+      var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
       cache.Clear();
       Vector3I previous = end;
@@ -379,7 +382,7 @@ namespace AiEnabled.Ai
       Vector3I next = end;
       while (current != start)
       {
-        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
+        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > maxTimeMS)
         {
           cache.Clear();
           return;
@@ -420,7 +423,7 @@ namespace AiEnabled.Ai
       // only happens when you start on a half stair.
       for (int i = intermediatePoints.Count - 1; i >= 0; i--)
       {
-        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
+        if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > maxTimeMS)
         {
           cache.Clear();
           return;
@@ -463,7 +466,7 @@ namespace AiEnabled.Ai
 
         for (int i = cache.Count - 1; i >= 0; i--)
         {
-          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > 15000)
+          if (collection.Dirty || collection.PathTimer.Elapsed.TotalMilliseconds > maxTimeMS)
           {
             break;
           }
@@ -1094,6 +1097,10 @@ namespace AiEnabled.Ai
                   var blockDwn = -gridMatrix.GetDirectionVector(blockBelowThis.Orientation.Up);
 
                   offset = (blockFwd * gridSize * 0.25f) + (blockDwn * gridSize * 0.25f);
+                }
+                else if (blockBelowThis.Orientation.Forward == Base6Directions.GetOppositeDirection(botDownDir) || blockBelowThis.Orientation.Up == botDownDir)
+                {
+                  offset = null;
                 }
                 else
                   offset = downTravelDir * gridSize * 0.5f;

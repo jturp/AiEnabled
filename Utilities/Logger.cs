@@ -33,7 +33,7 @@ namespace AiEnabled.Utilities
       _lines = new List<string>(10);
       _isClosed = false;
 
-      Log($"Log Started ({AiSession.Instance.VERSION})");
+      Log($"Log Started ({AiSession.VERSION})");
     }
 
     string DateTimeNow => DateTime.Now.ToString("[HH:mm:ss.fff]");

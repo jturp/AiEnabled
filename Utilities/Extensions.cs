@@ -21,7 +21,6 @@ using Sandbox.Engine.Multiplayer;
 using Sandbox.Game.Gui;
 using Sandbox.Game.GUI;
 using Sandbox.Game.World;
-using Sandbox.ModAPI.Ingame;
 using VRage.Game.ModAPI.Ingame.Utilities;
 using System.Collections.Concurrent;
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
@@ -301,6 +300,15 @@ namespace AiEnabled.Utilities
 
       distance = Math.Floor(Math.Sqrt(distance));
       return true;
+    }
+
+    public static bool IsBlockUnbuilt(this IMySlimBlock block)
+    {
+      if (block == null)
+        return false;
+
+      var blockDef = (MyCubeBlockDefinition)block.BlockDefinition;
+      return block.BuildLevelRatio < blockDef.CriticalIntegrityRatio;
     }
   }
 }

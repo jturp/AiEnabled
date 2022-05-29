@@ -28,6 +28,7 @@ using VRage.Voxels;
 using AiEnabled.API;
 using AiEnabled.Parallel;
 using VRage.Input;
+using AiEnabled.ConfigData;
 
 namespace AiEnabled
 {
@@ -297,6 +298,43 @@ namespace AiEnabled
       { BotType.Combat, 50000 },
     };
 
+    public Dictionary<BotType, List<SerialId>> BotComponents = new Dictionary<BotType, List<SerialId>>()
+    {
+      {
+        BotType.Repair, new List<SerialId>()
+        {
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 10),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SmallTube"), 2),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "LargeTube"), 2),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Motor"), 2),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Construction"), 15),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "MetalGrid"), 1),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "PowerCell"), 1),
+        }
+      },
+      {
+        BotType.Combat, new List<SerialId>()
+        {
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 20),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SmallTube"), 4),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "LargeTube"), 4),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Motor"), 5),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "BulletproofGlass"), 5),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Reactor"), 1),
+        }
+      },
+      {
+        BotType.Scavenger, new List<SerialId>()
+        {
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 5),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SmallTube"), 4),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Motor"), 2),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Detector"), 1),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "PowerCell"), 1),
+        }
+      },
+    };
+
     public Dictionary<BotType, string> BotDescriptions = new Dictionary<BotType, string>()
     {
       { BotType.Repair, "A simple helper bot. The Repair Bot is capable of manuevering around a grid and collecting dropped components to be placed in a container, as well as performing light welding duty for any blocks that may need it. It will pull components from containers on the same grid as needed." },
@@ -339,6 +377,7 @@ namespace AiEnabled
     public ConcurrentDictionary<long, List<long>> PlayerToActiveHelperIds = new ConcurrentDictionary<long, List<long>>(); // player identity to active bot entity id
     public ConcurrentDictionary<long, IMyFaction> BotFactions = new ConcurrentDictionary<long, IMyFaction>(); // player faction id to bot faction
     public ConcurrentDictionary<long, Vector3D> BotToSeatRelativePosition = new ConcurrentDictionary<long, Vector3D>();
+    public ConcurrentDictionary<long, MyOwnershipShareModeEnum> BotToSeatShareMode = new ConcurrentDictionary<long, MyOwnershipShareModeEnum>();
     public ConcurrentDictionary<long, TimeSpan> DoorsToClose = new ConcurrentDictionary<long, TimeSpan>(); // door entityId to timespan when opened
     public ConcurrentDictionary<long, CubeGridMap> GridGraphDict = new ConcurrentDictionary<long, CubeGridMap>();
     public ConcurrentDictionary<ulong, VoxelGridMap> VoxelGraphDict;
@@ -361,6 +400,7 @@ namespace AiEnabled
     public ConcurrentStack<List<CubeGridMap>> GridMapListStack = new ConcurrentStack<List<CubeGridMap>>();
     public ConcurrentStack<Vector3D[]> CornerArrayStack = new ConcurrentStack<Vector3D[]>();
     public ConcurrentStack<InventoryCache> InvCacheStack = new ConcurrentStack<InventoryCache>();
+    public ConcurrentStack<Dictionary<string, int>> MissingCompsDictStack = new ConcurrentStack<Dictionary<string, int>>();
     public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
 
@@ -370,9 +410,10 @@ namespace AiEnabled
     public Queue<FutureBotAPI> FutureBotAPIQueue = new Queue<FutureBotAPI>();
     public Queue<FutureBot> FutureBotQueue = new Queue<FutureBot>();
     public HashSet<long> AnalyzeHash = new HashSet<long>();
+    public Dictionary<MyDefinitionId, MyDefinitionBase> AllGameDefinitions = new Dictionary<MyDefinitionId, MyDefinitionBase>(MyDefinitionId.Comparer);
+    public List<MyDefinitionId> ScavengerItemList = new List<MyDefinitionId>();
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
     public List<IMySlimBlock> GridSeatsAPI = new List<IMySlimBlock>();
-    public List<MyDefinitionId> ComponentDefinitions = new List<MyDefinitionId>(); // TODO: Use this to randomize components "found" by scavenger bot
 
     Stack<WeaponInfo> _weaponInfoStack = new Stack<WeaponInfo>(20);
     Stack<IconInfo> _iconInfoStack = new Stack<IconInfo>(20);
@@ -394,6 +435,7 @@ namespace AiEnabled
     List<IMyPlayer> _tempPlayersAsync = new List<IMyPlayer>(16);
     List<IMyCharacter> _botCharsToClose = new List<IMyCharacter>();
     List<MyKeys> _keyPresses = new List<MyKeys>();
+    List<IMyIdentity> _identityList = new List<IMyIdentity>(100);
     Dictionary<long, long> _newPlayerIds = new Dictionary<long, long>(); // bot identityId to bot entityId
     HashSet<long> _iconRemovals = new HashSet<long>();
     HashSet<long> _hBarRemovals = new HashSet<long>();

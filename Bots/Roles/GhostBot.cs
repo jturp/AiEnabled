@@ -88,7 +88,7 @@ namespace AiEnabled.Bots.Roles
       };
     }
 
-    internal override void CleanUp(bool cleanConfig = false)
+    internal override void CleanUp(bool cleanConfig = false, bool removeBot = true)
     {
       if (!BugZapped && _particleInfo?.Bot != null)
       {
@@ -104,7 +104,7 @@ namespace AiEnabled.Bots.Roles
       _shiverSounds = null;
       _consumable = null;
       _particleInfo?.Close();
-      base.CleanUp();
+      base.CleanUp(cleanConfig, removeBot);
     }
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)

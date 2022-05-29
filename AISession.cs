@@ -74,34 +74,52 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public string VERSION = "v0.13b";
+    public const string VERSION = "v0.15b";
+    const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
     public int MaxHelpers = 2;
     public int MaxBotProjectileDistance = 150;
-    public int ControllerCacheNum = 20;
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
+    public bool AllowMusic;
 
     public int BotNumber => _robots?.Count ?? 0;
     public Logger Logger { get; protected set; }
     public bool Registered { get; protected set; }
-    public bool CanSpawn => Registered && _controllerInfo?.Count >= MIN_SPAWN_COUNT;
-    const int MIN_SPAWN_COUNT = 3;
+    public bool CanSpawn
+    {
+      get
+      {
+        if (!Registered || _controllerInfo == null || _controllerInfo.Count < MIN_SPAWN_COUNT || BotNumber >= MaxBots)
+          return false;
+
+        if (EemLoaded && !MyAPIGateway.Utilities.IsDedicated)
+        {
+          var first = _controllerInfo[0];
+          if (first?.Identity == null)
+            return false;
+
+          return MyAPIGateway.Players.TryGetSteamId(first.Identity.IdentityId) == 0;
+        }
+
+        return true;
+      }
+    }
 
     public bool FactoryControlsHooked;
     public bool FactoryControlsCreated;
     public bool FactoryActionsCreated;
     public bool IsServer, IsClient;
     public bool DrawDebug;
-    public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded;
+    public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded, EemLoaded;
     public bool InfiniteAmmoEnabled;
-    public MyStringHash ShieldHash = MyStringHash.GetOrCompute("DefenseShield");
 
     public List<HelperInfo> MyHelperInfo;
     public CommandMenu CommandMenu;
     public PlayerMenu PlayerMenu;
     public NetworkHandler Network;
     public SaveData ModSaveData;
+    public BotPricing ModPriceData;
     public PlayerData PlayerData;
     public Inputs Input;
     public ProjectileInfo Projectiles = new ProjectileInfo();
@@ -112,9 +130,14 @@ namespace AiEnabled
     public DefenseShieldsAPI ShieldAPI = new DefenseShieldsAPI();
     public WcApi WcAPI = new WcApi();
     LocalBotAPI _localBotAPI;
+
     IMyHudNotification _hudMsg;
-    bool _isControlBot;
     Vector3D _starterPosition;
+    bool _isControlBot;
+    int _controllerCacheNum = 20;
+    bool? _allowEnemyFlight, _allowNeutralTargets;
+    float? _botDamageMult, _playerDamageMult;
+    int _maxHuntEnemy, _maxHuntFriendly, _maxProjectile;
 
     public GridBase GetNewGraph(MyCubeGrid grid, Vector3D newGraphPosition, MatrixD worldMatrix)
     {
@@ -139,7 +162,7 @@ namespace AiEnabled
         gridGroup.Clear();
       }
 
-      grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroup);
+      grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
       foreach (var g in gridGroup)
       {
         if (g == null || g.MarkedForClose || g.EntityId == grid.EntityId || g.GridSizeEnum == MyCubeSize.Small)
@@ -324,7 +347,7 @@ namespace AiEnabled
       }
 
       if (_selectedBot != null)
-        MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
+        MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
 
       if (ModSaveData != null)
       {
@@ -416,6 +439,16 @@ namespace AiEnabled
         }
       }
 
+      if (BotComponents != null)
+      {
+        foreach (var kvp in BotComponents)
+        {
+          kvp.Value?.Clear();
+        }
+
+        BotComponents.Clear();
+      }
+
       if (ShieldAPILoaded)
       {
         ShieldAPILoaded = false;
@@ -440,7 +473,6 @@ namespace AiEnabled
       RepairWorkStack?.Clear();
       GraphWorkStack?.Clear();
       PathWorkStack?.Clear();
-      ComponentDefinitions?.Clear();
       InvCacheStack?.Clear();
       SlimListStack?.Clear();
       GridMapListStack?.Clear();
@@ -475,13 +507,18 @@ namespace AiEnabled
       RobotSubtypes?.Clear();
       UseObjectsAPI?.Clear();
       BotToSeatRelativePosition?.Clear();
+      BotToSeatShareMode?.Clear();
       ComponentInfoDict?.Clear();
       StorageStack?.Clear();
       AcceptedItemDict?.Clear();
       ItemOBDict?.Clear();
       PatrolListStack?.Clear();
       VoxelMapListStack?.Clear();
+      AllGameDefinitions?.Clear();
+      ScavengerItemList?.Clear();
+      MissingCompsDictStack?.Clear();
 
+      _identityList?.Clear();
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
       _gpsRemovals?.Clear();
@@ -507,7 +544,6 @@ namespace AiEnabled
       GraphWorkStack = null;
       PathWorkStack = null;
       BlockRepairDelays = null;
-      ComponentDefinitions = null;
       MapInitQueue = null;
       InvCacheStack = null;
       CornerArrayStack = null;
@@ -568,6 +604,7 @@ namespace AiEnabled
       CommandMenu = null;
       PlayerMenu = null;
       BotToSeatRelativePosition = null;
+      BotToSeatShareMode = null;
       ComponentInfoDict = null;
       StorageStack = null;
       VoxelGraphDict = null;
@@ -577,7 +614,12 @@ namespace AiEnabled
       ShieldAPI = null;
       PatrolListStack = null;
       VoxelMapListStack = null;
+      BotComponents = null;
+      AllGameDefinitions = null;
+      ScavengerItemList = null;
+      MissingCompsDictStack = null;
 
+      _identityList = null;
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
       _gpsRemovals = null;
@@ -625,7 +667,7 @@ namespace AiEnabled
         IsServer = MyAPIGateway.Multiplayer.IsServer;
         IsClient = !IsServer;
         MainThreadId = Environment.CurrentManagedThreadId;
-        ControllerCacheNum = Math.Max(20, MyAPIGateway.Session.MaxPlayers * 2);
+        _controllerCacheNum = Math.Max(20, MyAPIGateway.Session.MaxPlayers * 2);
 
         bool sessionOK = MyAPIGateway.Session != null;
         if (sessionOK && MyAPIGateway.Session.Mods?.Count > 0)
@@ -650,11 +692,43 @@ namespace AiEnabled
             {
               IndOverhaulLoaded = true;
             }
+            else if (mod.PublishedFileId == 531659576)
+            {
+              EemLoaded = true;
+
+              if (!MyAPIGateway.Utilities.IsDedicated)
+              {
+                Logger.Log($"EEM Mod found. Spawns will be delayed until EEM faction validation passes.");
+                MyAPIGateway.Utilities.ShowMessage("AiEnabled", "Spawns will be delayed until EEM faction validation passes.");
+              }
+            }
           }
         }
         else
         {
           Logger.Log($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}", MessageType.WARNING);
+        }
+
+        foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
+        {
+          if (def == null || !def.Public || def.Id.SubtypeName == "ZoneChip")
+            continue;
+
+          var compItem = def as MyComponentDefinition;
+          if (compItem != null)
+          {
+            if (compItem.AvailableInSurvival && compItem.CanSpawnFromScreen)
+              AllGameDefinitions[def.Id] = def;
+
+            continue;
+          }
+
+          //var physItem = def as MyPhysicalItemDefinition;
+          //if (physItem != null)
+          //{
+          //  if (physItem.IsIngot || physItem.IsOre)
+          //    AllGameDefinitions[def.Id] = def;
+          //}
         }
 
         if (IsServer)
@@ -666,6 +740,11 @@ namespace AiEnabled
             var subtype = def.Id.SubtypeName;
             AnimationControllerDictionary[subtype] = def.AnimationController;
             RobotSubtypes.Add(subtype);
+          }
+
+          foreach (var def in AllGameDefinitions)
+          {
+            ScavengerItemList.Add(def.Key);
           }
 
           if (sessionOK)
@@ -686,6 +765,62 @@ namespace AiEnabled
 
           VoxelGraphDict = new ConcurrentDictionary<ulong, VoxelGridMap>();
 
+          ModPriceData = Config.ReadFileFromWorldStorage<BotPricing>("BotPricing.cfg", typeof(BotPricing), Logger);
+          if (ModPriceData == null)
+          {
+            ModPriceData = new BotPricing();
+          }
+
+          if (ModPriceData.BotPrices == null)
+          {
+            ModPriceData.BotPrices = new List<BotPrice>();
+
+            foreach (var kvp in BotPrices)
+            {
+              var bp = new BotPrice
+              {
+                BotType = kvp.Key,
+                SpaceCredits = kvp.Value,
+                Components = BotComponents.GetValueOrDefault(kvp.Key, new List<SerialId>() { new SerialId() })
+              };
+
+              ModPriceData.BotPrices.Add(bp);
+            }
+          }
+          else
+          {
+            foreach (var botPrice in ModPriceData.BotPrices)
+            {
+              if (botPrice?.BotType != null && BotPrices.ContainsKey(botPrice.BotType.Value))
+              {
+                if (botPrice.Components?.Count > 0)
+                {
+                  var comps = BotComponents.GetValueOrDefault(botPrice.BotType.Value, new List<SerialId>());
+                  comps.Clear();
+
+                  foreach (var c in botPrice.Components)
+                  {
+                    var def = c.DefinitionId;
+
+                    if (!def.TypeId.IsNull && AllGameDefinitions.ContainsKey(def))
+                      comps.Add(c);
+                  }
+
+                  BotComponents[botPrice.BotType.Value] = comps;
+                }
+                else
+                {
+                  BotComponents[botPrice.BotType.Value]?.Clear();
+                }
+
+                if (botPrice.SpaceCredits.HasValue)
+                  BotPrices[botPrice.BotType.Value] = botPrice.SpaceCredits.Value;
+              }
+            }
+          }
+
+          Config.WriteFileToWorldStorage("BotPricing.cfg", typeof(BotPricing), ModPriceData, Logger);
+
           ModSaveData = Config.ReadFileFromWorldStorage<SaveData>("AiEnabled.cfg", typeof(SaveData), Logger);
           if (ModSaveData == null)
           {
@@ -700,13 +835,13 @@ namespace AiEnabled
             };
           }
 
-          if (ModSaveData.EnforceGroundNodesFirst)
+          if (ModSaveData.EnforceGroundPathingFirst)
             Logger.Log($"EnforceGroundNodesFirst is enabled. This is a use-at-your-own-risk option that may result in lag.", MessageType.WARNING);
 
           ModSaveData.MaxBotHuntingDistanceEnemy = Math.Max(50, Math.Min(1000, ModSaveData.MaxBotHuntingDistanceEnemy));
           ModSaveData.MaxBotHuntingDistanceFriendly = Math.Max(50, Math.Min(1000, ModSaveData.MaxBotHuntingDistanceFriendly));
           ModSaveData.MaxBotProjectileDistance = Math.Max(50, Math.Min(500, ModSaveData.MaxBotProjectileDistance));
-          MaxBotProjectileDistance = ModSaveData.MaxBotProjectileDistance;
+          MaxBotProjectileDistance = Math.Max(0, ModSaveData.MaxBotProjectileDistance);
           AllowMusic = ModSaveData.AllowBotMusic;
 
           if (ModSaveData.PlayerHelperData == null)
@@ -775,7 +910,7 @@ namespace AiEnabled
                 }
               }
 
-              if (faction.Members.Count > 1)
+              if (faction.Members.Count > 2)
               {
                 factionMembers.Clear();
                 bool founderOK = false;
@@ -1396,7 +1531,7 @@ namespace AiEnabled
       }
     }
 
-    internal void PlayerLeftCockpit(string entityName, long playerId, string gridName)
+    void PlayerLeftCockpitDelayed(string entityname, long playerId, string gridName)
     {
       try
       {
@@ -1432,6 +1567,14 @@ namespace AiEnabled
           if (seat != null)
           {
             seat.RemovePilot();
+
+            MyOwnershipShareModeEnum shareMode;
+            if (BotToSeatShareMode.TryRemove(character.EntityId, out shareMode))
+            {
+              var seatCube = seat as MyCubeBlock;
+              if (seatCube != null)
+                seatCube.IDModule.ShareMode = shareMode;
+            }
 
             var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
             if (jetpack != null)
@@ -1545,11 +1688,42 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
+        Logger.Log($"Exception in PlayerLeftCockpitDelayed: {ex.Message}\n{ex.StackTrace}");
+      }
+    }
+
+    internal void PlayerLeftCockpit(string entityName, long playerId, string gridName)
+    {
+      try
+      {
+        if (Registered)
+        {
+          foreach (var bot in Bots)
+          {
+            var botChar = bot.Value?.Character;
+            if (botChar.ControllerInfo.ControllingIdentityId == playerId)
+            {
+              ShowMessage($"Found bot! {botChar.EntityId}");
+              break;
+            }
+          }
+        }
+
+        List<BotBase> playerHelpers;
+        if (!Registered || !PlayerToHelperDict.TryGetValue(playerId, out playerHelpers) || playerHelpers == null || playerHelpers.Count == 0)
+        {
+          return;
+        }
+
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName));
+      }
+      catch (Exception ex)
+      {
         Logger.Log($"Exception in PlayerLeftCockpit: {ex.Message}\n{ex.StackTrace}");
       }
     }
 
-    internal void PlayerEnteredCockpit(string entityName, long playerId, string gridName)
+    void PlayerEnteredCockpitDelayed(string entityname, long playerId, string gridName)
     {
       try
       {
@@ -1592,7 +1766,7 @@ namespace AiEnabled
         else
           gridSeats.Clear();
 
-        playerGrid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroup);
+        playerGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
 
         foreach (var grid in gridGroup)
         {
@@ -1638,7 +1812,7 @@ namespace AiEnabled
             if (gridSeats.Count == 0)
               break;
 
-            if (bot.UseAPITargets || bot.Character.Parent is IMyCockpit)
+            if (bot.UseAPITargets || bot.PatrolMode || bot.Character.Parent is IMyCockpit)
               continue;
 
             gridSeats.ShellSort(botPosition, reverse: true);
@@ -1646,7 +1820,7 @@ namespace AiEnabled
             for (int j = gridSeats.Count - 1; j >= 0; j--)
             {
               var seat = gridSeats[j]?.FatBlock as IMyCockpit;
-              if (seat == null || seat.Pilot != null || !seat.IsFunctional || !seat.HasPlayerAccess(bot.Character.ControllerInfo.ControllingIdentityId))
+              if (seat == null || seat.Pilot != null || !seat.IsFunctional)
               {
                 gridSeats.RemoveAtFast(j);
                 continue;
@@ -1665,8 +1839,6 @@ namespace AiEnabled
                 }
               }
 
-              // TODO: Need to ensure that the position is valid on exit (in case ship took off) and if not, find valid tile!
-
               _useObjList.Clear();
               var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
               useComp?.GetInteractiveObjects(_useObjList);
@@ -1676,13 +1848,44 @@ namespace AiEnabled
                 BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
 
                 var useObj = _useObjList[0];
-                useObj.Use(UseActionEnum.Manipulate, bot.Character);
+                var seatCube = seat as MyCubeBlock;
 
-                bot._pathCollection?.CleanUp(true);
-                bot.Target?.RemoveTarget();
+                if (useObj != null)
+                {
+                  var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+                  bool changeBack = false;
 
-                gridSeats.RemoveAtFast(j);
-                break;
+                  if (shareMode != MyOwnershipShareModeEnum.All)
+                  {
+                    var owner = bot.Owner?.IdentityId ?? bot.Character.ControllerInfo.ControllingIdentityId;
+                    var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+                    var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+                    if (relation != MyRelationsBetweenPlayers.Enemies)
+                    {
+                      changeBack = true;
+                      seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+                    }
+                  }
+
+                  if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+                  {
+                    useObj.Use(UseActionEnum.Manipulate, bot.Character);
+                  }
+
+                  if (changeBack)
+                  {
+                    BotToSeatShareMode[bot.Character.EntityId] = shareMode;
+                    //seatCube.IDModule.ShareMode = shareMode;
+                  }
+
+                  useObj.Use(UseActionEnum.Manipulate, bot.Character);
+                  bot._pathCollection?.CleanUp(true);
+                  bot.Target?.RemoveTarget();
+
+                  gridSeats.RemoveAtFast(j);
+                  break;
+                }
               }
             }
           }
@@ -1690,6 +1893,24 @@ namespace AiEnabled
 
         gridSeats.Clear();
         SlimListStack.Push(gridSeats);
+      }
+      catch (Exception ex)
+      {
+        Logger.Log($"Exception in PlayerEnteredCockpitDelayed: {ex.Message}\n{ex.StackTrace}");
+      }
+    }
+
+    internal void PlayerEnteredCockpit(string entityName, long playerId, string gridName)
+    {
+      try
+      {
+        IMyPlayer player;
+        if (!Players.TryGetValue(playerId, out player) || player?.Character == null || player.Character.IsDead)
+        {
+          return;
+        }
+
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName));
       }
       catch (Exception ex)
       {
@@ -2043,7 +2264,7 @@ namespace AiEnabled
                     var matrix = bot.WorldMatrix;
                     helper.Orientation = Quaternion.CreateFromRotationMatrix(matrix);
                     helper.Position = matrix.Translation;
-                    helper.ToolPhyiscalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
+                    helper.ToolPhysicalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
                     helper.InventoryItems?.Clear();
 
                     var gridGraph = bot._currentGraph as CubeGridMap;
@@ -2357,9 +2578,6 @@ namespace AiEnabled
       }
     }
 
-    public bool AllowMusic = true;
-    bool? _allowEnemyFlight, _allowNeutralTargets;
-    int _maxHuntEnemy, _maxHuntFriendly, _maxProjectile;
     MyCommandLine _cli = new MyCommandLine();
     private void OnMessageEntered(string messageText, ref bool sendToOthers)
     {
@@ -2405,7 +2623,7 @@ namespace AiEnabled
 
           if (num != MaxBots)
           {
-            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic);
+            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic, null, null, null);
             Network.SendToServer(packet);
           }
         }
@@ -2418,7 +2636,7 @@ namespace AiEnabled
           if (AllowMusic != on)
           {
             AllowMusic = on;
-            var pkt = new AdminPacket(AllowMusic, null);
+            var pkt = new AdminPacket(AllowMusic, null, null);
             Network.SendToServer(pkt);
           }
 
@@ -2426,9 +2644,9 @@ namespace AiEnabled
         }
         else if (cmd.Equals("debug", StringComparison.OrdinalIgnoreCase))
         {
-          if (MyAPIGateway.Utilities.IsDedicated)
+          if (!IsServer)
           {
-            ShowMessage("Debug draw is not available on DS.", timeToLive: 5000);
+            ShowMessage("Debug draw is only available server side.", timeToLive: 5000);
             return;
           }
 
@@ -2584,7 +2802,7 @@ namespace AiEnabled
             {
               _allowEnemyFlight = b;
 
-              var pkt = new AdminPacket(AllowMusic, b);
+              var pkt = new AdminPacket(AllowMusic, b, null);
               Network.SendToServer(pkt);
 
               ShowMessage($"Allow Enemy Flight set to {b}");
@@ -2601,7 +2819,10 @@ namespace AiEnabled
           {
             _allowNeutralTargets = b;
 
-            // TODO: sync<t> here
+            var pkt = new AdminPacket(AllowMusic, null, b);
+            Network.SendToServer(pkt);
+
+            ShowMessage($"Allow Neutral Targets set to {b}");
           }
         }
         else if (cmd.Equals("botdamage", StringComparison.OrdinalIgnoreCase))
@@ -2620,13 +2841,14 @@ namespace AiEnabled
             return;
           }
 
-          if (num != ModSaveData.BotDamageModifier)
+          if (_botDamageMult == null || num != _botDamageMult)
           {
-            ShowMessage($"Setting Bot Damage Modifier to {num}");
+            _botDamageMult = num;
 
-            // TODO: Sync this value with MySync<T>
-            ModSaveData.BotDamageModifier = num;
-            SaveModData(true);
+            var pkt = new AdminPacket(num, true);
+            Network.SendToServer(pkt);
+
+            ShowMessage($"Setting Bot Damage Modifier to {num}");
           }
         }
         else if (cmd.Equals("playerdamage", StringComparison.OrdinalIgnoreCase))
@@ -2645,13 +2867,87 @@ namespace AiEnabled
             return;
           }
 
-          if (num != ModSaveData.PlayerDamageModifier)
+          if (_playerDamageMult == null || num != _playerDamageMult)
           {
-            ShowMessage($"Setting Player Damage Modifier to {num}");
+            _playerDamageMult = num;
 
-            // TODO: Sync this value with MySync<T>
-            ModSaveData.PlayerDamageModifier = num;
-            SaveModData(true);
+            var pkt = new AdminPacket(num, false);
+            Network.SendToServer(pkt);
+
+            ShowMessage($"Setting Player Damage Modifier to {num}");
+          }
+        }
+        else if (cmd.Equals("spawnapi", StringComparison.OrdinalIgnoreCase))
+        {
+          List<MyEntity> entList;
+          if (!EntListStack.TryPop(out entList))
+            entList = new List<MyEntity>();
+          else
+            entList.Clear();
+
+          var sphere = new BoundingSphereD(character.WorldAABB.Center, 20);
+          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);
+
+          IMyCubeGrid rover = null;
+
+          for (int i = 0; i < entList.Count; i++)
+          {
+            var grid = entList[i] as IMyCubeGrid;
+            if (grid != null && !grid.MarkedForClose && !grid.Closed && grid.GridSize < 1 && !grid.Physics.IsStatic)
+            {
+              var blocks = ((MyCubeGrid)grid).GetFatBlocks();
+              foreach (var b in blocks)
+              {
+                var slim = b.SlimBlock as IMySlimBlock;
+                if (slim.FatBlock is IMyCockpit)
+                {
+                  rover = grid;
+                  break;
+                }
+              }
+
+              if (rover != null)
+                break;
+            }
+          }
+
+          if (rover == null)
+          {
+            ShowMessage("No rover found near player");
+            return;
+          }
+
+          var data = new RemoteBotAPI.SpawnData();
+          data.BotSubtype = "Default_Astronaut";
+          data.BotRole = "Bruiser";
+
+          var matrix = character.WorldMatrix;
+          matrix.Translation += matrix.Right * 5;
+
+          var bot = BotFactory.SpawnBotFromAPI(new MyPositionAndOrientation(matrix), data);
+          if (bot != null)
+          {
+            if (_localBotAPI.TrySeatBotOnGrid(bot.EntityId, rover))
+            {
+              _localBotAPI.SetBotTarget(bot.EntityId, null);
+              ShowMessage("Bot seated successfully");
+              seatedBot = bot.EntityId;
+            }
+            else
+            {
+              ShowMessage("Bot not seated");
+            }
+          }
+          else
+          {
+            ShowMessage("Bot null");
+          }
+        }
+        else if (cmd.Equals("unseat", StringComparison.OrdinalIgnoreCase))
+        {
+          if (seatedBot.HasValue)
+          {
+            _localBotAPI.TryRemoveBotFromSeat(seatedBot.Value);
           }
         }
       }
@@ -2661,6 +2957,8 @@ namespace AiEnabled
         Logger.Log($"Exception during command execution: '{messageText}'\n {ex.Message}\n{ex.StackTrace}");
       }
     }
+
+    long? seatedBot = null;
 
     bool _drawMenu, _capsLock;
     TimeSpan _lastClickTime = new TimeSpan(DateTime.Now.Ticks);
@@ -2968,12 +3266,13 @@ namespace AiEnabled
 
     public bool IsBotAllowedToUse(BotBase bot, string toolSubtype, out string reason)
     {
+      var definition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype);
+      var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(definition);
+
       reason = null;
       if (bot is CombatBot)
       {
-        bool allowed = toolSubtype.IndexOf("rifle", StringComparison.OrdinalIgnoreCase) >= 0 
-          || toolSubtype.IndexOf("pistol", StringComparison.OrdinalIgnoreCase) >= 0
-          || toolSubtype.IndexOf("handheldlauncher", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool allowed = handItemDef != null && handItemDef.WeaponType != MyItemWeaponType.None;
 
         if (!allowed)
           reason = "The CombatBot can only use rifles, pistols, and rocket launchers.";
@@ -2983,12 +3282,17 @@ namespace AiEnabled
       
       if (bot is RepairBot)
       {
-        bool allowed = toolSubtype.IndexOf("welder", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool allowed = handItemDef != null && handItemDef.Id.TypeId == typeof(MyObjectBuilder_Welder);
 
         if (!allowed)
           reason = "The RepairBot can only use welders";
 
         return allowed;
+      }
+
+      if (bot is ScavengerBot)
+      {
+        reason = "The ScavengerBot cannot use tools";
       }
 
       return false;
@@ -3067,7 +3371,7 @@ namespace AiEnabled
           helperData.Position = botChar.GetPosition();
           helperData.Orientation = Quaternion.CreateFromRotationMatrix(botChar.WorldMatrix);
           helperData.InventoryItems?.Clear();
-          helperData.ToolPhyiscalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
+          helperData.ToolPhysicalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
 
           var inventory = botChar.GetInventory() as MyInventory;
           if (inventory?.ItemCount > 0)
@@ -3166,7 +3470,7 @@ namespace AiEnabled
       {
         if (!currentNull)
         {
-          MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
+          MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
           _selectedBot = null;
         }
 
@@ -3180,7 +3484,7 @@ namespace AiEnabled
       {
         if (!currentNull)
         {
-          MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
+          MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
           _selectedBot = null;
         }
 
@@ -3210,7 +3514,7 @@ namespace AiEnabled
         {
           if (!currentNull)
           {
-            MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
+            MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
             _selectedBot = null;
           }
 
@@ -3220,7 +3524,7 @@ namespace AiEnabled
 
       if (!currentNull && _selectedBot.EntityId != bot.EntityId)
       {
-        MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
+        MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
         _selectedBot = null;
         currentNull = true;
       }
@@ -3249,7 +3553,7 @@ namespace AiEnabled
       }
       else if (!currentNull)
       {
-        MyVisualScriptLogicProvider.SetHighlight(_selectedBot.Name, false);
+        MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
         _selectedBot = null;
       }
     }
@@ -3461,7 +3765,7 @@ namespace AiEnabled
           }
         }
 
-        if (_controllerSet && _controllerInfo.Count + _pendingControllerInfo.Count < ControllerCacheNum)
+        if (_controllerSet && _controllerInfo.Count + _pendingControllerInfo.Count < _controllerCacheNum)
         {
           bool spawnOkay = false;
           try
@@ -3474,11 +3778,40 @@ namespace AiEnabled
             if (bot != null)
             {
               bot.Flags &= ~EntityFlags.NeedsUpdate100;
+              bot.Save = false;
+              bool useBot = true;
 
-              _controllerSet = false;
-              _controlBotIds.Add(botId);
-              MyAPIGateway.Utilities.InvokeOnGameThread(GetBotController, "AiEnabled");
-              //MyAPIGateway.Utilities.ShowMessage("AiEnabled", "Spawned bot");
+              // TODO: Figure out how to avoid using other valid NPC identities, needs testing!
+
+              _identityList.Clear();
+              MyAPIGateway.Players.GetAllIdentites(_identityList);
+
+              for (int i = 0; i < _identityList.Count; i++)
+              {
+                var ident = _identityList[i];
+                if (ident != null && ident.IdentityId == bot.ControllerInfo?.ControllingIdentityId)
+                {
+                  if (ident.DisplayName?.Length > 0 || ident.Model != "Police_Bot")
+                  {
+                    var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ident.IdentityId);
+                    if (faction != null && faction.Tag != "SPRT")
+                    {
+                      Logger.Log($"Found duplicate Ident: Name = {ident.DisplayName ?? "NULL"}, Model = {ident.Model ?? "NULL"}, Faction = {faction.Name}", MessageType.WARNING);
+                      useBot = false;
+                      bot.Close();
+                    }
+                  }
+
+                  break;
+                }
+              }
+
+              if (useBot)
+              {
+                _controllerSet = false;
+                _controlBotIds.Add(botId);
+                MyAPIGateway.Utilities.InvokeOnGameThread(GetBotController, "AiEnabled");
+              }
             }
           }
           catch
@@ -3632,13 +3965,11 @@ namespace AiEnabled
       bool clearObstacles = _tempObstacleTimer % 360 == 0;
 
       ++GlobalMapInitTimer;
-      //MyAPIGateway.Utilities.ShowNotification($"Map Init Timer = {GlobalMapInitTimer}", 160);
       if (GlobalMapInitTimer > 6 && MapInitQueue.Count > 0)
       {
         GridBase map;
         if (MapInitQueue.TryDequeue(out map))
         {
-          //MyAPIGateway.Utilities.ShowMessage("AiE", $"Running map init. {MapInitQueue.Count} remaining.");
           GlobalMapInitTimer = 0;
           map.Init();
         }
@@ -3819,103 +4150,117 @@ namespace AiEnabled
         if (_newPlayerIds.Count > 0)
           UpdatePlayers();
 
-        if (_controllerSet && FutureBotQueue.Count > 0 && _controllerInfo.Count >= ControllerCacheNum)
+        if (_controllerSet && FutureBotQueue.Count > 0 && _controllerInfo.Count >= _controllerCacheNum)
         {
-          while (FutureBotQueue.Count > 0)
+          bool allowSpawns = true;
+          if (EemLoaded && !MyAPIGateway.Utilities.IsDedicated)
           {
-            if (_controllerInfo.Count < MIN_SPAWN_COUNT)
-              break;
-
-            var future = FutureBotQueue.Dequeue();
-            if (future.HelperInfo == null)
-              continue;
-
-            var info = future.HelperInfo;
-
-            var matrix = MatrixD.CreateFromQuaternion(info.Orientation);
-            matrix.Translation = info.Position;
-            var posOr = new MyPositionAndOrientation(matrix);
-
-            MyCubeGrid grid = null;
-            if (info.GridEntityId > 0)
-            {
-              grid = MyEntities.GetEntityById(info.GridEntityId) as MyCubeGrid;
-            }
-
-            var bot = BotFactory.SpawnHelper(info.CharacterSubtype, info.DisplayName ?? "", future.OwnerId, posOr, grid, ((BotType)info.Role).ToString(), info.ToolPhyiscalItem?.SubtypeName, info.BotColor);
-            if (bot == null)
-            {
-              Logger.Log($"{GetType().FullName}: FutureBot returned null from spawn event", MessageType.WARNING);
-            }
-            else
-            {
-              try
-              {
-                var botInventory = bot.GetInventory() as MyInventory;
-                if (info.InventoryItems?.Count > 0 && botInventory != null)
-                {
-                  foreach (var item in info.InventoryItems)
-                  {
-                    var ob = MyObjectBuilderSerializer.CreateNewObject(item.ItemDefinition);
-                    botInventory.AddItems(item.Amount, ob);
-                  }
-                }
-
-                BotBase botBase;
-                if (Bots.TryGetValue(bot.EntityId, out botBase) && botBase != null)
-                {
-                  if (info.PatrolRoute?.Count > 0)
-                    botBase.UpdatePatrolPoints(info.PatrolRoute);
-
-                  if (botBase.ToolDefinition != null)
-                    MyAPIGateway.Utilities.InvokeOnGameThread(botBase.EquipWeapon, "AiEnabled");
-                }
-              }
-              catch (Exception ex)
-              {
-                Logger.Log($"Error trying to add items to future bot ({future.HelperInfo.DisplayName}) inventory: {ex.Message}\n{ex.StackTrace}", MessageType.WARNING);
-              }
-
-              IMyPlayer player;
-              if (Players.TryGetValue(future.OwnerId, out player) && player != null) 
-              {
-                var pkt = new SpawnPacketClient(bot.EntityId, false);
-                Network.SendToPlayer(pkt, player.SteamUserId);
-
-                var saveData = ModSaveData.PlayerHelperData;
-                for (int i = 0; i < saveData.Count; i++)
-                {
-                  var playerData = saveData[i];
-                  if (playerData.OwnerIdentityId == player.IdentityId)
-                  {
-                    var helperData = playerData.Helpers;
-                    for (int j = helperData.Count - 1; j >= 0 ; j--)
-                    {
-                      var helper = helperData[j];
-                      if (helper.HelperId == info.HelperId)
-                      {
-                        helperData.RemoveAtFast(j);
-                        break;
-                      }
-                      //else if (helper.HelperId == bot.EntityId)
-                      //{
-                      //  helper.ToolSubtype = info.ToolSubtype;
-                      //}
-                    }
-
-                    var pkt2 = new ClientHelperPacket(helperData);
-                    Network.SendToPlayer(pkt2, player.SteamUserId);
-
-                    break;
-                  }
-                }
-              }
-            }
+            // Fix for folks using EEM
+            // EEM validates faction join requests and for the first minute or so the stored identities will be linked to the local player's SteamId
+            var controlInfo = _controllerInfo[0];
+            var steamId = MyAPIGateway.Players.TryGetSteamId(controlInfo.Identity.IdentityId);
+            if (steamId == MyAPIGateway.Session.Player?.SteamUserId)
+              allowSpawns = false;
           }
 
-          if (FutureBotQueue.Count == 0)
+          if (allowSpawns)
           {
-            SaveModData(true);
+            while (FutureBotQueue.Count > 0)
+            {
+              if (_controllerInfo.Count < MIN_SPAWN_COUNT)
+                break;
+
+              var future = FutureBotQueue.Dequeue();
+              if (future.HelperInfo == null)
+                continue;
+
+              var info = future.HelperInfo;
+
+              var matrix = MatrixD.CreateFromQuaternion(info.Orientation);
+              matrix.Translation = info.Position;
+              var posOr = new MyPositionAndOrientation(matrix);
+
+              MyCubeGrid grid = null;
+              if (info.GridEntityId > 0)
+              {
+                grid = MyEntities.GetEntityById(info.GridEntityId) as MyCubeGrid;
+              }
+
+              var bot = BotFactory.SpawnHelper(info.CharacterSubtype, info.DisplayName ?? "", future.OwnerId, posOr, grid, ((BotType)info.Role).ToString(), info.ToolPhysicalItem?.SubtypeName, info.BotColor);
+              if (bot == null)
+              {
+                Logger.Log($"{GetType().FullName}: FutureBot returned null from spawn event", MessageType.WARNING);
+              }
+              else
+              {
+                try
+                {
+                  var botInventory = bot.GetInventory() as MyInventory;
+                  if (info.InventoryItems?.Count > 0 && botInventory != null)
+                  {
+                    foreach (var item in info.InventoryItems)
+                    {
+                      var ob = MyObjectBuilderSerializer.CreateNewObject(item.ItemDefinition);
+                      botInventory.AddItems(item.Amount, ob);
+                    }
+                  }
+
+                  BotBase botBase;
+                  if (Bots.TryGetValue(bot.EntityId, out botBase) && botBase != null)
+                  {
+                    if (info.PatrolRoute?.Count > 0)
+                      botBase.UpdatePatrolPoints(info.PatrolRoute);
+
+                    if (botBase.ToolDefinition != null)
+                      MyAPIGateway.Utilities.InvokeOnGameThread(botBase.EquipWeapon, "AiEnabled");
+                  }
+                }
+                catch (Exception ex)
+                {
+                  Logger.Log($"Error trying to add items to future bot ({future.HelperInfo.DisplayName}) inventory: {ex.Message}\n{ex.StackTrace}", MessageType.WARNING);
+                }
+
+                IMyPlayer player;
+                if (Players.TryGetValue(future.OwnerId, out player) && player != null)
+                {
+                  var pkt = new SpawnPacketClient(bot.EntityId, false);
+                  Network.SendToPlayer(pkt, player.SteamUserId);
+
+                  var saveData = ModSaveData.PlayerHelperData;
+                  for (int i = 0; i < saveData.Count; i++)
+                  {
+                    var playerData = saveData[i];
+                    if (playerData.OwnerIdentityId == player.IdentityId)
+                    {
+                      var helperData = playerData.Helpers;
+                      for (int j = helperData.Count - 1; j >= 0; j--)
+                      {
+                        var helper = helperData[j];
+                        if (helper.HelperId == info.HelperId)
+                        {
+                          helperData.RemoveAtFast(j);
+                          break;
+                        }
+                        //else if (helper.HelperId == bot.EntityId)
+                        //{
+                        //  helper.ToolSubtype = info.ToolSubtype;
+                        //}
+                      }
+
+                      var pkt2 = new ClientHelperPacket(helperData);
+                      Network.SendToPlayer(pkt2, player.SteamUserId);
+
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+
+            if (FutureBotQueue.Count == 0)
+            {
+              SaveModData(true);
+            }
           }
         }
         else if (FutureBotQueue.Count == 0 && FutureBotAPIQueue.Count > 0 && _controllerInfo.Count >= MIN_SPAWN_COUNT)
@@ -3955,8 +4300,6 @@ namespace AiEnabled
 
               graph.Close();
               VoxelGraphDict.TryRemove(kvp.Key, out graph);
-              //MyAPIGateway.Utilities.ShowNotification($"Removing voxel graph {kvp.Key}, {VoxelGraphDict.Count} VMs remaining");
-              //Logger.Log($"Removing voxel graph {kvp.Key} (last active = {graph.LastActiveTicks}), {VoxelGraphDict.Count} VMs remaining");
             }
 
             continue;
@@ -3994,6 +4337,16 @@ namespace AiEnabled
         return null;
 
       var info = _controllerInfo[0];
+
+      if (EemLoaded && !MyAPIGateway.Utilities.IsDedicated)
+      {
+        // Fix for folks using EEM
+        // EEM validates faction join requests and for the first minute or so the stored identities will be linked to the local player's SteamId
+        var steamId = MyAPIGateway.Players.TryGetSteamId(info.Identity.IdentityId);
+        if (steamId != 0)
+          return null;
+      }
+
       _controllerInfo.RemoveAtImmediately(0);
       _controllerInfo.ApplyChanges();
 
@@ -4329,6 +4682,29 @@ namespace AiEnabled
       _gpsUpdatesAvailable = true;
     }
 
+    public void SwitchBot(BotBase newBot)
+    {
+      bool found = false;
+
+      for (int i = 0; i < _robots.Count; i++)
+      {
+        var bot = _robots[i];
+        if (bot?.Character == null || bot.IsDead)
+          continue;
+
+        if (bot.Character.EntityId == newBot.Character.EntityId)
+        {
+          _robots[i] = newBot;
+          break;
+        }
+      }
+
+      if (!found)
+      {
+        _robots.Add(newBot);
+      }
+    }
+
     public void AddBot(BotBase bot, long ownerId = 0L)
     {
       var botId = bot.Character.EntityId;
@@ -4390,7 +4766,7 @@ namespace AiEnabled
                 helper.Orientation = Quaternion.CreateFromRotationMatrix(matrix);
                 helper.Position = matrix.Translation;
                 helper.GridEntityId = grid?.EntityId ?? 0L;
-                helper.ToolPhyiscalItem = bot.ToolDefinition?.PhysicalItemId ?? (bot.Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
+                helper.ToolPhysicalItem = bot.ToolDefinition?.PhysicalItemId ?? (bot.Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
                 helper.InventoryItems?.Clear();
 
                 var inventory = bot.Character.GetInventory() as MyInventory;
