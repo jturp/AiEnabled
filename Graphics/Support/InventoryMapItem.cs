@@ -33,6 +33,21 @@ namespace AiEnabled.Graphics.Support
         IconName = tmDef.Id.SubtypeName;
       else if (itemDef == null)
         IconName = "AiEnabled_GenericUnknown";
+      else if (itemDef.DisplayNameText.EndsWith("Bot Material"))
+      {
+        if (itemDef.DisplayNameText.StartsWith("Combat"))
+        {
+          IconName = "AiEnabled_CombatBotMaterial";
+        }
+        else if (itemDef.DisplayNameText.StartsWith("Repair"))
+        {
+          IconName = "AiEnabled_RepairBotMaterial";
+        }
+        else // Scavenger
+        {
+          IconName = "AiEnabled_ScavengerBotMaterial";
+        }
+      }
       else if (itemDef.Context.IsBaseGame || (itemDef.Context.ModItem.PublishedFileId == 2344068716 && !itemDef.IsOre && !itemDef.IsIngot))
         IconName = $"AiEnabled_{defId.ToString()}";
       else if (itemDef is MyConsumableItemDefinition)

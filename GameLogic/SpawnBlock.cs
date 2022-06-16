@@ -64,7 +64,8 @@ namespace AiEnabled.GameLogic
     List<string> _creatureTypes = new List<string>(5);
     List<string> _nomadTypes = new List<string>(5);
     List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
-    string _soldierColor, _zombieColor, _grinderColor;
+    string _soldierColor, _zombieColor, _grinderColor, _nomadColor;
+    bool _useRandomColor = true, _spidersOnly, _wolvesOnly;
 
     int _minSecondsBetweenSpawns = 60;
     int _maxSecondsBetweenSpawns = 180;
@@ -155,7 +156,7 @@ namespace AiEnabled.GameLogic
 
       var defaultColor = Color.Red;
       var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
-      _soldierColor = _zombieColor = _grinderColor = hexColor;
+      _soldierColor = _zombieColor = _grinderColor = _nomadColor = hexColor;
 
       _allSubtypes.Clear();
       _creatureTypes.Clear();
@@ -167,6 +168,10 @@ namespace AiEnabled.GameLogic
       _allSubtypes.Add("Space_Zombie");
       _allSubtypes.Add("Ghost_Bot");
       _creatureTypes.Add("Space_Wolf");
+      _creatureTypes.Add("Space_spider_black");
+      _creatureTypes.Add("Space_spider_brown");
+      _creatureTypes.Add("Space_spider_green");
+      _creatureTypes.Add("Space_spider");
       _nomadTypes.Add("Default_Astronaut");
       _nomadTypes.Add("Default_Astronaut_Female");
 
@@ -174,6 +179,7 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
+      _ini.Set("AiEnabled", "Use Random Spawn Colors", true);
       _ini.Set("AiEnabled", "Allow SoldierBot", true);
       _ini.Set("AiEnabled", "SoldierBot Color", hexColor);
       _ini.Set("AiEnabled", "Allow GrinderBot", true);
@@ -183,12 +189,17 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Allow GhostBot", true);
       _ini.Set("AiEnabled", "Allow BruiserBot", true);
       _ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
+      _ini.Set("AiEnabled", "NomadBot Color", hexColor);
       _ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
+      _ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
+      _ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
+
 
       _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
-      _ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds betweeen spawns. (min = 1)\n ");
+      _ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
       _ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       _ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
+      _ini.SetComment("AiEnabled", "Use Random Spawn Colors", " \n If True, all spawns will use a random color.\n ");
       _ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
@@ -268,13 +279,20 @@ namespace AiEnabled.GameLogic
       }
 
       _creatureBotOnly = ini.Get("AiEnabled", "CreatureBots Only").ToBoolean(false);
+      _wolvesOnly = ini.Get("AiEnabled", "Wolves Only").ToBoolean(false);
+      _spidersOnly = ini.Get("AiEnabled", "Spiders Only").ToBoolean(false);
 
       if (_creatureBotOnly)
       {
         _creatureTypes.Add("Space_Wolf");
+        _creatureTypes.Add("Space_spider_black");
+        _creatureTypes.Add("Space_spider_brown");
+        _creatureTypes.Add("Space_spider_green");
+        _creatureTypes.Add("Space_spider");
       }
 
       _nomadBotOnly = ini.Get("AiEnabled", "NomadBots Only").ToBoolean(false);
+      _nomadColor = ini.Get("AiEnabled", "NomadBot Color").ToString(hexColor);
 
       if (_nomadBotOnly)
       {
@@ -282,6 +300,7 @@ namespace AiEnabled.GameLogic
         _nomadTypes.Add("Default_Astronaut_Female");
       }
 
+      _useRandomColor = ini.Get("AiEnabled", "Use Random Spawn Colors").ToBoolean(true);
       _allowBossBot = ini.Get("AiEnabled", "Allow BruiserBot").ToBoolean(true);
       _minSecondsBetweenSpawns = Math.Max(1, ini.Get("AiEnabled", "Min Spawn Interval").ToInt32(60));
       _maxSecondsBetweenSpawns = Math.Max(_minSecondsBetweenSpawns, ini.Get("AiEnabled", "Max Spawn Interval").ToInt32(180));
@@ -455,6 +474,7 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
+      ini.Set("AiEnabled", "Use Random Spawn Colors", _useRandomColor);
       ini.Set("AiEnabled", "Allow SoldierBot", allowSoldier);
       ini.Set("AiEnabled", "SoldierBot Color", _soldierColor);
       ini.Set("AiEnabled", "Allow GrinderBot", allowGrinder);
@@ -464,12 +484,16 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Allow GhostBot", allowGhost);
       ini.Set("AiEnabled", "Allow BruiserBot", _allowBossBot);
       ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
+      ini.Set("AiEnabled", "NomadBot Color", _nomadColor);
       ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
+      ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
+      ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
 
       ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
-      ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds betweeen spawns. (min = 1)\n ");
+      ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
       ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
+      ini.SetComment("AiEnabled", "Use Random Spawn Colors", " \n If True, all spawns will use a random color.\n ");
       ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
@@ -593,7 +617,21 @@ namespace AiEnabled.GameLogic
             {
               assignRole = false;
               role = "CREATURE";
-              var num = MyUtils.GetRandomInt(0, _creatureTypes.Count);
+
+              int num;
+              if (_wolvesOnly)
+              {
+                num = 0;
+              }
+              else if (_spidersOnly)
+              {
+                num = MyUtils.GetRandomInt(1, 5);
+              }
+              else
+              {
+                num = MyUtils.GetRandomInt(0, _creatureTypes.Count);
+              }
+
               botType = _creatureTypes[num];
             }
             else if (_nomadBotOnly && _nomadTypes?.Count > 0)
@@ -622,14 +660,25 @@ namespace AiEnabled.GameLogic
 
             Color? color = null;
             KeyValuePair<string, string> roleAndColor;
+
+            if (_useRandomColor)
+            {
+              var r = MyUtils.GetRandomInt(0, 256);
+              var g = MyUtils.GetRandomInt(0, 256);
+              var b = MyUtils.GetRandomInt(0, 256);
+
+              color = new Color(r, g, b);
+            }
+
             if (_subtypeToRole.TryGetValue(botType, out roleAndColor))
             {
               if (assignRole) 
                 role = roleAndColor.Key;
   
-              color = ColorExtensions.FromHtml(roleAndColor.Value);
+              if (!_useRandomColor)
+                color = ColorExtensions.FromHtml(roleAndColor.Value);
             }
-            else
+            else if (!_useRandomColor)
             {
               switch (botType)
               {
@@ -643,7 +692,12 @@ namespace AiEnabled.GameLogic
                   color = ColorExtensions.FromHtml(_grinderColor);
                   break;
                 default:
-                  color = null;
+
+                  if (_nomadBotOnly)
+                    color = ColorExtensions.FromHtml(_nomadColor);
+                  else
+                    color = null;
+  
                   break;
               }
             }

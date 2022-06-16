@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Sandbox.Definitions;
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -12,7 +14,12 @@ namespace AiEnabled.Bots.Behaviors
   {
     public CreatureBehavior(IMyCharacter bot) : base(bot)
     {
-      // TODO
+      var cDef = bot.Definition as MyCharacterDefinition;
+      
+      if (!string.IsNullOrWhiteSpace(cDef?.PainSoundName))
+      {
+        PainSounds.Add(cDef.PainSoundName);
+      }
     }
   }
 }

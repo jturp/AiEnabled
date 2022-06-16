@@ -155,7 +155,7 @@ namespace AiEnabled.Bots.Roles
           var damage = 0.2f;
           if (AiSession.Instance.Players.ContainsKey(tgtEnt.ControllerInfo.ControllingIdentityId))
           {
-            damage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+            damage *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
           }
           else if (AiSession.Instance.Bots.TryGetValue(tgtEnt.EntityId, out botTarget) && botTarget != null)
           {
@@ -166,7 +166,7 @@ namespace AiEnabled.Bots.Roles
             }
             else if (botTarget.Owner != null)
             {
-              damage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+              damage *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
             }
           }
 
@@ -174,7 +174,7 @@ namespace AiEnabled.Bots.Roles
         }
         else if (seat != null)
         {
-          var damage = 5f * AiSession.Instance.ModSaveData.BotDamageModifier;
+          var damage = 5f * AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
           var casterComp = tool.Components?.Get<MyCasterComponent>();
           if (casterComp != null && casterComp.HitBlock == null)
           {
@@ -255,21 +255,21 @@ namespace AiEnabled.Bots.Roles
       var flattenedLengthSquared = flattenedVector.LengthSquared();
       var distanceSqd = relVectorBot.LengthSquared();
 
-      if (jpEnabled)
-      {
-        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
-        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+      //if (jpEnabled)
+      //{
+      //  var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+      //  var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
 
-        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
-        {
-          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+      //  if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+      //  {
+      //    var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
 
-          if (botdotUp < 0)
-            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
-          else
-            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
-        }
-      }
+      //    if (botdotUp < 0)
+      //      roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+      //    else
+      //      roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+      //  }
+      //}
 
       var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
@@ -284,21 +284,21 @@ namespace AiEnabled.Bots.Roles
       {
         float xRot = 0;
 
-        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
-        {
-          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
-          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+        //if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
+        //{
+        //  var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+        //  var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
 
-          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
-          {
-            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+        //  if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
+        //  {
+        //    var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
 
-            if (botDotUp < 0)
-              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
-            else
-              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
-          }
-        }
+        //    if (botDotUp < 0)
+        //      xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+        //    else
+        //      xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
+        //  }
+        //}
 
         rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }

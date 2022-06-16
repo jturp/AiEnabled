@@ -67,7 +67,7 @@ namespace AiEnabled.Networking
         for (int i = 0; i < entList.Count; i++)
         {
           var ent = entList[i] as IMyCockpit;
-          if (ent == null || Vector3D.DistanceSquared(ent.WorldAABB.Center, GoTo.Value) > 1)
+          if (ent == null)
             continue;
 
           shouldSit = true;

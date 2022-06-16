@@ -124,6 +124,7 @@ namespace AiEnabled.Ai.Support
 
     ParallelTasks.Task _asyncTileTask;
     Vector3D _worldPosition;
+    MatrixD _lastMatrix;
     List<CubeGridMap> _additionalMaps2;
     List<IMyCubeGrid> _gridsToAdd;
     List<IMyCubeGrid> _gridsToRemove;
@@ -197,6 +198,7 @@ namespace AiEnabled.Ai.Support
 
         WorldMatrix = grid.WorldMatrix;
         _worldPosition = WorldMatrix.Translation;
+        _lastMatrix = WorldMatrix;
         MainGrid = grid;
 
         var hExtents = grid.PositionComp.LocalAABB.HalfExtents + (new Vector3I(11) * grid.GridSize);
@@ -831,7 +833,7 @@ namespace AiEnabled.Ai.Support
       if (IsGridGraph)
         MyAPIGateway.Parallel.StartBackground(InitGridArea, SetReady);
 
-      //Testing only!
+      // Testing only!
       //if (IsGridGraph)
       //{
       //  InitGridArea();
@@ -3939,6 +3941,15 @@ namespace AiEnabled.Ai.Support
                 node.SetBlocked(dirVec); 
                 continue;
               }
+
+              if (nextBlock.BlockDefinition.Id.SubtypeName == "LadderShaft")
+              {
+                if (dir == nextOr.Left || oppositeDir == nextOr.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
             }
             else if (nextIsBeam)
             {
@@ -4940,6 +4951,12 @@ namespace AiEnabled.Ai.Support
               node.SetBlocked(dirVec); 
               continue;
             }
+            
+            if (thisBlock.BlockDefinition.Id.SubtypeName.StartsWith("CatwalkHalf") && oppositeDir == thisBlock.Orientation.Left)
+            {
+              node.SetBlocked(dirVec);
+              continue;
+            }
           }
           else if (thisIsRailing)
           {
@@ -5180,6 +5197,15 @@ namespace AiEnabled.Ai.Support
             {
               node.SetBlocked(dirVec); 
               continue;
+            }
+
+            if (thisBlock.BlockDefinition.Id.SubtypeName == "LadderShaft")
+            {
+              if (dir == thisBlock.Orientation.Left || oppositeDir == thisBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
             }
           }
           else if (thisIsBtnPanel)
@@ -5845,6 +5871,12 @@ namespace AiEnabled.Ai.Support
               node.SetBlocked(dirVec); 
               continue;
             }
+
+            if (nextBlock.BlockDefinition.Id.SubtypeName.StartsWith("CatwalkHalf") && dir == nextBlock.Orientation.Left)
+            {
+              node.SetBlocked(dirVec);
+              continue;
+            }
           }
           else if (nextIsRailing)
           {
@@ -5974,6 +6006,15 @@ namespace AiEnabled.Ai.Support
             {
               node.SetBlocked(dirVec); 
               continue;
+            }
+
+            if (nextBlock.BlockDefinition.Id.SubtypeName == "LadderShaft")
+            {
+              if (dir == nextBlock.Orientation.Left || oppositeDir == nextBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
             }
           }
           else if (nextIsBtnPanel)
@@ -6531,6 +6572,89 @@ namespace AiEnabled.Ai.Support
         Planet_OnMarkForClose(RootVoxel);
         RootVoxel = null;
       }
+    }
+
+    public void AdjustWorldMatrix()
+    {
+      if (MainGrid?.Physics == null || MainGrid.Physics.IsStatic || MainGrid.WorldMatrix == _lastMatrix)
+        return;
+
+      int numSeats, numFactories;
+      bool matrixSet = false;
+      if (MainGrid.HasMainCockpit())
+      {
+        WorldMatrix = MainGrid.MainCockpit.WorldMatrix;
+        matrixSet = true;
+      }
+      else if (MainGrid.HasMainRemoteControl())
+      {
+        WorldMatrix = MainGrid.MainRemoteControl.WorldMatrix;
+        matrixSet = true;
+      }
+      else if ((MainGrid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_Cockpit), out numSeats) && numSeats > 0)
+        || (MainGrid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_RemoteControl), out numSeats) && numSeats > 0)
+        || (MainGrid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_ConveyorSorter), out numFactories) && numFactories > 0))
+      {
+        foreach (var b in MainGrid.GetFatBlocks())
+        {
+          if (b is IMyShipController || (b is MyConveyorSorter && b.BlockDefinition.Id.SubtypeName == "RoboFactory"))
+          {
+            WorldMatrix = b.WorldMatrix;
+            matrixSet = true;
+            break;
+          }
+        }
+      }
+
+      if (!matrixSet)
+      {
+        float _;
+        var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
+        var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, 0);
+        if (aGrav.LengthSquared() > 0)
+        {
+          var up = -Vector3D.Normalize(aGrav);
+          var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+          var dir = MainGrid.WorldMatrix.GetClosestDirection(up);
+          up = MainGrid.WorldMatrix.GetDirectionVector(dir);
+
+          dir = MainGrid.WorldMatrix.GetClosestDirection(fwd);
+          fwd = MainGrid.WorldMatrix.GetDirectionVector(dir);
+
+          WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+        }
+        else if (nGrav.LengthSquared() > 0)
+        {
+          var up = -Vector3D.Normalize(nGrav);
+          var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+          var dir = MainGrid.WorldMatrix.GetClosestDirection(up);
+          up = MainGrid.WorldMatrix.GetDirectionVector(dir);
+
+          dir = MainGrid.WorldMatrix.GetClosestDirection(fwd);
+          fwd = MainGrid.WorldMatrix.GetDirectionVector(dir);
+
+          WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+        }
+        else
+          return;
+
+        bool rotate = true;
+        foreach (var block in MainGrid.GetFatBlocks())
+        {
+          rotate = false;
+          break;
+        }
+
+        if (rotate)
+        {
+          var rotatedMatrix = MatrixD.CreateRotationY(MathHelper.PiOver2) * WorldMatrix;
+          WorldMatrix = rotatedMatrix;
+        }
+      }
+
+      _lastMatrix = MainGrid.WorldMatrix;
     }
 
     public override bool IsPositionValid(Vector3D position)

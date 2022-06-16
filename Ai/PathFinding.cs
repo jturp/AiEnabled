@@ -544,7 +544,8 @@ namespace AiEnabled.Ai
             var cubeBlockDef = thisBlock.BlockDefinition as MyCubeBlockDefinition;
             var cubeDef = cubeBlockDef.Id;
             bool isDeadBody = cubeDef.SubtypeName.StartsWith("DeadBody");
-            bool isDeco = !isDeadBody && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(cubeDef);
+            bool isHalfCatwalk = !isDeadBody && cubeDef.SubtypeName.StartsWith("CatwalkHalf");
+            bool isDeco = !isHalfCatwalk && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(cubeDef);
             bool isHalfWall = !isDeco && AiSession.Instance.HalfWallDefinitions.ContainsItem(cubeDef);
             bool isHalfBlock = !isHalfWall && ((cubeDef.SubtypeName.StartsWith("Large") && cubeDef.SubtypeName.EndsWith("HalfArmorBlock"))
               || (cubeDef.SubtypeName.StartsWith("AQD_LG") && cubeDef.SubtypeName.EndsWith($"Concrete_Half_Block"))); 
@@ -561,6 +562,19 @@ namespace AiEnabled.Ai
             if (isDeadBody)
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
+
+              //pathNode = tileDict[localVec];
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+              optimizedCache[localVec] = pathNode;
+              path.Enqueue(pathNode);
+              continue;
+            }
+
+            if (isHalfCatwalk)
+            {
+              offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
 
               //pathNode = tileDict[localVec];
               gridGraph.TryGetNodeForPosition(localVec, out pathNode);

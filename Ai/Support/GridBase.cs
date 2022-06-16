@@ -475,11 +475,11 @@ namespace AiEnabled.Ai.Support
     /// <param name="prevNode">Previous <see cref="Node"/> position</param>
     /// <param name="curNode">Current <see cref="Node"/> position</param>
     /// <param name="nextNode">Next <see cref="Node"/> position</param>
-    public virtual void AddToObstacles(Vector3D prevNode, Vector3D curNode, Vector3D nextNode)
+    public virtual void AddToObstacles(Vector3I prevNode, Vector3I curNode, Vector3I nextNode)
     {
-      var prev = WorldToLocal(prevNode);
-      var curr = WorldToLocal(curNode);
-      var next = WorldToLocal(nextNode);
+      var prev = prevNode; // WorldToLocal(prevNode);
+      var curr = curNode; // WorldToLocal(curNode);
+      var next = nextNode; // WorldToLocal(nextNode);
       bool addObstacle = true;
 
       Node node;
@@ -581,6 +581,78 @@ namespace AiEnabled.Ai.Support
     public abstract Node GetReturnHomePoint(BotBase bot);
 
     public abstract IMySlimBlock GetBlockAtPosition(Vector3I localPosition);
+
+    public virtual void TeleportNearby(BotBase bot)
+    {
+      var botPostion = bot.GetPosition();
+      var graph = bot._currentGraph;
+      var botLocal = graph.WorldToLocal(botPostion);
+      int distanceCheck = 20;
+
+      Vector3I? center = null;
+
+      for (int i = 1; i < distanceCheck + 1; i++)
+      {
+        var testPoint = botLocal + Vector3I.Up * i;
+        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        {
+          center = testPoint;
+          break;
+        }
+
+        testPoint = botLocal + Vector3I.Down * i;
+        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        {
+          center = testPoint;
+          break;
+        }
+
+        testPoint = botLocal + Vector3I.Left * i;
+        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        {
+          center = testPoint;
+          break;
+        }
+
+        testPoint = botLocal + Vector3I.Right * i;
+        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        {
+          center = testPoint;
+          break;
+        }
+
+        testPoint = botLocal + Vector3I.Forward * i;
+        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        {
+          center = testPoint;
+          break;
+        }
+
+        testPoint = botLocal + Vector3I.Backward * i;
+        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        {
+          center = testPoint;
+          break;
+        }
+      }
+
+      if (!center.HasValue)
+      {
+        var node = GetReturnHomePoint(bot);
+        if (node != null)
+          center = node.Position;
+      }
+
+      if (center.HasValue)
+      {
+        var worldPoint = graph.LocalToWorld(center.Value) + bot.Character.WorldMatrix.Down * 0.5;
+        bot.Character.SetPosition(worldPoint);
+      }
+      else
+      {
+        AiSession.Instance.Logger.Log($"GridBase.TeleportNearby: Unable to find placement for bot", MessageType.WARNING);
+      }
+    }
 
     internal virtual void SetReady()
     {

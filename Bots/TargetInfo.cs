@@ -444,7 +444,72 @@ namespace AiEnabled.Bots
 
         if (Inventory != null)
         {
-          gotoPosition = Inventory.CubeGrid.GridIntegerToWorld(Inventory.Position);
+          var center = Inventory.Position;
+          int distanceCheck;
+
+          if (Inventory.FatBlock != null)
+          {
+            distanceCheck = (int)Math.Ceiling((Inventory.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 1f) / 2.5);
+          }
+          else
+          {
+            BoundingBoxD box;
+            Inventory.GetWorldBoundingBox(out box, true);
+            distanceCheck = (int)Math.Ceiling((box.HalfExtents.AbsMax() + 1f) / 2.5);
+          }
+
+          Dictionary<Vector3I, HashSet<Vector3I>> blockFaces;
+          if (AiSession.Instance.BlockFaceDictionary.TryGetValue(Inventory.BlockDefinition.Id, out blockFaces) && blockFaces.Count > 1 && _base?._currentGraph != null)
+          {
+            var graph = _base._currentGraph;
+
+            for (int i = 1; i < distanceCheck + 1; i++)
+            {
+              var testPoint = center + Vector3I.Up * i;
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              {
+                center = testPoint;
+                break;
+              }
+
+              testPoint = center + Vector3I.Down * i;
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              {
+                center = testPoint;
+                break;
+              }
+
+              testPoint = center + Vector3I.Left * i;
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              {
+                center = testPoint;
+                break;
+              }
+
+              testPoint = center + Vector3I.Right * i;
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              {
+                center = testPoint;
+                break;
+              }
+
+              testPoint = center + Vector3I.Forward * i;
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              {
+                center = testPoint;
+                break;
+              }
+
+              testPoint = center + Vector3I.Backward * i;
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              {
+                center = testPoint;
+                break;
+              }
+            }
+          }
+
+          gotoPosition = Inventory.CubeGrid.GridIntegerToWorld(center);
           actualPosition = gotoPosition;
           return true;
         }

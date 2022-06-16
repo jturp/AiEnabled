@@ -701,7 +701,7 @@ namespace AiEnabled.Bots
     Action<WorkData> _pathWorkAction, _pathWorkCallBack;
     readonly GraphWorkData _graphWorkData;
     readonly PathWorkData _pathWorkData;
-    readonly MyObjectBuilderType _animalBotType = MyObjectBuilderType.Parse("MyObjectBuilder_AnimalBot");
+    readonly internal MyObjectBuilderType _animalBotType = MyObjectBuilderType.Parse("MyObjectBuilder_AnimalBot");
 
     public void SetShootInterval()
     {
@@ -1330,6 +1330,15 @@ namespace AiEnabled.Bots
         {
           CheckGraphNeeded = true;
 
+          if (_currentGraph != null && _currentGraph.IsValid && Character != null && !IsDead
+            && Math.Abs(VectorUtils.GetAngleBetween(Character.WorldMatrix.Up, _currentGraph.WorldMatrix.Up)) > MathHelper.ToRadians(3))
+          {
+            var matrix = _currentGraph.WorldMatrix;
+            matrix.Translation = Character.WorldMatrix.Translation;
+
+            Character.SetWorldMatrix(matrix);
+          }
+
           if (Owner?.Character != null)
           {
             if (Owner.Character.EnabledLights != Character.EnabledLights)
@@ -1554,11 +1563,11 @@ namespace AiEnabled.Bots
 
       if (cube != null || (isCharacter && AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId)))
       {
-        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+        rand *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
       }
       else if (isCharacter && AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget?.Owner != null)
       {
-        rand *= AiSession.Instance.ModSaveData.BotDamageModifier;
+        rand *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
       }
 
       destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
@@ -2341,6 +2350,10 @@ namespace AiEnabled.Bots
         {
           checkDistance = _followDistanceSqd;
         }
+        else if (Target.IsFloater)
+        {
+          checkDistance = 8;
+        }
         else
         {
           checkDistance = 4;
@@ -2555,12 +2568,13 @@ namespace AiEnabled.Bots
       bool startDenied = _pathCollection.DeniedDoors.ContainsKey(start);
       if (!_currentGraph.GetClosestValidNode(this, start, out start, currentIsDenied: startDenied))
       {
-        var pn = _currentGraph.GetReturnHomePoint(this);
-        if (pn != null)
-        {
-          _moveTo = _currentGraph.LocalToWorld(pn.Position) + pn.Offset;
-        }
+        //var pn = _currentGraph.GetReturnHomePoint(this);
+        //if (pn != null)
+        //{
+        //  _moveTo = _currentGraph.LocalToWorld(pn.Position) + pn.Offset;
+        //}
 
+        _currentGraph.TeleportNearby(this);
         _idlePathTimer = 0;
         return;
       }
@@ -3202,7 +3216,7 @@ namespace AiEnabled.Bots
 
     void CheckNode(ref float distanceToCheck)
     {
-      if (_stuckCounter > 1 || _pathCollection.UpdateDistanceToNextNode())
+      if (_stuckCounter > 2 || _pathCollection.UpdateDistanceToNextNode())
       {
         _stuckTimer = 0;
         _stuckCounter = 0;
@@ -3213,7 +3227,7 @@ namespace AiEnabled.Bots
         AfterNextIsLadder = false;
         UseLadder = false;
 
-        if (_stuckCounter > 1)
+        if (_stuckCounter > 2)
         {
           if (!_currentGraph.IsGridGraph)
           {
@@ -3222,11 +3236,11 @@ namespace AiEnabled.Bots
             var nextNode = _pathCollection.NextNode;
 
             var currentNode = _currentGraph.WorldToLocal(GetPosition());
-            var current = _currentGraph.LocalToWorld(currentNode);
-            var last = lastNode != null ? _currentGraph.LocalToWorld(lastNode.Position) + lastNode.Offset : current;
-            var next = nextNode != null ? _currentGraph.LocalToWorld(nextNode.Position) + nextNode.Offset : current;
+            //var current = _currentGraph.LocalToWorld(currentNode);
+            var last = lastNode != null ? lastNode.Position : currentNode; // _currentGraph.LocalToWorld(lastNode.Position) + lastNode.Offset : current;
+            var next = nextNode != null ? nextNode.Position : currentNode; // _currentGraph.LocalToWorld(nextNode.Position) + nextNode.Offset : current;
 
-            voxelGraph.AddToObstacles(last, current, next);
+            voxelGraph.AddToObstacles(last, currentNode, next);
             _pathCollection.CleanUp(true);
           }
           else
@@ -3286,13 +3300,14 @@ namespace AiEnabled.Bots
       if (!_currentGraph.GetClosestValidNode(this, start, out start))
       {
         _pathCollection.CleanUp(true);
+        _currentGraph.TeleportNearby(this);
 
-        var home = _currentGraph.GetReturnHomePoint(this);
-        if (home != null)
-        {
-          lock (_pathCollection.PathToTarget)
-            _pathCollection.PathToTarget.Enqueue(home);
-        }
+        //var home = _currentGraph.GetReturnHomePoint(this);
+        //if (home != null)
+        //{
+        //  lock (_pathCollection.PathToTarget)
+        //    _pathCollection.PathToTarget.Enqueue(home);
+        //}
 
         return;
       }
@@ -4060,13 +4075,15 @@ namespace AiEnabled.Bots
           {
             if (_pathCollection.HasNode && !_currentGraph.IsGridGraph)
             {
-              var currentPosition = GetPosition();
-              var nextPosition = _currentGraph.LocalToWorld(_pathCollection.NextNode.Position) + _pathCollection.NextNode.Offset;
-              var fromPosition = _pathCollection.LastNode != null ? _currentGraph.LocalToWorld(_pathCollection.LastNode.Position) + _pathCollection.LastNode.Offset
-                : currentPosition;
+              //var currentPosition = GetPosition();
+              var currentNode = _currentGraph.WorldToLocal(GetPosition());
+
+              var nextPosition = _pathCollection.NextNode.Position; // _currentGraph.LocalToWorld(_pathCollection.NextNode.Position) + _pathCollection.NextNode.Offset;
+              var fromPosition = _pathCollection.LastNode != null ? _pathCollection.LastNode.Position : currentNode; 
+              // _currentGraph.LocalToWorld(_pathCollection.LastNode.Position) + _pathCollection.LastNode.Offset : currentPosition;
 
               var vGrid = _currentGraph as VoxelGridMap;
-              vGrid?.AddToObstacles(fromPosition, currentPosition, nextPosition);
+              vGrid?.AddToObstacles(fromPosition, currentNode, nextPosition);
             }
 
             _stuckTimer = 0;
@@ -4104,18 +4121,28 @@ namespace AiEnabled.Bots
           WaitForStuckTimer = false;
         }
 
-        rotation *= -1;
-
         if (JetpackEnabled)
         {
-          //movement *= 0.5f;
+          if (_stuckTimerReset <= 30)
+          {
+            movement *= 0.5f;
 
-          if (_stuckCounter < 45)
-            movement += (_stuckTimerReset <= 30 ? Vector3.Up : Vector3.Down) * 0.25f;
+            if (_stuckCounter == 1)
+              movement += Vector3.Up * 0.5f;
+            else if (_stuckTimer == 2)
+              movement += Vector3.Down * 0.5f;
+          }
+          else
+            movement = Vector3.Forward * 0.5f;
         }
-        else if (_stuckTimerReset > 40)
+        else
         {
-          Character.Jump();
+          rotation *= -1;
+
+          if (_stuckTimerReset > 40)
+          {
+            Character.Jump();
+          }
         }
       }
       else if (WaitForSwerveTimer)

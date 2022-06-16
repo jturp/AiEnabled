@@ -137,9 +137,9 @@ namespace AiEnabled.Networking
         else if (DamageMultiplier.HasValue)
         {
           if (IsBotMultiplier == true)
-            AiSession.Instance.ModSaveData.BotDamageModifier = DamageMultiplier.Value;
+            AiSession.Instance.ModSaveData.BotWeaponDamageModifier = DamageMultiplier.Value;
           else
-            AiSession.Instance.ModSaveData.PlayerDamageModifier = DamageMultiplier.Value;
+            AiSession.Instance.ModSaveData.PlayerWeaponDamageModifier = DamageMultiplier.Value;
         }
         else if (ShowHealthBars.HasValue && PlayerId > 0)
         {

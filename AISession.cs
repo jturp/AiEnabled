@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v0.15b";
+    public const string VERSION = "v0.16b";
     const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
@@ -777,11 +777,14 @@ namespace AiEnabled
 
             foreach (var kvp in BotPrices)
             {
+              var bType = kvp.Key;
+              var credits = kvp.Value;
+
               var bp = new BotPrice
               {
-                BotType = kvp.Key,
-                SpaceCredits = kvp.Value,
-                Components = BotComponents.GetValueOrDefault(kvp.Key, new List<SerialId>() { new SerialId() })
+                BotType = bType,
+                SpaceCredits = credits,
+                Components = BotComponents.GetValueOrDefault(bType, new List<SerialId>() { new SerialId() })
               };
 
               ModPriceData.BotPrices.Add(bp);
@@ -816,6 +819,39 @@ namespace AiEnabled
                 if (botPrice.SpaceCredits.HasValue)
                   BotPrices[botPrice.BotType.Value] = botPrice.SpaceCredits.Value;
               }
+            }
+          }
+
+          foreach (var kvp in BotPrices)
+          {
+            var bType = kvp.Key;
+            var subtype = $"AiEnabled_Comp_{bType}BotMaterial";
+            var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), subtype);
+            var bpDef = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(comp);
+
+            if (bpDef != null)
+            {
+              var items = BotComponents[bType];
+              if (items.Count == 0)
+                items.Add(new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 1));
+
+              var reqs = new MyBlueprintDefinitionBase.Item[items.Count];
+
+              for (int i = 0; i < items.Count; i++)
+              {
+                var item = items[i];
+
+                var req = new MyBlueprintDefinitionBase.Item
+                {
+                  Amount = item.Amount,
+                  Id = item.DefinitionId
+                };
+
+                reqs[i] = req;
+              }
+
+              bpDef.Atomic = true;
+              bpDef.Prerequisites = reqs;
             }
           }
 
@@ -1997,7 +2033,7 @@ namespace AiEnabled
               damageAmount = info.Amount * 0.0001f;
 
               if (targetIsPlayer)
-                damageAmount *= ModSaveData.BotDamageModifier;
+                damageAmount *= ModSaveData.BotWeaponDamageModifier;
             }
             else if (targetIsBot && (character.Definition.Id.SubtypeName == "Default_Astronaut" || character.Definition.Id.SubtypeName == "Default_Astronaut_Female"))
             {
@@ -2018,7 +2054,7 @@ namespace AiEnabled
               damageAmount = info.Amount * 0.04f;
 
               if (targetIsPlayer)
-                damageAmount *= ModSaveData.BotDamageModifier;
+                damageAmount *= ModSaveData.BotWeaponDamageModifier;
             }
             else if (targetIsBot && (character.Definition.Id.SubtypeName == "Default_Astronaut" || character.Definition.Id.SubtypeName == "Default_Astronaut_Female"))
             {
@@ -2034,7 +2070,7 @@ namespace AiEnabled
               ownerIdentityId = entity.ControllerInfo.ControllingIdentityId;
 
             if (entity != null && Players.ContainsKey(ownerIdentityId) && targetIsBot)
-              damageAmount *= ModSaveData.PlayerDamageModifier;
+              damageAmount *= ModSaveData.PlayerWeaponDamageModifier;
 
             break;
           case "Grind":
@@ -2050,7 +2086,7 @@ namespace AiEnabled
             if (ch != null && Players.ContainsKey(ownerIdentityId))
             {
               if (targetIsBot)
-                damageAmount *= ModSaveData.PlayerDamageModifier;
+                damageAmount *= ModSaveData.PlayerWeaponDamageModifier;
             }
             else if (Bots.ContainsKey(ownerId))
             {
@@ -2094,7 +2130,7 @@ namespace AiEnabled
                   damageAmount = 1.5f;
 
                   if (isPlayerAttacker)
-                    damageAmount *= ModSaveData.PlayerDamageModifier;
+                    damageAmount *= ModSaveData.PlayerWeaponDamageModifier;
 
                   DamageCharacter(info.AttackerId, character, info.Type, damageAmount);
                 }
@@ -2118,12 +2154,12 @@ namespace AiEnabled
             if (targetIsBot)
             {
               if (Players.ContainsKey(ownerIdentityId))
-                damageAmount *= ModSaveData.PlayerDamageModifier;
+                damageAmount *= ModSaveData.PlayerWeaponDamageModifier;
             }
             else if (targetIsPlayer)
             {
               if (Bots.ContainsKey(ownerId))
-                damageAmount *= ModSaveData.BotDamageModifier;
+                damageAmount *= ModSaveData.BotWeaponDamageModifier;
             }
 
             break;
@@ -3995,6 +4031,8 @@ namespace AiEnabled
             continue;
           }
         }
+
+        graph.AdjustWorldMatrix();
 
         if (graph.NeedsGridUpdate)
           graph.UpdateGridCollection();

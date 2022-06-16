@@ -462,7 +462,7 @@ namespace AiEnabled.Ai.Support
       else
         gridList.Clear();
 
-      Grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridList);
+      Grid.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
 
       for (int i = gridList.Count - 1; i >= 0; i--)
       {
@@ -527,7 +527,7 @@ namespace AiEnabled.Ai.Support
         if (terminal == null || !terminal.HasInventory)
           continue;
 
-        if (!(terminal is IMyCargoContainer) && !(terminal is IMyShipConnector) && !(terminal is IMyShipToolBase))
+        if (!(terminal is IMyCargoContainer) && !(terminal is IMyShipConnector) && !(terminal is IMyShipToolBase) && !(terminal is IMyAssembler))
           continue;
 
         for (int j = 0; j < terminal.InventoryCount; j++)
@@ -551,7 +551,7 @@ namespace AiEnabled.Ai.Support
         for (int j = 0; j < terminal.InventoryCount; j++)
         {
           var inv = terminal.GetInventory(j);
-          if (inv == null)
+          if (inv == null || (terminal is IMyAssembler && j == 0))
             continue;
 
           if (hookEvents)

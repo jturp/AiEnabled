@@ -14,8 +14,8 @@ namespace AiEnabled.ConfigData
     public int MaxBotHuntingDistanceEnemy = 300;
     public int MaxBotHuntingDistanceFriendly = 150;
     public long MaxPathfindingTimeInSeconds = 30;
-    public float PlayerDamageModifier = 1;
-    public float BotDamageModifier = 1;
+    public float PlayerWeaponDamageModifier = 1;
+    public float BotWeaponDamageModifier = 1;
     public bool AllowBotMusic;
     public bool AllowEnemiesToFly;
     public bool AllowNeutralTargets;
@@ -29,3 +29,4 @@ namespace AiEnabled.ConfigData
     public SaveData() { }
   }
 }
+ 

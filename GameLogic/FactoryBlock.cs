@@ -348,32 +348,26 @@ namespace AiEnabled.GameLogic
         .Append(SelectedRole)
         .Append('\n', 2);
 
+      var compSubtype = $"AiEnabled_Comp_{SelectedRole}BotMaterial";
+      var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), compSubtype);
+      var def = AiSession.Instance.AllGameDefinitions[comp];
+
+      sb.Append("Build Requirements:\n")
+        .Append(" - ")
+        .Append(def?.DisplayNameText ?? comp.SubtypeName)
+        .Append('\n');
+
       List<SerialId> comps;
       if (AiSession.Instance.BotComponents.TryGetValue(SelectedRole, out comps) && comps?.Count > 0)
       {
-        sb.Append("Build Requirements:\n")
-          .Append(" - ")
+        sb.Append(" - ")
           .Append(AiSession.Instance.BotPrices[SelectedRole].ToString("#,###,##0"))
-          .Append(" Space Credits");
-
-        foreach (var c in comps)
-        {
-          var id = c.DefinitionId;
-          MyDefinitionBase def;
-          if (!id.TypeId.IsNull && AiSession.Instance.AllGameDefinitions.TryGetValue(id, out def) && def != null)
-          {
-            sb.Append("\n - ")
-              .Append(c.Amount)
-              .Append(" ")
-              .Append(def.DisplayNameText);
-          }
-        }
-
-        sb.Append('\n', 2);
+          .Append(" Space Credits")
+          .Append('\n', 2);
       }
       else
       {
-        sb.Append("Component Requirements: None\n\n");
+        sb.Append('\n');
       }
 
       sb.Append("Description:\n")

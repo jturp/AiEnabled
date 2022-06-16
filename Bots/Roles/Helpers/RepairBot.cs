@@ -191,6 +191,11 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
+      if (Target.IsInventory)
+      {
+        return;
+      }
+
       if (Target.IsSlimBlock)
       {
         var slim = Target.Entity as IMySlimBlock;
@@ -199,10 +204,6 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (!AiSession.Instance.BlockRepairDelays.Contains(slim.CubeGrid.EntityId, slim.Position))
             return;
         }
-      }
-      else if (Target.IsInventory)
-      {
-        return;
       }
 
       object tgt = null;
@@ -498,27 +499,17 @@ namespace AiEnabled.Bots.Roles.Helpers
           graph.RemoveRepairTiles(_repairedBlocks);
         }
 
-        var floatingObj = Target.Entity as MyFloatingObject;
-        if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null)
-          return;
-
         var inv = Character.GetInventory() as MyInventory;
         if (inv != null)
         {
-          if (isGridGraph && ((float)inv.CurrentVolume / (float)inv.MaxVolume) > 0.9f)
-          {
-            // inv too full, send bot to drop off current stock
+          var invRatioOK = ((float)inv.CurrentVolume / (float)inv.MaxVolume) < 0.9f;
 
-            var botLocal = graph.WorldToLocal(botPosition);
-            var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
-            if (invBlock != null)
-            {
-              Target.SetInventory(invBlock);
-              isInventory = true;
-            }
-          }
-          else
+          if (invRatioOK)
           {
+            var floatingObj = Target.Entity as MyFloatingObject;
+            if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null)
+              return;
+
             List<MyEntity> entities;
             if (!AiSession.Instance.EntListStack.TryPop(out entities))
               entities = new List<MyEntity>();
@@ -548,6 +539,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                   Target.SetInventory(invBlock);
                   isInventory = true;
                 }
+
                 break;
               }
 
@@ -569,6 +561,18 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             entities.Clear();
             AiSession.Instance.EntListStack.Push(entities);
+          }
+          else if (isGridGraph)
+          {
+            // inv too full, send bot to drop off current stock
+
+            var botLocal = graph.WorldToLocal(botPosition);
+            var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
+            if (invBlock != null)
+            {
+              Target.SetInventory(invBlock);
+              isInventory = true;
+            }
           }
         }
       }
@@ -1110,21 +1114,21 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      if (jpEnabled)
-      {
-        var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
-        var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
+      //if (jpEnabled)
+      //{
+      //  var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
+      //  var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
 
-        if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
-        {
-          var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
+      //  if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
+      //  {
+      //    var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
 
-          if (botdotUp < 0)
-            roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
-          else
-            roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
-        }
-      }
+      //    if (botdotUp < 0)
+      //      roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
+      //    else
+      //      roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
+      //  }
+      //}
 
       var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
@@ -1139,21 +1143,21 @@ namespace AiEnabled.Bots.Roles.Helpers
       {
         float xRot = 0;
 
-        if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
-        {
-          var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
-          var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
+        //if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
+        //{
+        //  var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
+        //  var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
 
-          if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
-          {
-            var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
+        //  if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
+        //  {
+        //    var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
 
-            if (botDotUp < 0)
-              xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
-            else
-              xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
-          }
-        }
+        //    if (botDotUp < 0)
+        //      xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
+        //    else
+        //      xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
+        //  }
+        //}
 
         rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
       }

@@ -191,6 +191,10 @@ namespace AiEnabled.Support
 
     private static void SpawnHelper(IMyTerminalBlock block)
     {
+      var funcBlock = block as IMyFunctionalBlock;
+      if (funcBlock == null || !funcBlock.Enabled)
+        return;
+
       var gameLogic = block.GameLogic.GetAs<Factory>();
       if (gameLogic == null)
         return;
@@ -232,77 +236,57 @@ namespace AiEnabled.Support
       player.TryGetBalanceInfo(out balance);
 
       var botRole = gameLogic.SelectedRole;
-      var botModel = gameLogic.SelectedModel;
+      var botModel = (botRole == AiSession.BotType.Scavenger) ? AiSession.BotModel.Default : gameLogic.SelectedModel;
       var price = AiSession.Instance.BotPrices[botRole];
       var credit = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalObject), "SpaceCredit");
       var inv = player.Character?.GetInventory() as MyInventory;
       var inventoryCredits = 0L;
 
-      if (price > balance)
-      {
-        var needed = price - balance;
-        if (inv != null)
-        {
-          inventoryCredits = Math.Min(needed, (long)inv.GetItemAmount(credit));
-          price = Math.Max(0, price - inventoryCredits);
-        }
+      var creativeMode = MyAPIGateway.Session.CreativeMode;
+      var copyPasteEnabled = MyAPIGateway.Session.EnableCopyPaste;
 
+      if (!creativeMode && !copyPasteEnabled)
+      {
         if (price > balance)
         {
-          needed = price - balance;
-          SetContextMessage(block, $"Missing {needed:#,###,###} SC");
-          return;
-        }
-      }
-
-      var reqs = AiSession.Instance.BotComponents[botRole];
-      if (reqs?.Count > 0)
-      {
-        var blockInv = block.GetInventory() as MyInventory;
-
-        for (int i = 0; i < reqs.Count; i++)
-        {
-          var req = reqs[i];
-          var amount = req.Amount;
-
-          if (amount > 0)
+          var needed = price - balance;
+          if (inv != null)
           {
-            var id = req.DefinitionId;
-            var def = AiSession.Instance.AllGameDefinitions[id];
+            inventoryCredits = Math.Min(needed, (long)inv.GetItemAmount(credit));
+            price = Math.Max(0, price - inventoryCredits);
+          }
 
-            var amountInBlock = (int)(blockInv?.GetItemAmount(id) ?? 0);
-            var amountInPlayer = (int)(inv?.GetItemAmount(id) ?? 0);
-            var needed = amount - amountInBlock - amountInPlayer;
-
-            if (needed > 0)
-            {
-              SetContextMessage(block, $"Missing {needed:#,###,###} {def?.DisplayNameText ?? id.SubtypeName}");
-              return;
-            }
+          if (price > balance)
+          {
+            needed = price - balance;
+            SetContextMessage(block, $"Missing {needed:#,###,###} SC");
+            return;
           }
         }
 
-        for (int i = 0; i < reqs.Count; i++)
+        var compSubtype = $"AiEnabled_Comp_{botRole}BotMaterial";
+        var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), compSubtype);
+
+        var blockInv = block.GetInventory() as MyInventory;
+        var amountInBlock = (int)(blockInv?.GetItemAmount(comp) ?? 0);
+
+        if (amountInBlock > 0)
         {
-          var req = reqs[i];
-          var amount = req.Amount;
+          blockInv.RemoveItemsOfType(1, comp);
+        }
+        else
+        {
+          var amountInPlayer = (int)(inv?.GetItemAmount(comp) ?? 0);
 
-          if (amount > 0)
+          if (amountInPlayer > 0)
           {
-            var id = req.DefinitionId;
-            var amountInBlock = (int)(blockInv?.GetItemAmount(id) ?? 0);
-            var amountInPlayer = (int)(inv?.GetItemAmount(id) ?? 0);
-
-            var amountToRemove = Math.Min(amount, amountInBlock);
-            blockInv?.RemoveItemsOfType((MyFixedPoint)amountToRemove, id);
-
-            amount -= amountToRemove;
-
-            if (amount > 0)
-            {
-              amountToRemove = Math.Min(amount, amountInPlayer);
-              inv.RemoveItemsOfType((MyFixedPoint)amountToRemove, id);
-            }
+            inv.RemoveItemsOfType(1, comp);
+          }
+          else
+          {
+            var def = AiSession.Instance.AllGameDefinitions[comp];
+            SetContextMessage(block, $"Missing {def?.DisplayNameText ?? comp.SubtypeName}");
+            return;
           }
         }
       }
@@ -615,6 +599,10 @@ namespace AiEnabled.Support
 
       var bot = (AiSession.BotType)value;
       gameLogic.SelectedRole = bot;
+
+      if (bot == AiSession.BotType.Scavenger)
+        gameLogic.SelectedModel = AiSession.BotModel.Default;
+
       block.RefreshCustomInfo();
       RefreshTerminalControls(block);
     }
@@ -625,7 +613,13 @@ namespace AiEnabled.Support
       if (gameLogic == null)
         return;
 
-      var model = (AiSession.BotModel)value;
+      AiSession.BotModel model;
+
+      if (gameLogic.SelectedRole == AiSession.BotType.Scavenger)
+        model = AiSession.BotModel.Default;
+      else
+        model = (AiSession.BotModel)value;
+      
       gameLogic.SelectedModel = model;
       block.RefreshCustomInfo();
       RefreshTerminalControls(block);

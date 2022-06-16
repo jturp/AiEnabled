@@ -313,7 +313,7 @@ namespace AiEnabled.Projectiles
           }
           else if (AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId) || bot?.Owner != null)
           {
-            Damage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+            Damage *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
           }
 
           AiSession.Instance.DamageCharacter(Owner.EntityId, character, MyDamageType.Bullet, Damage);
@@ -382,7 +382,7 @@ namespace AiEnabled.Projectiles
         var isServer = AiSession.Instance.IsServer;
         if (isServer)
         {
-          BlockDamage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+          BlockDamage *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
 
           BotBase bot;
           if (AiSession.Instance.Bots.TryGetValue(Owner.EntityId, out bot) && bot != null)
@@ -489,7 +489,7 @@ namespace AiEnabled.Projectiles
         };
 
         if (AiSession.Instance.IsServer)
-          Damage *= AiSession.Instance.ModSaveData.BotDamageModifier;
+          Damage *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
   
         MyDecals.HandleAddDecal(hitEntity, info, (Vector3)Direction, materialType, ProjectileConstants.DecalSource_Rifle, damage: (float)Damage, voxelMaterial: materialType, flags: MyDecalFlags.IgnoreOffScreenDeletion);
         return true;

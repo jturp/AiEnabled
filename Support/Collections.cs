@@ -272,6 +272,9 @@ namespace AiEnabled
 
     public Dictionary<MyDefinitionId, Base6Directions.Direction[]> CatwalkRailDirections { get; protected set; } = new Dictionary<MyDefinitionId, Base6Directions.Direction[]>(MyDefinitionId.Comparer)
     {
+      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
+      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfCenterRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
+      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfOuterRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
       { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
       { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
       { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Left } },
