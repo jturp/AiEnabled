@@ -938,6 +938,8 @@ namespace AiEnabled.Bots
           Health = 1000,
           OwningPlayerIdentityId = playerId,
           ColorMaskHSV = hsvOffset,
+          //IsPersistenceCharacter = true,
+          //IsStartingCharacterForLobby = true,
         };
 
         var bot = MyEntities.CreateFromObjectBuilder(ob, true) as IMyCharacter;

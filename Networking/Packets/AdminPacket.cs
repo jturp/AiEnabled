@@ -9,7 +9,11 @@ using AiEnabled.Support;
 
 using ProtoBuf;
 
+using Sandbox.Definitions;
 using Sandbox.ModAPI;
+
+using VRage;
+using VRage.Game;
 
 namespace AiEnabled.Networking
 {
@@ -190,6 +194,48 @@ namespace AiEnabled.Networking
         AiSession.Instance.BotComponents[AiSession.BotType.Repair] = RepairBotRequirements ?? new List<SerialId>();
         AiSession.Instance.BotComponents[AiSession.BotType.Combat] = CombatBotRequirements ?? new List<SerialId>();
         AiSession.Instance.BotComponents[AiSession.BotType.Scavenger] = ScavengerBotRequirements ?? new List<SerialId>();
+
+        var efficiency = MyAPIGateway.Session.AssemblerEfficiencyMultiplier;
+        var fixedPoint = (MyFixedPoint)(1f / efficiency);
+        var remainder = 1 - (fixedPoint * efficiency);
+
+        foreach (var kvp in AiSession.Instance.BotComponents)
+        {
+          var bType = kvp.Key;
+          var subtype = $"AiEnabled_Comp_{bType}BotMaterial";
+          var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), subtype);
+          var bpDef = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(comp);
+
+          if (bpDef != null)
+          {
+            var items = kvp.Value;
+            if (items.Count == 0)
+              items.Add(new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 1));
+
+            var reqs = new MyBlueprintDefinitionBase.Item[items.Count];
+
+            for (int i = 0; i < items.Count; i++)
+            {
+              var item = items[i];
+
+              var req = new MyBlueprintDefinitionBase.Item
+              {
+                Amount = item.Amount,
+                Id = item.DefinitionId
+              };
+
+              req.Amount *= efficiency;
+
+              if (remainder > 0)
+                req.Amount += req.Amount * remainder + remainder;
+
+              reqs[i] = req;
+            }
+
+            bpDef.Atomic = true;
+            bpDef.Prerequisites = reqs;
+          }
+        }
       }
 
       return false;

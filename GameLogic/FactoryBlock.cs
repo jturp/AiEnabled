@@ -78,6 +78,16 @@ namespace AiEnabled.GameLogic
       if (_block == null)
         return;
 
+      var sorter = _block as IMyConveyorSorter;
+      sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>()
+      {
+        new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial")),
+        new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial")),
+        new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial")),
+      });
+
+      sorter.DrainAll = true;
+
       _block.AppendingCustomInfo += AppendingCustomInfo;
       _block.OnMarkForClose += OnMarkForClose;
       _block.OnClosing += OnMarkForClose;

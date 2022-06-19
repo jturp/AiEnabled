@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
+using VRage.Utils;
 
 using VRageMath;
 
@@ -36,7 +37,7 @@ namespace AiEnabled.Particles
         AiSession.Instance.SoundPairDict[sound] = SoundPair;
       }
 
-      SoundEmitter = AiSession.Instance.GetEmitter(bot as MyEntity); // new MyEntity3DSoundEmitter(bot as MyEntity);
+      SoundEmitter = AiSession.Instance.GetEmitter(bot as MyEntity);
       SoundEmitter.PlaySound(SoundPair);
     }
 
@@ -78,6 +79,8 @@ namespace AiEnabled.Particles
     {
       Stop();
       Block = block;
+
+      MyLog.Default.WriteLine($"Playing sound: {SoundPair.SoundId}");
       SoundEmitter?.PlaySound(SoundPair);
     }
 

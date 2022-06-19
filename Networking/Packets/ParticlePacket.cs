@@ -8,7 +8,10 @@ using AiEnabled.Particles;
 
 using ProtoBuf;
 
+using Sandbox.ModAPI;
+
 using VRage;
+using VRage.Utils;
 
 using VRageMath;
 
@@ -56,7 +59,9 @@ namespace AiEnabled.Networking
       {
         ParticleInfoBase pBase;
         if (AiSession.Instance.ParticleInfoDict.TryGetValue(BotEntityId, out pBase))
-          pBase.Stop();
+        {
+          MyAPIGateway.Utilities.InvokeOnGameThread(pBase.Stop, "AiEnabled");
+        }
       }
       else
       {
@@ -67,8 +72,10 @@ namespace AiEnabled.Networking
         AiSession.Instance.ParticleDictionary.TryRemove(BotEntityId, out pClient);
 
         ParticleInfoBase pBase;
-        if (AiSession.Instance.ParticleInfoDict.TryRemove(BotEntityId, out pBase))
-          pBase?.Close();
+        if (AiSession.Instance.ParticleInfoDict.TryRemove(BotEntityId, out pBase) && pBase != null)
+        {
+          MyAPIGateway.Utilities.InvokeOnGameThread(pBase.Close, "AiEnabled");
+        }
 
         if (!Remove)
         {

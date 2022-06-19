@@ -113,6 +113,7 @@ namespace AiEnabled
     public bool DrawDebug;
     public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded, EemLoaded;
     public bool InfiniteAmmoEnabled;
+    public readonly MyStringHash FactorySorterHash = MyStringHash.GetOrCompute("RoboFactory");
 
     public List<HelperInfo> MyHelperInfo;
     public CommandMenu CommandMenu;
@@ -822,6 +823,10 @@ namespace AiEnabled
             }
           }
 
+          var efficiency = MyAPIGateway.Session.AssemblerEfficiencyMultiplier;
+          var fixedPoint = (MyFixedPoint)(1f / efficiency);
+          var remainder = 1 - (fixedPoint * efficiency);
+
           foreach (var kvp in BotPrices)
           {
             var bType = kvp.Key;
@@ -846,6 +851,11 @@ namespace AiEnabled
                   Amount = item.Amount,
                   Id = item.DefinitionId
                 };
+
+                req.Amount *= efficiency;
+
+                if (remainder > 0)
+                  req.Amount += req.Amount * remainder + remainder;
 
                 reqs[i] = req;
               }
