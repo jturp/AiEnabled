@@ -49,7 +49,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       BotType = AiSession.BotType.Repair;
       Owner = AiSession.Instance.Players[ownerId];
-      Behavior = new WorkerBehavior(bot);
+      Behavior = new WorkerBehavior(this);
       var toolSubtype = toolType ?? "Welder2Item";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 

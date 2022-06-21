@@ -10,7 +10,7 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class NeutralBehavior : BotBehavior
   {
-    public NeutralBehavior(IMyCharacter bot) : base(bot)
+    public NeutralBehavior(BotBase bot) : base(bot)
     {
       Actions.AddList(AiSession.Instance.Animations);
     }

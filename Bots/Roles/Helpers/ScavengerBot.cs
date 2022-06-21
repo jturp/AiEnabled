@@ -41,7 +41,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       BotType = AiSession.BotType.Scavenger;
       Owner = AiSession.Instance.Players[ownerId];
-      Behavior = new ScavengerBehavior(bot);
+      Behavior = new ScavengerBehavior(this);
 
       _followDistanceSqd = 25;
       _ticksBetweenAttacks = 150;

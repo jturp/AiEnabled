@@ -33,7 +33,7 @@ namespace AiEnabled.Bots.Roles
 
     public ZombieBot(IMyCharacter bot, GridBase gridBase) : base(bot, 1, 1, gridBase)
     {
-      Behavior = new ZombieBehavior(bot);
+      Behavior = new ZombieBehavior(this);
 
       _ticksBeforeDamage = 63;
       _ticksBetweenAttacks = 200;

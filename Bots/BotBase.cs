@@ -1379,24 +1379,17 @@ namespace AiEnabled.Bots
             BehaviorReady = false;
             UseBehavior();
           }
-          else if (AiSession.Instance?.GlobalSpeakTimer > 1000 && (inSeat || (Target.Entity != null && Target.GetDistanceSquared() < 2500 && !Target.IsFriendly())))
+          else if (AiSession.Instance?.GlobalSpeakTimer > 1000) // && (inSeat || (Target.Entity != null && Target.GetDistanceSquared() < 2500 && !Target.IsFriendly())))
           {
             AiSession.Instance.GlobalSpeakTimer = 0;
             BehaviorReady = false;
 
-            if (inSeat)
-            {
-              if (AiSession.Instance.AllowMusic)
-              {
-                var num = MyUtils.GetRandomInt(0, 10);
-                if (num > 6)
-                  Behavior?.Sing();
-              }
-            }
+            var num = (inSeat && AiSession.Instance.AllowMusic) ? MyUtils.GetRandomInt(0, 10) : 0;
+
+            if (num > 6)
+              Behavior?.Sing();
             else
-            {
               UseBehavior();
-            }
           }
         }
       }

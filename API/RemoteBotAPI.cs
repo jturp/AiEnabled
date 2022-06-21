@@ -126,7 +126,7 @@ namespace AiEnabled.API
       [ProtoMember(15)] public List<string> PainSounds;
 
       /// <summary>
-      /// These sounds are played randomly when the bot is pursuing a target
+      /// These sounds are played randomly when the bot does NOT have a target
       /// </summary>
       [ProtoMember(16)] public List<string> IdleSounds;
 
@@ -164,6 +164,11 @@ namespace AiEnabled.API
       /// If the bot is unable to use any of the specified types, the default type will be used instead.
       /// </summary>
       [ProtoMember(22)] public List<string> ToolSubtypeIdList;
+
+      /// <summary>
+      /// These sounds are played randomly when the bot is pursuing a target
+      /// </summary>
+      [ProtoMember(23)] public List<string> TauntSounds;
     }
 
     /////////////////////////////////////////////

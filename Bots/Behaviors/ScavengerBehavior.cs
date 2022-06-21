@@ -10,12 +10,12 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class ScavengerBehavior : BotBehavior
   {
-    public ScavengerBehavior(IMyCharacter bot) : base(bot)
+    public ScavengerBehavior(BotBase bot) : base(bot)
     {
       Phrases.Add("RoboDogBark001");
       Phrases.Add("RoboDogBark002");
-      Phrases.Add("RoboDogBark003");
-      Phrases.Add("RoboDogSnarl001");
+      Taunts.Add("RoboDogBark003");
+      Taunts.Add("RoboDogSnarl001");
       //Phrases.Add("RoboDogPant001");
       //Phrases.Add("RoboDogSniff001");
 

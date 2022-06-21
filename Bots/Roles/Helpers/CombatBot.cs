@@ -45,7 +45,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       BotType = AiSession.BotType.Combat;
       Owner = AiSession.Instance.Players[ownerId];
-      Behavior = new FriendlyBehavior(bot);
+      Behavior = new FriendlyBehavior(this);
       var toolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
@@ -59,8 +59,8 @@ namespace AiEnabled.Bots.Roles.Helpers
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
       _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(1.5f));
 
-      var jetRequired = false; // bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = false; // jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
 
       RequiresJetpack = jetRequired;
       CanUseSpaceNodes = jetAllowed;

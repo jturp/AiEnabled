@@ -27,7 +27,7 @@ namespace AiEnabled.Bots.Roles
   {
     public BruiserBot(IMyCharacter bot, GridBase gridBase) : base(bot, 15, 25, gridBase)
     {
-      Behavior = new EnemyBehavior(bot);
+      Behavior = new EnemyBehavior(this);
 
       _ticksBeforeDamage = 35;
       _ticksBetweenAttacks = 400;

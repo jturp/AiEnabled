@@ -12,13 +12,13 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class ZombieBehavior : BotBehavior
   {
-    public ZombieBehavior(IMyCharacter bot) : base(bot)
+    public ZombieBehavior(BotBase bot) : base(bot)
     {
-      Phrases.Add("ZombieGroan001");
-      Phrases.Add("ZombieGroan002");
-      Phrases.Add("ZombieGroan003");
-      Phrases.Add("ZombieGroan004");
-      Phrases.Add("ZombieGroan005");
+      Taunts.Add("ZombieGroan001");
+      Taunts.Add("ZombieGroan002");
+      Taunts.Add("ZombieGroan003");
+      Taunts.Add("ZombieGroan004");
+      Taunts.Add("ZombieGroan005");
     }
   }
 }

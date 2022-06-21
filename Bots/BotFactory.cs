@@ -424,33 +424,28 @@ namespace AiEnabled.Bots
         {
           var sounds = bot.Behavior.Phrases;
           sounds.Clear();
+          sounds.AddList(spawnData.IdleSounds);
+        }
 
-          for (int i = 0; i < spawnData.IdleSounds.Count; i++)
-          {
-            sounds.Add(spawnData.IdleSounds[i]);
-          }
+        if (spawnData.TauntSounds?.Count > 0)
+        {
+          var sounds = bot.Behavior.Taunts;
+          sounds.Clear();
+          sounds.AddList(spawnData.TauntSounds);
         }
 
         if (spawnData.Actions?.Count > 0)
         {
           var actions = bot.Behavior.Actions;
           actions.Clear();
-
-          for (int i = 0; i < spawnData.Actions.Count; i++)
-          {
-            actions.Add(spawnData.Actions[i]);
-          }
+          actions.AddList(spawnData.Actions);
         }
 
         if (spawnData.PainSounds?.Count > 0)
         {
           var sounds = bot.Behavior.PainSounds;
           sounds.Clear();
-
-          for (int i = 0; i < spawnData.PainSounds.Count; i++)
-          {
-            sounds.Add(spawnData.PainSounds[i]);
-          }
+          sounds.AddList(spawnData.PainSounds);
         }
       }
 

@@ -39,7 +39,7 @@ namespace AiEnabled.GameLogic
     public override void Init(MyObjectBuilder_EntityBase objectBuilder)
     {
       _block = Entity as Sandbox.ModAPI.IMyAssembler;
-      NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME;
+      NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
       base.Init(objectBuilder);
     }
 

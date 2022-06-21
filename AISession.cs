@@ -518,6 +518,8 @@ namespace AiEnabled
       AllGameDefinitions?.Clear();
       ScavengerItemList?.Clear();
       MissingCompsDictStack?.Clear();
+      EmptySorterCache?.Clear();
+      FactorySorterCache?.Clear();
 
       _identityList?.Clear();
       _gpsAddIDs?.Clear();
@@ -619,6 +621,8 @@ namespace AiEnabled
       AllGameDefinitions = null;
       ScavengerItemList = null;
       MissingCompsDictStack = null;
+      EmptySorterCache = null;
+      FactorySorterCache = null;
 
       _identityList = null;
       _gpsAddIDs = null;
@@ -715,21 +719,26 @@ namespace AiEnabled
           if (def == null || !def.Public || def.Id.SubtypeName == "ZoneChip")
             continue;
 
-          var compItem = def as MyComponentDefinition;
-          if (compItem != null)
-          {
-            if (compItem.AvailableInSurvival && compItem.CanSpawnFromScreen)
-              AllGameDefinitions[def.Id] = def;
-
+          if (def is MyGasTankDefinition || def is MyOxygenGeneratorDefinition)
             continue;
-          }
 
-          //var physItem = def as MyPhysicalItemDefinition;
-          //if (physItem != null)
-          //{
-          //  if (physItem.IsIngot || physItem.IsOre)
-          //    AllGameDefinitions[def.Id] = def;
-          //}
+          // Thanks to Digi for showing me how to figure out what is craftable :)
+          var prodDef = def as MyProductionBlockDefinition;
+          if (prodDef != null)
+          {
+            foreach (MyBlueprintClassDefinition bpClass in prodDef.BlueprintClasses)
+            {
+              foreach (MyBlueprintDefinitionBase bp in bpClass)
+              {
+                foreach (MyBlueprintDefinitionBase.Item result in bp.Results)
+                {
+                  var compDef = MyDefinitionManager.Static.GetDefinition(result.Id) as MyComponentDefinition;
+                  if (compDef != null && !AllGameDefinitions.ContainsKey(compDef.Id))
+                    AllGameDefinitions[compDef.Id] = compDef;
+                }
+              }
+            }
+          }
         }
 
         if (IsServer)

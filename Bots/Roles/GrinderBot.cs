@@ -33,7 +33,7 @@ namespace AiEnabled.Bots.Roles
   {
     public GrinderBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
     {
-      Behavior = new ZombieBehavior(bot);
+      Behavior = new ZombieBehavior(this);
       var toolSubtype = toolType ?? "AngleGrinder2Item";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 

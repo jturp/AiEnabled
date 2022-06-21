@@ -79,14 +79,13 @@ namespace AiEnabled.GameLogic
         return;
 
       var sorter = _block as IMyConveyorSorter;
-      sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>()
-      {
-        new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial")),
-        new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial")),
-        new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial")),
-      });
-
       sorter.DrainAll = true;
+
+      // Workaround - using SetFilter with a list of items causes CTD on DS due to SE trying to serialize the MyDefinitionIds, which aren't serializable
+      sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, AiSession.Instance.EmptySorterCache);
+
+      foreach (var itemFilter in AiSession.Instance.FactorySorterCache)
+        sorter.AddItem(itemFilter);
 
       _block.AppendingCustomInfo += AppendingCustomInfo;
       _block.OnMarkForClose += OnMarkForClose;

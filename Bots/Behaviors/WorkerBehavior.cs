@@ -10,7 +10,7 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class WorkerBehavior : BotBehavior
   {
-    public WorkerBehavior(IMyCharacter bot) : base(bot)
+    public WorkerBehavior(BotBase bot) : base(bot)
     {
       Songs.Add("CallItTheBlues");
 

@@ -36,7 +36,7 @@ namespace AiEnabled.Bots.Roles
 
     public SoldierBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
     {
-      Behavior = new EnemyBehavior(bot);
+      Behavior = new EnemyBehavior(this);
       var toolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 

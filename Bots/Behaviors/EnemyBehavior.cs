@@ -10,13 +10,13 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class EnemyBehavior : BotBehavior
   {
-    public EnemyBehavior(IMyCharacter bot) : base(bot)
+    public EnemyBehavior(BotBase bot) : base(bot)
     {
-      Phrases.Add("YourTimeIsCome");
-      Phrases.Add("EatLead");
-      Phrases.Add("Taunt_MoreChallenge"); 
-      Phrases.Add("AutoAimEngaged");
-      Phrases.Add("Earthlings");
+      Taunts.Add("YourTimeIsCome");
+      Taunts.Add("EatLead");
+      Taunts.Add("Taunt_MoreChallenge");
+      Taunts.Add("AutoAimEngaged");
+      Taunts.Add("Earthlings");
 
       //Actions.Add("");
     }

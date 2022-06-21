@@ -10,14 +10,14 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class FriendlyBehavior : BotBehavior
   {
-    public FriendlyBehavior(IMyCharacter bot) : base(bot)
+    public FriendlyBehavior(BotBase bot) : base(bot)
     {
       Songs.Add("BadToTheBone");
 
-      Phrases.Add("TakeThatYouFilth");
-      Phrases.Add("HowIsTheTasting");
-      Phrases.Add("Enemy");
-      //Phrases.Add("CriticalBatteries");
+      Taunts.Add("TakeThatYouFilth");
+      Taunts.Add("HowIsTheTasting");
+      Taunts.Add("Enemy");
+      //Taunts.Add("CriticalBatteries");
 
       //Actions.Add("");
     }

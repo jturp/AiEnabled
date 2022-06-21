@@ -12,9 +12,9 @@ namespace AiEnabled.Bots.Behaviors
 {
   public class CreatureBehavior : BotBehavior
   {
-    public CreatureBehavior(IMyCharacter bot) : base(bot)
+    public CreatureBehavior(BotBase bot) : base(bot)
     {
-      var cDef = bot.Definition as MyCharacterDefinition;
+      var cDef = bot?.Character?.Definition as MyCharacterDefinition;
       
       if (!string.IsNullOrWhiteSpace(cDef?.PainSoundName))
       {

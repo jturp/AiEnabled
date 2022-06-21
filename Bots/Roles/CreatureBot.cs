@@ -30,7 +30,7 @@ namespace AiEnabled.Bots.Roles
 
     public CreatureBot(IMyCharacter bot, GridBase gridBase) : base(bot, 10, 15, gridBase)
     {
-      Behavior = new CreatureBehavior(bot);
+      Behavior = new CreatureBehavior(this);
 
       _ticksBetweenAttacks = 150;
       _blockDamagePerSecond = 175;

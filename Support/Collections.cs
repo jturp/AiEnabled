@@ -417,6 +417,13 @@ namespace AiEnabled
     public List<MyDefinitionId> ScavengerItemList = new List<MyDefinitionId>();
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
     public List<IMySlimBlock> GridSeatsAPI = new List<IMySlimBlock>();
+    public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> EmptySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>();
+    public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> FactorySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>()
+    {
+      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial")),
+      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial")),
+      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial"))
+    };
 
     Stack<WeaponInfo> _weaponInfoStack = new Stack<WeaponInfo>(20);
     Stack<IconInfo> _iconInfoStack = new Stack<IconInfo>(20);

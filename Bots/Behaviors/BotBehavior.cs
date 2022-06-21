@@ -12,6 +12,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using VRage.Game.ModAPI;
+using VRage.ModAPI;
 using VRage.Utils;
 
 namespace AiEnabled.Bots.Behaviors
@@ -19,15 +20,16 @@ namespace AiEnabled.Bots.Behaviors
   public abstract class BotBehavior
   {
     public List<string> Phrases = new List<string>();
+    public List<string> Taunts = new List<string>();
     public List<string> Songs = new List<string>();
     public List<string> Actions = new List<string>();
     public List<string> PainSounds = new List<string>();
-    public IMyCharacter Bot;
+    public BotBase Bot;
 
     public string LastAction, LastPhrase, LastSong;
     int _painTimer;
 
-    public BotBehavior(IMyCharacter bot)
+    public BotBehavior(BotBase bot)
     {
       Bot = bot;
     }
@@ -41,41 +43,57 @@ namespace AiEnabled.Bots.Behaviors
     {
       try
       {
+        if (Bot?.Character == null || Bot.Character.IsDead || Bot.Character.MarkedForClose)
+          return;
+
         if (string.IsNullOrWhiteSpace(words))
         {
-          if (Phrases.Count == 0 && Songs.Count == 0)
-            return;
+          bool taunt = Bot.Target.Entity is IMyEntity && !Bot.Target.IsFriendly();
 
-          var max = Phrases.Count + Songs.Count;
-          var rand = MyUtils.GetRandomInt(0, max);
-
-          if (rand > Phrases.Count - 1)
+          if (taunt)
           {
-            if (AiSession.Instance.AllowMusic)
-              Sing();
+            if (Taunts.Count == 0)
+              return;
 
-            return;
+            var rand = MyUtils.GetRandomInt(0, Taunts.Count);
+            words = Taunts[rand];
           }
+          else if (Phrases.Count > 0 || Songs.Count > 0)
+          {
+            var max = Phrases.Count + Songs.Count;
+            var rand = MyUtils.GetRandomInt(0, max);
 
-          words = Phrases[rand];
+            if (rand > Phrases.Count - 1)
+            {
+              if (AiSession.Instance.AllowMusic)
+                Sing();
+
+              return;
+            }
+
+            words = Phrases[rand];
+          }
+          else
+            return;
         }
 
         LastPhrase = words;
+        var botEntityId = Bot.Character.EntityId;
 
         if (MyAPIGateway.Utilities.IsDedicated)
         {
-          var packet = new SoundPacket(words, Bot.EntityId, includeIcon: true);
+          var packet = new SoundPacket(words, botEntityId, includeIcon: true);
           AiSession.Instance.Network.RelayToClients(packet);
         }
         else
         {
           if (MyAPIGateway.Multiplayer.MultiplayerActive)
           {
-            var packet = new SoundPacket(words, Bot.EntityId, includeIcon: true);
+            var packet = new SoundPacket(words, botEntityId, includeIcon: true);
             AiSession.Instance.Network.RelayToClients(packet);
           }
 
-          AiSession.Instance.PlaySoundForEntity(Bot.EntityId, words, false, true);
+          AiSession.Instance.PlaySoundForEntity(botEntityId, words, false, true);
         }
       }
       catch (Exception ex)
@@ -88,6 +106,9 @@ namespace AiEnabled.Bots.Behaviors
     {
       try
       {
+        if (Bot?.Character == null || Bot.Character.IsDead || Bot.Character.MarkedForClose)
+          return;
+
         if (string.IsNullOrWhiteSpace(song))
         {
           if (Songs.Count == 0)
@@ -98,17 +119,18 @@ namespace AiEnabled.Bots.Behaviors
         }
 
         LastSong = song;
+        var botEntityId = Bot.Character.EntityId;
 
         if (MyAPIGateway.Utilities.IsDedicated)
         {
-          var packet = new SoundPacket(song, Bot.EntityId);
+          var packet = new SoundPacket(song, botEntityId);
           AiSession.Instance.Network.RelayToClients(packet);
         }
         else
         {
           if (MyAPIGateway.Multiplayer.MultiplayerActive)
           {
-            var packet = new SoundPacket(song, Bot.EntityId);
+            var packet = new SoundPacket(song, botEntityId);
             AiSession.Instance.Network.RelayToClients(packet);
           }
 
@@ -119,7 +141,7 @@ namespace AiEnabled.Bots.Behaviors
             AiSession.Instance.SoundPairDict[song] = sp;
           }
 
-          var soundComp = Bot.Components?.Get<MyCharacterSoundComponent>();
+          var soundComp = Bot.Character.Components?.Get<MyCharacterSoundComponent>();
           soundComp?.PlayActionSound(sp);
         }
       }
@@ -133,6 +155,9 @@ namespace AiEnabled.Bots.Behaviors
     {
       try
       {
+        if (Bot?.Character == null || Bot.Character.IsDead || Bot.Character.MarkedForClose)
+          return;
+
         if (string.IsNullOrWhiteSpace(action))
         {
           if (Actions.Count == 0)
@@ -143,14 +168,15 @@ namespace AiEnabled.Bots.Behaviors
         }
 
         LastAction = action;
+        var character = Bot.Character;
 
-        var weapon = Bot.EquippedTool as IMyGunObject<MyDeviceBase>;
+        var weapon = character.EquippedTool as IMyGunObject<MyDeviceBase>;
         var controlEnt = Bot as Sandbox.Game.Entities.IMyControllableEntity;
         if (weapon != null)
           controlEnt.SwitchToWeapon(null);
 
-        Bot.TriggerCharacterAnimationEvent("emote", true);
-        Bot.TriggerCharacterAnimationEvent(action, true);
+        character.TriggerCharacterAnimationEvent("emote", true);
+        character.TriggerCharacterAnimationEvent(action, true);
 
         if (weapon != null)
           controlEnt.SwitchToWeapon(weapon.DefinitionId);
@@ -165,6 +191,9 @@ namespace AiEnabled.Bots.Behaviors
     {
       try
       {
+        if (Bot?.Character == null || Bot.Character.IsDead || Bot.Character.MarkedForClose)
+          return;
+
         if (_painTimer < 100)
           return;
 
@@ -179,20 +208,22 @@ namespace AiEnabled.Bots.Behaviors
           sound = PainSounds[rand];
         }
 
+        var botEntityId = Bot.Character.EntityId;
+
         if (MyAPIGateway.Utilities.IsDedicated)
         {
-          var packet = new SoundPacket(sound, Bot.EntityId, includeIcon: true);
+          var packet = new SoundPacket(sound, botEntityId, includeIcon: true);
           AiSession.Instance.Network.RelayToClients(packet);
         }
         else
         {
           if (MyAPIGateway.Multiplayer.MultiplayerActive)
           {
-            var packet = new SoundPacket(sound, Bot.EntityId, includeIcon: true);
+            var packet = new SoundPacket(sound, botEntityId, includeIcon: true);
             AiSession.Instance.Network.RelayToClients(packet);
           }
 
-          AiSession.Instance.PlaySoundForEntity(Bot.EntityId, sound, false, true);
+          AiSession.Instance.PlaySoundForEntity(botEntityId, sound, false, true);
         }
       }
       catch (Exception ex)
@@ -204,11 +235,13 @@ namespace AiEnabled.Bots.Behaviors
     public virtual void Close()
     {
       Phrases?.Clear();
+      Taunts?.Clear();
       Actions?.Clear();
       Songs?.Clear();
       PainSounds?.Clear();
 
       Phrases = null;
+      Taunts = null;
       Actions = null;
       Songs = null;
       PainSounds = null;

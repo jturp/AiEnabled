@@ -28,7 +28,7 @@ namespace AiEnabled.Bots.Roles
 
     public NomadBot(IMyCharacter bot, GridBase gridBase) : base(bot, 7, 15, gridBase)
     {
-      Behavior = new NeutralBehavior(bot);
+      Behavior = new NeutralBehavior(this);
 
       _deathSound = new MySoundPair("PlayVocDeath");
       _deathSoundString = "PlayVocDeath";
