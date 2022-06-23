@@ -4751,6 +4751,7 @@ namespace AiEnabled
 
         if (bot.Character.EntityId == newBot.Character.EntityId)
         {
+          found = true;
           _robots[i] = newBot;
           break;
         }

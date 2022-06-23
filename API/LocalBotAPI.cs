@@ -426,6 +426,7 @@ namespace AiEnabled.API
         return null;
       }
 
+      AiSession.Instance.Logger.Log($"AiEnabled: API received obsolete SpawnBot command. This method can cause lag and should be replaced with SpawnBotQueued.", MessageType.WARNING);
       return BotFactory.SpawnBotFromAPI(subType, displayName, positionAndOrientation, grid, role, owner, color);
     }
 
@@ -443,14 +444,18 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
         return null;
       }
 
       var data = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(spawnData);
       if (data == null)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
         return null;
+      }
 
+      AiSession.Instance.Logger.Log($"AiEnabled: API received obsolete SpawnBot command. This method can cause lag and should be replaced with SpawnBotQueued.", MessageType.WARNING);
       return BotFactory.SpawnBotFromAPI(positionAndOrientation, data, grid, owner);
     }
 
@@ -470,7 +475,7 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
         return;
       }
 
@@ -492,13 +497,16 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
         return;
       }
 
       var data = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(spawnData);
       if (data == null)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
         return;
+      }
 
       var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
       future.SetInfo(positionAndOrientation, data, grid, owner, callBack);
@@ -1119,6 +1127,7 @@ namespace AiEnabled.API
         newBot.Behavior.Phrases = bot.Behavior.Phrases;
         newBot.Behavior.Actions = bot.Behavior.Actions;
         newBot.Behavior.PainSounds = bot.Behavior.PainSounds;
+        newBot.Behavior.Taunts = bot.Behavior.Taunts;
       }
 
       AiSession.Instance.SwitchBot(newBot);
@@ -1284,33 +1293,28 @@ namespace AiEnabled.API
         {
           var sounds = newBot.Behavior.Phrases;
           sounds.Clear();
-
-          for (int i = 0; i < spawnData.IdleSounds.Count; i++)
-          {
-            sounds.Add(spawnData.IdleSounds[i]);
-          }
+          sounds.AddList(spawnData.IdleSounds);
         }
 
         if (spawnData.Actions?.Count > 0)
         {
           var actions = newBot.Behavior.Actions;
           actions.Clear();
-
-          for (int i = 0; i < spawnData.Actions.Count; i++)
-          {
-            actions.Add(spawnData.Actions[i]);
-          }
+          actions.AddList(spawnData.Actions);
         }
 
         if (spawnData.PainSounds?.Count > 0)
         {
           var sounds = newBot.Behavior.PainSounds;
           sounds.Clear();
+          sounds.AddList(spawnData.PainSounds);
+        }
 
-          for (int i = 0; i < spawnData.PainSounds.Count; i++)
-          {
-            sounds.Add(spawnData.PainSounds[i]);
-          }
+        if (spawnData.TauntSounds?.Count > 0)
+        {
+          var sounds = newBot.Behavior.Taunts;
+          sounds.Clear();
+          sounds.AddList(spawnData.TauntSounds);
         }
       }
 
