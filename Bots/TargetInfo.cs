@@ -100,7 +100,7 @@ namespace AiEnabled.Bots
       public bool IsFriendly()
       {
         var ent = Entity as IMyEntity;
-        if (ent == null || _base?.Owner == null)
+        if (ent == null || _base?.Owner?.Character == null || _base.Owner.Character.MarkedForClose)
           return false;
 
         var controllingPlayer = MyAPIGateway.Players.GetPlayerControllingEntity(ent);

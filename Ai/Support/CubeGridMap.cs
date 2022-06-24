@@ -423,7 +423,7 @@ namespace AiEnabled.Ai.Support
           {
             CloseGrid(grid as MyEntity);
 
-            for (int j = 0; i < GridCollection.Count; j++)
+            for (int j = GridCollection.Count; j < GridCollection.Count; j++)
             {
               if (grid.EntityId == GridCollection[j]?.EntityId)
               {

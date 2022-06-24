@@ -22,6 +22,7 @@ using System.Threading.Tasks;
 using VRage;
 using VRage.Game;
 using VRage.Game.ModAPI;
+using VRage.ObjectBuilders;
 using VRage.Utils;
 
 using VRageMath;
@@ -77,6 +78,8 @@ namespace AiEnabled.API
         { "CanRoleUseTool", new Func<string, string, bool>(CanRoleUseTool) },
         { "SwitchBotRole", new Func<long, RemoteBotAPI.SpawnData, bool>(SwitchBotRole) },
         { "SwitchBotRoleSlim", new Func<long, string, List<string>, bool>(SwitchBotRole) },
+        { "GetBotOwnerId", new Func<long, long>(GetBotOwnerId) },
+        { "SwitchBotWeapon", new Func<long, string, bool>(SwitchBotWeapon) },
      };
 
       return dict;
@@ -1321,6 +1324,67 @@ namespace AiEnabled.API
       AiSession.Instance.SwitchBot(newBot);
       AiSession.Instance.Bots[botEntityId] = newBot;
       bot.Close(false, false);
+      return true;
+    }
+
+    /// <summary>
+    /// Gets the bot's owner's IdentityId (Player Id)
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <returns>the IdentityId of the bot's owner if found, otherwise 0</returns>
+    public long GetBotOwnerId(long botEntityId)
+    {
+      long ownerId = 0L;
+
+      if (AiSession.Instance != null && AiSession.Instance.Registered)
+      {
+        BotBase bot;
+        if (AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) && bot?.Owner != null)
+          ownerId = bot.Owner.IdentityId;
+      }
+
+      return ownerId;
+    }
+
+    /// <summary>
+    /// Attempts to switch a bot's weapon or tool. The item will be added if not found in the bot's inventory.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="toolSubtypeId">The SubtypeId for the weapon or tool you want the bot to use</param>
+    /// <returns>true if the switch is successful, otherwise false</returns>
+    public bool SwitchBotWeapon(long botEntityId, string toolSubtypeId)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+        return false;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.Character == null || bot.IsDead)
+        return false;
+
+      string reason;
+      if (!AiSession.Instance.IsBotAllowedToUse(bot, toolSubtypeId, out reason))
+        return false;
+
+      var weaponDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtypeId);
+      var toolDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(weaponDefinition);
+      if (toolDef == null)
+        return false;
+
+      var inventory = bot.Character.GetInventory();
+      if (inventory == null)
+        return false;
+
+      if (inventory.GetItemAmount(weaponDefinition) == 0)
+      {
+        if (!inventory.CanItemsBeAdded(1, weaponDefinition))
+          return false;
+
+        var weapon = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(weaponDefinition);
+        inventory.AddItems(1, weapon);
+      }
+
+      bot.ToolDefinition = toolDef;
+      bot.EquipWeapon();
       return true;
     }
   }

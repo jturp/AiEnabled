@@ -1606,14 +1606,11 @@ namespace AiEnabled.Bots
     {
       if (ToolDefinition == null)
         return;
-      //if (string.IsNullOrWhiteSpace(ToolSubtype))
-      //  return;
 
-      //var weaponDefinition = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype);
       var weaponDefinition = ToolDefinition.PhysicalItemId;
 
       var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
-      if (charController.CanSwitchToWeapon(weaponDefinition))
+      if (charController?.CanSwitchToWeapon(weaponDefinition) == true)
       {
         charController.SwitchToWeapon(weaponDefinition);
         HasWeaponOrTool = true;
@@ -2220,6 +2217,8 @@ namespace AiEnabled.Bots
 
       if (targetPosition == Target.Override)
       {
+        bool onLadder = _botState.IsOnLadder;
+
         if (_currentGraph.IsGridGraph)
         {
           var gridGraph = _currentGraph as CubeGridMap;
@@ -2239,7 +2238,7 @@ namespace AiEnabled.Bots
 
           var cube = gridGraph.GetBlockAtPosition(localTarget);
           var seat = cube?.FatBlock as IMyCockpit;
-          if (seat != null)
+          if (seat != null && !onLadder)
           {
             if (CanUseSeats && seat.Pilot == null && (localTgt - localBot).AbsMax() < 2 && manhattanDist <= 2)
             {
@@ -2283,7 +2282,7 @@ namespace AiEnabled.Bots
         }
 
         var distance = Vector3D.DistanceSquared(botPos, targetPosition);
-        return distance < 1.75;
+        return !onLadder && distance < 1.75;
       }
 
       if (localBot != localTgt)

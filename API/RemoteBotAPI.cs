@@ -465,6 +465,21 @@ namespace AiEnabled.API
     /// <returns>true if the change is successful, otherwise false</returns>
     public bool SwitchBotRole(long botEntityId, string newRole, List<string> toolSubtypes) => _switchBotRoleSlim?.Invoke(botEntityId, newRole, toolSubtypes) ?? false;
 
+    /// <summary>
+    /// Attempts to switch a bot's weapon. The weapon will be added if not found in the bot's inventory. Ammo is NOT included.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="toolSubtypeId">The SubtypeId for the weapon or tool you want the bot to use</param>
+    /// <returns>true if the switch is successful, otherwise false</returns>
+    public bool SwitchBotWeapon(long botEntityId, string toolSubtypeId) => _switchBotWeapon?.Invoke(botEntityId, toolSubtypeId) ?? false;
+
+    /// <summary>
+    /// Gets the bot's owner's IdentityId (Player Id)
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <returns>the IdentityId of the bot's owner if found, otherwise 0</returns>
+    public long GetBotOwnerId(long botEntityId) => _getBotOwnerId?.Invoke(botEntityId) ?? 0L;
+
 
     /////////////////////////////////////////////
     //API Methods End
@@ -505,6 +520,8 @@ namespace AiEnabled.API
     private GetClosestNodeDelegate _getClosestValidNode;
     private GetClosestNodeDelegateNew _getClosestValidNodeNew;
     private GetBotAndRelationTo _getBotAndRelationTo;
+    private Func<long, long> _getBotOwnerId;
+    private Func<long, string, bool> _switchBotWeapon;
 
     private void ReceiveModMessage(object payload)
     {
@@ -552,6 +569,8 @@ namespace AiEnabled.API
         _switchBotRole = dict["SwitchBotRole"] as Func<long, SpawnData, bool>;
         _getClosestValidNodeNew = dict["GetClosestValidNodeNew"] as GetClosestNodeDelegateNew;
         _switchBotRoleSlim = dict["SwitchBotRoleSlim"] as Func<long, string, List<string>, bool>;
+        _switchBotWeapon = dict["SwitchBotWeapon"] as Func<long, string, bool>;
+        _getBotOwnerId = dict["GetBotOwnerId"] as Func<long, long>;
 
       }
       catch
