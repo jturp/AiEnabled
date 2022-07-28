@@ -236,34 +236,61 @@ namespace AiEnabled.Ai.Support
       return false;
     }
 
-    public override bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true)
+    public override bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true)
     {
       node = testNode;
       Node n;
       if (!currentIsDenied && _openTileDict.TryGetValue(node, out n) && !Obstacles.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
       {
-        if (allowAirNodes || !n.IsAirNode)
+        if (preferGroundNode)
+        {
+          if (!n.IsAirNode)
+            return true;
+        }
+        else if (allowAirNodes || !n.IsAirNode)
           return true;
       }
 
       var center = node;
       double localDistance = double.MaxValue;
+      double groundDistance = double.MaxValue;
       var worldPosition = LocalToWorld(testNode);
+      Vector3I? closestGround = null;
 
       foreach (var point in Neighbors(bot, center, center, worldPosition, false, currentIsObstacle: true, up: up))
       {
-        if (!allowAirNodes && _openTileDict.TryGetValue(point, out n) && n.IsAirNode)
+        _openTileDict.TryGetValue(point, out n);
+        var isAirNode = n.IsAirNode;
+        var isWaterNode = n.IsWaterNode;
+
+        if (!allowAirNodes && isAirNode)
           continue;
 
-        var testPosition = LocalToWorld(point);
-        var dist = Vector3D.DistanceSquared(testPosition, worldPosition);
+        if (bot != null && !isWaterNode && bot.WaterNodesOnly)
+          continue;
 
-        if (dist < localDistance)
+        if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!n.IsSpaceNode(this) || bot.CanUseSpaceNodes)))
         {
-          localDistance = dist;
-          node = point;
+
+          var testPosition = LocalToWorld(point);
+          var dist = Vector3D.DistanceSquared(testPosition, worldPosition);
+
+          if (dist < localDistance)
+          {
+            localDistance = dist;
+            node = point;
+          }
+
+          if (preferGroundNode && !isAirNode && dist < groundDistance)
+          {
+            groundDistance = dist;
+            closestGround = point;
+          }
         }
       }
+
+      if (preferGroundNode && closestGround.HasValue)
+        node = closestGround.Value;
 
       return localDistance < double.MaxValue;
     }

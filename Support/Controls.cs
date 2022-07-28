@@ -320,12 +320,12 @@ namespace AiEnabled.Support
 
               subtype = "RoboDog";
               break;
-            //case AiSession.BotType.Medic:
-            // if (needsName)
-            //   displayName = "MedicBot";
-            //
-            // subtype = "Police_Bot";
-            // break;
+            case AiSession.BotType.Crew:
+              if (needsName)
+                displayName = "CrewBot";
+
+              subtype = MyUtils.GetRandomInt(0, 10) >= 5 ? "Default_Astronaut" : "Default_Astronaut_Female";
+              break;
             default:
               return;
           }
@@ -333,28 +333,28 @@ namespace AiEnabled.Support
         else if (botModel == AiSession.BotModel.DroneBot)
         {
           if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
 
           subtype = "Drone_Bot";
         }
         else if (botModel == AiSession.BotModel.AstronautMale)
         {
           if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
 
           subtype = "Default_Astronaut";
         }
         else if (botModel == AiSession.BotModel.AstronautFemale)
         {
           if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
 
           subtype = "Default_Astronaut_Female";
         }
         else // if (botModel == AiSession.BotModel.TargetBot)
         {
           if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
 
           subtype = "Target_Dummy";
         }

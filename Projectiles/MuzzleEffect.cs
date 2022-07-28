@@ -1,6 +1,7 @@
 ﻿using Sandbox.Definitions;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Weapons;
+using Sandbox.ModAPI;
 
 using System.Collections.Generic;
 
@@ -15,6 +16,7 @@ namespace AiEnabled.Projectiles
 {
   internal class MuzzleEffect
   {
+    public double StartTime;
     public int Duration;
     MyGunBase _gun;
     IMyEntity _tool;
@@ -23,8 +25,10 @@ namespace AiEnabled.Projectiles
 
     public void Start(MyGunBase gun, IMyCharacter bot)
     {
+      StartTime = MyAPIGateway.Session.ElapsedPlayTime.TotalMilliseconds;
       Duration = gun.MuzzleFlashLifeSpan;
-      //gun.CreateEffects(MyWeaponDefinition.WeaponEffectAction.Shoot);
+      var renderId = gun.IsUserControllableGunBlock ? _tool.Render.GetRenderObjectID() : uint.MaxValue;
+      //gun.CreateEffects(MyWeaponDefinition.WeaponEffectAction.Shoot, renderId); // Keen changed something that causes this use MatrixD.Identity :(
 
       _gun = gun;
       _bot = bot;
@@ -33,8 +37,12 @@ namespace AiEnabled.Projectiles
       _tool.NeedsUpdate |= MyEntityUpdateEnum.EACH_FRAME;
       _tool.NeedsWorldMatrix = true;
 
-      var renderId =  gun.IsUserControllableGunBlock ? _tool.Render.GetRenderObjectID() : uint.MaxValue;
+      var translationAddition = (bot.Physics?.LinearVelocity / 60f) ?? Vector3.Zero;
       _effects.Clear();
+
+      var matrix = gun.GetMuzzleWorldMatrix();
+      var position = gun.GetMuzzleWorldPosition();
+      matrix.Translation += translationAddition;
 
       for (int i = 0; i < gun.WeaponDefinition.WeaponEffects.Length; i++)
       {
@@ -43,11 +51,6 @@ namespace AiEnabled.Projectiles
           continue;
 
         MyParticleEffect particle;
-        var matrix = gun.GetMuzzleWorldMatrix();
-        var position = gun.GetMuzzleWorldPosition();
-
-        matrix.Translation += bot.Physics.LinearVelocity / 60f;
-
         if (MyParticlesManager.TryCreateParticleEffect(eff.Particle, ref matrix, ref position, renderId, out particle) && particle.Loop)
         {
           var effect = AiSession.Instance.Projectiles.WeaponEffects.Count > 0 ? AiSession.Instance.Projectiles.WeaponEffects.Pop() : new ProjectileInfo.WeaponEffect();
@@ -73,7 +76,7 @@ namespace AiEnabled.Projectiles
       _tool.NeedsWorldMatrix = true;
 
       var matrix = _gun.GetMuzzleWorldMatrix();
-      matrix.Translation += _bot?.Physics != null ? _bot.Physics.LinearVelocity / 60f : Vector3.Zero;
+      matrix.Translation += (_bot?.Physics?.LinearVelocity) / 60f ?? Vector3.Zero;
 
       //var position = _gun.GetMuzzleWorldPosition();
 
@@ -86,8 +89,12 @@ namespace AiEnabled.Projectiles
         pEff.WorldMatrix = matrix;
       }
 
-      //_gun.UpdateEffectPositions();
-      //_gun.UpdateEffects();
+      _gun.UpdateEffectPositions();
+      _gun.UpdateEffects();
+
+      var time = MyAPIGateway.Session.ElapsedPlayTime.TotalMilliseconds - StartTime;
+      if (time > _gun.ReleaseTimeAfterFire)
+        return false;
 
       Duration--;
       return Duration > 0;
@@ -101,7 +108,7 @@ namespace AiEnabled.Projectiles
       for (int i = 0; i < _effects.Count; i++)
       {
         var eff = _effects[i];
-        eff.ParticleEffect.Stop();
+        eff.ParticleEffect.Stop(eff.Effect.InstantStop);
         AiSession.Instance.Projectiles.WeaponEffects.Push(eff);
       }
 

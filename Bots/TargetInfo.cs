@@ -119,7 +119,21 @@ namespace AiEnabled.Bots
           if (ch.EntityId == _base.Owner.Character.EntityId)
             return true;
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, ch.ControllerInfo.ControllingIdentityId);
+          var ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
+          
+          BotBase bot;
+          if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot) && bot != null)
+          {
+            ownerIdentityId = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+          }
+          else if (ch.IsPlayer && ch.Parent is IMyShipController)
+          {
+            var p = MyAPIGateway.Players.GetPlayerControllingEntity(ch.Parent);
+            if (p != null)
+              ownerIdentityId = p.IdentityId;
+          }
+
+          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, ownerIdentityId);
           return relation != MyRelationsBetweenPlayers.Enemies;
         }
 

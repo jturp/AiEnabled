@@ -952,8 +952,8 @@ namespace AiEnabled.Ai.Support
         return;
 
       var grid = gridGraph.MainGrid;
-      var botIdentityId = Bot.Character.ControllerInfo.ControllingIdentityId;
-      var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0;
+      var botIdentityId = Bot.BotIdentityId;
+      var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
 
       relation = MyIDModule.GetRelationPlayerPlayer(botIdentityId, gridOwner);
       if (relation == MyRelationsBetweenPlayers.Enemies || (Bot.Owner == null && relation == MyRelationsBetweenPlayers.Neutral))

@@ -12,17 +12,21 @@ namespace AiEnabled.Networking
   public class MessagePacket : PacketBase
   {
     [ProtoMember(1)] public string Message;
+    [ProtoMember(2)] public string Color;
+    [ProtoMember(3)] public int TimeToLive;
 
     public MessagePacket() { }
 
-    public MessagePacket(string msg)
+    public MessagePacket(string msg, string color = "Red", int ttl = 2000)
     {
       Message = msg;
+      Color = color;
+      TimeToLive = ttl;
     }
 
     public override bool Received(NetworkHandler netHandler)
     {
-      AiSession.Instance.ShowMessage(Message);
+      AiSession.Instance.ShowMessage(Message, Color, TimeToLive);
       return false;
     }
   }

@@ -31,6 +31,7 @@ using VRage.Voxels;
 using AiEnabled.API;
 using VRage.Game.Components;
 using VRage.Game;
+using AiEnabled.Parallel;
 
 namespace AiEnabled.Ai.Support
 {
@@ -70,6 +71,11 @@ namespace AiEnabled.Ai.Support
     /// If true, planet tiles have already been cleared from the dictionary
     /// </summary>
     public bool PlanetTilesRemoved { get; private set; }
+
+    /// <summary>
+    /// If true, the interior nodes list is ready to be used
+    /// </summary>
+    public bool InteriorNodesReady { get; private set; }
 
     /// <summary>
     /// Contains information about the components stored in the grid's inventories
@@ -125,9 +131,10 @@ namespace AiEnabled.Ai.Support
     ParallelTasks.Task _asyncTileTask;
     Vector3D _worldPosition;
     MatrixD _lastMatrix;
-    List<CubeGridMap> _additionalMaps2;
-    List<IMyCubeGrid> _gridsToAdd;
-    List<IMyCubeGrid> _gridsToRemove;
+    readonly List<CubeGridMap> _additionalMaps2;
+    readonly List<IMyCubeGrid> _gridsToAdd;
+    readonly List<IMyCubeGrid> _gridsToRemove;
+    public List<Vector3I> InteriorNodeList;
     readonly byte _boxExpansion;
 
     public CubeGridMap(MyCubeGrid grid, MatrixD spawnBlockMatrix)
@@ -189,10 +196,15 @@ namespace AiEnabled.Ai.Support
         else
           _gridsToAdd.Clear();
 
-        if (!AiSession.Instance.GridGroupListStack.TryPop(out  _gridsToRemove) || _gridsToRemove == null)
+        if (!AiSession.Instance.GridGroupListStack.TryPop(out _gridsToRemove) || _gridsToRemove == null)
           _gridsToRemove = new List<IMyCubeGrid>();
         else
           _gridsToRemove.Clear();
+
+        if (!AiSession.Instance.LineListStack.TryPop(out InteriorNodeList) || InteriorNodeList == null)
+          InteriorNodeList = new List<Vector3I>();
+        else
+          InteriorNodeList.Clear();
 
         InventoryCache.Update(false);
 
@@ -467,14 +479,12 @@ namespace AiEnabled.Ai.Support
           InventoryCache._needsUpdate = false;
 
           AiSession.Instance.InvCacheStack.Push(InventoryCache);
-          InventoryCache = null;
         }
 
         if (_additionalMaps2 != null)
         {
           _additionalMaps2.Clear();
           AiSession.Instance.GridMapListStack.Push(_additionalMaps2);
-          _additionalMaps2 = null;
         }
 
         if (GridCollection != null)
@@ -488,21 +498,24 @@ namespace AiEnabled.Ai.Support
 
           GridCollection.Clear();
           AiSession.Instance.GridGroupListStack.Push(GridCollection);
-          GridCollection = null;
         }
 
         if (_gridsToAdd != null)
         {
           _gridsToAdd.Clear();
           AiSession.Instance.GridGroupListStack.Push(_gridsToAdd);
-          _gridsToAdd = null;
         }
 
         if (_gridsToRemove != null)
         {
           _gridsToRemove.Clear();
           AiSession.Instance.GridGroupListStack.Push(_gridsToRemove);
-          _gridsToRemove = null;
+        }
+
+        if (InteriorNodeList != null)
+        {
+          InteriorNodeList.Clear();
+          AiSession.Instance.LineListStack.Push(InteriorNodeList);
         }
 
         OpenTileDict?.Clear();
@@ -807,6 +820,7 @@ namespace AiEnabled.Ai.Support
         return;
 
       GraphLocked = true;
+      InteriorNodesReady = false;
       Ready = false;
       Dirty = false;
       ObstacleNodes.Clear();
@@ -889,12 +903,15 @@ namespace AiEnabled.Ai.Support
 
     public override bool InBounds(Vector3I node) => BoundingBox.Contains(node) != ContainmentType.Disjoint;
 
-    public override bool GetClosestValidNode(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true)
+    public override bool GetClosestValidNode(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true)
     {
+      localPosition = testPosition;
+      if (!IsValid || !Ready)
+        return false;
+
       Node node;
       TryGetNodeForPosition(testPosition, out node);
 
-      localPosition = testPosition;
       if (node != null && !currentIsDenied && !isSlimBlock
         && !BlockedDoors.ContainsKey(localPosition)
         && !ObstacleNodes.ContainsKey(localPosition)
@@ -902,7 +919,7 @@ namespace AiEnabled.Ai.Support
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
-        if ((allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
+        if ((!preferGroundNode || !isAir) && (allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
         {
           if (!bot.WaterNodesOnly || !isWater)
             return true;
@@ -940,7 +957,7 @@ namespace AiEnabled.Ai.Support
               var current = iter.Current;
               iter.MoveNext();
 
-              if (GetClosestNodeInternal(bot, current, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes))
+              if (GetClosestNodeInternal(bot, current, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes, preferGroundNode))
                 return true;
             }
 
@@ -949,7 +966,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      return GetClosestNodeInternal(bot, testPosition, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes);
+      return GetClosestNodeInternal(bot, testPosition, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes, preferGroundNode);
     }
 
     public bool CanBotUseTile(BotBase bot, Node node, bool allowAirNodes = true)
@@ -967,7 +984,7 @@ namespace AiEnabled.Ai.Support
       return false;
     }
 
-    bool GetClosestNodeInternal(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true)
+    bool GetClosestNodeInternal(BotBase bot, Vector3I testPosition, out Vector3I localPosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true)
     {
       localPosition = testPosition;
       Node node;
@@ -976,45 +993,57 @@ namespace AiEnabled.Ai.Support
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
-        if ((allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
+        if ((!preferGroundNode || !isAir) && (allowAirNodes || !isAir) && (bot == null || ((!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))))
         {
-          if (!bot.WaterNodesOnly || !isWater)
+          if (bot == null || !bot.WaterNodesOnly || !isWater)
             return true;
         }
       }
 
       var center = localPosition;
       double localDistance = double.MaxValue;
+      double groundDistance = double.MaxValue;
       var worldPosition = MainGrid.GridIntegerToWorld(localPosition);
+      Vector3I? closestGround = null;
 
       foreach (var point in Neighbors(bot, center, center, worldPosition, true, true, isSlimBlock, up))
       {
-        if (!allowAirNodes && TryGetNodeForPosition(point, out node) && node.IsAirNode)
-          continue;
-
-        var testPositionWorld = MainGrid.GridIntegerToWorld(point);
-        var dist = Vector3D.DistanceSquared(testPositionWorld, worldPosition);
-
-        if (dist < localDistance)
-        {
-          localDistance = dist;
-          localPosition = point;
-        }
-      }
-
-      if (!BlockedDoors.ContainsKey(localPosition) && !ObstacleNodes.ContainsKey(localPosition)
-        && !TempBlockedNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
-      {
+        TryGetNodeForPosition(point, out node);
         var isAirNode = node.IsAirNode;
         var isWaterNode = node.IsWaterNode;
 
-        if (bot.WaterNodesOnly)
-          return isWaterNode;
+        if (!allowAirNodes && isAirNode)
+          continue;
 
-        return (allowAirNodes || !isAirNode) && (!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes);
+        if (BlockedDoors.ContainsKey(point) || ObstacleNodes.ContainsKey(point) || TempBlockedNodes.ContainsKey(point))
+          continue;
+
+        if (bot != null && !isWaterNode && bot.WaterNodesOnly)
+          continue;
+
+        if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes)))
+        {
+          var testPositionWorld = MainGrid.GridIntegerToWorld(point);
+          var dist = Vector3D.DistanceSquared(testPositionWorld, worldPosition);
+
+          if (dist < localDistance)
+          {
+            localDistance = dist;
+            localPosition = point;
+          }
+
+          if (preferGroundNode && !isAirNode && dist < groundDistance)
+          {
+            groundDistance = dist;
+            closestGround = point;
+          }
+        }
       }
 
-      return false;
+      if (preferGroundNode && closestGround.HasValue)
+        localPosition = closestGround.Value;
+
+      return localDistance < double.MaxValue;
     }
 
     public override IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null)
@@ -1324,10 +1353,28 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        if (AiSession.Instance == null || !AiSession.Instance.Registered)
+          return;
+
         //AiSession.Instance.Logger.Log($"Grid.InitGridArea starting for {MainGrid.DisplayName}");
 
+        ApiWorkData data;
+        if (!AiSession.Instance.ApiWorkDataStack.TryPop(out data) || data == null)
+          data = new ApiWorkData();
+
+        data.Grid = MainGrid;
+        data.NodeList = InteriorNodeList;
+        data.EnclosureRating = 5;
+        data.AirtightNodesOnly = false;
+        data.AllowAirNodes = false;
+        data.CallBack = null;
+
+        BotFactory.GetInteriorNodes(data);
+        AiSession.Instance.ApiWorkDataStack.Push(data);
+        InteriorNodesReady = true;
+
         List<IMySlimBlock> blocks;
-        if (!AiSession.Instance.SlimListStack.TryPop(out blocks))
+        if (!AiSession.Instance.SlimListStack.TryPop(out blocks) || blocks == null)
           blocks = new List<IMySlimBlock>();
         else
           blocks.Clear();

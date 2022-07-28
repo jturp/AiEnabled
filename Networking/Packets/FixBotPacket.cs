@@ -77,13 +77,17 @@ namespace AiEnabled.Networking
 
           helper.UseAPITargets = false;
           helper.NeedsTransition = false;
-          helper._pathCollection.CleanUp(true);
-          helper.Target.RemoveTarget();
-          helper.SetTarget();
+          helper._pathCollection?.CleanUp(true);
 
-          helper.Target.Update();
-          var actualPosition = helper.Target.CurrentActualPosition;
-          helper.StartCheckGraph(ref actualPosition, true);
+          if (helper.Target != null)
+          {
+            helper.Target.RemoveTarget();
+            helper.SetTarget();
+
+            helper.Target.Update();
+            var actualPosition = helper.Target.CurrentActualPosition;
+            helper.StartCheckGraph(ref actualPosition, true);
+          }
         }
       }
 

@@ -144,7 +144,7 @@ namespace AiEnabled.GameLogic
 
       BotInfo info;
       List<BotBase> playerHelpers;
-      if (AiSession.Instance.FactoryBotInfoDict.TryGetValue(bot.EntityId, out info)
+      if (AiSession.Instance.FactoryBotInfoDict.TryGetValue(bot.EntityId, out info) && info.OwnerId > 0
         && AiSession.Instance.PlayerToHelperDict.TryGetValue(info.OwnerId, out playerHelpers))
       {
         for (int i = playerHelpers.Count - 1; i >= 0; i--)
@@ -206,6 +206,10 @@ namespace AiEnabled.GameLogic
           break;
         case AiSession.BotType.Combat:
           botBase = new CombatBot(bot, gBase, ownerId);
+          MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
+          break;
+        case AiSession.BotType.Crew:
+          botBase = new CrewBot(bot, gBase, ownerId);
           MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
           break;
         case AiSession.BotType.Scavenger:

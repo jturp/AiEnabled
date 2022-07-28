@@ -17,6 +17,7 @@ using Sandbox.Game;
 using VRage.Game.Entity;
 using Sandbox.Game.Weapons;
 using VRage.Game;
+using AiEnabled.Bots.Roles.Helpers;
 
 namespace AiEnabled.ConfigData
 {
@@ -47,13 +48,14 @@ namespace AiEnabled.ConfigData
     [ProtoMember(106)] public SerializableVector3D Position;
     [ProtoMember(107)] public SerializableQuaternion Orientation;
     [ProtoMember(108)] public int Role;
-    [ProtoMember(109)] public Color BotColor;
-    [ProtoMember(110)] public List<InventoryItem> InventoryItems;
-    [ProtoMember(111)] public List<SerializableVector3D> PatrolRoute;
+    [ProtoMember(109)] public int? CrewFunction;
+    [ProtoMember(110)] public Color BotColor;
+    [ProtoMember(111)] public List<InventoryItem> InventoryItems;
+    [ProtoMember(112)] public List<SerializableVector3D> PatrolRoute;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null, List<Vector3D> route = null)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null, List<Vector3D> route = null, CrewBot.CrewType? crewRole = null)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
@@ -64,6 +66,11 @@ namespace AiEnabled.ConfigData
       Orientation = Quaternion.CreateFromRotationMatrix(bot.WorldMatrix);
       IsActiveHelper = true;
       Role = (int)botType;
+
+      if (crewRole.HasValue)
+        CrewFunction = (int)crewRole.Value;
+      else
+        CrewFunction = null;
 
       var hsvOffset = ((MyObjectBuilder_Character)bot.GetObjectBuilder()).ColorMaskHSV;
       var hsv = MyColorPickerConstants.HSVOffsetToHSV(hsvOffset);
@@ -107,12 +114,12 @@ namespace AiEnabled.ConfigData
       Helpers = new List<HelperInfo>();
     }
 
-    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid, List<Vector3D> patrolRoute)
+    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid, List<Vector3D> patrolRoute, CrewBot.CrewType? crewRole = null)
     {
       if (Helpers == null)
         Helpers = new List<HelperInfo>();
 
-      Helpers.Add(new HelperInfo(helper, botType, grid, patrolRoute));
+      Helpers.Add(new HelperInfo(helper, botType, grid, patrolRoute, crewRole));
     }
 
     public bool RemoveHelper(long id)

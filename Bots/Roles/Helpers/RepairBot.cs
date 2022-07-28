@@ -34,7 +34,7 @@ using MyInventoryItem = VRage.Game.ModAPI.Ingame.MyInventoryItem;
 
 namespace AiEnabled.Bots.Roles.Helpers
 {
-  public class RepairBot : BotBase
+  public class RepairBot : FriendlyBotBase
   {
     // TODO: Create a pool for these collections and reuse them!
     Dictionary<IMyProjector, IMyCubeGrid> _projectedGrids = new Dictionary<IMyProjector, IMyCubeGrid>();
@@ -44,54 +44,19 @@ namespace AiEnabled.Bots.Roles.Helpers
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     List<IMySlimBlock> _cubes = new List<IMySlimBlock>();
     BuildBotToolInfo _toolInfo = new BuildBotToolInfo();
+    ParallelTasks.Task _targetTask;
+    Action _targetAction;
 
-    public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 1, 1, gridBase)
+    public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 1, 1, gridBase, ownerId)
     {
       BotType = AiSession.BotType.Repair;
-      Owner = AiSession.Instance.Players[ownerId];
       Behavior = new WorkerBehavior(this);
       var toolSubtype = toolType ?? "Welder2Item";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
       _targetAction = new Action(SetTargetInternal);
-      _followDistanceSqd = 25;
-
-      bool hasOwner = Owner != null;
-      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
-
-      RequiresJetpack = jetRequired;
-      CanUseSpaceNodes = jetAllowed;
-      CanUseAirNodes = jetAllowed;
-      GroundNodesFirst = !jetRequired;
-      EnableDespawnTimer = !hasOwner;
-      CanUseWaterNodes = true;
-      WaterNodesOnly = false;
-      CanUseSeats = true;
-      CanUseLadders = true;
-      WantsTarget = true;
-
       _blockDamagePerSecond = 0;
       _blockDamagePerAttack = 0; // he's a lover, not a fighter :)
-
-      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
-      if (jetpack != null)
-      {
-        if (RequiresJetpack)
-        {
-          if (!jetpack.TurnedOn)
-          {
-            var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-            MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-            jetpack.TurnOnJetpack(true);
-            MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-          }
-        }
-        else if (jetpack.TurnedOn)
-        {
-          jetpack.SwitchThrusts();
-        }
-      }
     }
 
     internal override void Close(bool cleanConfig = false, bool removeBot = true)
@@ -166,8 +131,6 @@ namespace AiEnabled.Bots.Roles.Helpers
         AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Unable to add welder to inventory!", MessageType.WARNING);
     }
 
-    internal override bool IsInRangeOfTarget() => true;
-
     void SetTargetInternal()
     {
       if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || !WantsTarget)
@@ -199,7 +162,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (Target.IsSlimBlock)
       {
         var slim = Target.Entity as IMySlimBlock;
-        if (slim != null && !slim.IsDestroyed && slim.GetBlockHealth() < 1 && CheckBotInventoryForItems(slim))
+        if (slim != null && !slim.IsDestroyed && (slim.HasDeformation || slim.GetBlockHealth() < 1) && CheckBotInventoryForItems(slim))
         {
           if (!AiSession.Instance.BlockRepairDelays.Contains(slim.CubeGrid.EntityId, slim.Position))
             return;
@@ -741,7 +704,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       return valid;
     }
 
-    int _ticks;
     bool _firstRun = true;
     internal override bool Update()
     {
@@ -751,9 +713,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (Character?.Parent is IMyCockpit)
         return true;
 
-      ++_ticks;
-
-      if (_firstRun || _ticks % 100 == 0)
+      if (_firstRun || _tickCount % 100 == 0)
       {
         _firstRun = false;
         UpdateRelativeDampening();
@@ -765,8 +725,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       return true;
     }
 
-    ParallelTasks.Task _targetTask;
-    Action _targetAction;
     public override void SetTarget()
     {
       if (_targetTask.Exceptions != null)
@@ -794,7 +752,8 @@ namespace AiEnabled.Bots.Roles.Helpers
       Vector3 movement;
       Vector2 rotation;
       float roll;
-      GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, distanceCheck);
+      bool fistAttack, rifleAttack;
+      GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out fistAttack, out rifleAttack, distanceCheck);
 
       if (Target.IsInventory || (Target.Entity != null && !(Target.Entity is IMyCharacter)))
       {
@@ -1060,197 +1019,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var weldAmount = _toolInfo.WeldAmount;
       var boneFixAmount = _toolInfo.BoneFixAmount;
 
-      block.IncreaseMountLevel(weldAmount, Character.ControllerInfo.ControllingIdentityId, null, boneFixAmount);
-
-      return true;
-    }
-
-    internal override void MoveToTarget()
-    {
-      if (!IsInRangeOfTarget())
-      {
-        if (!UseAPITargets)
-          SimulateIdleMovement(true);
-  
-        return;
-      }
-
-      if (!Target.PositionsValid)
-        return;
-
-      var actualPosition = Target.CurrentActualPosition;
-
-      if (UsePathFinder)
-      {
-        var gotoPosition = Target.CurrentGoToPosition;
-        UsePathfinder(gotoPosition, actualPosition);
-        return;
-      }
-
-      Vector3 movement;
-      Vector2 rotation;
-      float roll;
-      GetMovementAndRotation(Target.Entity != null, actualPosition, out movement, out rotation, out roll);
-      Character.MoveAndRotate(movement, rotation, roll);
-    }
-
-    public void GetMovementAndRotation(bool isTarget, Vector3D waypoint, out Vector3 movement, out Vector2 rotation, out float roll, double distanceCheck = 5)
-    {
-      var botPosition = GetPosition();
-      var botMatrix = WorldMatrix;
-      var graphMatrix = _currentGraph.WorldMatrix;
-      var graphUpVector = graphMatrix.Up;
-      var jpEnabled = JetpackEnabled;
-
-      var vecToWP = waypoint - botPosition;
-      var flatDistanceCheck = (isTarget && Target.IsFriendly()) ? _followDistanceSqd : distanceCheck;
-      var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
-      roll = 0;
-
-      if (_botState.IsOnLadder)
-      {
-        movement = (relVectorBot.Y > 0 ? Vector3.Forward : Vector3.Backward) * 0.5f;
-        rotation = Vector2.Zero;
-        return;
-      }
-
-      //if (jpEnabled)
-      //{
-      //  var deviationAngle = MathHelper.PiOver2 - VectorUtils.GetAngleBetween(graphUpVector, botMatrix.Left);
-      //  var botdotUp = botMatrix.Up.Dot(graphMatrix.Up);
-
-      //  if (botdotUp < 0 || Math.Abs(deviationAngle) > _twoDegToRads)
-      //  {
-      //    var botLeftDotUp = -botMatrix.Left.Dot(graphUpVector);
-
-      //    if (botdotUp < 0)
-      //      roll = MathHelper.Pi * Math.Sign(botLeftDotUp);
-      //    else
-      //      roll = (float)deviationAngle * Math.Sign(botLeftDotUp);
-      //  }
-      //}
-
-      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
-      var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
-      var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
-
-      if (!WaitForStuckTimer && angleTwoOrLess)
-      {
-        rotation = Vector2.Zero;
-      }
-      else
-      {
-        float xRot = 0;
-
-        //if (jpEnabled && Math.Abs(roll) < MathHelper.ToRadians(5))
-        //{
-        //  var angleFwd = MathHelperD.PiOver2 - VectorUtils.GetAngleBetween(botMatrix.Forward, graphUpVector);
-        //  var botDotUp = botMatrix.Up.Dot(graphMatrix.Up);
-
-        //  if (botDotUp < 0 || Math.Abs(angleFwd) > _twoDegToRads)
-        //  {
-        //    var botFwdDotUp = botMatrix.Forward.Dot(graphMatrix.Up);
-
-        //    if (botDotUp < 0)
-        //      xRot = -MathHelper.Pi * Math.Sign(botFwdDotUp);
-        //    else
-        //      xRot = (float)angleFwd * Math.Sign(botFwdDotUp);
-        //  }
-        //}
-
-        rotation = new Vector2(xRot, (float)angle * Math.Sign(relVectorBot.X) * 75);
-      }
-
-      if (_currentGraph?.Ready == true)
-      {
-        var localPos = _currentGraph.WorldToLocal(botPosition);
-        var worldPosAligned = _currentGraph.LocalToWorld(localPos);
-        if (Vector3D.DistanceSquared(worldPosAligned, waypoint) >= _currentGraph.CellSize * _currentGraph.CellSize)
-        {
-          var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(botMatrix));
-          var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
-          if (Vector3D.IsZero(flattenedVecWP, 0.1))
-          {
-            var absY = Math.Abs(relVectorBot.Y);
-            if (!JetpackEnabled || absY <= 0.1)
-            {
-              if (!_currentGraph.IsGridGraph && absY > 0.5 && relVectorBot.Y < 0)
-              {
-                _pathCollection.ClearNode();
-                rotation = Vector2.Zero;
-                movement = Vector3.Forward;
-              }
-              else
-              {
-                movement = Vector3.Zero;
-              }
-            }
-            else
-            {
-              rotation = Vector2.Zero;
-              movement = Math.Sign(relVectorBot.Y) * Vector3.Up * 2;
-            }
-
-            return;
-          }
-        }
-      }
-
-      var flattenedVector = new Vector3D(relVectorBot.X, 0, relVectorBot.Z);
-      var flattenedLengthSquared = flattenedVector.LengthSquared();
-
-      if (PathFinderActive)
-      {
-        if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
-          movement = Vector3.Forward * 0.5f;
-        else
-          movement = Vector3.Zero;
-      }
-      else if (flattenedLengthSquared > flatDistanceCheck && _ticksSinceFoundTarget > 240)
-        movement = Vector3.Forward * 0.5f;
-      else
-        movement = Vector3.Zero;
-
-      if (JetpackEnabled)
-      {
-        var vecToTgt = Target.CurrentActualPosition - botPosition;
-        var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
-        var flatToTarget = new Vector3D(relToTarget.X, 0, relToTarget.Z);
-        if (flatToTarget.LengthSquared() <= flatDistanceCheck && Math.Abs(relToTarget.Y) > 0.5)
-        {
-          movement = Vector3.Zero;
-          relVectorBot = relToTarget;
-        }
-
-        if (Math.Abs(relVectorBot.Y) > 0.05)
-        {
-          bool towardBlock = isTarget && Target.IsSlimBlock;
-          AdjustMovementForFlight(ref relVectorBot, ref movement, ref botPosition, towardBlock);
-        }
-      }
-    }
-
-    bool FireWeapon()
-    {
-      var gun = Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>;
-      if (gun == null)
-        return false;
-
-      //MyGunStatusEnum gunStatus;
-      //if (!gun.CanShoot(MyShootActionEnum.PrimaryAction, Character.ControllerInfo.ControllingIdentityId, out gunStatus))
-      //  return false;
-
-      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, CastHax(MySessionComponentSafeZones.AllowedActions, 8)))
-        return false;
-
-      if (MyAPIGateway.Multiplayer.MultiplayerActive)
-      {
-        var packet = new WeaponFirePacket(Character.EntityId, 0L, 0, 0, null, TicksBetweenProjectiles, 100, false, true, false);
-        AiSession.Instance.Network.RelayToClients(packet);
-      }
-
-      AiSession.Instance.StartWeaponFire(Character.EntityId, 0L, 0, 0, null, TicksBetweenProjectiles, 100, false, true, false);
+      block.IncreaseMountLevel(weldAmount, BotIdentityId, null, boneFixAmount);
       return true;
     }
   }

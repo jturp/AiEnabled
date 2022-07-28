@@ -1,25 +1,19 @@
-﻿using System;
+﻿using AiEnabled.Ai.Support;
+using AiEnabled.Bots.Behaviors;
+using AiEnabled.Utilities;
+
+using Sandbox.Definitions;
+using Sandbox.Game;
+using Sandbox.ModAPI;
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-using AiEnabled.Ai.Support;
-using AiEnabled.Bots.Behaviors;
-using AiEnabled.Networking;
-using AiEnabled.Support;
-using AiEnabled.Utilities;
-
-using Sandbox.Definitions;
-using Sandbox.Game;
-using Sandbox.Game.Entities;
-using Sandbox.Game.Weapons;
-using Sandbox.ModAPI;
-
-using VRage;
 using VRage.Game;
 using VRage.Game.ModAPI;
-using VRage.ModAPI;
 using VRage.ObjectBuilders;
 using VRage.Utils;
 
@@ -27,26 +21,29 @@ using VRageMath;
 
 namespace AiEnabled.Bots.Roles
 {
-  public class SoldierBot : EnemyBotBase
+  public class EnforcerBot : NeutralBotBase
   {
-    public SoldierBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
+    public EnforcerBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 12, 20, gridBase)
     {
-      Behavior = new EnemyBehavior(this);
-      var toolSubtype = toolType ?? "RapidFireAutomaticRifleItem";
-      ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
+      Behavior = new NeutralBehavior(this);
 
-      _sideNodeWaitTime = 60;
-      _ticksSinceFoundTarget = 241;
-      _ticksBetweenAttacks = 200;
-      _blockDamagePerSecond = 175;
-      _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
-      _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(1.5f));
-      _allowedToSwitchWalk = true;
+      if (toolType == null)
+      {
+        var rand = MyUtils.GetRandomInt(100);
 
-      _attackSounds.Add(new MySoundPair("Enemy"));
-      _attackSoundStrings.Add("Enemy");
+        if (rand >= 95)
+          toolType = "BasicHandHeldLauncherItem";
+        else if (rand >= 50)
+          toolType = "RapidFireAutomaticRifleItem";
+        else
+          toolType = "SemiAutoPistolItem";
+      }
 
-      MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+      _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(2.5f));
+      ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolType));
+
+      if (ToolDefinition != null)
+        MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
     }
 
     public override void AddWeapon()
@@ -58,7 +55,13 @@ namespace AiEnabled.Bots.Roles
         return;
       }
 
-      var weaponDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "RapidFireAutomaticRifleItem");
+      if (ToolDefinition == null)
+      {
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING: Tool Definition was NULL!", MessageType.WARNING);
+        return;
+      }
+
+      var weaponDefinition = ToolDefinition.PhysicalItemId;
 
       if (inventory.CanItemsBeAdded(1, weaponDefinition))
       {
@@ -75,7 +78,7 @@ namespace AiEnabled.Bots.Roles
         }
         else
         {
-          AiSession.Instance.Logger.Log($"WeaponItemDef was null for {weaponDefinition}");
+          AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WeaponItemDef was null for {weaponDefinition}", MessageType.WARNING);
         }
 
         if (ammoSubtype == null)
@@ -131,23 +134,24 @@ namespace AiEnabled.Bots.Roles
       if (!base.Update())
         return false;
 
-      if (_sideNodeTimer < byte.MaxValue)
-        ++_sideNodeTimer;
-
-      if (_firePacketSent)
+      if (_tickCount % 100 == 0)
       {
-        _ticksSinceFirePacket++;
-        if (_ticksSinceFirePacket > TicksBetweenProjectiles * 25)
-          _firePacketSent = false;
-      }
-
-      if (WaitForLOSTimer)
-      {
-        ++_lineOfSightTimer;
-        if (_lineOfSightTimer > 100)
+        if (Target.Entity != null && Target.PositionsValid)
         {
-          _lineOfSightTimer = 0;
-          WaitForLOSTimer = false;
+          if (Vector3D.DistanceSquared(Character.WorldAABB.Center, Target.CurrentActualPosition) > 150 * 150)
+            Target.RemoveTarget();
+        }
+
+        if (Target.Entity == null || Target.IsDestroyed())
+        {
+          if (_botState.IsRunning)
+            Character.SwitchWalk();
+        }
+
+        if (_shouldMove && Character.EquippedTool == null && ToolDefinition != null)
+        {
+          var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
+          controlEnt.SwitchToWeapon(ToolDefinition.PhysicalItemId);
         }
       }
 

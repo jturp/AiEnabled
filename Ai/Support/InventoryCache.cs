@@ -156,6 +156,52 @@ namespace AiEnabled.Ai.Support
       return inv;
     }
 
+    public bool ContainsItem(MyDefinitionId itemDef)
+    {
+      return Inventories.Count > 0 && !itemDef.TypeId.IsNull && ItemCounts.GetValueOrDefault(itemDef.ToString(), 0) > 0;
+    }
+
+    public bool TryMoveItem(MyDefinitionId itemDef, float numToMove, MyInventoryBase destination)
+    {
+      float num;
+      if (!ItemCounts.TryGetValue(itemDef.SubtypeName, out num) || num < numToMove)
+        return false;
+
+      bool found = false;
+
+      foreach (var invKvp in Inventories)
+      {
+        var inv = invKvp.Key;
+        var invList = invKvp.Value;
+        for (int i = 0; i < invList.Count; i++)
+        {
+          var invItem = invList[i];
+          if (invItem.Type == (MyItemType)itemDef)
+          {
+
+            float amount = (float)invItem.Amount;
+            if (amount < numToMove)
+              continue;
+
+            var fixedPoint = (MyFixedPoint)numToMove;
+
+            inv.RemoveItems(invItem.ItemId, fixedPoint);
+            
+            var toAdd = MyObjectBuilderSerializer.CreateNewObject(itemDef);
+            destination.AddItems(fixedPoint, toAdd);
+
+            found = true;
+            break;
+          }
+        }
+
+        if (found)
+          break;
+      }
+
+      return found;
+    }
+
     public bool ContainsItemsFor(IMySlimBlock block, List<MyInventoryItem> botItems)
     {
       if (Inventories.Count == 0)
@@ -489,7 +535,7 @@ namespace AiEnabled.Ai.Support
         items.Clear();
         foreach (var item in kvp.Value)
         {
-          if (item.Type.TypeId != "MyObjectBuilder_Component")
+          if (item.Type.TypeId != "MyObjectBuilder_Component" && item.Type.TypeId != "MyObjectBuilder_AmmoMagazine")
           {
             continue;
           }

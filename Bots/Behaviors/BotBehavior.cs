@@ -171,15 +171,12 @@ namespace AiEnabled.Bots.Behaviors
         var character = Bot.Character;
 
         var weapon = character.EquippedTool as IMyGunObject<MyDeviceBase>;
-        var controlEnt = Bot as Sandbox.Game.Entities.IMyControllableEntity;
+        var controlEnt = character as Sandbox.Game.Entities.IMyControllableEntity;
         if (weapon != null)
           controlEnt.SwitchToWeapon(null);
 
         character.TriggerCharacterAnimationEvent("emote", true);
         character.TriggerCharacterAnimationEvent(action, true);
-
-        if (weapon != null)
-          controlEnt.SwitchToWeapon(weapon.DefinitionId);
       }
       catch (Exception ex)
       {

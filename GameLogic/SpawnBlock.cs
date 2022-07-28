@@ -62,9 +62,9 @@ namespace AiEnabled.GameLogic
     Stack<WeaponInfo> _wepInfoStack = new Stack<WeaponInfo>(10);
     List<string> _allSubtypes = new List<string>(10);
     List<string> _creatureTypes = new List<string>(5);
-    List<string> _nomadTypes = new List<string>(5);
+    List<string> _neutralTypes = new List<string>(5);
     List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
-    string _soldierColor, _zombieColor, _grinderColor, _nomadColor;
+    string _soldierColor, _zombieColor, _grinderColor, _nomadColor, _enforcerColor;
     bool _useRandomColor = true, _spidersOnly, _wolvesOnly;
 
     int _minSecondsBetweenSpawns = 60;
@@ -77,7 +77,7 @@ namespace AiEnabled.GameLogic
     CubeGridMap _gridMap;
     string _lastConfig;
     bool _hasSpawned = true, _isClient, _isServer;
-    bool _allowBossBot = true, _nomadBotOnly, _creatureBotOnly;
+    bool _allowBossBot = true, _nomadBotOnly, _enforcerBotOnly, _neutralBotOnly, _creatureBotOnly;
     int _nextSpawnTime = 1000, _spawnTimer, _currentSpawnCount;
 
     public override void Close()
@@ -90,7 +90,7 @@ namespace AiEnabled.GameLogic
         _allSubtypes?.Clear();
         _subtypeToRole?.Clear();
         _creatureTypes?.Clear();
-        _nomadTypes?.Clear();
+        _neutralTypes?.Clear();
         _weaponSubtypes?.Clear();
         _wepInfoStack?.Clear();
 
@@ -102,7 +102,7 @@ namespace AiEnabled.GameLogic
         _iniLines = null;
         _subtypeToRole = null;
         _creatureTypes = null;
-        _nomadTypes = null;
+        _neutralTypes = null;
         _weaponSubtypes = null;
         _wepInfoStack = null;
       }
@@ -156,11 +156,11 @@ namespace AiEnabled.GameLogic
 
       var defaultColor = Color.Red;
       var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
-      _soldierColor = _zombieColor = _grinderColor = _nomadColor = hexColor;
+      _soldierColor = _zombieColor = _grinderColor = _nomadColor = _enforcerColor = hexColor;
 
       _allSubtypes.Clear();
       _creatureTypes.Clear();
-      _nomadTypes.Clear();
+      _neutralTypes.Clear();
       _weaponSubtypes.Clear();
 
       _allSubtypes.Add("Police_Bot");
@@ -172,8 +172,8 @@ namespace AiEnabled.GameLogic
       _creatureTypes.Add("Space_spider_brown");
       _creatureTypes.Add("Space_spider_green");
       _creatureTypes.Add("Space_spider");
-      _nomadTypes.Add("Default_Astronaut");
-      _nomadTypes.Add("Default_Astronaut_Female");
+      _neutralTypes.Add("Default_Astronaut");
+      _neutralTypes.Add("Default_Astronaut_Female");
 
       _ini.Clear();
       _ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
@@ -188,12 +188,14 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "ZombieBot Color", hexColor);
       _ini.Set("AiEnabled", "Allow GhostBot", true);
       _ini.Set("AiEnabled", "Allow BruiserBot", true);
+      _ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       _ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
+      _ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
       _ini.Set("AiEnabled", "NomadBot Color", hexColor);
+      _ini.Set("AiEnabled", "EnforcerBot Color", hexColor);
       _ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
       _ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
       _ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
-
 
       _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
       _ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
@@ -205,8 +207,8 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
       _ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n Not colorable.\n ");
       _ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch. Not colorable.\n ");
-      _ini.SetComment("AiEnabled", "NomadBots Only", " \n The NomadBot is a neutral encounter that will only attack when\n provoked. Enabling this will disable all others.\n ");
-      _ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including NomadBot.\n ");
+      _ini.SetComment("AiEnabled", "Neutral Bots Only", " \n Neutral Bots are neutral encounters that will only attack if / when\n provoked. Enabling this will disable all others.\n ");
+      _ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including Neutral Bots.\n ");
 
       _ini.Set("SoldierBot Weapon Subtypes", "AddWeaponSubtypeHere", 100);
       _ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
@@ -224,7 +226,7 @@ namespace AiEnabled.GameLogic
 
       _allSubtypes.Clear();
       _creatureTypes.Clear();
-      _nomadTypes.Clear();
+      _neutralTypes.Clear();
       _iniLines.Clear();
 
       for (int i = 0; i < _weaponSubtypes.Count; i++)
@@ -284,20 +286,37 @@ namespace AiEnabled.GameLogic
 
       if (_creatureBotOnly)
       {
-        _creatureTypes.Add("Space_Wolf");
-        _creatureTypes.Add("Space_spider_black");
-        _creatureTypes.Add("Space_spider_brown");
-        _creatureTypes.Add("Space_spider_green");
-        _creatureTypes.Add("Space_spider");
+        if (_wolvesOnly)
+        {
+          _creatureTypes.Add("Space_Wolf");
+        }
+        else if (_spidersOnly)
+        {
+          _creatureTypes.Add("Space_spider_black");
+          _creatureTypes.Add("Space_spider_brown");
+          _creatureTypes.Add("Space_spider_green");
+          _creatureTypes.Add("Space_spider");
+        }
+        else
+        {
+          _creatureTypes.Add("Space_Wolf");
+          _creatureTypes.Add("Space_spider_black");
+          _creatureTypes.Add("Space_spider_brown");
+          _creatureTypes.Add("Space_spider_green");
+          _creatureTypes.Add("Space_spider");
+        }
       }
 
+      _neutralBotOnly = ini.Get("AiEnabled", "Neutral Bots Only").ToBoolean(false);
       _nomadBotOnly = ini.Get("AiEnabled", "NomadBots Only").ToBoolean(false);
       _nomadColor = ini.Get("AiEnabled", "NomadBot Color").ToString(hexColor);
+      _enforcerBotOnly = ini.Get("AiEnabled", "EnforcerBots Only").ToBoolean(false);
+      _enforcerColor = ini.Get("AiEnabled", "Enforcer Color").ToString(hexColor);
 
-      if (_nomadBotOnly)
+      if (_neutralBotOnly)
       {
-        _nomadTypes.Add("Default_Astronaut");
-        _nomadTypes.Add("Default_Astronaut_Female");
+        _neutralTypes.Add("Default_Astronaut");
+        _neutralTypes.Add("Default_Astronaut_Female");
       }
 
       _useRandomColor = ini.Get("AiEnabled", "Use Random Spawn Colors").ToBoolean(true);
@@ -450,8 +469,20 @@ namespace AiEnabled.GameLogic
               if (!_allSubtypes.Contains(subtype))
                 _allSubtypes.Add(subtype);
 
-              if (!_nomadTypes.Contains(subtype))
-                _nomadTypes.Add(subtype);
+              if (!_neutralTypes.Contains(subtype))
+                _neutralTypes.Add(subtype);
+
+              break;
+
+            case "ENFORCER":
+
+              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
+
+              if (!_allSubtypes.Contains(subtype))
+                _allSubtypes.Add(subtype);
+
+              if (!_neutralTypes.Contains(subtype))
+                _neutralTypes.Add(subtype);
 
               break;
 
@@ -483,8 +514,11 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "ZombieBot Color", _zombieColor);
       ini.Set("AiEnabled", "Allow GhostBot", allowGhost);
       ini.Set("AiEnabled", "Allow BruiserBot", _allowBossBot);
+      ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
-      ini.Set("AiEnabled", "NomadBot Color", _nomadColor);
+      ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
+      ini.Set("AiEnabled", "NomadBot Color", hexColor);
+      ini.Set("AiEnabled", "EnforcerBot Color", hexColor);
       ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
       ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
       ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
@@ -499,8 +533,8 @@ namespace AiEnabled.GameLogic
       ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
       ini.SetComment("AiEnabled", "Allow GhostBot", " \n The GhostBot applies cold damage over time with its attacks.\n Not colorable.\n ");
       ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch. Not colorable.\n ");
-      ini.SetComment("AiEnabled", "NomadBots Only", " \n The NomadBot is a neutral encounter that will only attack when\n provoked. Enabling this will disable all others.\n ");
-      ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including NomadBot.\n ");
+      ini.SetComment("AiEnabled", "Neutral Bots Only", " \n Neutral Bots are neutral encounters that will only attack if / when\n provoked. Enabling this will disable all others.\n ");
+      ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including Neutral Bots.\n ");
 
       if (_weaponSubtypes.Count > 0)
       {
@@ -595,7 +629,9 @@ namespace AiEnabled.GameLogic
         var grid = _gridMap.MainGrid;
         bool hasRegular = _allSubtypes.Count > 0;
 
-        if (!hasRegular && !_allowBossBot)
+        if (!hasRegular && !_allowBossBot 
+          && (!_creatureBotOnly || _creatureTypes == null || _creatureTypes.Count == 0) 
+          && (!_neutralBotOnly || _neutralTypes == null || _neutralTypes.Count == 0))
           return;
 
         var maxPlayerDistance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy;
@@ -634,12 +670,18 @@ namespace AiEnabled.GameLogic
 
               botType = _creatureTypes[num];
             }
-            else if (_nomadBotOnly && _nomadTypes?.Count > 0)
+            else if (_neutralBotOnly && _neutralTypes?.Count > 0)
             {
               assignRole = false;
-              role = "NOMAD";
-              var num = MyUtils.GetRandomInt(0, _nomadTypes.Count);
-              botType = _nomadTypes[num];
+              var num = MyUtils.GetRandomInt(0, _neutralTypes.Count);
+              botType = _neutralTypes[num];
+
+              if (_enforcerBotOnly)
+                role = "ENFORCER";
+              else if (_nomadBotOnly)
+                role = "NOMAD";
+              else
+                role = MyUtils.GetRandomInt(0, 10) > 5 ? "ENFORCER" : "NOMAD";
             }
             else if (_allowBossBot && (!hasRegular || _gridMap.TotalSpawnCount > 10 && MyUtils.GetRandomInt(1, 101) >= _gridMap.BossSpawnChance))
             {
@@ -695,6 +737,8 @@ namespace AiEnabled.GameLogic
 
                   if (_nomadBotOnly)
                     color = ColorExtensions.FromHtml(_nomadColor);
+                  else if (_enforcerBotOnly)
+                    color = ColorExtensions.FromHtml(_enforcerColor);
                   else
                     color = null;
   
@@ -734,6 +778,16 @@ namespace AiEnabled.GameLogic
                   }
                 }
               }
+            }
+
+            if (toolType == null && role?.ToUpperInvariant() == "NOMAD")
+            {
+              var rand = MyUtils.GetRandomInt(0, 100);
+
+              if (rand >= 90)
+                toolType = "FullAutoPistolItem";
+              else if (rand >= 60)
+                toolType = "SemiAutoPistolItem";
             }
 
             var intVecFwd = -Base6Directions.GetIntVector(_block.Orientation.Forward);

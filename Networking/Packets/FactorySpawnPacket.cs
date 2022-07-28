@@ -101,6 +101,12 @@ namespace AiEnabled.Networking
 
             subtype = "RoboDog";
             break;
+          case AiSession.BotType.Crew:
+            if (needsName)
+              BotName = "CrewBot";
+
+            subtype = MyUtils.GetRandomInt(0, 10) > 4 ? "Default_Astronaut" : "Default_Astronaut_Female";
+            break;
           //case AiSession.BotType.Medic:
           // if (needsName)
           //   displayName = "MedicBot";

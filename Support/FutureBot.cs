@@ -76,7 +76,7 @@ namespace AiEnabled.Support
       {
         if (Grid != null && LocalPosition.HasValue)
         {
-          PositionAndOrientation.Position = Grid.GridIntegerToWorld(LocalPosition.Value);
+          PositionAndOrientation.Position = Grid.GridIntegerToWorld(LocalPosition.Value) - (Vector3)PositionAndOrientation.Up;
         }
 
         bot = BotFactory.SpawnBotFromAPI(PositionAndOrientation, SpawnData, Grid, Owner);

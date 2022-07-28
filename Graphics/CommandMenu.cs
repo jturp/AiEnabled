@@ -58,6 +58,8 @@ namespace AiEnabled.Graphics
     public bool AwaitingRename { get; private set; }
     public double AspectRatio { get; private set; }
     public IMyControl UseControl { get; private set; }
+    public IMyControl PrimaryActionControl { get; private set; }
+    public IMyControl SecondaryActionControl { get; private set; }
     public Quadrant SelectedQuadrant { get; private set; } = Quadrant.None;
 
     HudAPIv2.BillBoardHUDMessage _interactBB, _radialArrow, _invBackground, _invBgBorder, _cursor;
@@ -85,7 +87,7 @@ namespace AiEnabled.Graphics
     Vector2D _minCursorPosition, _maxCursorPosition;
     List<Vector3D> _patrolList = new List<Vector3D>(10);
     List<MyMouseButtonsEnum> _mouseButtonList;
-    string _lastControlString;
+    string _lastControlString, _lastPrimaryString, _lastSecondaryString;
 
     public CommandMenu()
     {
@@ -227,46 +229,7 @@ namespace AiEnabled.Graphics
         if (!InteractVisible)
         {
           var control = MyAPIGateway.Input.GetGameControl(MyControlsSpace.USE);
-          string controlString;
-
-          var key = control.GetKeyboardControl();
-          if (key != MyKeys.None)
-          {
-            controlString = key.ToString();
-          }
-          else
-          {
-            key = control.GetSecondKeyboardControl();
-            if (key != MyKeys.None)
-            {
-              controlString = key.ToString();
-            }
-            else
-            {
-              var btn = control.GetMouseControl();
-              switch (btn)
-              {
-                case MyMouseButtonsEnum.Left:
-                  controlString = "LMB";
-                  break;
-                case MyMouseButtonsEnum.Right:
-                  controlString = "RMB";
-                  break;
-                case MyMouseButtonsEnum.Middle:
-                  controlString = "MMB";
-                  break;
-                case MyMouseButtonsEnum.XButton1:
-                  controlString = "MXB1";
-                  break;
-                case MyMouseButtonsEnum.XButton2:
-                  controlString = "MXB2";
-                  break;
-                default:
-                  controlString = "F";
-                  break;
-              }
-            }
-          }
+          var controlString = GetControlString(control);
 
           if (_lastControlString != controlString)
           {
@@ -577,6 +540,23 @@ namespace AiEnabled.Graphics
 
       if (!PatrolVisible)
       {
+        var primary = MyAPIGateway.Input.GetGameControl(MyControlsSpace.PRIMARY_TOOL_ACTION);
+        var secondary = MyAPIGateway.Input.GetGameControl(MyControlsSpace.SECONDARY_TOOL_ACTION);
+        var primaryString = GetControlString(primary);
+        var secondaryString = GetControlString(secondary);
+
+        if (primaryString != _lastPrimaryString)
+        {
+          PrimaryActionControl = primary;
+          _lastPrimaryString = primaryString;
+        }
+
+        if (secondaryString != _lastSecondaryString)
+        {
+          SecondaryActionControl = secondary;
+          _lastSecondaryString = secondaryString;
+        }
+
         SetPatrolMenuVisibility(true);
         PatrolVisible = true;
       }
@@ -1357,7 +1337,7 @@ namespace AiEnabled.Graphics
       }
 
       if (PatrolTo)
-        MyAPIGateway.Utilities.ShowNotification($"Press [LMB] to add waypoints, [RMB] to finish and name.", 16);
+        MyAPIGateway.Utilities.ShowNotification($"Press [{_lastPrimaryString}] to add waypoints, [{_lastSecondaryString}] to finish and name.", 16);
 
       var headMatrix = ch.GetHeadMatrix(true);
       var from = headMatrix.Translation + ch.WorldMatrix.Forward * 0.25 + ch.WorldMatrix.Down * 0.25;
@@ -1784,6 +1764,44 @@ namespace AiEnabled.Graphics
       }
     }
 
+    public string GetControlString(IMyControl control)
+    {
+      var key = control.GetKeyboardControl();
+
+      if (key != MyKeys.None)
+        return key.ToString();
+
+      key = control.GetSecondKeyboardControl();
+      if (key != MyKeys.None)
+        return key.ToString();
+
+      string useString;
+      var btn = control.GetMouseControl();
+      switch (btn)
+      {
+        case MyMouseButtonsEnum.Left:
+          useString = "LMB";
+          break;
+        case MyMouseButtonsEnum.Right:
+          useString = "RMB";
+          break;
+        case MyMouseButtonsEnum.Middle:
+          useString = "MMB";
+          break;
+        case MyMouseButtonsEnum.XButton1:
+          useString = "MXB1";
+          break;
+        case MyMouseButtonsEnum.XButton2:
+          useString = "MXB2";
+          break;
+        default:
+          useString = "F";
+          break;
+      }
+
+      return useString;
+    }
+
     bool Init()
     {
       try
@@ -1825,49 +1843,14 @@ namespace AiEnabled.Graphics
         _interactBB.Visible = false;
 
         UseControl = MyAPIGateway.Input.GetGameControl(MyControlsSpace.USE);
-        string controlString;
+        PrimaryActionControl = MyAPIGateway.Input.GetGameControl(MyControlsSpace.PRIMARY_TOOL_ACTION);
+        SecondaryActionControl = MyAPIGateway.Input.GetGameControl(MyControlsSpace.SECONDARY_TOOL_ACTION);
 
-        var key = UseControl.GetKeyboardControl();
-        if (key != MyKeys.None)
-        {
-          controlString = key.ToString();
-        }
-        else
-        {
-          key = UseControl.GetSecondKeyboardControl();
-          if (key != MyKeys.None)
-          {
-            controlString = key.ToString();
-          }
-          else
-          {
-            var btn = UseControl.GetMouseControl();
-            switch (btn)
-            {
-              case MyMouseButtonsEnum.Left:
-                controlString = "LMB";
-                break;
-              case MyMouseButtonsEnum.Right:
-                controlString = "RMB";
-                break;
-              case MyMouseButtonsEnum.Middle:
-                controlString = "MMB";
-                break;
-              case MyMouseButtonsEnum.XButton1:
-                controlString = "MXB1";
-                break;
-              case MyMouseButtonsEnum.XButton2:
-                controlString = "MXB2";
-                break;
-              default:
-                controlString = "F";
-                break;
-            }
-          }
-        }
+        _lastControlString = GetControlString(UseControl);
+        _lastPrimaryString = GetControlString(PrimaryActionControl);
+        _lastSecondaryString = GetControlString(SecondaryActionControl);
 
-        _lastControlString = controlString;
-        _interactMsg = new HudAPIv2.HUDMessage(new StringBuilder($"Press '{controlString}'\nto interact"), Vector2D.Zero, Blend: BlendTypeEnum.PostPP);
+        _interactMsg = new HudAPIv2.HUDMessage(new StringBuilder($"Press '{_lastControlString}'\nto interact"), Vector2D.Zero, Blend: BlendTypeEnum.PostPP);
         _interactMsg.Options |= options;
         _interactMsg.Visible = false;
 

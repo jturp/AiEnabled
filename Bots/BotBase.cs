@@ -88,6 +88,7 @@ namespace AiEnabled.Bots
       BuggZapped = 0x100000000,
       FollowMode = 0x200000000,
       PatrolMode = 0x400000000,
+      AllowGridDamage = 0x800000000,
     }
 
     public IMyPlayer Owner;
@@ -95,8 +96,25 @@ namespace AiEnabled.Bots
     public TargetInfo Target;
     public float DamageModifier;
     public int TicksBetweenProjectiles = 10;
+    public long BotIdentityId;
     public MyHandItemDefinition ToolDefinition;
     public AiSession.BotType BotType;
+
+    public bool CanDamageGrid
+    {
+      get { return (_botInfo & BotInfo.AllowGridDamage) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.AllowGridDamage;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.AllowGridDamage;
+        }
+      }
+    }
 
     public bool HasWeaponOrTool
     {
@@ -730,6 +748,7 @@ namespace AiEnabled.Bots
     public BotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase)
     {
       Character = bot;
+      BotIdentityId = bot.ControllerInfo.ControllingIdentityId;
       Target = new TargetInfo(this);
       UsePathFinder = gridBase != null;
 
@@ -1025,15 +1044,18 @@ namespace AiEnabled.Bots
       }
     }
 
-    MyStringHash _roboDogSubtype = MyStringHash.GetOrCompute("RoboDog");
     public bool IsDead { get; private set; }
+
     public Vector3D GetPosition()
     {
       if (Character != null)
       {
         var center = Character.WorldAABB.Center;
+        var subtype = Character.Definition.Id.SubtypeId;
 
-        if (Character.Definition.Id.SubtypeId == _roboDogSubtype)
+        if (subtype == AiSession.Instance.RoboDogSubtype)
+          center += Character.WorldMatrix.Up * 0.75;
+        else if (subtype == AiSession.Instance.PlushieSubtype)
           center += Character.WorldMatrix.Up * 0.5;
 
         return center;
@@ -1041,7 +1063,9 @@ namespace AiEnabled.Bots
 
       return Vector3D.Zero;
     }
+
     public MatrixD WorldMatrix => Character?.WorldMatrix ?? MatrixD.Identity;
+
     internal void GiveControl(IMyEntityController controller) => controller.TakeControl(Character);
 
     internal void UpdatePatrolPoints(List<Vector3D> waypoints)
@@ -1207,7 +1231,7 @@ namespace AiEnabled.Bots
             var shieldInfo = AiSession.Instance.ShieldAPI.MatchEntToShieldFastExt(shieldent, true);
             if (shieldInfo != null && shieldInfo.Value.Item2.Item1)
             {
-              var botIdentityId = Owner?.IdentityId ?? Character.ControllerInfo.ControllingIdentityId;
+              var botIdentityId = Owner?.IdentityId ?? BotIdentityId;
               var blockOwnerId = shieldInfo.Value.Item1.OwnerId;
 
               var relation = MyIDModule.GetRelationPlayerPlayer(botIdentityId, blockOwnerId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
@@ -1374,7 +1398,7 @@ namespace AiEnabled.Bots
             AiSession.Instance.GlobalSpeakTimer = 0;
             Behavior.Speak("CriticalBatteries");
           }
-          else if (this is NomadBot || this is ScavengerBot)
+          else if (this is NeutralBotBase || this is ScavengerBot)
           {
             BehaviorReady = false;
             UseBehavior();
@@ -1423,7 +1447,7 @@ namespace AiEnabled.Bots
       return true;
     }
 
-    internal virtual void UseBehavior()
+    internal virtual void UseBehavior(bool force = false)
     {
       Behavior?.Speak();
     }
@@ -1519,7 +1543,7 @@ namespace AiEnabled.Bots
         return;
 
       var gridGraph = _currentGraph as CubeGridMap;
-      var grid = gridGraph.MainGrid;
+      var grid = gridGraph?.MainGrid;
 
       if (grid?.Physics == null || grid.IsStatic)
         return;
@@ -1531,7 +1555,7 @@ namespace AiEnabled.Bots
       controlEnt.RelativeDampeningEntity = grid;
     }
 
-    internal virtual void DoDamage(float amount = 0)
+    internal virtual bool DoDamage(float amount = 0)
     {
       IMyDestroyableObject destroyable;
       var cube = Target.Entity as IMyCubeBlock;
@@ -1546,15 +1570,29 @@ namespace AiEnabled.Bots
       }
 
       if (destroyable == null || !destroyable.UseDamageSystem || destroyable.Integrity <= 0)
-        return;
+        return false;
 
       var character = Target.Entity as IMyCharacter;
       bool isCharacter = character != null;
       var rand = amount > 0 ? amount : isCharacter ? MyUtils.GetRandomFloat(_minDamage, _maxDamage) : _blockDamagePerAttack;
 
       BotBase botTarget = null;
+      bool isPlayer = false;
 
-      if (cube != null || (isCharacter && AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId)))
+      if (isCharacter)
+      {
+        if (character.Parent is IMyShipController)
+        {
+          var p = MyAPIGateway.Players.GetPlayerControllingEntity(character.Parent);
+          isPlayer = p != null && AiSession.Instance.Players.ContainsKey(p.IdentityId);
+        }
+        else
+        {
+          isPlayer = AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId);
+        }
+      }
+
+      if (cube != null || isPlayer)
       {
         rand *= AiSession.Instance.ModSaveData.BotWeaponDamageModifier;
       }
@@ -1565,10 +1603,7 @@ namespace AiEnabled.Bots
 
       destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
 
-      if (!isCharacter)
-        return;
-
-      if (botTarget != null)
+      if (isCharacter && botTarget != null)
       {
         botTarget._ticksSinceFoundTarget = 0;
 
@@ -1590,6 +1625,8 @@ namespace AiEnabled.Bots
           nomad.SetHostile(Character);
         }
       }
+
+      return isCharacter;
     }
 
     internal virtual bool IsInRangeOfTarget()
@@ -1666,6 +1703,8 @@ namespace AiEnabled.Bots
       var distance = double.MaxValue;
       entList.ShellSort(botPosition);
 
+      var hasWeapon = ToolDefinition != null && ToolDefinition.WeaponType != MyItemWeaponType.None;
+
       for (int i = 0; i < entList.Count; i++)
       {
         var ent = entList[i];
@@ -1681,19 +1720,18 @@ namespace AiEnabled.Bots
           if (ch.IsDead || ch.MarkedForClose || ch.EntityId == Character.EntityId)
             continue;
 
-          long ownerIdentityId = ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
+          long ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
           BotBase bot;
           if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot))
           {
             if (bot == null || bot.IsDead)
               continue;
 
-            if (bot.Owner != null)
-              ownerIdentityId = bot.Owner.IdentityId;
+            ownerIdentityId = bot.Owner?.IdentityId ?? bot.BotIdentityId;
           }
           else if (ch.IsPlayer)
           {
-            if (ch.Parent is IMyCockpit)
+            if (ch.Parent is IMyShipController)
             {
               var p = MyAPIGateway.Players.GetPlayerControllingEntity(ch.Parent);
               if (p != null)
@@ -1716,7 +1754,7 @@ namespace AiEnabled.Bots
             }
           }
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(ownerIdentityId, Character.ControllerInfo.ControllingIdentityId);
+          var relation = MyIDModule.GetRelationPlayerPlayer(ownerIdentityId, BotIdentityId);
           if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
             continue;
           else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
@@ -1729,8 +1767,11 @@ namespace AiEnabled.Bots
             distance = dSqd;
           }
         }
-        else if ((grid = ent as MyCubeGrid)?.Physics != null && !grid.IsPreview && !grid.MarkedForClose && !checkedGridIDs.Contains(grid.EntityId))
+        else if (hasWeapon && blockDestroEnabled && CanDamageGrid && (grid = ent as MyCubeGrid)?.Physics != null)
         {
+          if (grid.IsPreview || grid.MarkedAsTrash || grid.MarkedForClose || grid.Closed || checkedGridIDs.Contains(grid.EntityId))
+            continue;
+
           blockTargets.Clear();
           gridGroups.Clear();
 
@@ -1740,7 +1781,7 @@ namespace AiEnabled.Bots
           foreach (var g in gridGroups)
           {
             var myGrid = g as MyCubeGrid;
-            if (myGrid == null || myGrid.MarkedForClose)
+            if (myGrid == null || myGrid.IsPreview || myGrid.MarkedForClose)
               continue;
 
             checkedGridIDs.Add(g.EntityId);
@@ -1754,7 +1795,7 @@ namespace AiEnabled.Bots
           }
 
           entOwnerId = thisGridOwner;
-          var relation = MyIDModule.GetRelationPlayerPlayer(entOwnerId, Character.ControllerInfo.ControllingIdentityId);
+          var relation = MyIDModule.GetRelationPlayerPlayer(entOwnerId, BotIdentityId);
           if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
             continue;
           else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
@@ -1763,7 +1804,7 @@ namespace AiEnabled.Bots
           foreach (var g in gridGroups)
           {
             var myGrid = g as MyCubeGrid;
-            if (myGrid == null || myGrid.MarkedForClose)
+            if (myGrid == null || myGrid.IsPreview || myGrid.MarkedForClose)
               continue;
 
             foreach (var cpit in myGrid.OccupiedBlocks)
@@ -1772,46 +1813,43 @@ namespace AiEnabled.Bots
                 entList.Add(cpit.Pilot);
             }
 
-            if (HasWeaponOrTool && blockDestroEnabled)
-            {
-              var blockCounter = myGrid?.BlocksCounters;
-              var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasGridAi(myGrid))
-                || (blockCounter != null 
-                && (blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_InteriorTurret), 0) > 0 
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncher), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncherReload), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallGatlingGun), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_TurretControlBlock), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorStator), 0) > 0
-                || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorAdvancedStator), 0) > 0));
+            var blockCounter = myGrid?.BlocksCounters;
+            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasGridAi(myGrid))
+              || (blockCounter != null 
+              && (blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_InteriorTurret), 0) > 0 
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncher), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncherReload), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallGatlingGun), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_TurretControlBlock), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorStator), 0) > 0
+              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorAdvancedStator), 0) > 0));
 
-              if (hasTurretOrRotor)
-              { 
-                var blocks = myGrid.GetFatBlocks();
-                for (int j = 0; j < blocks.Count; j++)
+            if (hasTurretOrRotor)
+            { 
+              var blocks = myGrid.GetFatBlocks();
+              for (int j = 0; j < blocks.Count; j++)
+              {
+                var b = blocks[j];
+                if (b == null || b.MarkedForClose)
+                  continue;
+
+                if (!b.IsWorking || b.SlimBlock.IsBlockUnbuilt())
+                  continue;
+
+                var stator = b as IMyMotorStator;
+                if (stator != null)
                 {
-                  var b = blocks[j];
-                  if (b == null || b.MarkedForClose)
-                    continue;
-
-                  if (!b.IsWorking || b.SlimBlock.IsBlockUnbuilt())
-                    continue;
-
-                  var stator = b as IMyMotorStator;
-                  if (stator != null)
-                  {
-                    if (stator.Enabled && stator.TopGrid != null)
-                      blockTargets.Add(b);
-                  }
-                  else if (AiSession.Instance.AllCoreWeaponDefinitions.Contains(b.BlockDefinition.Id)
-                    || b is IMyLargeTurretBase || b is IMySmallGatlingGun
-                    || b is IMySmallMissileLauncher || b is IMySmallMissileLauncherReload
-                    || b is IMyTurretControlBlock)
-                  {
+                  if (stator.Enabled && stator.TopGrid != null)
                     blockTargets.Add(b);
-                  }
+                }
+                else if (AiSession.Instance.AllCoreWeaponDefinitions.Contains(b.BlockDefinition.Id)
+                  || b is IMyLargeTurretBase || b is IMySmallGatlingGun
+                  || b is IMySmallMissileLauncher || b is IMySmallMissileLauncherReload
+                  || b is IMyTurretControlBlock)
+                {
+                  blockTargets.Add(b);
                 }
               }
             }
@@ -1821,7 +1859,7 @@ namespace AiEnabled.Bots
           {
             blockTargets.ShellSort(botPosition);
 
-              // check for weapons or rotors
+            // check for weapons or rotors
             for (int j = 0; j < blockTargets.Count; j++)
             {
               var blockTgt = blockTargets[j];
@@ -2251,7 +2289,7 @@ namespace AiEnabled.Bots
 
                 if (shareMode != MyOwnershipShareModeEnum.All)
                 {
-                  var owner = Owner?.IdentityId ?? Character.ControllerInfo.ControllingIdentityId;
+                  var owner = Owner?.IdentityId ?? BotIdentityId;
                   var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
 
                   var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
@@ -2513,7 +2551,7 @@ namespace AiEnabled.Bots
         return result;
       }
 
-      return true;
+      return true; // should this be false ??
     }
 
     internal void CheckDeniedDoors()
@@ -3255,9 +3293,9 @@ namespace AiEnabled.Bots
         var relVector = Vector3D.TransformNormal(vector, MatrixD.Transpose(WorldMatrix));
         var flattenedVector = new Vector3D(relVector.X, 0, relVector.Z);
         var flattenedLengthSquared = flattenedVector.LengthSquared();
-        var check = 1.1 * distanceToCheck;
+        //var check = 1.1 * distanceToCheck;
 
-        if (flattenedLengthSquared < check && Math.Abs(relVector.Y) < check)
+        if (flattenedLengthSquared < distanceToCheck && Math.Abs(relVector.Y) < distanceToCheck)
         {
           if (NextIsLadder)
           {
@@ -3782,23 +3820,23 @@ namespace AiEnabled.Bots
           var botOwner = Owner.IdentityId;
           var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, doorOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
 
-          hasAccess = ((MyDoorBase)door).AnyoneCanUse || relation != MyRelationsBetweenPlayers.Enemies;
+          hasAccess = ((MyDoorBase)door).AnyoneCanUse || relation != MyRelationsBetweenPlayers.Enemies || (doorOwner == 0L && door.HasPlayerAccess(BotIdentityId));
         }
         else
         {
-          var botOwner = Character.ControllerInfo.ControllingIdentityId;
+          var botOwner = BotIdentityId;
           var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, doorOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
 
-          hasAccess = relation != MyRelationsBetweenPlayers.Enemies;
+          hasAccess = relation != MyRelationsBetweenPlayers.Enemies || (doorOwner == 0L && door.HasPlayerAccess(BotIdentityId));
         }
 
-        if (!hasAccess)
+        if (!hasAccess || this is CreatureBot)
         {
-          if (Owner != null)
+          if (Owner != null || !WantsTarget || !CanDamageGrid || this is NomadBot)
           {
             _pathCollection.DeniedDoors[door.Position] = door;
           }
-          else
+          else if (!hasAccess)
           {
             // assume enemy, attack door!
             if (Target.Entity == null || !ReferenceEquals(Target.Entity, door))
@@ -4153,7 +4191,7 @@ namespace AiEnabled.Bots
       Character.MoveAndRotate(movement, rotation, roll);
     }
 
-    internal void SimulateIdleMovement(bool getMoving, bool towardOwner = false)
+    internal virtual void SimulateIdleMovement(bool getMoving, bool towardOwner = false, double distanceCheck = 3)
     {
       if (PatrolMode || FollowMode || !AiSession.Instance.ModSaveData.AllowIdleMovement)
         return;
@@ -4169,14 +4207,16 @@ namespace AiEnabled.Bots
         _idleTimer = 0;
         _ticksSinceLastIdleTransition = 0;
       }
-      else if (_moveTo.HasValue)
+      else if (_moveTo.HasValue) 
       {
         var vector = Vector3D.TransformNormal(_moveTo.Value - botPosition, Matrix.Transpose(botMatrix));
         var flattenedVector = new Vector3D(vector.X, 0, vector.Z);
 
-        if (flattenedVector.LengthSquared() <= 3)
+        if (flattenedVector.LengthSquared() <= distanceCheck)
+        {
           _moveTo = null;
-        else
+        }
+        else if (_prevMoveTo.HasValue)
         {
           var distFromPrev = Vector3D.DistanceSquared(_prevMoveTo.Value, botPosition);
           if (distFromPrev > 4)
@@ -4187,7 +4227,7 @@ namespace AiEnabled.Bots
           else
           {
             ++_idleTimer;
-            if (_idleTimer >= 120)
+            if (_idleTimer >= 180)
             {
               _moveTo = null;
               _pathCollection?.CleanUp(true);
@@ -4332,7 +4372,7 @@ namespace AiEnabled.Bots
           FindPathForIdleMovement(_moveTo.Value);
       }
       else
-        MoveToPoint(_moveTo.Value);
+        MoveToPoint(_moveTo.Value, distanceCheck: Math.Min(1, distanceCheck));
     }
 
     internal Vector3D GetTravelDirection()

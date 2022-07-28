@@ -56,6 +56,13 @@ namespace AiEnabled
       "AssistCome", "Bed_Laying_Pose"
     };
 
+    public List<string> CrewAnimations = new List<string>()
+    {
+      "FacePalm", "LookingAround", "Stretching", "Yelling",
+      "PointAggressive", "PointBack", "PointDown", "PointForward",
+      "PointLeft", "PointRight", "CheckWrist", "AssistCome"
+    };
+
     public List<string> BotFactionTags = new List<string>()
     {
       "BINC", "SCDS", "OTFI", "UNIT", "BLBT", "LEGN", "OBSD", "FLWR",
@@ -297,6 +304,7 @@ namespace AiEnabled
     {
       { BotType.Repair, 10000 },
       { BotType.Scavenger, 5000 },
+      { BotType.Crew, 15000 },
       //{ BotType.Medic, 30000 },
       { BotType.Combat, 50000 },
     };
@@ -336,17 +344,28 @@ namespace AiEnabled
           new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "PowerCell"), 1),
         }
       },
+      {
+        BotType.Crew, new List<SerialId>()
+        {
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 20),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SmallTube"), 4),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "LargeTube"), 4),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "Motor"), 5),
+          new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "BulletproofGlass"), 5),
+        }
+      },
     };
 
     public Dictionary<BotType, string> BotDescriptions = new Dictionary<BotType, string>()
     {
       { BotType.Repair, "A simple helper bot. The Repair Bot is capable of manuevering around a grid and collecting dropped components to be placed in a container, as well as performing light welding duty for any blocks that may need it. It will pull components from containers on the same grid as needed." },
-      { BotType.Scavenger, "The Scavenger Bot will follow you around and periodically may find items of interest in the environment. These items may include components, ammunition, ore, and space credits." },
+      { BotType.Scavenger, "The Scavenger Bot will follow you around and periodically may find items of interest in the environment." },
+      { BotType.Crew, "The Crew Bot performs certain functions based on the block it is assigned to, such as ammo reloading, battery life extension, and more!" },
       //{ BotType.Medic, "The Healer bot is well versed in the art of salves and poultices capable of mending all but the most grievous of wounds. Salves apply a healing over time effect and are applied automatically while the bot is active." },
       { BotType.Combat, "The latest in combat technology, the Combat Bot is equipped with a rapid fire rifle and a titanium exoskeleton capable of taking on small arms fire with ease. It will follow you and attack any nearby hostiles." },
     };
 
-    public enum BotType { Repair, Scavenger, /* Medic,*/ Combat };
+    public enum BotType { Repair, Scavenger, Combat, Crew };
     public enum BotModel { Default, DroneBot, TargetBot, AstronautMale, AstronautFemale };
 
     public HashSet<MyDefinitionId> AllCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
@@ -384,6 +403,7 @@ namespace AiEnabled
     public ConcurrentDictionary<long, TimeSpan> DoorsToClose = new ConcurrentDictionary<long, TimeSpan>(); // door entityId to timespan when opened
     public ConcurrentDictionary<long, CubeGridMap> GridGraphDict = new ConcurrentDictionary<long, CubeGridMap>();
     public ConcurrentDictionary<ulong, VoxelGridMap> VoxelGraphDict;
+    public ConcurrentDictionary<long, long> EntityToIdentityDict = new ConcurrentDictionary<long, long>(2, 100);
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
     public ConcurrentStack<TempNode> NodeStack = new ConcurrentStack<TempNode>();
     public ConcurrentStack<GraphWorkData> GraphWorkStack = new ConcurrentStack<GraphWorkData>();
@@ -402,10 +422,22 @@ namespace AiEnabled
     public ConcurrentStack<List<MyLineSegmentOverlapResult<MyEntity>>> OverlapResultListStack = new ConcurrentStack<List<MyLineSegmentOverlapResult<MyEntity>>>();
     public ConcurrentStack<List<CubeGridMap>> GridMapListStack = new ConcurrentStack<List<CubeGridMap>>();
     public ConcurrentStack<Vector3D[]> CornerArrayStack = new ConcurrentStack<Vector3D[]>();
+    public ConcurrentStack<HashSet<Vector3I>> LocalVectorHashStack = new ConcurrentStack<HashSet<Vector3I>>();
     public ConcurrentStack<InventoryCache> InvCacheStack = new ConcurrentStack<InventoryCache>();
     public ConcurrentStack<Dictionary<string, int>> MissingCompsDictStack = new ConcurrentStack<Dictionary<string, int>>();
+    public ConcurrentStack<ApiWorkData> ApiWorkDataStack = new ConcurrentStack<ApiWorkData>();
     public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
+
+    public static Vector3I[] DirArray = new Vector3I[]
+    {
+      Vector3I.Up,
+      Vector3I.Down,
+      Vector3I.Left,
+      Vector3I.Right,
+      Vector3I.Forward,
+      Vector3I.Backward
+    };
 
     //public Dictionary<string, int> AnimationTimeDictionary = new Dictionary<string, int>(); // TODO: Try and find a reference to the duration of animations
     public Stack<RemoteBotAPI.SpawnData> SpawnDataStack = new Stack<RemoteBotAPI.SpawnData>();
@@ -417,12 +449,14 @@ namespace AiEnabled
     public List<MyDefinitionId> ScavengerItemList = new List<MyDefinitionId>();
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
     public List<IMySlimBlock> GridSeatsAPI = new List<IMySlimBlock>();
+    public List<MyConsumableItemDefinition> ConsumableItemList = new List<MyConsumableItemDefinition>();
     public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> EmptySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>();
     public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> FactorySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>()
     {
       new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial")),
       new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial")),
-      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial"))
+      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial")),
+      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial"))
     };
 
     Stack<WeaponInfo> _weaponInfoStack = new Stack<WeaponInfo>(20);
@@ -431,8 +465,6 @@ namespace AiEnabled
     Stack<PathCollection> _pathCollections = new Stack<PathCollection>(10);
     ConcurrentCachingList<ControlInfo> _controllerInfo = new ConcurrentCachingList<ControlInfo>();
     ConcurrentCachingList<ControlInfo> _pendingControllerInfo = new ConcurrentCachingList<ControlInfo>();
-    //ConcurrentDictionary<long, ControlInfo> _controllerInfo = new ConcurrentDictionary<long, ControlInfo>();
-    //ConcurrentDictionary<long, ControlInfo> _pendingControllerInfo = new ConcurrentDictionary<long, ControlInfo>();
     ConcurrentDictionary<long, byte> _botEntityIds = new ConcurrentDictionary<long, byte>();
     ConcurrentDictionary<long, IconInfo> _botSpeakers = new ConcurrentDictionary<long, IconInfo>();
     ConcurrentDictionary<long, IconInfo> _botAnalyzers = new ConcurrentDictionary<long, IconInfo>();
@@ -445,7 +477,6 @@ namespace AiEnabled
     List<IMyPlayer> _tempPlayersAsync = new List<IMyPlayer>(16);
     List<IMyCharacter> _botCharsToClose = new List<IMyCharacter>();
     List<MyKeys> _keyPresses = new List<MyKeys>();
-    List<IMyIdentity> _identityList = new List<IMyIdentity>(100);
     Dictionary<long, long> _newPlayerIds = new Dictionary<long, long>(); // bot identityId to bot entityId
     HashSet<long> _iconRemovals = new HashSet<long>();
     HashSet<long> _hBarRemovals = new HashSet<long>();

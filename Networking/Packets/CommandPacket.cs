@@ -49,6 +49,9 @@ namespace AiEnabled.Networking
       if (!AiSession.Instance.Bots.TryGetValue(BotEntityId, out bot) || bot?.Character == null || bot.Character.MarkedForClose || bot.Character.IsDead)
         return false;
 
+      var crewBot = bot as CrewBot;
+      var isCrew = crewBot != null;
+
       if (GoTo.HasValue)
       {
         // turning GoTo into a patrol with one waypoint if the position isn't a seat (otherwise bot should sit down)
@@ -63,6 +66,7 @@ namespace AiEnabled.Networking
         MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, entList);
 
         bool shouldSit = false;
+        MyCubeBlock cube = null;
 
         for (int i = 0; i < entList.Count; i++)
         {
@@ -70,19 +74,53 @@ namespace AiEnabled.Networking
           if (ent == null)
             continue;
 
+          cube = ent as MyCubeBlock;
           shouldSit = true;
           break;
         }
 
-        entList.Clear();
-        AiSession.Instance.EntListStack.Push(entList);
-
         if (!shouldSit)
         {
-          Patrol = true;
-          PatrolNodes = new List<Vector3D>() { GoTo.Value };
-          GoTo = null;
+          if (isCrew)
+          {
+            entList.Clear();
+            sphere = new BoundingSphereD(GoTo.Value, 3);
+            MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, entList);
+            double distanceSqd = double.MaxValue;
+
+            for (int i = 0; i < entList.Count; i++)
+            {
+              var terminal = entList[i] as IMyTerminalBlock;
+
+              if (terminal != null && (terminal is IMyPowerProducer || terminal is IMyShipController || terminal is IMyProductionBlock || terminal is IMyLargeTurretBase
+                || terminal.BlockDefinition.SubtypeName.IndexOf("kitchen", StringComparison.OrdinalIgnoreCase) >= 0))
+              {
+
+                var d = Vector3D.DistanceSquared(terminal.GetPosition(), GoTo.Value);
+                if (d < distanceSqd)
+                {
+                  distanceSqd = d;
+                  cube = terminal as MyCubeBlock;
+                }
+              }
+            }
+
+            crewBot.AssignToCrew(cube);
+          }
+          else
+          {
+            Patrol = true;
+            PatrolNodes = new List<Vector3D>() { GoTo.Value };
+            GoTo = null;
+          }
         }
+        else if (isCrew)
+        {
+          crewBot.AssignToCrew(cube);
+        }
+
+        entList.Clear();
+        AiSession.Instance.EntListStack.Push(entList);
       }
 
       if (Stay || GoTo.HasValue)
@@ -91,7 +129,7 @@ namespace AiEnabled.Networking
         bot.Target.RemoveOverride(false);
         bot.PatrolMode = false;
         bot.FollowMode = false;
-        bot.UseAPITargets = true;
+        bot.UseAPITargets = Stay || !isCrew;
 
         if (GoTo.HasValue)
         {

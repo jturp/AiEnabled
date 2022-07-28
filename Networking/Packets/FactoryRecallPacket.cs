@@ -50,7 +50,7 @@ namespace AiEnabled.Networking
         if (bot != null)
         {
           BotBase helper;
-          if (bot.IsDead || bot.MarkedForClose || !AiSession.Instance.Bots.TryGetValue(bot.EntityId, out helper))
+          if (bot.IsDead || bot.MarkedForClose || !AiSession.Instance.Bots.TryGetValue(bot.EntityId, out helper) || helper == null)
           {
             AiSession.Instance.Logger.Log($"Attempted to recall a dead or missing bot", Utilities.MessageType.WARNING);
             return false;
@@ -64,13 +64,17 @@ namespace AiEnabled.Networking
 
           helper.UseAPITargets = false;
           helper.NeedsTransition = false;
-          helper._pathCollection.CleanUp(true);
-          helper.Target.RemoveTarget();
-          helper.SetTarget();
+          helper._pathCollection?.CleanUp(true);
 
-          helper.Target.Update();
-          var actualPosition = helper.Target.CurrentActualPosition;
-          helper.StartCheckGraph(ref actualPosition, true);
+          if (helper.Target != null)
+          {
+            helper.Target.RemoveTarget();
+            helper.SetTarget();
+
+            helper.Target.Update();
+            var actualPosition = helper.Target.CurrentActualPosition;
+            helper.StartCheckGraph(ref actualPosition, true);
+          }
         }
         else if (AiSession.Instance.Players.TryGetValue(_ownerIdentityId, out player))
         {
