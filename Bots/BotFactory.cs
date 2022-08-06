@@ -18,6 +18,7 @@ using ParallelTasks;
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.Game;
+using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.ModAPI;
@@ -1457,6 +1458,19 @@ namespace AiEnabled.Bots
           positionAndOrientation.Up = Vector3.Up;
         }
 
+        var enableJetpack = subType == "Drone_Bot";
+        if (!enableJetpack)
+        {
+          float _;
+          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(positionAndOrientation.Position, out _);
+
+          if (nGrav.LengthSquared() < 1E-2)
+          {
+            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(positionAndOrientation.Position, 0);
+            enableJetpack = aGrav.LengthSquared() < 1E-2;
+          }
+        }
+
         var ob = new MyObjectBuilder_Character()
         {
           Name = displayName,
@@ -1465,7 +1479,7 @@ namespace AiEnabled.Bots
           CharacterModel = subType,
           EntityId = 0,
           AIMode = false,
-          JetpackEnabled = subType == "Drone_Bot",
+          JetpackEnabled = enableJetpack,
           EnableBroadcasting = false,
           NeedsOxygenFromSuit = false,
           OxygenLevel = 1,

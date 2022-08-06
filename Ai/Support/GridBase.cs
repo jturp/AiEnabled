@@ -30,13 +30,28 @@ namespace AiEnabled.Ai.Support
     internal byte LastActiveTicks;
     internal MyOrientedBoundingBoxD OBB;
     internal BoundingBoxI BoundingBox;
-    internal ConcurrentDictionary<Vector3I, byte> ObstacleNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
-    internal ConcurrentDictionary<Vector3I, byte> ObstacleNodesTemp = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
-    internal ConcurrentDictionary<Vector3I, byte> TempBlockedNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
-    internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
-
-    internal bool GraphLocked, GraphHasTunnel = false;
+    internal bool GraphLocked, GraphHasTunnel;
     byte _refreshTimer;
+
+    /// <summary>
+    /// Holds all nodes that are currently occupied by unconnected grids. Used to determine if a blocked path is temporarily or permanently blocked
+    /// </summary>
+    internal ConcurrentDictionary<Vector3I, byte> ObstacleNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+
+    /// <summary>
+    /// Only used in the method to update <see cref="ObstacleNodes"/>
+    /// </summary>
+    internal ConcurrentDictionary<Vector3I, byte> ObstacleNodesTemp = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+
+    /// <summary>
+    /// Used for temporarily blocked nodes
+    /// </summary>
+    internal ConcurrentDictionary<Vector3I, byte> TempBlockedNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+
+    /// <summary>
+    /// Used for permanently blocked nodes
+    /// </summary>
+    internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
 
     /// <summary>
     /// The dictionary key for this map
@@ -109,6 +124,13 @@ namespace AiEnabled.Ai.Support
     }
 
     /// <summary>
+    /// Determines if something is in the temporary blocked nodes collection
+    /// </summary>
+    /// <param name="position">the grid local position to test for</param>
+    /// <returns>true if temporarily blocked, otherwise false</returns>
+    public virtual bool IsTemporaryBlock(Vector3I position) => ObstacleNodes.ContainsKey(position);
+
+    /// <summary>
     /// Gets the <see cref="Node"/> associated with a given local position
     /// </summary>
     /// <param name="position">the intended <see cref="Node"/> position</param>
@@ -131,6 +153,12 @@ namespace AiEnabled.Ai.Support
     /// <returns></returns>
     public abstract bool IsObstacle(Vector3I position, bool includeTemp);
 
+    /// <summary>
+    /// Gets the <see cref="Node"/> associated with a grid position, or the default if there isn't one
+    /// </summary>
+    /// <param name="position">the grid local position to get the Node for</param>
+    /// <param name="defaultValue">the default if there isn't an associated node</param>
+    /// <returns></returns>
     public abstract Node GetValueOrDefault(Vector3I position, Node defaultValue);
 
     /// <summary>
@@ -146,8 +174,6 @@ namespace AiEnabled.Ai.Support
 
       Node node;
       var localPosition = WorldToLocal(worldPosition);
-      //if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-      //  && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
         && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
@@ -180,8 +206,6 @@ namespace AiEnabled.Ai.Support
         return false;
 
       var localPosition = WorldToLocal(worldPosition);
-      //if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-      //  && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
        && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
@@ -209,10 +233,8 @@ namespace AiEnabled.Ai.Support
     public virtual bool IsPositionUsable(BotBase bot, Vector3I localPosition)
     {
       Node node;
-      //if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-      //  && !ObstacleNodes.ContainsKey(localPosition) && OpenTileDict.TryGetValue(localPosition, out node))
       if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-     && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
+        && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
       {
         var worldPoint = LocalToWorld(node.Position) + node.Offset;
         if (!PointInsideVoxel(worldPoint, RootVoxel))
@@ -236,7 +258,6 @@ namespace AiEnabled.Ai.Support
     /// <returns>true if the <paramref name="position"/> is available (is open tile and not blocked in any way)</returns>
     public virtual bool IsPositionAvailable(Vector3I position)
     {
-      //return OpenTileDict.ContainsKey(position) && !TempBlockedNodes.ContainsKey(position) && !ObstacleNodes.ContainsKey(position);
       return IsOpenTile(position) && !TempBlockedNodes.ContainsKey(position) && !ObstacleNodes.ContainsKey(position) && !Obstacles.ContainsKey(position);
     }
 
@@ -407,8 +428,6 @@ namespace AiEnabled.Ai.Support
 
       double distanceTunnel = double.MaxValue;
       double distanceRegular = double.MaxValue;
-      //int regularCount = 0;
-      //int counter = 0;
       bool pointFound = false;
 
       for (int y = minY; y <= maxY; y++)
@@ -417,10 +436,8 @@ namespace AiEnabled.Ai.Support
         {
           for (int x = minX; x <= maxX; x++)
           {
-            //counter++;
             var localPoint = new Vector3I(x, y, z);
 
-            // worldPoint = LocalToWorld(localPoint);
             Vector3D worldPoint = localPoint * cellSize;
             Vector3D.Transform(ref worldPoint, ref matrix, out worldPoint);
 
@@ -460,12 +477,6 @@ namespace AiEnabled.Ai.Support
       var extents = localBox.Max - localBox.Min + 1;
       var volume = extents.X * extents.Y * extents.Z;
 
-      //AiSession.Instance.Logger.Log($"Checked {counter} of {volume} points in prunik (extents = {extents}. Result = {resultNode?.Position.ToString() ?? "NULL"}, Backup Result = {backupNode?.Position.ToString() ?? "NULL"}");
-      //if (result != null)
-      //  AiSession.Instance.Logger.Log($" -> Result: IsAir = {result.IsAirNode}, IsGround = {result.IsGroundNode}, IsWater = {result.IsWaterNode}, IsSpace = {result.IsSpaceNode(this)}, IsTunnel = {result.IsTunnelNode}, IsInVoxel = {PointInsideVoxel(LocalToWorld(result.Position) + result.Offset, Planet)}");
-      //else
-      //  AiSession.Instance.Logger.Log($" -> Result wasn't in OpenTileDict!");
-
       return result;
     }
 
@@ -483,7 +494,6 @@ namespace AiEnabled.Ai.Support
       bool addObstacle = true;
 
       Node node;
-      //if (OpenTileDict.TryGetValue(prev, out node))
       if (TryGetNodeForPosition(prev, out node))
       {
         var dirPN = next - prev;
@@ -494,7 +504,6 @@ namespace AiEnabled.Ai.Support
           addObstacle = false;
       }
 
-      //if (addObstacle && OpenTileDict.TryGetValue(curr, out node))
       if (addObstacle && TryGetNodeForPosition(curr, out node))
       {
         var dirCN = next - curr;
@@ -507,7 +516,6 @@ namespace AiEnabled.Ai.Support
 
       if (addObstacle)
       {
-        //AiSession.Instance.Logger.Log($"AddToObstacles: Adding {next} to obstacles");
         Obstacles[next] = new byte();
       }
     }
@@ -729,9 +737,7 @@ namespace AiEnabled.Ai.Support
 
       Node node;
       localPoint = WorldToLocal(closestSurfacePoint);
-      //AiSession.Instance.Logger.Log($"Final node: {localPoint}");
 
-      //if (OpenTileDict.TryGetValue(localPoint, out node))
       if (TryGetNodeForPosition(localPoint, out node))
       {
         closestSurfacePoint = LocalToWorld(node.Position) + node.Offset;

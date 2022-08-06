@@ -601,20 +601,12 @@ namespace AiEnabled.API
         bot.Character.SetPosition(position);
 
         var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-        if (jetpack != null)
+        if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
         {
-          if (bot.RequiresJetpack)
-          {
-            if (!jetpack.TurnedOn)
-            {
-              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-              jetpack.TurnOnJetpack(true);
-              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-            }
-          }
-          else if (jetpack.TurnedOn)
-            jetpack.SwitchThrusts();
+          var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+          MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+          jetpack.TurnOnJetpack(true);
+          MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
         }
       }
 

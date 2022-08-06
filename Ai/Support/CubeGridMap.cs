@@ -84,7 +84,7 @@ namespace AiEnabled.Ai.Support
 
     /// <summary>
     /// If repair bots are present on the grid, this will hold any tiles they are actively reparing or building.
-    /// Key is grid entity id, value is a Dictionary where Key is block position on grid and Value is  bot entity id.
+    /// Key is grid entity id, value is a Dictionary where Key is block position on grid and Value is bot entity id.
     /// </summary>
     public ConcurrentDictionary<long, ConcurrentDictionary<Vector3I, long>> SelectedRepairTiles = new ConcurrentDictionary<long, ConcurrentDictionary<Vector3I, long>>(5, 10);
 
@@ -125,7 +125,6 @@ namespace AiEnabled.Ai.Support
 
     internal Dictionary<Vector3I, Node> OpenTileDict = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
     Dictionary<Vector3I, Node> _planetTileDictionary = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
-
     ConcurrentStack<Node> _nodeStack = new ConcurrentStack<Node>();
 
     ParallelTasks.Task _asyncTileTask;
@@ -809,7 +808,12 @@ namespace AiEnabled.Ai.Support
 
     public bool IsInBufferZone(Vector3D botPosition)
     {
-      return OBB.Contains(ref botPosition) && !UnbufferedOBB.Contains(ref botPosition);
+      var allExt = OBB.HalfExtent;
+      var ext = UnbufferedOBB.HalfExtent;
+      var extra = (allExt - ext) * 0.75;
+
+      var excludeOBB = new MyOrientedBoundingBoxD(UnbufferedOBB.Center, ext + extra, UnbufferedOBB.Orientation);
+      return OBB.Contains(ref botPosition) && !excludeOBB.Contains(ref botPosition);
     }
 
     public override void Refresh() => Init();
@@ -950,6 +954,14 @@ namespace AiEnabled.Ai.Support
 
           if ((max - min) != Vector3I.Zero)
           {
+            if (block.CubeGrid.EntityId != MainGrid.EntityId)
+            {
+              var minWorld = block.CubeGrid.GridIntegerToWorld(block.Min);
+              var maxWorld = block.CubeGrid.GridIntegerToWorld(block.Max);
+              min = MainGrid.WorldToGridInteger(minWorld);
+              max = MainGrid.WorldToGridInteger(maxWorld);
+            }
+
             Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref min, ref max);
 
             while (iter.IsValid())
@@ -1117,7 +1129,9 @@ namespace AiEnabled.Ai.Support
       }
 
       if (!isVoxelNode || currentIsObstacle)
+      {
         yield break;
+      }
 
       foreach (var dir in AiSession.Instance.VoxelMovementDirections)
       {
@@ -1141,7 +1155,7 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      if (ObstacleNodes.ContainsKey(nextNode) || TempBlockedNodes.ContainsKey(nextNode))
+      if (Obstacles.ContainsKey(nextNode) || ObstacleNodes.ContainsKey(nextNode) || TempBlockedNodes.ContainsKey(nextNode))
       {
         return false;
       }
@@ -1161,7 +1175,7 @@ namespace AiEnabled.Ai.Support
 
       if (isSlimBlock)
       {
-        if (TempBlockedNodes.ContainsKey(currentNode) || DoesBlockExist(nextNode))
+        if (TempBlockedNodes.ContainsKey(currentNode) || (bot?.Target.IsFloater == true && DoesBlockExist(nextNode)))
         {
           return false;
         }
@@ -3288,15 +3302,6 @@ namespace AiEnabled.Ai.Support
           byte b;
           ObstacleNodes.TryRemove(current, out b);
           Obstacles.TryRemove(current, out b);
-
-          //Node node;
-          //if (_planetTileDictionary.TryRemove(current, out node))
-          //{
-          //  byte b;
-          //  _nodeStack.Push(node);
-          //  ObstacleNodes.TryRemove(current, out b);
-          //  Obstacles.TryRemove(current, out b);
-          //}
         }
 
         float _;
@@ -6369,13 +6374,13 @@ namespace AiEnabled.Ai.Support
     public override void UpdateTempObstacles()
     {
       List<MyEntity> tempEntities;
-      if (!AiSession.Instance.EntListStack.TryPop(out tempEntities))
+      if (!AiSession.Instance.EntListStack.TryPop(out tempEntities) || tempEntities == null)
         tempEntities = new List<MyEntity>();
       else
         tempEntities.Clear();
 
       Vector3D[] corners;
-      if (!AiSession.Instance.CornerArrayStack.TryPop(out corners))
+      if (!AiSession.Instance.CornerArrayStack.TryPop(out corners) || corners == null)
         corners = new Vector3D[8];
 
       ObstacleNodesTemp.Clear();
@@ -6385,22 +6390,18 @@ namespace AiEnabled.Ai.Support
       for (int i = tempEntities.Count - 1; i >= 0; i--)
       {
         var grid = tempEntities[i] as MyCubeGrid;
-        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
+        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.Closed)
           continue;
 
-        if (grid.IsSameConstructAs(MainGrid) && grid.GridSizeEnum == VRage.Game.MyCubeSize.Large)
-        {
+        if (grid.IsSameConstructAs(MainGrid) && grid.GridSizeEnum == MyCubeSize.Large)
           continue;
-        }
 
         var orientation = Quaternion.CreateFromRotationMatrix(grid.WorldMatrix);
         var obb = new MyOrientedBoundingBoxD(grid.PositionComp.WorldAABB.Center, grid.PositionComp.LocalAABB.HalfExtents, orientation);
 
         var containType = OBB.Contains(ref obb);
         if (containType == ContainmentType.Disjoint)
-        {
           continue;
-        }
 
         BoundingBoxI box = BoundingBoxI.CreateInvalid();
         obb.GetCorners(corners, 0);

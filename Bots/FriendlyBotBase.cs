@@ -928,7 +928,7 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
-      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, Utilities.Extensions.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
 
       var targetEnt = Target.Entity as IMyEntity;

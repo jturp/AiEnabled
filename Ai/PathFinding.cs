@@ -84,7 +84,10 @@ namespace AiEnabled.Ai
             else
               bot.Target.RemoveTarget();
 
-            graph.TempBlockedNodes[goal] = new byte();
+            if (graph.IsTemporaryBlock(goal))
+              graph.TempBlockedNodes[goal] = new byte();
+            else
+              graph.Obstacles[goal] = new byte();
           }
           else
           {

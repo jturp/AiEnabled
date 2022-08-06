@@ -64,6 +64,9 @@ namespace AiEnabled.Networking
 
           helper.UseAPITargets = false;
           helper.NeedsTransition = false;
+          helper.PatrolMode = false;
+          helper.FollowMode = false;
+          helper._patrolList?.Clear();
           helper._pathCollection?.CleanUp(true);
 
           if (helper.Target != null)

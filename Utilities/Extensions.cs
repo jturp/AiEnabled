@@ -36,6 +36,8 @@ namespace AiEnabled.Utilities
 {
   public static class Extensions
   {
+    public static T CastHax<T>(T typeRef, object castObj) => (T)castObj;
+
     public static bool ContainsItem(this Base6Directions.Direction[] array, Base6Directions.Direction item)
     {
       for (int i = 0; i < array.Length; i++)

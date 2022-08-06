@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.Networking.Packets;
+
 using ProtoBuf;
 
 using Sandbox.ModAPI;
@@ -34,6 +36,8 @@ namespace AiEnabled.Networking
   [ProtoInclude(1022, typeof(ClientHelperPacket))]
   [ProtoInclude(1023, typeof(SettingRequestPacket))]
   [ProtoInclude(1024, typeof(ShieldHitPacket))]
+  [ProtoInclude(1025, typeof(BotStatusPacket))]
+  [ProtoInclude(1026, typeof(BotStatusRequestPacket))]
   [ProtoContract]
   public abstract class PacketBase
   {

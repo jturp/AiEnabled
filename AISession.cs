@@ -52,6 +52,7 @@ using VRage.Game.ModAPI.Network;
 using VRage.Sync;
 using Sandbox.ModAPI.Interfaces.Terminal;
 using SpaceEngineers.Game.ModAPI;
+using AiEnabled.Networking.Packets;
 
 namespace AiEnabled
 {
@@ -77,7 +78,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v0.17b";
+    public const string VERSION = "v0.18b";
     const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
@@ -528,6 +529,8 @@ namespace AiEnabled
       LocalVectorHashStack?.Clear();
       ConsumableItemList?.Clear();
       CrewAnimations?.Clear();
+      BotStatusStack?.Clear();
+      BotStatusListStack?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -644,6 +647,8 @@ namespace AiEnabled
       DirArray = null;
       ConsumableItemList = null;
       CrewAnimations = null;
+      BotStatusStack = null;
+      BotStatusListStack = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -1712,25 +1717,17 @@ namespace AiEnabled
             if (BotToSeatShareMode.TryRemove(character.EntityId, out shareMode))
             {
               var seatCube = seat as MyCubeBlock;
-              if (seatCube != null)
+              if (seatCube?.IDModule != null)
                 seatCube.IDModule.ShareMode = shareMode;
             }
 
             var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
-            if (jetpack != null)
+            if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
             {
-              if (bot.RequiresJetpack)
-              {
-                if (!jetpack.TurnedOn)
-                {
-                  var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                  MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                  jetpack.TurnOnJetpack(true);
-                  MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-                }
-              }
-              else if (jetpack.TurnedOn)
-                jetpack.SwitchThrusts();
+              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+              jetpack.TurnOnJetpack(true);
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
             }
 
             bot.Target.RemoveTarget();
@@ -1842,7 +1839,7 @@ namespace AiEnabled
           return;
         }
 
-        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName));
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName), "AiEnabled", 10);
       }
       catch (Exception ex)
       {
@@ -1966,53 +1963,44 @@ namespace AiEnabled
                 }
               }
 
-              _useObjList.Clear();
-              var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
-              useComp?.GetInteractiveObjects(_useObjList);
-              if (_useObjList.Count > 0)
+              var relativePosition = Vector3D.Rotate(botPosition - seatPosition, MatrixD.Transpose(seat.WorldMatrix));
+              BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
+
+              var cpit = seat as MyCockpit;
+              if (cpit != null)
               {
-                var relativePosition = Vector3D.Rotate(botPosition - seatPosition, MatrixD.Transpose(seat.WorldMatrix));
-                BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
-
-                var useObj = _useObjList[0];
                 var seatCube = seat as MyCubeBlock;
+                var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+                bool changeBack = false;
 
-                if (useObj != null)
+                if (shareMode != MyOwnershipShareModeEnum.All)
                 {
-                  var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
-                  bool changeBack = false;
+                  var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+                  var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
 
-                  if (shareMode != MyOwnershipShareModeEnum.All)
+                  var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+                  if (relation != MyRelationsBetweenPlayers.Enemies)
                   {
-                    var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
-                    var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
-
-                    var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
-                    if (relation != MyRelationsBetweenPlayers.Enemies)
-                    {
-                      changeBack = true;
-                      seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
-                    }
+                    changeBack = true;
+                    seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
                   }
-
-                  if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
-                  {
-                    useObj.Use(UseActionEnum.Manipulate, bot.Character);
-                  }
-
-                  if (changeBack)
-                  {
-                    BotToSeatShareMode[bot.Character.EntityId] = shareMode;
-                    //seatCube.IDModule.ShareMode = shareMode;
-                  }
-
-                  useObj.Use(UseActionEnum.Manipulate, bot.Character);
-                  bot._pathCollection?.CleanUp(true);
-                  bot.Target?.RemoveTarget();
-
-                  gridSeats.RemoveAtFast(j);
-                  break;
                 }
+
+                if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+                {
+                  cpit.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(cpit.Pilot, bot.Character));
+                }
+
+                if (changeBack)
+                {
+                  BotToSeatShareMode[bot.Character.EntityId] = shareMode;
+                }
+
+                bot._pathCollection?.CleanUp(true);
+                bot.Target?.RemoveTarget();
+
+                gridSeats.RemoveAtFast(j);
+                break;
               }
             }
           }
@@ -2037,7 +2025,7 @@ namespace AiEnabled
           return;
         }
 
-        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName));
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName), "AiEnabled", 10);
       }
       catch (Exception ex)
       {
@@ -3518,6 +3506,7 @@ namespace AiEnabled
 
         ++GlobalSpawnTimer;
         ++GlobalSpeakTimer;
+        ++_statusRequestTimer;
         ++_ticks;
         _isTick10 = _ticks % 10 == 0;
         _isTick100 = _isTick10 && _ticks % 100 == 0;
@@ -5058,5 +5047,33 @@ namespace AiEnabled
       emitter.Entity = null;
       SoundEmitters.Push(emitter);
     }
+
+    byte _statusRequestTimer;
+
+    internal void SendBotStatusRequest()
+    {
+      if (_statusRequestTimer < 100)
+        return;
+
+      _statusRequestTimer = 0;
+
+      var player = MyAPIGateway.Session?.Player;
+      if (player == null)
+        return;
+
+      List<long> helperIds;
+      if (PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds?.Count > 0)
+      {
+        var pkt = new BotStatusRequestPacket();
+        Network.SendToServer(pkt);
+      }
+    }
+
+    internal void PropagateBotStatusUpdate(List<BotStatus> stats)
+    {
+      OnBotStatsUpdate?.Invoke(stats);
+    }
+
+    public event Action<List<BotStatus>> OnBotStatsUpdate;
   }
 }

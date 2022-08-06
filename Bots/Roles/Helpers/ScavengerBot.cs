@@ -142,7 +142,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           Behavior.Perform("RoboDog_Digging");
 
           rand = MyUtils.GetRandomInt(1, 101);
-          _awaitItem = rand > 30;
+          _awaitItem = rand > 65;
           _performing = true;
         }
       }

@@ -1,4 +1,5 @@
 ﻿using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Parallel;
 using AiEnabled.Utilities;
 
@@ -164,7 +165,7 @@ namespace AiEnabled.Ai.Support
     public bool TryMoveItem(MyDefinitionId itemDef, float numToMove, MyInventoryBase destination)
     {
       float num;
-      if (!ItemCounts.TryGetValue(itemDef.SubtypeName, out num) || num < numToMove)
+      if (Inventories == null || Inventories.Count == 0 || itemDef.TypeId.IsNull || !ItemCounts.TryGetValue(itemDef.SubtypeName, out num) || num < numToMove)
         return false;
 
       bool found = false;
@@ -202,12 +203,16 @@ namespace AiEnabled.Ai.Support
       return found;
     }
 
-    public bool ContainsItemsFor(IMySlimBlock block, List<MyInventoryItem> botItems)
+    public bool ContainsItemsFor(IMySlimBlock block, List<MyInventoryItem> botItems, BotBase bot)
     {
       if (Inventories.Count == 0)
       {
         return false;
       }
+
+      var rBot = bot as RepairBot;
+      if (rBot != null)
+        rBot.FirstMissingItemForRepairs = null;
 
       Dictionary<string, int> missingComps;
       if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
@@ -256,6 +261,14 @@ namespace AiEnabled.Ai.Support
         ItemCounts.TryGetValue(kvp.Key, out num);
         if (num < needed)
         {
+          if (rBot != null)
+          {
+            var def = new MyDefinitionId(typeof(MyObjectBuilder_Component), kvp.Key);
+            var compDef = MyDefinitionManager.Static.GetComponentDefinition(def) as MyComponentDefinition;
+            if (compDef != null)
+              rBot.FirstMissingItemForRepairs = compDef.DisplayNameText;
+          }
+
           valid = false;
           break;
         }

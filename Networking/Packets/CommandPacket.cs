@@ -51,6 +51,7 @@ namespace AiEnabled.Networking
 
       var crewBot = bot as CrewBot;
       var isCrew = crewBot != null;
+      bot._pathCollection?.CleanUp(true);
 
       if (GoTo.HasValue)
       {
@@ -145,24 +146,16 @@ namespace AiEnabled.Networking
             bot.Character.SetPosition(position);
 
             var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-            if (jetpack != null)
+            if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
             {
-              if (bot.RequiresJetpack)
-              {
-                if (!jetpack.TurnedOn)
-                {
-                  var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                  MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                  jetpack.TurnOnJetpack(true);
-                  MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-                }
-              }
-              else if (jetpack.TurnedOn)
-                jetpack.SwitchThrusts();
+              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+              jetpack.TurnOnJetpack(true);
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
             }
           }
 
-          bot.Target.SetOverride(GoTo.Value);          
+          bot.Target.SetOverride(GoTo.Value);
         }
       }
       else if (Resume)
@@ -185,20 +178,12 @@ namespace AiEnabled.Networking
           bot.Character.SetPosition(position);
 
           var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-          if (jetpack != null)
+          if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
           {
-            if (bot.RequiresJetpack)
-            {
-              if (!jetpack.TurnedOn)
-              {
-                var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                jetpack.TurnOnJetpack(true);
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-              }
-            }
-            else if (jetpack.TurnedOn)
-              jetpack.SwitchThrusts();
+            var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+            jetpack.TurnOnJetpack(true);
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
           }
         }
       }
@@ -222,20 +207,12 @@ namespace AiEnabled.Networking
           bot.Character.SetPosition(position);
 
           var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-          if (jetpack != null)
+          if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
           {
-            if (bot.RequiresJetpack)
-            {
-              if (!jetpack.TurnedOn)
-              {
-                var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                jetpack.TurnOnJetpack(true);
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-              }
-            }
-            else if (jetpack.TurnedOn)
-              jetpack.SwitchThrusts();
+            var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+            jetpack.TurnOnJetpack(true);
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
           }
         }
       }
@@ -265,20 +242,12 @@ namespace AiEnabled.Networking
           bot.Character.SetPosition(position);
 
           var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-          if (jetpack != null)
+          if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
           {
-            if (bot.RequiresJetpack)
-            {
-              if (!jetpack.TurnedOn)
-              {
-                var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                jetpack.TurnOnJetpack(true);
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-              }
-            }
-            else if (jetpack.TurnedOn)
-              jetpack.SwitchThrusts();
+            var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+            jetpack.TurnOnJetpack(true);
+            MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
           }
         }
       }

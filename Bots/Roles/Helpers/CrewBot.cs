@@ -32,6 +32,7 @@ using VRage.Utils;
 using VRageMath;
 
 using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
+using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 
 namespace AiEnabled.Bots.Roles.Helpers
 {
@@ -356,12 +357,21 @@ namespace AiEnabled.Bots.Roles.Helpers
     bool FaceCube()
     {
       var worldPosition = AttachedBlock.PositionComp.GetPosition();
-      var vector = Vector3D.TransformNormal(worldPosition - GetPosition(), MatrixD.Transpose(WorldMatrix));
+      var botPosition = GetPosition();
+      var targetVector = worldPosition - botPosition;
+      var vector = Vector3D.TransformNormal(targetVector, MatrixD.Transpose(WorldMatrix));
 
-      if (vector.Z < 0 && Math.Abs(vector.X) < 0.5)
-        return true;
+      if (vector.Z < 0)
+      {
+        var reject = VectorUtils.Project(targetVector, Character.WorldMatrix.Up);
+        var flattenedVector = targetVector - reject;
+        var angle = VectorUtils.GetAngleBetween(flattenedVector, Character.WorldMatrix.Forward);
 
-      var rotation = new Vector2(0, Math.Sign(vector.X) * 75);
+        if (Math.Abs(angle) < MathHelper.ToRadians(3))
+          return true;
+      }
+
+      var rotation = new Vector2(0, Math.Sign(vector.X) * 20);
       Character.MoveAndRotate(Vector3.Zero, rotation, 0);
       return false;
     }
@@ -390,7 +400,9 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (_pathCollection?.HasPath == true)
           {
             var lastNode = _pathCollection.PathToTarget[_pathCollection.PathToTarget.Count - 1];
-            checkVector = _currentGraph.LocalToWorld(lastNode.Position) + lastNode.Offset;
+
+            if (_currentGraph.WorldToLocal(_moveTo.Value) == lastNode.Position)
+              checkVector = _currentGraph.LocalToWorld(lastNode.Position) + lastNode.Offset;
           }
 
           var vector = Vector3D.TransformNormal(checkVector - botPosition, Matrix.Transpose(WorldMatrix));
@@ -406,6 +418,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             if (cubeOK)
               CrewBehavior();
+
+            _idlePathTimer = 0;
+            return;
           }
         }
 
@@ -428,7 +443,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 for (int i = 0; i < blocks.Count; i++)
                 {
                   var b = blocks[i];
-                  if (b == null || b.MarkedForClose || b.Closed || b.Position == AttachedBlock?.Position)
+                  if (b == null || b.MarkedForClose || b.Closed)
                     continue;
 
                   if (b is IMyProductionBlock || (b is IMyCargoContainer && b.BlockDefinition.Id.SubtypeName.Contains("Cargo")))
@@ -445,7 +460,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 for (int i = 0; i < blocks.Count; i++)
                 {
                   var b = blocks[i];
-                  if (b == null || b.MarkedForClose || b.Closed || b.Position == AttachedBlock?.Position)
+                  if (b == null || b.MarkedForClose || b.Closed)
                     continue;
 
                   if (b is IMyPowerProducer || b is IMyTextPanel)
@@ -462,7 +477,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 for (int i = 0; i < blocks.Count; i++)
                 {
                   var b = blocks[i];
-                  if (b == null || b.MarkedForClose || b.Closed || b.Position == AttachedBlock?.Position)
+                  if (b == null || b.MarkedForClose || b.Closed)
                     continue;
 
                   if (b is IMyLargeTurretBase)
@@ -479,15 +494,22 @@ namespace AiEnabled.Bots.Roles.Helpers
             _refetchBlocks = false;
           }
 
-          AttachedBlock = null;
-
           if (_goToBlocks.Count > 0)
           {
-            var index = MyUtils.GetRandomInt(_goToBlocks.Count);
-            var testBlock = _goToBlocks[index]?.FatBlock;
+            IMyCubeBlock testBlock = null;
+
+            for (int i = 0; i < 10; i++)
+            {
+              var index = MyUtils.GetRandomInt(_goToBlocks.Count);
+              testBlock = _goToBlocks[index]?.FatBlock;
+
+              if (testBlock != null && testBlock != AttachedBlock)
+                break;
+            }
 
             if (testBlock == null || testBlock.MarkedForClose || testBlock.Closed)
             {
+              AttachedBlock = null;
               _refetchBlocks = true;
             }
             else
@@ -507,6 +529,10 @@ namespace AiEnabled.Bots.Roles.Helpers
                 AiSession.Instance.Logger.Log($"{this.GetType().FullName}: Current Cube returned no valid node after assignment", MessageType.WARNING);
               }
             }
+          }
+          else
+          {
+            AttachedBlock = null;
           }
         }
 

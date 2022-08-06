@@ -47,6 +47,8 @@ namespace AiEnabled.Bots.Roles.Helpers
     ParallelTasks.Task _targetTask;
     Action _targetAction;
 
+    public string FirstMissingItemForRepairs;
+
     public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 1, 1, gridBase, ownerId)
     {
       BotType = AiSession.BotType.Repair;
@@ -270,7 +272,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                     graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
                     break;
                   }
-                  else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
+                  else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
                   {
                     var botLocal = mainGrid.WorldToGridInteger(botPosition);
                     var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
@@ -369,7 +371,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                         graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
                         break;
                       }
-                      else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
+                      else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
                       {
                         var botLocal = mainGrid.WorldToGridInteger(botPosition);
                         var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
@@ -426,7 +428,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                         graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
                         break;
                       }
-                      else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems))
+                      else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
                       {
                         var botLocal = mainGrid.WorldToGridInteger(botPosition);
                         var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);

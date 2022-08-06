@@ -426,6 +426,8 @@ namespace AiEnabled
     public ConcurrentStack<InventoryCache> InvCacheStack = new ConcurrentStack<InventoryCache>();
     public ConcurrentStack<Dictionary<string, int>> MissingCompsDictStack = new ConcurrentStack<Dictionary<string, int>>();
     public ConcurrentStack<ApiWorkData> ApiWorkDataStack = new ConcurrentStack<ApiWorkData>();
+    public ConcurrentStack<BotStatus> BotStatusStack = new ConcurrentStack<BotStatus>();
+    public ConcurrentStack<List<BotStatus>> BotStatusListStack = new ConcurrentStack<List<BotStatus>>();
     public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
 

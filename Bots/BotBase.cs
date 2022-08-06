@@ -2025,62 +2025,125 @@ namespace AiEnabled.Bots
         if (_currentGraph.IsGridGraph)
         {
           if (!_currentGraph.GetEdgeDistanceInDirection(normal, out maxLength))
-            maxLength = 2 * (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
-          else
-            maxLength += (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+            maxLength = (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize);
 
-          if (!_currentGraph.GetEdgeDistanceInDirection(graphUp, out lengthToTop))
-            lengthToTop = VoxelGridMap.DefaultHalfSize;
+          //if (!_currentGraph.GetEdgeDistanceInDirection(graphUp, out lengthToTop))
+          //  lengthToTop = VoxelGridMap.DefaultHalfSize;
+
+          newGraphPosition = graphCenter + normal * maxLength; // Maybe try botPosition + normal * maxLength
+          var surfacePoint = _currentGraph.GetClosestSurfacePointFast(null, newGraphPosition, _currentGraph.WorldMatrix.Up);
+
+          if (surfacePoint.HasValue)
+            newGraphPosition = surfacePoint.Value;
+
+          // TODO: Need to check if in voxel here ???
         }
         else
         {
           maxLength = 2 * (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
           lengthToTop = VoxelGridMap.DefaultHalfSize;
-        }
 
-        newGraphPosition = graphCenter + normal * maxLength;
+          newGraphPosition = graphCenter + normal * maxLength;
 
-        var intVecDir = Base6Directions.GetIntVector(dir);
-        var dotUp = Vector3I.Up.Dot(ref intVecDir);
+          var intVecDir = Base6Directions.GetIntVector(dir);
+          var dotUp = Vector3I.Up.Dot(ref intVecDir);
 
-        bool targetAboveBox = false;
-        bool targetBelowBox = false;
+          bool targetAboveBox = false;
+          bool targetBelowBox = false;
 
-        Vector3D projUp = VectorUtils.Project(vectorGraphToTarget, graphUp);
-        if (projUp.LengthSquared() > lengthToTop * lengthToTop)
-        {
-          var projGraphUp = projUp.Dot(ref graphUp);
-          targetAboveBox = projGraphUp > 0;
-          targetBelowBox = projGraphUp < 0;
-        }
-
-        var pointAboveNext = newGraphPosition + (graphUp * lengthToTop * 0.9);
-        var pointAboveThis = graphCenter + (graphUp * lengthToTop * 0.9) + (normal * maxLength * 0.75);
-        var pointBelowThis = graphCenter - (graphUp * lengthToTop * 0.9) + (normal * maxLength * 0.5);
-
-        if (targetAboveBox && dotUp <= 0 && GridBase.PointInsideVoxel(pointAboveNext, _currentGraph.RootVoxel))
-        {
-          // the target is going to be above the current map box
-          maxLength = lengthToTop + (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
-
-          if (GridBase.PointInsideVoxel(pointAboveThis, _currentGraph.RootVoxel))
+          Vector3D projUp = VectorUtils.Project(vectorGraphToTarget, graphUp);
+          if (projUp.LengthSquared() > lengthToTop * lengthToTop)
           {
-            newGraphPosition = graphCenter + graphUp * maxLength;
+            var projGraphUp = projUp.Dot(ref graphUp);
+            targetAboveBox = projGraphUp > 0;
+            targetBelowBox = projGraphUp < 0;
           }
-          else
+
+          var pointAboveNext = newGraphPosition + (graphUp * lengthToTop * 0.9);
+          var pointAboveThis = graphCenter + (graphUp * lengthToTop * 0.9) + (normal * maxLength * 0.75);
+          var pointBelowThis = graphCenter - (graphUp * lengthToTop * 0.9) + (normal * maxLength * 0.5);
+
+          if (targetAboveBox && dotUp <= 0 && GridBase.PointInsideVoxel(pointAboveNext, _currentGraph.RootVoxel))
           {
-            newGraphPosition += graphUp * maxLength;
+            // the target is going to be above the current map box
+            maxLength = lengthToTop + (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+
+            if (GridBase.PointInsideVoxel(pointAboveThis, _currentGraph.RootVoxel))
+            {
+              newGraphPosition = graphCenter + graphUp * maxLength;
+            }
+            else
+            {
+              newGraphPosition += graphUp * maxLength;
+            }
+          }
+          else if (targetBelowBox && dotUp >= 0 && !GridBase.PointInsideVoxel(pointBelowThis, _currentGraph.RootVoxel))
+          {
+            // the target is going to be below the current map box
+            maxLength = lengthToTop + (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+            newGraphPosition = graphCenter - graphUp * maxLength;
           }
         }
-        else if (targetBelowBox && dotUp >= 0 && !GridBase.PointInsideVoxel(pointBelowThis, _currentGraph.RootVoxel))
-        {
-          // the target is going to be below the current map box
-          maxLength = lengthToTop + (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
-          newGraphPosition = graphCenter - graphUp * maxLength;
-        }
+
+        //if (_currentGraph.IsGridGraph)
+        //{
+        //  if (!_currentGraph.GetEdgeDistanceInDirection(normal, out maxLength))
+        //    maxLength = 2 * (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+        //  else
+        //    maxLength += (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+
+        //  if (!_currentGraph.GetEdgeDistanceInDirection(graphUp, out lengthToTop))
+        //    lengthToTop = VoxelGridMap.DefaultHalfSize;
+        //}
+        //else
+        //{
+        //  maxLength = 2 * (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+        //  lengthToTop = VoxelGridMap.DefaultHalfSize;
+        //}
+
+        //newGraphPosition = graphCenter + normal * maxLength;
+
+        //var intVecDir = Base6Directions.GetIntVector(dir);
+        //var dotUp = Vector3I.Up.Dot(ref intVecDir);
+
+        //bool targetAboveBox = false;
+        //bool targetBelowBox = false;
+
+        //Vector3D projUp = VectorUtils.Project(vectorGraphToTarget, graphUp);
+        //if (projUp.LengthSquared() > lengthToTop * lengthToTop)
+        //{
+        //  var projGraphUp = projUp.Dot(ref graphUp);
+        //  targetAboveBox = projGraphUp > 0;
+        //  targetBelowBox = projGraphUp < 0;
+        //}
+
+        //var pointAboveNext = newGraphPosition + (graphUp * lengthToTop * 0.9);
+        //var pointAboveThis = graphCenter + (graphUp * lengthToTop * 0.9) + (normal * maxLength * 0.75);
+        //var pointBelowThis = graphCenter - (graphUp * lengthToTop * 0.9) + (normal * maxLength * 0.5);
+
+        //if (targetAboveBox && dotUp <= 0 && GridBase.PointInsideVoxel(pointAboveNext, _currentGraph.RootVoxel))
+        //{
+        //  // the target is going to be above the current map box
+        //  maxLength = lengthToTop + (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+
+        //  if (GridBase.PointInsideVoxel(pointAboveThis, _currentGraph.RootVoxel))
+        //  {
+        //    newGraphPosition = graphCenter + graphUp * maxLength;
+        //  }
+        //  else
+        //  {
+        //    newGraphPosition += graphUp * maxLength;
+        //  }
+        //}
+        //else if (targetBelowBox && dotUp >= 0 && !GridBase.PointInsideVoxel(pointBelowThis, _currentGraph.RootVoxel))
+        //{
+        //  // the target is going to be below the current map box
+        //  maxLength = lengthToTop + (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize) - (3 * _currentGraph.CellSize);
+        //  newGraphPosition = graphCenter - graphUp * maxLength;
+        //}
 
         var vectorBotToTgt = targetPosition - botPosition;
-        if (vectorBotToTgt.LengthSquared() > 15625) // 125 * 125
+        if (vectorBotToTgt.LengthSquared() > 125 * 125)
         {
           var edgePoint = _currentGraph.GetBufferZoneTargetPosition(targetPosition, graphCenter, true);
           if (edgePoint.HasValue)
@@ -2130,7 +2193,7 @@ namespace AiEnabled.Bots
       foreach (var overlapResult in rayEntities)
       {
         var grid = overlapResult.Element as MyCubeGrid;
-        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
+        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.Closed)
         {
           continue;
         }
@@ -2798,8 +2861,8 @@ namespace AiEnabled.Bots
         return;
 
       tempTaskInProcess = true;
-
       CheckGraphNeeded = true;
+
       _graphWorkData.Force = force;
       _graphWorkData.TargetPosition = tgtPosition;
       _graphTask = MyAPIGateway.Parallel.Start(_graphWorkAction, _graphWorkCallBack, _graphWorkData);
@@ -2899,7 +2962,7 @@ namespace AiEnabled.Bots
         var botPosition = GetPosition();
         var botMatrix = WorldMatrix;
 
-        if (newGrid != null || !_currentGraph.IsPositionValid(newGraphPosition))
+        if (newGrid != null || _currentGraph.IsGridGraph || !_currentGraph.IsPositionValid(newGraphPosition))
         {         
           _nextGraph = AiSession.Instance.GetNewGraph(newGrid, newGraphPosition, botMatrix);
         }
@@ -2927,10 +2990,6 @@ namespace AiEnabled.Bots
 
                 if (tgtPoint == null)
                 {
-                  //var m = MatrixD.Transpose(Character.WorldMatrix);
-                  //var vector = _nextGraph.OBB.Center - _currentGraph.OBB.Center;
-                  //Vector3D.Rotate(ref vector, ref m, out vector);
-
                   switchNow = true;
                   var midPoint = (_currentGraph.OBB.Center + _nextGraph.OBB.Center) * 0.5;
                   _nextGraph = AiSession.Instance.GetVoxelGraph(midPoint, WorldMatrix);
@@ -3342,7 +3401,8 @@ namespace AiEnabled.Bots
         return;
       }
 
-      var isSlimBlock = Target.IsSlimBlock;
+      var isSlimTarget = Target.IsSlimBlock;
+      var isSlimBlock = isSlimTarget;
 
       Vector3D exit;
       Vector3I goal;
@@ -3358,6 +3418,12 @@ namespace AiEnabled.Bots
       {
         exit = targetPosition;
         goal = _currentGraph.WorldToLocal(exit);
+      }
+
+      if (!isSlimBlock && _currentGraph.IsGridGraph)
+      {
+        var gridGraph = _currentGraph as CubeGridMap;
+        isSlimBlock = gridGraph.DoesBlockExist(goal);
       }
 
       Node goalNode;
@@ -3386,7 +3452,7 @@ namespace AiEnabled.Bots
           if (Target.Override.HasValue && exit == Target.Override)
             Target.RemoveOverride(false);
 
-          if (isSlimBlock || Target.IsInventory)
+          if (isSlimTarget || Target.IsInventory)
           {
             _currentGraph.TempBlockedNodes[_currentGraph.WorldToLocal(exit)] = new byte();
             Target.RemoveTarget();
@@ -3398,11 +3464,11 @@ namespace AiEnabled.Bots
 
       if (start == goal)
       {
-        if (Target.IsInventory || isSlimBlock)
+        if (isSlimTarget || Target.IsInventory)
         {
           _pathCollection.CleanUp(true);
 
-          var block = isSlimBlock ? Target.Entity as IMySlimBlock : Target.Inventory;
+          var block = isSlimTarget ? Target.Entity as IMySlimBlock : Target.Inventory;
           var grid = block.CubeGrid as MyCubeGrid;
           var worldPostion = grid.GridIntegerToWorld(block.Position);
           var position = _currentGraph.WorldToLocal(worldPostion);
@@ -3659,7 +3725,14 @@ namespace AiEnabled.Bots
           Node curNode;
           var current = _currentGraph.WorldToLocal(botPosition);
           if (!_currentGraph.TryGetNodeForPosition(current, out curNode) || !curNode.IsAirNode)
-            TrySwitchJetpack(false);
+          {
+            float _;
+            var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(botPosition, out _);
+            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(botPosition, 0);
+
+            if (nGrav.LengthSquared() > 0 || aGrav.LengthSquared() > 0)
+              TrySwitchJetpack(false);
+          }
         }
       }
 
@@ -4402,7 +4475,5 @@ namespace AiEnabled.Bots
           return botMatrix.Forward;
       }
     }
-
-    public T CastHax<T>(T typeRef, object castObj) => (T)castObj;
   }
 }
