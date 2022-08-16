@@ -190,6 +190,10 @@ namespace AiEnabled.Ai.Support
     /// <param name="nextIsLadder">If the next point is a ladder that the bot needs to climb</param>
     /// <param name="ladderUseObj">The use object for the ladder</param>
     /// <param name="useNow">If the bot is going DOWN the ladder, use it now before falling off the ledge</param>
+    /// <param name="afterNextIsLadder">If the point after next is a ladder that the bot needs to climb</param>
+    /// <param name="findNewPath">If this is true then something went awry during the pathing and the bot needs to recalculate the path</param>\
+    /// <param name="isTransition">If the final point is a transition point to another map area or not</param>
+    /// <param name="nextIsAirNode">If the next point is an Air Node</param>
     /// <returns></returns>
     public void GetNextNode(Vector3D current, bool onLadder, bool isTransition,
       out bool nextIsLadder, out bool afterNextIsLadder, out IMyUseObject ladderUseObj, out bool useNow, out bool findNewPath, out bool nextIsAirNode)
@@ -232,11 +236,22 @@ namespace AiEnabled.Ai.Support
         }
 
         var result = PathToTarget.Peek(); // TODO: Need to check that each node's edge isn't blocked ?
-        var botMatrixT = MatrixD.Transpose(Bot.WorldMatrix);
+        var botMatrix = Bot.WorldMatrix;
+        var botMatrixT = MatrixD.Transpose(botMatrix);
         var allowedDiff = 1.5;
 
         var gridGraph = Graph as CubeGridMap;
         var localResult = result.Position;
+
+        if (onLadder && localCurrent == localResult)
+        {
+          // the bot likely just hopped on a ladder, which puts it at the next point automatically
+          // move next point one further to avoid having current and next both be the same ladder
+
+          PathToTarget.Dequeue();
+          result = PathToTarget.Peek();
+          localResult = result.Position;
+        }
 
         var worldCurrentNode = Graph.LocalToWorld(localCurrent); // use these for relative height check
         var worldResultNode = Graph.LocalToWorld(localResult); // use these for relative height check
@@ -255,16 +270,26 @@ namespace AiEnabled.Ai.Support
 
         if (Bot.CanUseLadders)
         {
-          var slim = gridGraph.GetBlockAtPosition(localResult); // gridGraph.MainGrid.GetCubeBlock(localResult) as IMySlimBlock;
-          var cube = slim?.FatBlock as MyCubeBlock;
-          nextIsLadder = cube != null && AiSession.Instance.LadderBlockDefinitions.Contains(cube.BlockDefinition.Id);
+          var curSlim = gridGraph.GetBlockAtPosition(localCurrent);
+          var nextSlim = gridGraph.GetBlockAtPosition(localResult);
 
-          if (!onLadder && nextIsLadder && Bot._ticksSinceLastDismount > 180)
+          var curIsLadder = curSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(curSlim.BlockDefinition.Id);
+          nextIsLadder = nextSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(nextSlim.BlockDefinition.Id);
+
+          if (curIsLadder && !nextIsLadder)
           {
-            var curSlim = gridGraph.GetBlockAtPosition(localCurrent); // gridGraph.MainGrid.GetCubeBlock(localCurrent) as IMySlimBlock;
-            if (curSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(curSlim.BlockDefinition.Id))
+            var vector = worldResultNode - worldCurrentNode;
+            if (vector.Dot(botMatrix.Up) <= 0)
             {
-              cube = curSlim.FatBlock as MyCubeBlock;
+              curIsLadder = false;
+            }
+          }
+
+          if (!onLadder && (nextIsLadder || curIsLadder) && Bot._ticksSinceLastDismount > 180)
+          {
+            if (curIsLadder)
+            {
+              var cube = curSlim.FatBlock as MyCubeBlock;
               IMyUseObject useObj = null;
               bool voxelBlocked, charBlocked;
 
@@ -272,42 +297,38 @@ namespace AiEnabled.Ai.Support
               if (voxelBlocked || (blocked && !charBlocked))
               {
                 bool firstWasVoxelBlocked = voxelBlocked;
-                var nextSlim = gridGraph.GetBlockAtPosition(result.Position); // gridGraph.MainGrid.GetCubeBlock(result.Position) as IMySlimBlock;
-                if (nextSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(nextSlim.BlockDefinition.Id))
+                var nextCube = nextSlim?.FatBlock as MyCubeBlock;
+                if (nextCube != null && !IsLadderBlocked(nextCube, out voxelBlocked, out charBlocked))
                 {
-                  var nextCube = nextSlim.FatBlock as MyCubeBlock;
-                  if (!IsLadderBlocked(nextCube, out voxelBlocked, out charBlocked))
+                  result = PathToTarget.Dequeue();
+                  useObj = GetBlockUseObject(nextCube);
+                }
+                else
+                {
+                  bool okay = false;
+                  if (PathToTarget.Count > 1 && firstWasVoxelBlocked && !charBlocked)
                   {
-                    result = PathToTarget.Dequeue();
-                    useObj = GetBlockUseObject(nextCube);
-                  }
-                  else
-                  {
-                    bool okay = false;
-                    if (PathToTarget.Count > 1 && firstWasVoxelBlocked && !charBlocked)
+                    var afterNext = PathToTarget[1].Position;
+                    nextSlim = gridGraph.GetBlockAtPosition(afterNext);
+                    if (nextSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(nextSlim.BlockDefinition.Id))
                     {
-                      var afterNext = PathToTarget[1].Position;
-                      nextSlim = gridGraph.GetBlockAtPosition(afterNext); // gridGraph.MainGrid.GetCubeBlock(afterNext) as IMySlimBlock;
-                      if (nextSlim?.FatBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(nextSlim.BlockDefinition.Id))
+                      nextCube = nextSlim.FatBlock as MyCubeBlock;
+                      if (!IsLadderBlocked(nextCube, out voxelBlocked, out charBlocked))
                       {
-                        nextCube = nextSlim.FatBlock as MyCubeBlock;
-                        if (!IsLadderBlocked(nextCube, out voxelBlocked, out charBlocked))
-                        {
-                          okay = true;
-                          PathToTarget.Dequeue();
-                          result = PathToTarget.Dequeue();
-                          useObj = GetBlockUseObject(nextCube);
-                        }
+                        okay = true;
+                        PathToTarget.Dequeue();
+                        result = PathToTarget.Dequeue();
+                        useObj = GetBlockUseObject(nextCube);
                       }
                     }
+                  }
 
-                    if (!okay)
-                    {
-                      Node next;
-                      Graph.TryGetNodeForPosition(localCurrent, out next);
-                      NextNode = next;
-                      return;
-                    }
+                  if (!okay)
+                  {
+                    Node next;
+                    Graph.TryGetNodeForPosition(localCurrent, out next);
+                    NextNode = next;
+                    return;
                   }
                 }
               }
@@ -322,7 +343,9 @@ namespace AiEnabled.Ai.Support
                 Bot._stuckCounter = 0;
                 Bot._stuckTimerReset = 0;
                 Bot.WaitForStuckTimer = false;
-                Bot.AfterNextIsLadder = false;
+
+                nextIsLadder = false;
+                afterNextIsLadder = false;
 
                 try
                 {
@@ -338,7 +361,7 @@ namespace AiEnabled.Ai.Support
               nextIsAirNode = result.IsAirNode;
               return;
             }
-            else
+            else // nextIsLadder
             {
               var vector = worldResultNode - worldCurrentNode;
               var localVector = Vector3D.Rotate(vector, botMatrixT);
@@ -346,6 +369,7 @@ namespace AiEnabled.Ai.Support
 
               if (checkY < 0)
               {
+                var cube = nextSlim?.FatBlock as MyCubeBlock;
                 ladderUseObj = GetBlockUseObject(cube);
                 useNow = ladderUseObj != null;
                 NextNode = result;
@@ -466,13 +490,17 @@ namespace AiEnabled.Ai.Support
 
           if (i < 2 && checkY < 0 && Bot.CanUseLadders)
           {
-            IMySlimBlock slim = gridGraph.GetBlockAtPosition(next.Position); // gridGraph.MainGrid.GetCubeBlock(next.Position);
+            IMySlimBlock slim = gridGraph.GetBlockAtPosition(next.Position);
             if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
             {
               var cube = slim.FatBlock as MyCubeBlock;
               ladderUseObj = GetBlockUseObject(cube);
               afterNextIsLadder = ladderUseObj != null;
               useNow = afterNextIsLadder && checkY < 0;
+
+              if (useNow)
+                nextIsLadder = false;
+
               break;
             }
           }
@@ -971,18 +999,17 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        foreach (var node in gridGraph.OpenTileDict.Values)
+        foreach (var kvp in gridGraph.AllDoors)
         {
-          if (node?.Block == null || node.IsGridNodePlanetTile)
+          var door = kvp.Value;
+          var localDoor = kvp.Key;
+          if (door == null || door.MarkedForClose || grid.WorldToGridInteger(door.CubeGrid.GridIntegerToWorld(door.Position)) != localDoor)
+          {
+            gridGraph.AllDoors.TryRemove(localDoor, out door);
             continue;
+          }
 
-          var door = node.Block.FatBlock as IMyDoor;
-          if (door == null || door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
-            continue;
-
-          var localDoor = grid.WorldToGridInteger(door.GetPosition());
-
-          if (DeniedDoors.ContainsKey(localDoor))
+          if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open || DeniedDoors.ContainsKey(localDoor))
             continue;
 
           if (door is IMyAirtightHangarDoor)
@@ -1005,9 +1032,9 @@ namespace AiEnabled.Ai.Support
             Vector3I.TransformNormal(ref center, ref matrix, out center);
             var adjustedPosition = door.Position - center;
 
-            foreach (var kvp in faceDict)
+            foreach (var kvpFD in faceDict)
             {
-              var cell = kvp.Key;
+              var cell = kvpFD.Key;
               Vector3I.TransformNormal(ref cell, ref matrix, out cell);
               var position = adjustedPosition + cell;
 

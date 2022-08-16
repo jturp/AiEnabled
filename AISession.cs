@@ -78,7 +78,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v0.18b";
+    public const string VERSION = "v0.19b";
     const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
@@ -94,12 +94,14 @@ namespace AiEnabled
     {
       get
       {
-        if (!Registered || _controllerInfo == null || _controllerInfo.Count < MIN_SPAWN_COUNT || BotNumber >= MaxBots)
+        if (!Registered || _controllerInfo == null || BotNumber >= MaxBots)
+          return false;
+
+        if (_controllerInfo.Count - (FutureBotAPIQueue?.Count ?? 0) - (FutureBotQueue?.Count ?? 0) < MIN_SPAWN_COUNT)
           return false;
 
         if (!MyAPIGateway.Utilities.IsDedicated)
         {
-          //var info = _controllerInfo[_controllerInfo.Count - 1];
           var info = _controllerInfo[0];
           if (info?.Identity == null)
             return false;
@@ -501,6 +503,7 @@ namespace AiEnabled
       HalfStairMirroredDefinitions?.Clear();
       LadderBlockDefinitions?.Clear();
       PassageBlockDefinitions?.Clear();
+      PassageIntersectionDefinitions?.Clear();
       ArmorPanelMiscDefinitions?.Clear();
       ArmorPanelAllDefinitions?.Clear();
       FactoryBotInfoDict?.Clear();
@@ -531,6 +534,9 @@ namespace AiEnabled
       CrewAnimations?.Clear();
       BotStatusStack?.Clear();
       BotStatusListStack?.Clear();
+      PendingBotRespawns?.Clear();
+      ScaffoldBlockDefinitions?.Clear();
+      GratedCatwalkExpansionBlocks?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -598,6 +604,7 @@ namespace AiEnabled
       LadderBlockDefinitions = null;
       BlockFaceDictionary = null;
       PassageBlockDefinitions = null;
+      PassageIntersectionDefinitions = null;
       ArmorPanelFullDefinitions = null;
       ArmorPanelSlopeDefinitions = null;
       ArmorPanelHalfDefinitions = null;
@@ -649,6 +656,9 @@ namespace AiEnabled
       CrewAnimations = null;
       BotStatusStack = null;
       BotStatusListStack = null;
+      PendingBotRespawns = null;
+      ScaffoldBlockDefinitions = null;
+      GratedCatwalkExpansionBlocks = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -1148,12 +1158,34 @@ namespace AiEnabled
             var blockSubtype = blockDef.SubtypeName;
             bool isSlopedBlock = _validSlopedBlockDefs.ContainsItem(blockDef) || blockSubtype.EndsWith("HalfSlopeArmorBlock");
             bool isStairBlock = !isSlopedBlock && blockSubtype != "LargeStairs" && blockSubtype.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isGratedModBlock = cubeDef.Context.ModName == "Grated Catwalks Expansion";
+            bool scaffoldHalfStair = false;
+            if (blockSubtype.StartsWith("ven_scaffold", StringComparison.OrdinalIgnoreCase))
+            {
+              if (isStairBlock)
+              {
+                scaffoldHalfStair = true;
+              }
+              else if (blockSubtype.IndexOf("ladder", StringComparison.OrdinalIgnoreCase) >= 0)
+              {
+                isStairBlock = true;
+              }
+              else if (!blockSubtype.EndsWith("Extension") && !blockSubtype.EndsWith("Balcony")
+                && blockSubtype.IndexOf("rail", StringComparison.OrdinalIgnoreCase) < 0)
+              {
+                ScaffoldBlockDefinitions.Add(blockDef);
+              }
+            }
+            else if (isGratedModBlock)
+            {
+              GratedCatwalkExpansionBlocks.Add(blockDef);
+            }
 
             if (isStairBlock || isSlopedBlock)
             {
               SlopeBlockDefinitions.Add(blockDef);
 
-              var isHalf = blockSubtype.IndexOf("half", StringComparison.OrdinalIgnoreCase) >= 0;
+              var isHalf = scaffoldHalfStair || blockSubtype.IndexOf("half", StringComparison.OrdinalIgnoreCase) >= 0;
 
               if (isStairBlock)
               {
@@ -1161,10 +1193,14 @@ namespace AiEnabled
                 {
                   HalfStairBlockDefinitions.Add(blockDef);
 
-                  if (blockSubtype.IndexOf("mirrored", StringComparison.OrdinalIgnoreCase) >= 0)
+                  if (scaffoldHalfStair || blockSubtype.IndexOf("mirrored", StringComparison.OrdinalIgnoreCase) >= 0)
                   {
                     HalfStairMirroredDefinitions.Add(blockDef);
                   }
+                }
+                else if (isGratedModBlock && blockSubtype.StartsWith("GCMGratedStairsWithGratedSides1x2"))
+                {
+                  RampBlockDefinitions.Add(blockDef);
                 }
               }
               else if (isHalf || blockSubtype.IndexOf("tip", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -1172,17 +1208,28 @@ namespace AiEnabled
                 SlopedHalfBlockDefinitions.Add(blockDef);
               }
             }
-            else if (blockDef.TypeId == typeof(MyObjectBuilder_Passage) || blockSubtype.StartsWith("Passage"))
+            else if (blockSubtype.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-              PassageBlockDefinitions.Add(blockDef);
+              CatwalkBlockDefinitions.Add(blockDef);
+
+              if (isGratedModBlock && blockDef.TypeId == typeof(MyObjectBuilder_Ladder2))
+                LadderBlockDefinitions.Add(blockDef);
+            }
+            else if (blockDef.TypeId == typeof(MyObjectBuilder_Passage) || blockDef.SubtypeName.IndexOf("passage", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              bool isPassageIntersection = def.Context.ModName?.IndexOf("PassageIntersections", StringComparison.OrdinalIgnoreCase) >= 0;
+
+              if (isPassageIntersection || isGratedModBlock || def.Context.IsBaseGame)
+              {
+                PassageBlockDefinitions.Add(blockDef);
+
+                if (isPassageIntersection)
+                  PassageIntersectionDefinitions.Add(blockDef);
+              }
             }
             else if (blockSubtype == "LargeStairs" || blockSubtype.IndexOf("ramp", StringComparison.OrdinalIgnoreCase) >= 0)
             {
               RampBlockDefinitions.Add(blockDef);
-            }
-            else if (blockSubtype.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-              CatwalkBlockDefinitions.Add(blockDef);
             }
             else if (blockDef.TypeId == typeof(MyObjectBuilder_Ladder2))
             {
@@ -3473,7 +3520,7 @@ namespace AiEnabled
             }
           }
 
-          if (bot._patrolList?.Count > 0)
+          if (bot.PatrolMode && bot._patrolList?.Count > 0)
           {
             if (helperData.PatrolRoute == null)
               helperData.PatrolRoute = new List<SerializableVector3D>();
@@ -3483,6 +3530,8 @@ namespace AiEnabled
             for (int k = 0; k < bot._patrolList.Count; k++)
               helperData.PatrolRoute.Add(bot._patrolList[k]);
           }
+          else
+            helperData.PatrolRoute?.Clear();
         }
       }
 
@@ -5050,8 +5099,9 @@ namespace AiEnabled
 
     byte _statusRequestTimer;
 
-    internal void SendBotStatusRequest()
+    internal void SendBotStatusRequest(out int helperCount)
     {
+      helperCount = -1;
       if (_statusRequestTimer < 100)
         return;
 
@@ -5067,6 +5117,8 @@ namespace AiEnabled
         var pkt = new BotStatusRequestPacket();
         Network.SendToServer(pkt);
       }
+
+      helperCount = helperIds?.Count ?? 0;
     }
 
     internal void PropagateBotStatusUpdate(List<BotStatus> stats)

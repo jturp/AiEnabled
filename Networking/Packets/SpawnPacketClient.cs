@@ -63,6 +63,8 @@ namespace AiEnabled.Networking
 
         if (!activeHelperIds.Contains(BotEntityId))
           activeHelperIds.Add(BotEntityId);
+
+        AiSession.Instance.PendingBotRespawns.Remove(bot.Name);
       }
 
       return false;

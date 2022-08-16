@@ -94,6 +94,11 @@ namespace AiEnabled.Ai.Support
     public ConcurrentDictionary<Vector3I, IMyDoor> BlockedDoors = new ConcurrentDictionary<Vector3I, IMyDoor>(5, 10, Vector3I.Comparer);
 
     /// <summary>
+    /// All doors for the current grid
+    /// </summary>
+    public ConcurrentDictionary<Vector3I, IMyDoor> AllDoors = new ConcurrentDictionary<Vector3I, IMyDoor>(5, 10, Vector3I.Comparer);
+
+    /// <summary>
     /// These are nodes that correspond to blocks above slopes and ramps that are pre-checked for pathfinding validity.
     /// No need to check them again for blocked edges.
     /// </summary>
@@ -116,12 +121,10 @@ namespace AiEnabled.Ai.Support
     public ushort TotalSpawnCount = 0;
 
     /// <summary>
-    /// Item1 = stair coming from, Item2 = stair going to, Item3 = position to insert between them
+    /// Item1 = stair coming from, Item2 = stair going to, Item3 = position to insert between them.
+    /// TODO: Need to make this part of the PathCollection to avoid threading issues
     /// </summary>
-    internal Queue<MyTuple<Vector3I, Vector3I, Vector3I>> StackedStairsFound { get; private set; } = new Queue<MyTuple<Vector3I, Vector3I, Vector3I>>(); // TODO: Need to make this part of the PathCollection to avoid threading issues
-
-    //internal ConcurrentDictionary<Vector3I, Node> OpenTileDict = new ConcurrentDictionary<Vector3I, Node>(5, 100, Vector3I.Comparer);
-    //ConcurrentDictionary<Vector3I, Node> _planetTileDictionary = new ConcurrentDictionary<Vector3I, Node>(5, 100, Vector3I.Comparer);
+    internal Queue<MyTuple<Vector3I, Vector3I, Vector3I>> StackedStairsFound { get; private set; } = new Queue<MyTuple<Vector3I, Vector3I, Vector3I>>();
 
     internal Dictionary<Vector3I, Node> OpenTileDict = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
     Dictionary<Vector3I, Node> _planetTileDictionary = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
@@ -517,6 +520,12 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.LineListStack.Push(InteriorNodeList);
         }
 
+        AllDoors?.Clear();
+        AllDoors = null;
+
+        BlockedDoors?.Clear();
+        BlockedDoors = null;
+
         OpenTileDict?.Clear();
         OpenTileDict = null;
 
@@ -829,6 +838,7 @@ namespace AiEnabled.Ai.Support
       Dirty = false;
       ObstacleNodes.Clear();
       Obstacles.Clear();
+      AllDoors.Clear();
       BlockedDoors.Clear();
       OptimizedCache.Clear();
       ExemptNodesUpper.Clear();
@@ -1473,6 +1483,8 @@ namespace AiEnabled.Ai.Support
               if (door.MarkedForClose)
                 continue;
 
+              AllDoors[mainGridPosition] = door;
+
               if (!door.Enabled && door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Open)
                 Door_EnabledChanged(door);
 
@@ -1678,8 +1690,77 @@ namespace AiEnabled.Ai.Support
                   OpenTileDict[mainGridPosition] = node;
 
                   var newPos = mainGridPosition + upVec;
-                  var cubeAbove = GetBlockAtPosition(newPos); // connectedGrid.GetCubeBlock(newPos) as IMySlimBlock;
-                  if (cubeAbove == null || cubeAbove.BlockDefinition == block.BlockDefinition)
+                  var cubeAbove = GetBlockAtPosition(newPos);
+                  var includeAbove = cubeAbove == null || cubeAbove.BlockDefinition.Id == block.BlockDefinition.Id;
+
+                  if (!includeAbove)
+                  {
+                    var cubeAboveDef = cubeAbove.BlockDefinition.Id;
+                    var entrance = block.Orientation.Forward;
+                    var entrance2 = block.Orientation.Up;
+                    var entranceIsUp = entrance == upDir || entrance2 == upDir;
+
+                    if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
+                    {
+                      includeAbove = !CheckCatwalkForRails(cubeAbove, -upVec);
+                    }
+                    else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
+                    {
+                      var aboveOr = cubeAbove.Orientation;
+                      var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
+                      if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
+                      {
+                        if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
+                        {
+                          if (entranceIsUp)
+                          {
+                            includeAbove = ((aboveOr.Up == entrance || aboveOr.Up == entrance2) && aboveOr.Forward == downDir)
+                              || ((aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) || aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance2)) && aboveOr.Up == upDir);
+
+                            if (includeAbove)
+                            {
+                              ExemptNodesUpper.Add(newPos);
+                            }
+                          }
+                          else // Up is up
+                          {
+                            includeAbove = (aboveOr.Up == downDir && (aboveOr.Forward == entrance || aboveOr.Forward == entrance2))
+                              || (aboveOr.Forward == upDir && (aboveOr.Up == Base6Directions.GetOppositeDirection(entrance) || aboveOr.Up == Base6Directions.GetOppositeDirection(entrance2)));
+
+                            if (includeAbove)
+                            {
+                              ExemptNodesUpper.Add(newPos);
+                            }
+                          }
+                        }
+                      }
+                      else
+                      {
+                        if (entranceIsUp)
+                        {
+                          includeAbove = ((aboveOr.Up == entrance || aboveOr.Up == entrance2) && aboveOr.Forward == downDir)
+                            || ((aboveOr.Forward == entrance || aboveOr.Forward == entrance2) && aboveOr.Up == downDir);
+
+                          if (includeAbove)
+                          {
+                            ExemptNodesUpper.Add(newPos);
+                          }
+                        }
+                        else // Up is up
+                        {
+                          includeAbove = (aboveOr.Up == downDir && (aboveOr.Forward == entrance || aboveOr.Forward == entrance2))
+                            || (aboveOr.Forward == downDir && (aboveOr.Up == entrance || aboveOr.Up == entrance2));
+
+                          if (includeAbove)
+                          {
+                            ExemptNodesUpper.Add(newPos);
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                  if (includeAbove)
                   {
                     Node newNode;
                     if (!_nodeStack.TryPop(out newNode) || newNode == null)
@@ -1706,14 +1787,26 @@ namespace AiEnabled.Ai.Support
                   OpenTileDict[mainGridPosition] = node;
                 }
               }
-              else if (block.Orientation.Up == upDir || block.Orientation.Up == downDir)
+              else if (!cubeDef.Id.SubtypeName.StartsWith("HalfPassageCorner"))
               {
-                Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
-                  node = new Node();
+                if (block.Orientation.Up == upDir || block.Orientation.Up == downDir)
+                {
+                  Node node;
+                  if (!_nodeStack.TryPop(out node) || node == null)
+                    node = new Node();
 
-                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                OpenTileDict[mainGridPosition] = node;
+                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
+                  OpenTileDict[mainGridPosition] = node;
+                }
+                else if (AiSession.Instance.PassageIntersectionDefinitions.Contains(cubeDef.Id))
+                {
+                  Node node;
+                  if (!_nodeStack.TryPop(out node) || node == null)
+                    node = new Node();
+
+                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
+                  OpenTileDict[mainGridPosition] = node;
+                }
               }
             }
             else if (AiSession.Instance.BeamBlockDefinitions.ContainsItem(cubeDef.Id))
@@ -1776,7 +1869,7 @@ namespace AiEnabled.Ai.Support
             else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id))
             {
               var positionAbove = position + upVec;
-              var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
+              var cubeAbove = GetBlockAtPosition(positionAbove);
               var entrance = Base6Directions.GetOppositeDirection(block.Orientation.Forward);
               bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
               bool validHalfStair = false;
@@ -1811,6 +1904,58 @@ namespace AiEnabled.Ai.Support
                           addThis = !CheckCatwalkForRails(cubeAbove, -upVec);
 
                         includeAbove = addThis;
+                      }
+                      else if (!addThis && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
+                      {
+                        var aboveOr = cubeAbove.Orientation;
+                        var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
+                        if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
+                        {
+                          if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
+                          {
+                            if (entranceIsUp)
+                            {
+                              addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir)
+                                || (aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) && aboveOr.Up == upDir);
+                              if (addThis)
+                              {
+                                includeAbove = true;
+                                ExemptNodesUpper.Add(positionAbove);
+                              }
+                            }
+                            else // Up is up
+                            {
+                              addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance)
+                                || (aboveOr.Forward == upDir && aboveOr.Up == Base6Directions.GetOppositeDirection(entrance));
+                              if (addThis)
+                              {
+                                includeAbove = true;
+                                ExemptNodesUpper.Add(positionAbove);
+                              }
+                            }
+                          }
+                        }
+                        else
+                        {
+                          if (entranceIsUp)
+                          {
+                            addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir) || (aboveOr.Forward == entrance && aboveOr.Up == downDir);
+                            if (addThis)
+                            {
+                              includeAbove = true;
+                              ExemptNodesUpper.Add(positionAbove);
+                            }
+                          }
+                          else // Up is up
+                          {
+                            addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance) || (aboveOr.Forward == downDir && aboveOr.Up == entrance);
+                            if (addThis)
+                            {
+                              includeAbove = true;
+                              ExemptNodesUpper.Add(positionAbove);
+                            }
+                          }
+                        }
                       }
                     }
                     else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
@@ -2469,7 +2614,7 @@ namespace AiEnabled.Ai.Support
               if (blockUp.Dot(ref upVec) != 0)
               {
                 var positionAbove = position + upVec;
-                var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
+                var cubeAbove = GetBlockAtPosition(positionAbove);
                 if (cubeAbove == null)
                 {
                   var newPos = mainGridPosition + upVec;
@@ -2486,10 +2631,12 @@ namespace AiEnabled.Ai.Support
             else if (cubeDef.Id.SubtypeName.EndsWith("HalfArmorBlock") || cubeDef.Id.SubtypeName.StartsWith("WindowWall"))
             {
               var blockFwd = Base6Directions.GetIntVector(block.Orientation.Forward);
-              if (blockFwd.Dot(ref upVec) < 0)
+              var dotFwd = blockFwd.Dot(ref upVec);
+
+              if (dotFwd < 0)
               {
                 var positionAbove = position + upVec;
-                var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
+                var cubeAbove = GetBlockAtPosition(positionAbove);
                 if (cubeAbove == null)
                 {
                   Node node;
@@ -2499,6 +2646,15 @@ namespace AiEnabled.Ai.Support
                   node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
                   OpenTileDict[mainGridPosition] = node;
                 }
+              }
+              else if (dotFwd == 0)
+              {
+                Node node;
+                if (!_nodeStack.TryPop(out node) || node == null)
+                  node = new Node();
+
+                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
+                OpenTileDict[mainGridPosition] = node;
               }
             }
             else if (block.FatBlock is IMyInteriorLight && block.BlockDefinition.Id.SubtypeName == "LargeLightPanel")
@@ -2515,8 +2671,6 @@ namespace AiEnabled.Ai.Support
             }
           }
         }
-
-        //AiSession.Instance.Logger.LogAll();
 
         blocks.Clear();
         AiSession.Instance.SlimListStack.Push(blocks);
@@ -2895,7 +3049,6 @@ namespace AiEnabled.Ai.Support
         iter.MoveNext();
 
         Node node;
-        //if (OpenTileDict.TryGetValue(localPoint, out node) && !node.IsGridNodePlanetTile)
         if (OpenTileDict.TryGetValue(localPoint, out node))
           continue;
 
@@ -2903,7 +3056,6 @@ namespace AiEnabled.Ai.Support
         bool isTunnelNode = false;
         bool addNodeBelow = false;
 
-        // worldPoint = LocalToWorld(localPoint);
         Vector3D worldPoint = MainGrid.GridIntegerToWorld(localPoint);
         var groundPoint = worldPoint;
         var groundPointBelow = worldPoint;
@@ -3057,15 +3209,36 @@ namespace AiEnabled.Ai.Support
             var localBelowOther = otherGrid.WorldToGridInteger(worldBelow);
             var slimBelow = otherGrid.GetCubeBlock(localBelowOther) as IMySlimBlock;
             if (slimBelow != null && ((MyCubeBlockDefinition)slimBelow.BlockDefinition).HasPhysics)
-              addNodeBelow = false;
+            {
+              if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slimBelow.BlockDefinition.Id))
+              {
+                var turretBasePosition = slimBelow.Position - Base6Directions.GetIntVector(slimBelow.Orientation.Up);
+                if (turretBasePosition == localBelowOther || slimBelow.Position == localBelowOther)
+                  addNodeBelow = false;
+              }
+              else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slimBelow.BlockDefinition.Id))
+                addNodeBelow = false;
+            }
           }
 
           var localPointOther = otherGrid.WorldToGridInteger(worldPoint);
           var slim = otherGrid.GetCubeBlock(localPointOther) as IMySlimBlock;
           if (slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics)
           {
-            add = false;
-            break;
+            if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slim.BlockDefinition.Id))
+            {
+              var turretBasePosition = slim.Position - Base6Directions.GetIntVector(slim.Orientation.Up);
+              if (turretBasePosition == localPointOther || slim.Position == localPointOther)
+              {
+                add = false;
+                break;
+              }
+            }
+            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slim.BlockDefinition.Id))
+            {
+              add = false;
+              break;
+            }
           }
         }
 
@@ -3073,7 +3246,15 @@ namespace AiEnabled.Ai.Support
         {
           if (addNodeBelow && DoesBlockExist(localBelow, false))
           {
-            addNodeBelow = false;
+            var block = GetBlockAtPosition(localBelow);
+            if (block != null && AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
+            {
+              var turretBasePosition = block.Position - Base6Directions.GetIntVector(block.Orientation.Up);
+              if (turretBasePosition == localBelow || block.Position == localBelow)
+                addNodeBelow = false;
+            }
+            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id))
+              addNodeBelow = false;
           }
 
           if (Dirty)
@@ -3083,15 +3264,31 @@ namespace AiEnabled.Ai.Support
 
           if (DoesBlockExist(localPoint, false))
           {
-            add = false;
+            var block = GetBlockAtPosition(localPoint);
+            if (block != null && AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
+            {
+              var turretBasePosition = block.Position - Base6Directions.GetIntVector(block.Orientation.Up);
+              if (turretBasePosition == localPoint || localPoint == block.Position)
+                add = false;
+            }
+            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id))
+              add = false;
           }
-          else if (isGroundNode)
+          
+          if (add && isGroundNode)
           {
             var localAbove = localPoint + upVec;
             var slim = GetBlockAtPosition(localAbove);
             if (slim != null)
             {
-              if (!AiSession.Instance.CatwalkBlockDefinitions.Contains(slim.BlockDefinition.Id) || Base6Directions.GetIntVector(slim.Orientation.Up) != -upVec)
+              if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slim.BlockDefinition.Id))
+              {
+                var turretBasePosition = slim.Position - Base6Directions.GetIntVector(slim.Orientation.Up);
+                if (turretBasePosition == localAbove || localAbove == slim.Position)
+                  add = false;
+              }
+              else if ((!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slim.BlockDefinition.Id)
+                && !AiSession.Instance.CatwalkBlockDefinitions.Contains(slim.BlockDefinition.Id)) || Base6Directions.GetIntVector(slim.Orientation.Up) != -upVec)
               {
                 var actualSurface = groundPoint + gravityNorm;
                 var direction = Base6Directions.GetDirection(-upVec);
@@ -3172,12 +3369,13 @@ namespace AiEnabled.Ai.Support
               nType |= NodeType.Tunnel;
 
             var offset = (Vector3)(groundPoint - LocalToWorld(localPoint));
+            var block = GetBlockAtPosition(localPoint);
 
             Node newNode;
             if (!_nodeStack.TryPop(out newNode) || newNode == null)
               newNode = new Node();
 
-            newNode.Update(localPoint, offset, nType, 0, MainGrid);
+            newNode.Update(localPoint, offset, nType, 0, MainGrid, block);
 
             if (checkForVoxel)
             {
@@ -3349,6 +3547,23 @@ namespace AiEnabled.Ai.Support
         return;
       }
 
+      bool isPassageStair = cubeDef.Context.ModName == "PassageIntersections" && cubeDef.Id.SubtypeName.EndsWith("PassageStairs_Large");
+      if (isPassageStair && normal != Base6Directions.GetIntVector(block.Orientation.Up))
+        return;
+
+      if (AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(cubeDef.Id))
+      {
+        if (cubeDef.Id.SubtypeName.EndsWith("Raised"))
+        {
+          if (normal != Base6Directions.GetIntVector(block.Orientation.Up))
+            return;
+        }
+        else if (normal != -Base6Directions.GetIntVector(block.Orientation.Up))
+        {
+          return;
+        }
+      }
+
       bool airTight = cubeDef.IsAirTight ?? false;
       bool allowSolar = !airTight && block.FatBlock is IMySolarPanel && Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0;
       bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
@@ -3357,6 +3572,10 @@ namespace AiEnabled.Ai.Support
       bool isSlopeBlock = !isCylinder && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id)
         && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef.Id)
         && !AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef.Id);
+
+      bool isScaffold = !isSlopeBlock && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeDef.Id);
+      bool exclude = isScaffold && (cubeDef.Id.SubtypeName.EndsWith("Open") || cubeDef.Id.SubtypeName.EndsWith("Structure"));
+      bool isPlatform = isScaffold && !exclude && cubeDef.Id.SubtypeName.EndsWith("Unsupported");
 
       var grid = block.CubeGrid as MyCubeGrid;
       bool needsPositionAdjusted = grid.EntityId != MainGrid.EntityId;
@@ -3380,12 +3599,46 @@ namespace AiEnabled.Ai.Support
       {
         var cell = kvp.Key;
         Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-        var positionAbove = adjustedPosition + cell + normal;
+        var position = adjustedPosition + cell;
+
+        if (isPassageStair)
+        {
+          var cellKey = kvp.Key;
+          if (cellKey != new Vector3I(1, 0, 0))
+          {
+            if (needsPositionAdjusted)
+              position = MainGrid.WorldToGridInteger(grid.GridIntegerToWorld(position));
+
+            Vector3 offset;
+            if (cellKey == new Vector3I(0, 0, 0))
+            {
+              offset = Vector3.Zero;
+            }
+            else if (cellKey == new Vector3I(0, 1, 0))
+            {
+              offset = -(Vector3)WorldMatrix.GetDirectionVector(block.Orientation.Up) * CellSize * 0.75f + -(Vector3)WorldMatrix.GetDirectionVector(block.Orientation.Left) * CellSize * 0.5f;
+            }
+            else
+            {
+              offset = -(Vector3)WorldMatrix.GetDirectionVector(block.Orientation.Up) * CellSize * 0.25f + -(Vector3)WorldMatrix.GetDirectionVector(block.Orientation.Left) * CellSize * 0.25f;
+            }
+
+            var node = new Node(position, offset, grid, block);
+            node.SetNodeType(NodeType.Ground);
+            OpenTileDict[position] = node;
+          }
+
+          continue;
+        }
+
+        var positionAbove = position + normal;
         var mainGridPosition = needsPositionAdjusted ? MainGrid.WorldToGridInteger(grid.GridIntegerToWorld(positionAbove)) : positionAbove;
         var cubeAbove = GetBlockAtPosition(positionAbove);
         var cubeAboveDef = cubeAbove?.BlockDefinition as MyCubeBlockDefinition;
         bool cubeAboveEmpty = cubeAbove == null || !cubeAboveDef.HasPhysics;
-        bool checkAbove = airTight || allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side) ?? false);
+        bool aboveisScaffold = cubeAboveDef != null && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeAboveDef.Id);
+        bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
+        bool checkAbove = !exclude && (airTight || allowConn || allowSolar || isCylinder || aboveisScaffold || (kvp.Value?.Contains(side) ?? false));
 
         if (cubeAboveEmpty)
         {
@@ -3394,6 +3647,20 @@ namespace AiEnabled.Ai.Support
             var node = new Node(mainGridPosition, Vector3.Zero, grid);
             node.SetNodeType(NodeType.Ground);
             OpenTileDict[mainGridPosition] = node;
+          }
+          else if (isPlatform)
+          {
+            if (Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref normal) > 0)
+            {
+              var node = new Node(mainGridPosition, Vector3.Zero, grid);
+              node.SetNodeType(NodeType.Ground);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
+          else if (isScaffold)
+          {
+            // TODO ??
+            //AiSession.Instance.Logger.Log($"Scaffold block found: {cubeDef.Id.SubtypeName}, HasPhysics = {cubeDef.HasPhysics}");
           }
           else if (isFlatWindow)
           {
@@ -3436,9 +3703,18 @@ namespace AiEnabled.Ai.Support
             OpenTileDict[mainGridPosition] = node;
           }
         }
-        else if (checkAbove)
+        else if (!aboveIsPassageStair && (checkAbove || aboveisScaffold))
         {
-          if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0)
+          if (aboveisScaffold)
+          {
+            Node node;
+            if (!_nodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
+            OpenTileDict[mainGridPosition] = node;
+          }
+          else if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             Node node;
             if (!_nodeStack.TryPop(out node) || node == null)
@@ -3677,50 +3953,52 @@ namespace AiEnabled.Ai.Support
 
       var nodePos = node.Position;
       var thisBlock = node.Block;
+      var blockBelowThis = GetBlockAtPosition(nodePos - upVec);
 
-      var blockBelowThis = GetBlockAtPosition(nodePos - upVec); // node.Grid.GetCubeBlock(nodePos - upVec) as IMySlimBlock;
       bool thisBlockEmpty = thisBlock == null || !((MyCubeBlockDefinition)thisBlock.BlockDefinition).HasPhysics;
       bool thisIsDoor = false, thisIsSlope = false, thisIsHalfSlope = false, thisIsHalfStair = false, thisIsRamp = false, thisIsSolar = false;
       bool thisIsCatwalk = false, thisIsBtnPanel = false, thisIsLadder = false, thisIsWindowFlat = false, thisIsWindowSlope = false;
       bool thisIsHalfBlock = false, thisIsCoverWall = false, thisIsFreight = false, thisIsRailing = false, thisIsPassage = false;
       bool thisIsPanel = false, thisIsFullPanel = false, thisIsHalfPanel = false, thisIsSlopePanel = false, thisIsHalfSlopePanel = false;
       bool thisIsLocker = false, thisIsBeam = false, thisIsDeadBody = false, thisIsDeco = false, thisIsNeonTube = false, thisIsLightPanel = false;
-      bool belowThisIsPanelSlope = false, belowThisIsHalfSlope = false, belowThisIsSlope = false, belowThisIsRamp = false;
+      bool thisIsScaffold = false, thisIsPassageStair = false;
+      bool belowThisIsPanelSlope = false, belowThisIsHalfSlope = false, belowThisIsSlope = false, belowThisIsRamp = false, belowThisIsLadderOrStair = false;
 
       if (!thisBlockEmpty)
       {
         var def = thisBlock.BlockDefinition.Id;
         thisIsDoor = thisBlock.FatBlock is IMyDoor;
-        thisIsSolar = !thisIsDoor && thisBlock.FatBlock is IMySolarPanel;
-        thisIsDeadBody = !thisIsSolar && def.SubtypeName.StartsWith("DeadBody");
-        thisIsFreight = !thisIsDeadBody && AiSession.Instance.FreightBlockDefinitions.ContainsItem(def);
-        thisIsSlope = !thisIsFreight && AiSession.Instance.SlopeBlockDefinitions.Contains(def);
+        thisIsSolar = thisBlock.FatBlock is IMySolarPanel;
+        thisIsDeadBody = def.SubtypeName.StartsWith("DeadBody");
+        thisIsFreight = AiSession.Instance.FreightBlockDefinitions.ContainsItem(def);
+        thisIsSlope = AiSession.Instance.SlopeBlockDefinitions.Contains(def);
         thisIsHalfStair = thisIsSlope && AiSession.Instance.HalfStairBlockDefinitions.Contains(def);
         thisIsHalfSlope = thisIsSlope && !thisIsHalfStair && AiSession.Instance.SlopedHalfBlockDefinitions.Contains(def);
-        thisIsRamp = !thisIsSlope && AiSession.Instance.RampBlockDefinitions.Contains(def);
-        thisIsCatwalk = !thisIsRamp && AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
-        thisIsBtnPanel = !thisIsCatwalk && AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
-        thisIsLadder = !thisIsBtnPanel && AiSession.Instance.LadderBlockDefinitions.Contains(def);
-        thisIsWindowFlat = !thisIsLadder && AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
-        thisIsWindowSlope = !thisIsWindowFlat && AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
-        thisIsCoverWall = !thisIsWindowSlope && (def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover"));
-        thisIsHalfBlock = !thisIsCoverWall && (def.SubtypeName.EndsWith("HalfArmorBlock")
-          || def.SubtypeName.EndsWith("Concrete_Half_Block") || def.SubtypeName.StartsWith("WindowWall"));
-        thisIsRailing = !thisIsHalfBlock && AiSession.Instance.RailingBlockDefinitions.ContainsItem(def);
-        thisIsLocker = !thisIsRailing && AiSession.Instance.LockerDefinitions.ContainsItem(def);
-        thisIsBeam = !thisIsLocker && AiSession.Instance.BeamBlockDefinitions.ContainsItem(def);
-        thisIsPassage = !thisIsBeam && AiSession.Instance.PassageBlockDefinitions.Contains(def);
-        thisIsPanel = !thisIsPassage && AiSession.Instance.ArmorPanelAllDefinitions.Contains(def);
-        thisIsDeco = !thisIsPanel && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(def);
-        thisIsNeonTube = !thisIsDeco && def.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0;
-        thisIsLightPanel = !thisIsNeonTube && thisBlock.FatBlock is IMyInteriorLight && def.SubtypeName == "LargeLightPanel";
+        thisIsPassageStair = thisIsSlope && thisBlock.BlockDefinition.Context.ModName == "PassageIntersections" && def.SubtypeName.EndsWith("PassageStairs_Large");
+        thisIsPassage = !thisIsPassageStair && AiSession.Instance.PassageBlockDefinitions.Contains(def);
+        thisIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
+        thisIsCatwalk = AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
+        thisIsBtnPanel = AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
+        thisIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(def);
+        thisIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
+        thisIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
+        thisIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
+        thisIsHalfBlock = def.SubtypeName.EndsWith("HalfArmorBlock") || def.SubtypeName.EndsWith("Concrete_Half_Block") || def.SubtypeName.StartsWith("WindowWall");
+        thisIsRailing = AiSession.Instance.RailingBlockDefinitions.ContainsItem(def);
+        thisIsLocker = AiSession.Instance.LockerDefinitions.ContainsItem(def);
+        thisIsBeam = AiSession.Instance.BeamBlockDefinitions.ContainsItem(def);
+        thisIsPanel = AiSession.Instance.ArmorPanelAllDefinitions.Contains(def);
+        thisIsDeco = AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(def);
+        thisIsNeonTube = def.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0;
+        thisIsLightPanel = thisBlock.FatBlock is IMyInteriorLight && def.SubtypeName == "LargeLightPanel";
+        thisIsScaffold = AiSession.Instance.ScaffoldBlockDefinitions.Contains(def);
 
         if (thisIsPanel)
         {
           thisIsFullPanel = AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(def);
-          thisIsHalfPanel = !thisIsFullPanel && AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(def);
-          thisIsSlopePanel = !thisIsHalfPanel && AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def);
-          thisIsHalfSlopePanel = !thisIsSlopePanel && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def);
+          thisIsHalfPanel = AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(def);
+          thisIsSlopePanel = AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def);
+          thisIsHalfSlopePanel = AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def);
         }
       }
 
@@ -3728,16 +4006,13 @@ namespace AiEnabled.Ai.Support
       {
         var def = blockBelowThis.BlockDefinition.Id;
         belowThisIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
-        belowThisIsHalfSlope = !belowThisIsRamp && AiSession.Instance.SlopedHalfBlockDefinitions.Contains(def);
+        belowThisIsHalfSlope = AiSession.Instance.SlopedHalfBlockDefinitions.Contains(def);
         belowThisIsPanelSlope = !belowThisIsRamp && !belowThisIsHalfSlope
-          && (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def)
-          || AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def));
+          && (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def) || AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def));
         belowThisIsSlope = !belowThisIsPanelSlope
-          && (belowThisIsRamp
-          || AiSession.Instance.AngledWindowDefinitions.ContainsItem(def)
-          || (AiSession.Instance.SlopeBlockDefinitions.Contains(def)
-          && !belowThisIsHalfSlope
-          && !AiSession.Instance.HalfStairBlockDefinitions.Contains(def)));
+          && (belowThisIsRamp || AiSession.Instance.AngledWindowDefinitions.ContainsItem(def) || (AiSession.Instance.SlopeBlockDefinitions.Contains(def)
+          && !belowThisIsHalfSlope && !AiSession.Instance.HalfStairBlockDefinitions.Contains(def)));
+        belowThisIsLadderOrStair = AiSession.Instance.LadderBlockDefinitions.Contains(def) || def.SubtypeName.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0;
       }
 
       foreach (var dirVec in AiSession.Instance.CardinalDirections)
@@ -3751,8 +4026,18 @@ namespace AiEnabled.Ai.Support
           continue;
         }
 
+        var dir = Base6Directions.GetDirection(dirVec);
+        var oppositeDir = Base6Directions.GetOppositeDirection(dir);
+
+        if (thisBlockEmpty && belowThisIsLadderOrStair 
+          && (dir == blockBelowThis.Orientation.Left || oppositeDir == blockBelowThis.Orientation.Left))
+        {
+          node.SetBlocked(dirVec);
+          continue;
+        }
+
         var nextBlock = nextNode.Block;
-        var blockBelowNext = GetBlockAtPosition(next - upVec); // nextNode.Grid?.GetCubeBlock(next - upVec) as IMySlimBlock;
+        var blockBelowNext = GetBlockAtPosition(next - upVec);
 
         bool nextBlockEmpty = nextBlock == null || !((MyCubeBlockDefinition)nextBlock.BlockDefinition).HasPhysics;
         bool nextIsDoor = false, nextIsSlope = false, nextIsHalfSlope = false, nextIsHalfStair = false, nextIsRamp = false, nextIsSolar = false;
@@ -3760,45 +4045,44 @@ namespace AiEnabled.Ai.Support
         bool nextIsHalfBlock = false, nextIsCoverWall = false, nextIsFreight = false, nextIsRailing = false, nextIsPassage = false;
         bool nextIsPanel = false, nextIsFullPanel = false, nextIsHalfPanel = false, nextIsSlopePanel = false, nextIsHalfSlopePanel = false;
         bool nextIsLocker = false, nextIsBeam = false, nextIsDeadBody = false, nextIsDeco = false, nextIsNeonTube = false, nextIsLightPanel = false;
+        bool nextIsScaffold = false, nextIsPassageStair = false;
         bool belowNextIsPanelSlope = false, belowNextIsHalfSlope = false, belowNextIsSlope = false, belowNextIsRamp = false;
-
-        var dir = Base6Directions.GetDirection(dirVec);
-        var oppositeDir = Base6Directions.GetOppositeDirection(dir);
 
         if (!nextBlockEmpty)
         {
           var def = nextBlock.BlockDefinition.Id;
           nextIsDoor = nextBlock.FatBlock is IMyDoor;
-          nextIsSolar = !nextIsDoor && nextBlock.FatBlock is IMySolarPanel;
-          nextIsDeadBody = !nextIsSolar && def.SubtypeName.StartsWith("DeadBody");
-          nextIsFreight = !nextIsDeadBody && AiSession.Instance.FreightBlockDefinitions.ContainsItem(def);
-          nextIsSlope = !nextIsFreight && AiSession.Instance.SlopeBlockDefinitions.Contains(def);
+          nextIsSolar = nextBlock.FatBlock is IMySolarPanel;
+          nextIsDeadBody = def.SubtypeName.StartsWith("DeadBody");
+          nextIsFreight = AiSession.Instance.FreightBlockDefinitions.ContainsItem(def);
+          nextIsSlope = AiSession.Instance.SlopeBlockDefinitions.Contains(def);
           nextIsHalfStair = nextIsSlope && AiSession.Instance.HalfStairBlockDefinitions.Contains(def);
           nextIsHalfSlope = nextIsSlope && !nextIsHalfStair && AiSession.Instance.SlopedHalfBlockDefinitions.Contains(def);
+          nextIsPassageStair = nextIsSlope && nextBlock.BlockDefinition.Context.ModName == "PassageIntersections" && def.SubtypeName.EndsWith("PassageStairs_Large");
+          nextIsPassage = !nextIsPassageStair && AiSession.Instance.PassageBlockDefinitions.Contains(def);
           nextIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
-          nextIsCatwalk = !nextIsRamp && AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
-          nextIsBtnPanel = !nextIsCatwalk && AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
-          nextIsLadder = !nextIsBtnPanel && AiSession.Instance.LadderBlockDefinitions.Contains(def);
-          nextIsWindowFlat = !nextIsLadder && AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
-          nextIsWindowSlope = !nextIsWindowFlat && AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
-          nextIsCoverWall = !nextIsWindowSlope && (def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover"));
-          nextIsHalfBlock = !nextIsCoverWall && (def.SubtypeName.EndsWith("HalfArmorBlock")
-            || def.SubtypeName.EndsWith("Concrete_Half_Block") || def.SubtypeName.StartsWith("WindowWall"));
-          nextIsRailing = !nextIsHalfBlock && AiSession.Instance.RailingBlockDefinitions.ContainsItem(def);
-          nextIsLocker = !nextIsRailing && AiSession.Instance.LockerDefinitions.ContainsItem(def);
-          nextIsBeam = !nextIsLocker && AiSession.Instance.BeamBlockDefinitions.ContainsItem(def);
-          nextIsPassage = !nextIsBeam && AiSession.Instance.PassageBlockDefinitions.Contains(def);
-          nextIsPanel = !nextIsPassage && AiSession.Instance.ArmorPanelAllDefinitions.Contains(def);
-          nextIsDeco = !nextIsPanel && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(def);
-          nextIsNeonTube = !nextIsDeco && def.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0;
-          nextIsLightPanel = !nextIsNeonTube && nextBlock.FatBlock is IMyInteriorLight && def.SubtypeName == "LargeLightPanel";
+          nextIsCatwalk = AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
+          nextIsBtnPanel = AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
+          nextIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(def);
+          nextIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
+          nextIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
+          nextIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
+          nextIsHalfBlock = def.SubtypeName.EndsWith("HalfArmorBlock") || def.SubtypeName.EndsWith("Concrete_Half_Block") || def.SubtypeName.StartsWith("WindowWall");
+          nextIsRailing = AiSession.Instance.RailingBlockDefinitions.ContainsItem(def);
+          nextIsLocker = AiSession.Instance.LockerDefinitions.ContainsItem(def);
+          nextIsBeam = AiSession.Instance.BeamBlockDefinitions.ContainsItem(def);
+          nextIsPanel = AiSession.Instance.ArmorPanelAllDefinitions.Contains(def);
+          nextIsDeco = AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(def);
+          nextIsNeonTube = def.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0;
+          nextIsLightPanel = nextBlock.FatBlock is IMyInteriorLight && def.SubtypeName == "LargeLightPanel";
+          nextIsScaffold = AiSession.Instance.ScaffoldBlockDefinitions.Contains(def);
 
           if (nextIsPanel)
           {
             nextIsFullPanel = AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(def);
-            nextIsHalfPanel = !nextIsFullPanel && AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(def);
-            nextIsSlopePanel = !nextIsHalfPanel && AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def);
-            nextIsHalfSlopePanel = !nextIsSlopePanel && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def);
+            nextIsHalfPanel = AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(def);
+            nextIsSlopePanel = AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def);
+            nextIsHalfSlopePanel = AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def);
           }
         }
 
@@ -3806,16 +4090,12 @@ namespace AiEnabled.Ai.Support
         {
           var def = blockBelowNext.BlockDefinition.Id;
           belowNextIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
-          belowNextIsHalfSlope = !belowNextIsRamp && AiSession.Instance.SlopedHalfBlockDefinitions.Contains(def);
+          belowNextIsHalfSlope = AiSession.Instance.SlopedHalfBlockDefinitions.Contains(def);
           belowNextIsPanelSlope = !belowNextIsRamp && !belowNextIsHalfSlope
-            && (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def)
-            || AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def));
+            && (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(def) || AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(def));
           belowNextIsSlope = !belowNextIsPanelSlope
-            && (belowNextIsRamp
-            || AiSession.Instance.AngledWindowDefinitions.ContainsItem(def)
-            || (AiSession.Instance.SlopeBlockDefinitions.Contains(def)
-            && !belowNextIsHalfSlope
-            && !AiSession.Instance.HalfStairBlockDefinitions.Contains(def)));
+            && (belowNextIsRamp || AiSession.Instance.AngledWindowDefinitions.ContainsItem(def) || (AiSession.Instance.SlopeBlockDefinitions.Contains(def)
+            && !belowNextIsHalfSlope && !AiSession.Instance.HalfStairBlockDefinitions.Contains(def)));
         }
 
         if (node.IsGridNodePlanetTile && !nextNode.IsGridNodePlanetTile)
@@ -4063,6 +4343,10 @@ namespace AiEnabled.Ai.Support
                 continue;
               }
             }
+            else if (nextIsScaffold)
+            {
+              // TODO
+            }
             else if (nextIsDoor)
             {
               var door = nextBlock.FatBlock as IMyDoor;
@@ -4074,7 +4358,6 @@ namespace AiEnabled.Ai.Support
 
                 if (next == doorPosition)
                 {
-                  //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #1.1");
                   node.SetBlocked(dirVec); 
                   continue;
                 }
@@ -4104,7 +4387,6 @@ namespace AiEnabled.Ai.Support
 
                 if (vector.LengthSquared() > 8)
                 {
-                  //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #1.2");
                   node.SetBlocked(dirVec); 
                   continue;
                 }
@@ -4113,21 +4395,18 @@ namespace AiEnabled.Ai.Support
                 Vector3D.Rotate(ref vector, ref doorMatrix, out vector);
                 if (vector.Y > 2 || vector.X > 3)
                 {
-                  //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #1.3");
                   node.SetBlocked(dirVec); 
                   continue;
                 }
               }
               else if (dir != nextBlock.Orientation.Forward && oppositeDir != nextBlock.Orientation.Forward)
               {
-                //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #1.4");
                 node.SetBlocked(dirVec); 
                 continue;
               }
             }
             else if (!nextIsHalfBlock)
             {
-              //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #1.5");
               node.SetBlocked(dirVec); 
               continue;
             }
@@ -4141,12 +4420,260 @@ namespace AiEnabled.Ai.Support
 
         if (!thisBlockEmpty)
         {
-          if (thisIsDeadBody)
+          if (thisIsPassage && !thisIsPassageStair)
+          {
+            var blockSubtype = thisBlock.BlockDefinition.Id.SubtypeName;
+            var blockFwd = thisBlock.Orientation.Forward;
+            var blockUp = thisBlock.Orientation.Up;
+
+            if (AiSession.Instance.PassageIntersectionDefinitions.Contains(thisBlock.BlockDefinition.Id))
+            {
+              if (blockSubtype.StartsWith("Lighted"))
+                blockSubtype = blockSubtype.Substring(7);
+
+              if (thisBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
+              {
+                if (dir == thisBlock.Orientation.Left || oppositeDir == thisBlock.Orientation.Left || dir == blockFwd)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+
+                if (oppositeDir == blockFwd && blockSubtype.IndexOf("enc", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype == "Passage")
+              {
+                if (dir != blockUp && oppositeDir != blockUp)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageTop"))
+              {
+                if (dir == blockUp)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+                else if (oppositeDir == blockUp && blockSubtype.IndexOf("enc", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("HalfPassage"))
+              {
+                if (blockSubtype.StartsWith("HalfPassageCorner"))
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+                else if (blockSubtype.StartsWith("HalfPassagePillar"))
+                {
+                  if (dir != blockFwd && dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (blockSubtype.StartsWith("HalfPassageGlass"))
+                {
+                  if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left && oppositeDir != blockFwd)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (blockSubtype.StartsWith("HalfPassageL"))
+                {
+                  if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left && dir != blockFwd)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+              }
+              else if (blockSubtype.StartsWith("PassagePillar"))
+              {
+                if (dir == blockUp || oppositeDir == blockUp)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageL"))
+              {
+                if (dir != blockUp && dir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageT"))
+              {
+                if (blockSubtype.StartsWith("PassageTVert"))
+                {
+                  if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (blockSubtype.StartsWith("PassageTGlass"))
+                {
+                  if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Forward)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left && dir != thisBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageGlass"))
+              {
+                if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageCargo") || blockSubtype.StartsWith("PassageConveyor"))
+              {
+                if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (thisBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_TextPanel)) // blockSubtype.IndexOf("lcd", StringComparison.OrdinalIgnoreCase) >= 0)
+              {
+                if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageDoor") || blockSubtype.StartsWith("PassageAirlock"))
+              {
+                if (blockSubtype.StartsWith("PassageDoorSide"))
+                {
+                  if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left && oppositeDir != blockFwd)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (dir != blockFwd && oppositeDir != blockFwd) // airlock and regular door are fwd / bwd only
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("Passage4Way"))
+              {
+                if (dir == blockFwd || oppositeDir == blockFwd)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+            }
+            else if (thisBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Passage))
+            {
+              if (dir != blockUp && oppositeDir != blockUp)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (dir == blockUp || oppositeDir == blockUp)
+            {
+              node.SetBlocked(dirVec);
+              continue;
+            }
+            else if (blockSubtype.StartsWith("Passage2"))
+            {
+              var blockLeft = thisBlock.Orientation.Left;
+              if (blockSubtype.EndsWith("Wall"))
+              {
+                if (dir != blockFwd && dir != blockLeft && oppositeDir != blockLeft)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (dir != blockLeft && oppositeDir != blockLeft)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (blockSubtype.EndsWith("Wall") || blockSubtype.EndsWith("Tjunction"))
+            {
+              if (dir != blockFwd && oppositeDir != blockFwd && oppositeDir != thisBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (blockSubtype.EndsWith("Corner"))
+            {
+              if (oppositeDir != blockFwd && oppositeDir != thisBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (!blockSubtype.EndsWith("Intersection") && dir != blockFwd && oppositeDir != blockFwd)
+            {
+              node.SetBlocked(dirVec);
+              continue;
+            }
+          }
+          else if (thisIsDeadBody)
           {
             if (CheckCatwalkForRails(thisBlock, dirVec))
             {
               node.SetBlocked(dirVec); 
               continue;
+            }
+          }
+          else if (thisIsScaffold)
+          {
+            var blockOr = thisBlock.Orientation;
+            var subtype = thisBlock.BlockDefinition.Id.SubtypeName;
+            if (subtype.EndsWith("Platform"))
+            {
+              if (dir == blockOr.Left || dir == blockOr.Up || oppositeDir == blockOr.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("Structure"))
+            {
+              if (dir == blockOr.Left || oppositeDir == blockOr.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("Unsupported"))
+            {
+              if (dir == blockOr.Up)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
             }
           }
           else if (thisIsLightPanel)
@@ -4294,7 +4821,6 @@ namespace AiEnabled.Ai.Support
 
                   if (next == doorPosition)
                   {
-                    //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #2.1");
                     node.SetBlocked(dirVec); 
                     continue;
                   }
@@ -4420,6 +4946,48 @@ namespace AiEnabled.Ai.Support
                 }
               }
             }
+            else if (thisIsPassageStair)
+            {
+              if (dir == thisBlock.Orientation.Forward || oppositeDir == thisBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+
+              var relativeVector = nodePos - thisBlock.Position;
+              var blockUpVec = Base6Directions.GetIntVector(thisBlock.Orientation.Up);
+              var blockFwdVec = -Base6Directions.GetIntVector(thisBlock.Orientation.Left);
+             
+              if (relativeVector == Vector3I.Zero) // base of stair
+              {
+                if (dir != thisBlock.Orientation.Left && dir != thisBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (relativeVector == blockUpVec) // above base of stair, needed in order to complete pathing link
+              {
+                if (oppositeDir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (relativeVector == blockUpVec + blockFwdVec) // top of stair
+              {
+                if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
             else
             {
               bool thisIsSlopeBase = thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("BlockArmorSlope2Base");
@@ -4481,7 +5049,7 @@ namespace AiEnabled.Ai.Support
               {
                 if (nextIsHalfStair)
                 {
-                  if (thisBlock.Orientation.Up != nextBlock.Orientation.Up)
+                  if (!ExemptNodesUpper.Contains(nodePos) && thisBlock.Orientation.Up != nextBlock.Orientation.Up)
                   {
                     node.SetBlocked(dirVec); 
                     continue;
@@ -4670,64 +5238,6 @@ namespace AiEnabled.Ai.Support
               continue;
             }
           }
-          else if (thisIsPassage)
-          {
-            var blockSubtype = thisBlock.BlockDefinition.Id.SubtypeName;
-            var blockFwd = thisBlock.Orientation.Forward;
-            var blockUp = thisBlock.Orientation.Up;
-
-            if (thisBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Passage))
-            {
-              if (dir != blockUp && oppositeDir != blockUp)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (dir == blockUp || oppositeDir == blockUp)
-            {
-              node.SetBlocked(dirVec); 
-              continue;
-            }
-            else if (blockSubtype.StartsWith("Passage2"))
-            {
-              var blockLeft = thisBlock.Orientation.Left;
-              if (blockSubtype.EndsWith("Wall"))
-              {
-                if (dir != blockFwd && dir != blockLeft && oppositeDir != blockLeft)
-                {
-                  node.SetBlocked(dirVec); 
-                  continue;
-                }
-              }
-              else if (dir != blockLeft && oppositeDir != blockLeft)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (blockSubtype.EndsWith("Wall") || blockSubtype.EndsWith("Tjunction"))
-            {
-              if (dir != blockFwd && oppositeDir != blockFwd && oppositeDir != thisBlock.Orientation.Left)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (blockSubtype.EndsWith("Corner"))
-            {
-              if (oppositeDir != blockFwd && oppositeDir != thisBlock.Orientation.Left)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (!blockSubtype.EndsWith("Intersection") && dir != blockFwd && oppositeDir != blockFwd)
-            {
-              node.SetBlocked(dirVec); 
-              continue;
-            }
-          }
           else if (thisIsBeam)
           {
             var blockSubtype = thisBlock.BlockDefinition.Id.SubtypeName;
@@ -4799,16 +5309,16 @@ namespace AiEnabled.Ai.Support
               continue;
             }
 
-            if (!nextBlockEmpty)
-            {
-              var downDir = Base6Directions.GetOppositeDirection(upDir);
+            //if (!nextBlockEmpty)
+            //{
+            //  //var downDir = Base6Directions.GetOppositeDirection(upDir);
 
-              if (nextIsHalfBlock && downDir == thisBlock.Orientation.Forward && downDir != nextBlock.Orientation.Forward)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
+            //  if (nextIsHalfBlock && thisBlock.Orientation.Forward != nextBlock.Orientation.Forward) // downDir == thisBlock.Orientation.Forward && downDir != nextBlock.Orientation.Forward)
+            //  {
+            //    node.SetBlocked(dirVec); 
+            //    continue;
+            //  }
+            //}
           }
           else if (thisIsCoverWall)
           {
@@ -4993,7 +5503,15 @@ namespace AiEnabled.Ai.Support
           }
           else if (thisIsCatwalk)
           {
-            if (oppositeDir == thisBlock.Orientation.Up)
+            if (AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(thisBlock.BlockDefinition.Id) && thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Raised"))
+            {
+              if (dir == thisBlock.Orientation.Up)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (oppositeDir == thisBlock.Orientation.Up)
             {
               node.SetBlocked(dirVec); 
               continue;
@@ -5003,7 +5521,7 @@ namespace AiEnabled.Ai.Support
               node.SetBlocked(dirVec); 
               continue;
             }
-            
+
             if (thisBlock.BlockDefinition.Id.SubtypeName.StartsWith("CatwalkHalf") && oppositeDir == thisBlock.Orientation.Left)
             {
               node.SetBlocked(dirVec);
@@ -5022,12 +5540,12 @@ namespace AiEnabled.Ai.Support
           else if (thisIsWindowFlat)
           {
             Base6Directions.Direction sideWithPane;
-            if (thisBlock.BlockDefinition.Id.SubtypeName == "LargeWindowSquare")
+            if (thisBlock.BlockDefinition.Id.SubtypeName == "LargeWindowSquare" || thisBlock.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner"))
               sideWithPane = thisBlock.Orientation.Forward;
             else
               sideWithPane = Base6Directions.GetOppositeDirection(thisBlock.Orientation.Left);
 
-            if (dir == sideWithPane || (thisBlock.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner") && dir == thisBlock.Orientation.Forward))
+            if (dir == sideWithPane)
             {
               node.SetBlocked(dirVec); 
               continue;
@@ -5321,12 +5839,259 @@ namespace AiEnabled.Ai.Support
 
         if (!nextBlockEmpty)
         {
-          if (nextIsDeadBody)
+          if (nextIsPassage && !nextIsPassageStair)
+          {
+            var blockSubtype = nextBlock.BlockDefinition.Id.SubtypeName;
+            var blockFwd = nextBlock.Orientation.Forward;
+            var blockUp = nextBlock.Orientation.Up;
+
+            if (AiSession.Instance.PassageIntersectionDefinitions.Contains(nextBlock.BlockDefinition.Id))
+            {
+              if (blockSubtype.StartsWith("Lighted"))
+                blockSubtype = blockSubtype.Substring(7);
+
+              if (nextBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
+              {
+                if (oppositeDir == nextBlock.Orientation.Left || dir == nextBlock.Orientation.Left || oppositeDir == blockFwd)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+
+                if (dir == blockFwd && blockSubtype.IndexOf("enc", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype == "Passage")
+              {
+                if (dir != blockUp && oppositeDir != blockUp)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageTop"))
+              {
+                if (oppositeDir == blockUp)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+                else if (dir == blockUp && blockSubtype.IndexOf("enc", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("HalfPassage"))
+              {
+                if (blockSubtype.StartsWith("HalfPassageCorner"))
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+                else if (blockSubtype.StartsWith("HalfPassagePillar"))
+                {
+                  if (oppositeDir != blockFwd && oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Left)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (blockSubtype.StartsWith("HalfPassageGlass"))
+                {
+                  if (oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Left && dir != blockFwd)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (blockSubtype.StartsWith("HalfPassageL"))
+                {
+                  if (oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Left && oppositeDir != blockFwd)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+              }
+              else if (blockSubtype.StartsWith("PassagePillar"))
+              {
+                if (dir == blockUp || oppositeDir == blockUp)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageL"))
+              {
+                if (oppositeDir != blockUp && oppositeDir != nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageT"))
+              {
+                if (blockSubtype.StartsWith("PassageTVert"))
+                {
+                  if (dir != nextBlock.Orientation.Left && oppositeDir != nextBlock.Orientation.Left)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (blockSubtype.StartsWith("PassageTGlass"))
+                {
+                  if (oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Forward)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Left && oppositeDir != nextBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageGlass"))
+              {
+                if (dir != nextBlock.Orientation.Left && oppositeDir != nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageCargo") || blockSubtype.StartsWith("PassageConveyor"))
+              {
+                if (dir != nextBlock.Orientation.Left && oppositeDir != nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (nextBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_TextPanel))
+              {
+                if (dir != nextBlock.Orientation.Left && oppositeDir != nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("PassageDoor") || blockSubtype.StartsWith("PassageAirlock"))
+              {
+                if (blockSubtype.StartsWith("PassageDoorSide"))
+                {
+                  if (oppositeDir != nextBlock.Orientation.Left && dir != nextBlock.Orientation.Left && dir != blockFwd)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (dir != blockFwd && oppositeDir != blockFwd) // airlock and regular door are fwd / bwd only
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (blockSubtype.StartsWith("Passage4Way"))
+              {
+                if (dir == blockFwd || oppositeDir == blockFwd)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+            }
+            else if (nextBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Passage))
+            {
+              if (dir != blockUp && oppositeDir != blockUp)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (dir == blockUp || oppositeDir == blockUp)
+            {
+              node.SetBlocked(dirVec);
+              continue;
+            }
+            else if (blockSubtype.StartsWith("Passage2"))
+            {
+              if (blockSubtype.EndsWith("Wall"))
+              {
+                if (dir == blockFwd)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (dir == blockFwd || oppositeDir == blockFwd)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (blockSubtype.EndsWith("Wall") || blockSubtype.EndsWith("Tjunction"))
+            {
+              if (dir != blockFwd && oppositeDir != blockFwd && dir != nextBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (blockSubtype.EndsWith("Corner"))
+            {
+              if (dir != blockFwd && dir != nextBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (!blockSubtype.EndsWith("Intersection") && dir != blockFwd && oppositeDir != blockFwd)
+            {
+              node.SetBlocked(dirVec);
+              continue;
+            }
+          }
+          else if (nextIsDeadBody)
           {
             if (CheckCatwalkForRails(nextBlock, -dirVec))
             {
               node.SetBlocked(dirVec); 
               continue;
+            }
+          }
+          else if (nextIsScaffold)
+          {
+            var blockOr = nextBlock.Orientation;
+            var subtype = nextBlock.BlockDefinition.Id.SubtypeName;
+            if (subtype.EndsWith("Platform"))
+            {
+              if (dir == blockOr.Left || oppositeDir == blockOr.Up || oppositeDir == blockOr.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("Structure"))
+            {
+              if (dir == blockOr.Left || oppositeDir == blockOr.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("Unsupported"))
+            {
+              if (oppositeDir == blockOr.Up)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
             }
           }
           else if (nextIsLightPanel)
@@ -5383,7 +6148,6 @@ namespace AiEnabled.Ai.Support
             }
             else if (dir != nextBlock.Orientation.Forward && oppositeDir != nextBlock.Orientation.Forward)
             {
-              //AiSession.Instance.Logger.Log($"{next} is blocked from {nodePos} #3.1");
               node.SetBlocked(dirVec); 
               continue;
             }
@@ -5504,7 +6268,7 @@ namespace AiEnabled.Ai.Support
                   if (!thisBlockEmpty)
                   {
                     var blockUp = Base6Directions.GetIntVector(thisBlock.Orientation.Up);
-                    var adjacentBlock = GetBlockAtPosition(nodePos + blockUp); // thisBlock.CubeGrid.GetCubeBlock(nodePos + blockUp);
+                    var adjacentBlock = GetBlockAtPosition(nodePos + blockUp);
                     if (adjacentBlock == nextBlock)
                     {
                       if (dir != thisBlock.Orientation.Up)
@@ -5537,6 +6301,43 @@ namespace AiEnabled.Ai.Support
                 if (subtype.EndsWith("Slope2Tip") || subtype.EndsWith("HalfSlopeArmorBlock") || subtype.EndsWith("Concrete_Half_Block_Slope"))
                 {
                   node.SetBlocked(dirVec); 
+                  continue;
+                }
+              }
+            }
+            else if (nextIsPassageStair)
+            {
+              if (thisBlockEmpty || thisBlock.Position != nextBlock.Position)
+              {
+                if (dir == nextBlock.Orientation.Forward || oppositeDir == nextBlock.Orientation.Forward)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+
+                var relativeVector = next - nextBlock.Position;
+                var blockUpVec = Base6Directions.GetIntVector(nextBlock.Orientation.Up);
+                var blockFwdVec = -Base6Directions.GetIntVector(nextBlock.Orientation.Left);
+
+                if (relativeVector == Vector3I.Zero)
+                {
+                  if (oppositeDir != nextBlock.Orientation.Left)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else if (relativeVector == blockUpVec + blockFwdVec)
+                {
+                  if (dir != nextBlock.Orientation.Left)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
+                  }
+                }
+                else
+                {
+                  node.SetBlocked(dirVec);
                   continue;
                 }
               }
@@ -5699,63 +6500,6 @@ namespace AiEnabled.Ai.Support
               }
             }
           }
-          else if (nextIsPassage)
-          {
-            var blockSubtype = nextBlock.BlockDefinition.Id.SubtypeName;
-            var blockFwd = nextBlock.Orientation.Forward;
-            var blockUp = nextBlock.Orientation.Up;
-
-            if (nextBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Passage))
-            {
-              if (dir != blockUp && oppositeDir != blockUp)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (dir == blockUp || oppositeDir == blockUp)
-            {
-              node.SetBlocked(dirVec); 
-              continue;
-            }
-            else if (blockSubtype.StartsWith("Passage2"))
-            {
-              if (blockSubtype.EndsWith("Wall"))
-              {
-                if (dir == blockFwd)
-                {
-                  node.SetBlocked(dirVec); 
-                  continue;
-                }
-              }
-              else if (dir == blockFwd || oppositeDir == blockFwd)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (blockSubtype.EndsWith("Wall") || blockSubtype.EndsWith("Tjunction"))
-            {
-              if (dir != blockFwd && oppositeDir != blockFwd && dir != nextBlock.Orientation.Left)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (blockSubtype.EndsWith("Corner"))
-            {
-              if (dir != blockFwd && dir != nextBlock.Orientation.Left)
-              {
-                node.SetBlocked(dirVec); 
-                continue;
-              }
-            }
-            else if (!blockSubtype.EndsWith("Intersection") && dir != blockFwd && oppositeDir != blockFwd)
-            {
-              node.SetBlocked(dirVec); 
-              continue;
-            }
-          }
           else if (nextIsBeam)
           {
             var blockSubtype = nextBlock.BlockDefinition.Id.SubtypeName;
@@ -5835,19 +6579,29 @@ namespace AiEnabled.Ai.Support
 
             if (thisIsHalfBlock)
             {
-              var downDir = Base6Directions.GetOppositeDirection(upDir);
+              //var downDir = Base6Directions.GetOppositeDirection(upDir);
 
-              if (downDir == thisBlock.Orientation.Forward && downDir != nextBlock.Orientation.Forward)
+              if (thisBlock.Orientation.Forward != nextBlock.Orientation.Forward) // downDir == thisBlock.Orientation.Forward && downDir != nextBlock.Orientation.Forward)
               {
                 node.SetBlocked(dirVec); 
                 continue;
               }
-
             }
             else if (!thisIsSlope)
             {
-              node.SetBlocked(dirVec); 
-              continue;
+              if (thisBlockEmpty)
+              {
+                if (Base6Directions.GetIntVector(nextBlock.Orientation.Forward).Dot(ref upVec) != 0)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
             }
             else
             {
@@ -5941,12 +6695,12 @@ namespace AiEnabled.Ai.Support
           else if (nextIsWindowFlat)
           {
             Base6Directions.Direction sideWithPane;
-            if (nextBlock.BlockDefinition.Id.SubtypeName == "LargeWindowSquare")
+            if (nextBlock.BlockDefinition.Id.SubtypeName == "LargeWindowSquare" || nextBlock.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner"))
               sideWithPane = nextBlock.Orientation.Forward;
             else
               sideWithPane = Base6Directions.GetOppositeDirection(nextBlock.Orientation.Left);
 
-            if (oppositeDir == sideWithPane || (nextBlock.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner") && oppositeDir == nextBlock.Orientation.Forward))
+            if (oppositeDir == sideWithPane)
             {
               node.SetBlocked(dirVec); 
               continue;

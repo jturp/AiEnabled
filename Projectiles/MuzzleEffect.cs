@@ -20,50 +20,56 @@ namespace AiEnabled.Projectiles
     public int Duration;
     MyGunBase _gun;
     IMyEntity _tool;
-    IMyCharacter _bot;
-    readonly List<ProjectileInfo.WeaponEffect> _effects = new List<ProjectileInfo.WeaponEffect>();
+    //IMyCharacter _bot;
+    //readonly List<ProjectileInfo.WeaponEffect> _effects = new List<ProjectileInfo.WeaponEffect>();
 
     public void Start(MyGunBase gun, IMyCharacter bot)
     {
-      StartTime = MyAPIGateway.Session.ElapsedPlayTime.TotalMilliseconds;
-      Duration = gun.MuzzleFlashLifeSpan;
-      var renderId = gun.IsUserControllableGunBlock ? _tool.Render.GetRenderObjectID() : uint.MaxValue;
-      //gun.CreateEffects(MyWeaponDefinition.WeaponEffectAction.Shoot, renderId); // Keen changed something that causes this use MatrixD.Identity :(
+      if (gun == null || bot == null)
+        return;
 
       _gun = gun;
-      _bot = bot;
+      //_bot = bot;
       _tool = bot.EquippedTool;
+
+      StartTime = MyAPIGateway.Session.ElapsedPlayTime.TotalMilliseconds;
+      Duration = gun.MuzzleFlashLifeSpan;
+      var renderId = (gun.IsUserControllableGunBlock && _tool?.Render != null) ? _tool.Render.GetRenderObjectID() : uint.MaxValue;
+      gun.CreateEffects(MyWeaponDefinition.WeaponEffectAction.Shoot, renderId, false);
+
       _tool.OnMarkForClose += EquippedTool_OnMarkForClose;
       _tool.NeedsUpdate |= MyEntityUpdateEnum.EACH_FRAME;
       _tool.NeedsWorldMatrix = true;
 
-      var translationAddition = (bot.Physics?.LinearVelocity / 60f) ?? Vector3.Zero;
-      _effects.Clear();
+      //var translationAddition = (bot.Physics?.LinearVelocity / 60f) ?? Vector3.Zero;
+      //_effects.Clear();
 
-      var matrix = gun.GetMuzzleWorldMatrix();
-      var position = gun.GetMuzzleWorldPosition();
-      matrix.Translation += translationAddition;
+      //var matrix = gun.GetMuzzleWorldMatrix();
+      //var position = gun.GetMuzzleWorldPosition();
+      //matrix.Translation += translationAddition;
 
-      for (int i = 0; i < gun.WeaponDefinition.WeaponEffects.Length; i++)
-      {
-        var eff = gun.WeaponDefinition.WeaponEffects[i];
-        if (eff == null || eff.Action != MyWeaponDefinition.WeaponEffectAction.Shoot)
-          continue;
+      //for (int i = 0; i < gun.WeaponDefinition.WeaponEffects.Length; i++)
+      //{
+      //  var eff = gun.WeaponDefinition.WeaponEffects[i];
+      //  if (eff == null || eff.Action != MyWeaponDefinition.WeaponEffectAction.Shoot)
+      //    continue;
 
-        MyParticleEffect particle;
-        if (MyParticlesManager.TryCreateParticleEffect(eff.Particle, ref matrix, ref position, renderId, out particle) && particle.Loop)
-        {
-          var effect = AiSession.Instance.Projectiles.WeaponEffects.Count > 0 ? AiSession.Instance.Projectiles.WeaponEffects.Pop() : new ProjectileInfo.WeaponEffect();
-          effect.Set(particle, eff);
+      //  MyParticleEffect particle;
+      //  if (MyParticlesManager.TryCreateParticleEffect(eff.Particle, ref matrix, ref position, renderId, out particle) && particle.Loop)
+      //  {
+      //    var effect = AiSession.Instance.Projectiles.WeaponEffects.Count > 0 ? AiSession.Instance.Projectiles.WeaponEffects.Pop() : new ProjectileInfo.WeaponEffect();
+      //    effect.Set(particle, eff);
 
-          _effects.Add(effect);
-        }
-      }
+      //    _effects.Add(effect);
+      //  }
+      //}
     }
 
     private void EquippedTool_OnMarkForClose(IMyEntity obj)
     {
-      obj.OnMarkForClose -= EquippedTool_OnMarkForClose;
+      if (obj != null)
+        obj.OnMarkForClose -= EquippedTool_OnMarkForClose;
+  
       Stop();
     }
 
@@ -75,19 +81,19 @@ namespace AiEnabled.Projectiles
       _tool.NeedsUpdate |= MyEntityUpdateEnum.EACH_FRAME;
       _tool.NeedsWorldMatrix = true;
 
-      var matrix = _gun.GetMuzzleWorldMatrix();
-      matrix.Translation += (_bot?.Physics?.LinearVelocity) / 60f ?? Vector3.Zero;
+      //var matrix = _gun.GetMuzzleWorldMatrix();
+      //matrix.Translation += (_bot?.Physics?.LinearVelocity) / 60f ?? Vector3.Zero;
 
       //var position = _gun.GetMuzzleWorldPosition();
 
-      for (int i = 0; i < _effects.Count; i++)
-      {
-        var weaponEffect = _effects[i];
-        var pEff = weaponEffect.ParticleEffect;
-        var def = weaponEffect.Effect;
-        pEff.UserBirthMultiplier = MathHelper.Clamp(pEff.UserBirthMultiplier - def.ParticleBirthDecrease, def.ParticleBirthMin, def.ParticleBirthMax);
-        pEff.WorldMatrix = matrix;
-      }
+      //for (int i = 0; i < _effects.Count; i++)
+      //{
+      //  var weaponEffect = _effects[i];
+      //  var pEff = weaponEffect.ParticleEffect;
+      //  var def = weaponEffect.Effect;
+      //  pEff.UserBirthMultiplier = MathHelper.Clamp(pEff.UserBirthMultiplier - def.ParticleBirthDecrease, def.ParticleBirthMin, def.ParticleBirthMax);
+      //  pEff.WorldMatrix = matrix;
+      //}
 
       _gun.UpdateEffectPositions();
       _gun.UpdateEffects();
@@ -105,19 +111,16 @@ namespace AiEnabled.Projectiles
       if (_tool != null)
         _tool.OnMarkForClose -= EquippedTool_OnMarkForClose;
 
-      for (int i = 0; i < _effects.Count; i++)
-      {
-        var eff = _effects[i];
-        eff.ParticleEffect.Stop(eff.Effect.InstantStop);
-        AiSession.Instance.Projectiles.WeaponEffects.Push(eff);
-      }
+      //for (int i = 0; i < _effects.Count; i++)
+      //{
+      //  var eff = _effects[i];
+      //  eff.ParticleEffect.Stop(eff.Effect.InstantStop);
+      //  AiSession.Instance.Projectiles.WeaponEffects.Push(eff);
+      //}
 
-      _effects.Clear();
+      //_effects.Clear();
 
-      if (_gun != null)
-      {
-        _gun.RemoveOldEffects();
-      }
+      _gun?.RemoveAllEffects();
     }
   }
 }

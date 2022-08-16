@@ -208,6 +208,12 @@ namespace AiEnabled.Bots
         movement = relVectorBot.Y > 0 ? Vector3.Forward : Vector3.Backward;
         rotation = Vector2.Zero;
         fistAttack = false;
+
+        if (movement == Vector3.Backward && !NextIsLadder)
+        {
+          DismountLadder(botPosition, waypoint);
+        }
+
         return;
       }
 

@@ -491,7 +491,7 @@ namespace AiEnabled.Support
 
       gameLogic.ButtonPressed = true;
 
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn)
       {
         SetContextMessage(block, "Capacitors are charging. Please wait...");
         return;
@@ -545,6 +545,12 @@ namespace AiEnabled.Support
           SetContextMessage(block, $"You already have {helperIds.Count} helper(s).");
           return;
         }
+      }
+
+      if (!AiSession.Instance.PendingBotRespawns.Add(helperInfo.DisplayName))
+      {
+        SetContextMessage(block, "Helper already pending recall...");
+        return;
       }
 
       var pkt = new FactoryRecallPacket(block.EntityId, helperInfo.HelperId, player.IdentityId);

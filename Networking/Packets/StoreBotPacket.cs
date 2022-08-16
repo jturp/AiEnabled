@@ -37,8 +37,6 @@ namespace AiEnabled.Networking
       if (!AiSession.Instance.Bots.TryGetValue(BotId, out bot) || bot?.Owner == null)
         return false;
 
-      // TODO: Set bot to IsActive = False, then close the bot without removing it from the player's helper list
-
       var playerHelperData = AiSession.Instance.ModSaveData.PlayerHelperData;
       for (int i = 0; i < playerHelperData.Count; i++)
       {

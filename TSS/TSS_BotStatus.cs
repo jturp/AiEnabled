@@ -21,9 +21,9 @@ namespace AiEnabled.TSS
   public class TSS_BotStatus : MyTSSCommon
   {
     public override ScriptUpdate NeedsUpdate => ScriptUpdate.Update100;
-    readonly float _scale = 0.7f;
+    readonly float _scale;
     readonly string _font = "Debug";
-    bool _setup, _shouldDraw, _firstRun = true;
+    bool _setup, _shouldDraw, _resetDraw, _firstRun = true;
     Vector2 _sizePX;
     Vector2 _center;
     Vector2 _startPos;
@@ -33,6 +33,8 @@ namespace AiEnabled.TSS
 
     public TSS_BotStatus(IMyTextSurface surface, IMyCubeBlock block, Vector2 size) : base(surface, block, size)
     {
+      _scale = (block is IMyTextPanel) ? 0.6f : 0.5f;
+
       var builder = new StringBuilder("M");
       _sizePX = Surface.MeasureStringInPixels(builder, _font, _scale);
       _center = Surface.TextureSize * 0.5f;
@@ -43,6 +45,7 @@ namespace AiEnabled.TSS
       Surface.ScriptBackgroundColor = Color.Black;
 
       UpdateStats(null);
+      builder.Clear();
     }
 
     public override void Dispose()
@@ -84,7 +87,20 @@ namespace AiEnabled.TSS
         _shouldDraw = ShouldDisplay();
 
         if (_shouldDraw)
-          AiSession.Instance.SendBotStatusRequest();
+        {
+          int count;
+          AiSession.Instance.SendBotStatusRequest(out count);
+
+          if (count > 0)
+          {
+            _resetDraw = false;
+          }
+          else if (count == 0 && !_resetDraw)
+          {
+            _resetDraw = true;
+            UpdateStats(null);
+          }
+        }
       }
       catch (Exception ex)
       {

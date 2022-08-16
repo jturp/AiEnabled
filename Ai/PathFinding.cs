@@ -21,6 +21,7 @@ using System.Threading;
 using Sandbox.Game.Entities;
 using VRage.Game.Entity;
 using VRage;
+using VRage.Collections;
 
 namespace AiEnabled.Ai
 {
@@ -268,7 +269,7 @@ namespace AiEnabled.Ai
               continue;
 
             if (bot.GroundNodesFirst && currentNode.IsAirNode)
-              newCost  = Math.Max(0, newCost - 1);
+              newCost = Math.Max(0, newCost - 1);
           }
           else if (node.IsWaterNode)
           {
@@ -500,39 +501,48 @@ namespace AiEnabled.Ai
                 var worldVec = mainGrid.GridIntegerToWorld(localVec);
                 gridLocalVector = grid.WorldToGridInteger(worldVec);
               }
+
+              if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(block.BlockDefinition.Id))
+              {
+                var positionBelow = localVec + intVecDown;
+
+                Node nBelow;
+                if (tileDict.TryGetValue(positionBelow, out nBelow) && nBelow?.Block != null)
+                {
+                  var blockBelowDef = nBelow.Block.BlockDefinition.Id;
+                  if (AiSession.Instance.SlopeBlockDefinitions.Contains(blockBelowDef)
+                    && !AiSession.Instance.HalfStairBlockDefinitions.Contains(blockBelowDef)
+                    && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(blockBelowDef))
+                  {
+                    // railing over stair / slope, can skip
+                    // can't skip over half stair / slope bc of how alignment is ajusted
+                    continue;
+                  }
+                }
+              }
             }
           }
 
-          Node pathNode;
-          if (optimizedCache.TryGetValue(localVec, out pathNode))
-          {
-            path.Enqueue(pathNode);
-            continue;
-          }
-
-          Vector3D? offset = null;
-          bool thisIsHalfStair = false, thisisHalfPanelSlope = false, prevIsHalfStair = false, prevIsHalfPanelSlope = false;
+          bool thisIsHalfStair = false, thisisHalfPanelSlope = false, thisIsRailing = false, thisIsCatwalkExpansion = false;
+          bool prevIsHalfStair = false, prevIsHalfPanelSlope = false, prevIsRailing = false, prevIsCatwalkExpansion = false;
+          bool nextIsHalfStair = false, afterNextIsHalfStair = false, nextIsCatwalkExpansion = false;
+          bool nextIsHalfPanelSlope = false, afterNextIsHalfPanelSlope = false;
+          bool nextIsHalfBlock = false, nextIsRailing = false, afterNextIsRailing = false;
           bool addOffsetStart = cache.Count <= i + 1;
 
-          IMySlimBlock thisBlock = grid.GetCubeBlock(gridLocalVector);
-          if (thisBlock != null)
-          {
-            var thisDef = thisBlock.BlockDefinition.Id;
-            thisIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(thisDef);
-            thisisHalfPanelSlope = !thisIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(thisDef);
-          }
-
+          Vector3D? offset = null;
           Vector3I fromVec = addOffsetStart ? start : cache[i + 1]; // If no previous in list, then previous is start position
           Vector3I fromToLocal = localVec - fromVec;
-          Vector3D fwdTravelDir = gridMatrix.GetDirectionVector(Base6Directions.GetDirection(fromToLocal));
-          IMySlimBlock prevBlock = gridGraph.GetBlockAtPosition(fromVec); // grid.GetCubeBlock(fromVec);
+          Vector3D fwdTravelDir = fromToLocal == Vector3I.Zero ? Vector3D.Zero : gridMatrix.GetDirectionVector(Base6Directions.GetDirection(fromToLocal));
+          Vector3I toVec;
+
+          IMySlimBlock prevBlock = gridGraph.GetBlockAtPosition(fromVec);
+          IMySlimBlock thisBlock = grid.GetCubeBlock(gridLocalVector);
+          IMySlimBlock nextBlock = null, afterNextBlock = null;
 
           if (prevBlock == null && tileDict.TryGetValue(fromVec, out n) && n?.Block != null)
           {
-            var blockGrid = n.Block.CubeGrid;
-            var worldFrom = mainGrid.GridIntegerToWorld(fromVec);
-            var localFrom = blockGrid.WorldToGridInteger(worldFrom);
-            prevBlock = blockGrid.GetCubeBlock(localFrom);
+            prevBlock = n.Block;
           }
 
           if (prevBlock != null)
@@ -540,18 +550,113 @@ namespace AiEnabled.Ai
             var prevDef = prevBlock.BlockDefinition.Id;
             prevIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(prevDef);
             prevIsHalfPanelSlope = !prevIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(prevDef);
+            prevIsRailing = !prevIsHalfPanelSlope && AiSession.Instance.RailingBlockDefinitions.ContainsItem(prevDef);
+            prevIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(prevDef)
+              && prevDef.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+          }
+
+          if (thisBlock == null && tileDict.TryGetValue(gridLocalVector, out n) && n?.Block != null)
+          {
+            thisBlock = n.Block;
+          }
+
+          if (thisBlock != null)
+          {
+            var thisDef = thisBlock.BlockDefinition.Id;
+            thisIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(thisDef);
+            thisisHalfPanelSlope = !thisIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(thisDef);
+            thisIsRailing = !thisisHalfPanelSlope && !thisIsHalfStair && AiSession.Instance.RailingBlockDefinitions.ContainsItem(thisDef);
+            thisIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(thisDef)
+              && thisDef.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+          }
+
+          if (i > 0)
+          {
+            next = cache[i - 1];
+            nextBlock = gridGraph.GetBlockAtPosition(next);
+
+            if (nextBlock == null && tileDict.TryGetValue(next, out n) && n?.Block != null)
+            {
+              nextBlock = n.Block;
+            }
+
+            if (nextBlock != null)
+            {
+              var nextDef = nextBlock.BlockDefinition.Id;
+              nextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(nextDef);
+              nextIsHalfPanelSlope = !nextIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(nextDef);
+              nextIsRailing = !nextIsHalfPanelSlope && AiSession.Instance.RailingBlockDefinitions.ContainsItem(nextDef);
+              nextIsHalfBlock = !nextIsRailing && (nextDef.SubtypeName.EndsWith("HalfArmorBlock")
+                || (nextDef.SubtypeName.StartsWith("AQD_LG") && nextDef.SubtypeName.EndsWith($"Concrete_Half_Block")));
+              nextIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(nextDef)
+                && nextDef.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            if (i > 1)
+            {
+              var afterNext = cache[i - 2];
+              toVec = afterNext;
+
+              afterNextBlock = gridGraph.GetBlockAtPosition(afterNext);
+
+              if (afterNextBlock == null && tileDict.TryGetValue(afterNext, out n) && n?.Block != null)
+              {
+                afterNextBlock = n.Block;
+              }
+
+              if (afterNextBlock != null)
+              {
+                var afterNextDef = afterNextBlock.BlockDefinition.Id;
+                afterNextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(afterNextDef);
+                afterNextIsHalfPanelSlope = !afterNextIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(afterNextDef);
+                afterNextIsRailing = !afterNextIsHalfPanelSlope && AiSession.Instance.RailingBlockDefinitions.ContainsItem(afterNextDef);
+              }
+            }
+            else
+              toVec = next;
+          }
+          else
+            toVec = localVec;
+
+          bool halfStairCheck = prevIsHalfStair || thisIsHalfStair || nextIsHalfStair || afterNextIsHalfStair;
+          bool halfSlopeCheck = prevIsHalfPanelSlope || thisisHalfPanelSlope || nextIsHalfPanelSlope || afterNextIsHalfPanelSlope;
+          bool isCatwalkExpansion = prevIsCatwalkExpansion || thisIsCatwalkExpansion || nextIsCatwalkExpansion;
+          bool skipOptimization = halfStairCheck || halfSlopeCheck || isCatwalkExpansion;
+
+          if (addOffsetStart && cache.Count > 1)
+          {
+            if (prevIsCatwalkExpansion)
+            {
+              AddOffsetForThisCatwalk(prevBlock, gridGraph, path, ref start, ref localVec, ref gridMatrix, ref gridSize, false);
+            }
+
+            if (thisIsCatwalkExpansion)
+            {
+              AddOffsetForNextCatwalk(thisBlock, gridGraph, path, ref start, ref localVec, ref gridMatrix, ref gridSize);
+            }
+          }
+
+          Node pathNode;
+          if (!skipOptimization && optimizedCache.TryGetValue(localVec, out pathNode) && pathNode != null)
+          {
+            path.Enqueue(pathNode);
+
+            if (nextIsCatwalkExpansion)
+              AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+            continue;
           }
 
           if (!thisIsHalfStair && !thisisHalfPanelSlope && thisBlock != null)
           {
             var cubeBlockDef = thisBlock.BlockDefinition as MyCubeBlockDefinition;
             var cubeDef = cubeBlockDef.Id;
-            bool isDeadBody = cubeDef.SubtypeName.StartsWith("DeadBody");
+            bool isDeadBody = !thisIsCatwalkExpansion && cubeDef.SubtypeName.StartsWith("DeadBody");
             bool isHalfCatwalk = !isDeadBody && cubeDef.SubtypeName.StartsWith("CatwalkHalf");
             bool isDeco = !isHalfCatwalk && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(cubeDef);
             bool isHalfWall = !isDeco && AiSession.Instance.HalfWallDefinitions.ContainsItem(cubeDef);
-            bool isHalfBlock = !isHalfWall && ((cubeDef.SubtypeName.StartsWith("Large") && cubeDef.SubtypeName.EndsWith("HalfArmorBlock"))
-              || (cubeDef.SubtypeName.StartsWith("AQD_LG") && cubeDef.SubtypeName.EndsWith($"Concrete_Half_Block"))); 
+            bool isHalfBlock = !isHalfWall && (cubeDef.SubtypeName.EndsWith("HalfArmorBlock")
+              || (cubeDef.SubtypeName.StartsWith("AQD_LG") && cubeDef.SubtypeName.EndsWith($"Concrete_Half_Block")));
             bool isFreight = !isHalfBlock && AiSession.Instance.FreightBlockDefinitions.ContainsItem(cubeDef);
             bool isRamp = !isFreight && AiSession.Instance.RampBlockDefinitions.Contains(cubeDef);
             bool isBeam = !isRamp && AiSession.Instance.BeamBlockDefinitions.ContainsItem(cubeDef);
@@ -562,16 +667,45 @@ namespace AiEnabled.Ai
               && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef)
               && !AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef);
 
+            if (thisIsCatwalkExpansion && cache.Count > 1)
+            {
+              AddOffsetForThisCatwalk(thisBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+              if (!halfSlopeCheck && !halfStairCheck)
+                continue;
+            }
+
             if (isDeadBody)
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
 
@@ -579,12 +713,30 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
 
@@ -592,12 +744,30 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
 
@@ -645,25 +815,68 @@ namespace AiEnabled.Ai
                 offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.3;
               }
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
 
             if (isHalfBlock)
             {
-              offset = -downTravelDir * gridSize * 0.25;
+              if (thisBlock.Orientation.Forward == botDownDir)
+              {
+                offset = -downTravelDir * gridSize * 0.25;
+              }
+              else if (Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown) == 0)
+              {
+                offset = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.25;
+              }
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
 
@@ -678,7 +891,7 @@ namespace AiEnabled.Ai
                   continue;
 
                 var positionBelow = localVec + intVecDown;
-                var blockBelow = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
+                var blockBelow = gridGraph.GetBlockAtPosition(positionBelow);
 
                 if (blockBelow == null && tileDict.TryGetValue(positionBelow, out n) && n?.Block != null)
                 {
@@ -692,12 +905,30 @@ namespace AiEnabled.Ai
                 {
                   offset = downTravelDir * gridSize * 0.25f;
 
-                  //pathNode = tileDict[localVec];
-                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                  if (skipOptimization)
+                  {
+                    Node node;
+                    gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                  optimizedCache[localVec] = pathNode;
-                  path.Enqueue(pathNode);
+                    TempNode tempNode;
+                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                      tempNode = new TempNode();
+
+                    tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                    path.Enqueue(tempNode);
+                  }
+                  else
+                  {
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                    path.Enqueue(pathNode);
+                    optimizedCache[localVec] = pathNode;
+                  }
+
+                  if (nextIsCatwalkExpansion)
+                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                   continue;
                 }
               }
@@ -713,12 +944,30 @@ namespace AiEnabled.Ai
                   offset = downTravelDir * gridSize * 0.25 + blockUp * gridSize * 0.5;
                 }
 
-                //pathNode = tileDict[localVec];
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                if (skipOptimization)
+                {
+                  Node node;
+                  gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                optimizedCache[localVec] = pathNode;
-                path.Enqueue(pathNode);
+                  TempNode tempNode;
+                  if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                    tempNode = new TempNode();
+
+                  tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                  path.Enqueue(tempNode);
+                }
+                else
+                {
+                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                  path.Enqueue(pathNode);
+                  optimizedCache[localVec] = pathNode;
+                }
+
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                 continue;
               }
               else if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Tip"))
@@ -727,12 +976,30 @@ namespace AiEnabled.Ai
                 {
                   offset = -downTravelDir * gridSize * 0.5 - gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
 
-                  //pathNode = tileDict[localVec];
-                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                  if (skipOptimization)
+                  {
+                    Node node;
+                    gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                  optimizedCache[localVec] = pathNode;
-                  path.Enqueue(pathNode);
+                    TempNode tempNode;
+                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                      tempNode = new TempNode();
+
+                    tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                    path.Enqueue(tempNode);
+                  }
+                  else
+                  {
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                    path.Enqueue(pathNode);
+                    optimizedCache[localVec] = pathNode;
+                  }
+
+                  if (nextIsCatwalkExpansion)
+                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                   continue;
                 }
               }
@@ -745,12 +1012,30 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5;
               }
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
             else if (isHalfPanel)
@@ -775,12 +1060,30 @@ namespace AiEnabled.Ai
                 offset = gridMatrix.GetDirectionVector(blockUp) * gridSize * 0.4 - gridMatrix.GetDirectionVector(blockFwd) * gridSize * 0.5;
               }
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
             else if (isPanelSlope)
@@ -827,8 +1130,6 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5f;
               }
 
-              //var tempNode = tileDict[localVec];
-
               Node tempNode;
               gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
@@ -837,7 +1138,7 @@ namespace AiEnabled.Ai
                 node = new TempNode();
 
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-              {                
+              {
                 var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                 if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                 {
@@ -845,11 +1146,15 @@ namespace AiEnabled.Ai
                     offset = offset.Value - downTravelDir * 0.5f;
                   else
                     offset = -downTravelDir * 0.5f;
-                }  
+                }
               }
 
               node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
             else if (isFreight)
@@ -864,12 +1169,30 @@ namespace AiEnabled.Ai
               else
                 offset = blockFwd * gridSize * 0.4;
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
             else if (isHalfWall)
@@ -894,12 +1217,30 @@ namespace AiEnabled.Ai
                 }
               }
 
-              //pathNode = tileDict[localVec];
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              if (skipOptimization)
+              {
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              optimizedCache[localVec] = pathNode;
-              path.Enqueue(pathNode);
+                TempNode tempNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
+
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
+              }
+              else
+              {
+                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                path.Enqueue(pathNode);
+                optimizedCache[localVec] = pathNode;
+              }
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
             else if (isRamp || isSlope)
@@ -937,7 +1278,7 @@ namespace AiEnabled.Ai
                 else if (dotUp > 0 && isBlockTip) // block is upside down
                 {
                   var positionBelow = localVec + intVecDown;
-                  var blockBelow = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
+                  var blockBelow = gridGraph.GetBlockAtPosition(positionBelow);
 
                   if (blockBelow == null && tileDict.TryGetValue(positionBelow, out n) && n?.Block != null)
                   {
@@ -951,15 +1292,64 @@ namespace AiEnabled.Ai
                   {
                     offset = downTravelDir * gridSize * 0.25f;
 
-                    //pathNode = tileDict[localVec];
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                    if (skipOptimization)
+                    {
+                      Node node2;
+                      gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    optimizedCache[localVec] = pathNode;
-                    path.Enqueue(pathNode);
+                      TempNode tempNode2;
+                      if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                        tempNode2 = new TempNode();
+
+                      tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                      path.Enqueue(tempNode2);
+                    }
+                    else
+                    {
+                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                      path.Enqueue(pathNode);
+                      optimizedCache[localVec] = pathNode;
+                    }
+
+                    if (nextIsCatwalkExpansion)
+                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                     continue;
                   }
                 }
+              }
+              else if (thisBlock.BlockDefinition.Context.ModName == "PassageIntersections" && thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large"))
+              {
+
+                var list = new List<string>();
+                list.Count();
+                // offset already 
+                if (skipOptimization)
+                {
+                  Node node2;
+                  gridGraph.TryGetNodeForPosition(localVec, out node2);
+
+                  TempNode tempNode2;
+                  if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                    tempNode2 = new TempNode();
+
+                  tempNode2.Update(node2.Position, node2.Offset, node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                  path.Enqueue(tempNode2);
+                }
+                else
+                {
+                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+
+                  path.Enqueue(pathNode);
+                  optimizedCache[localVec] = pathNode;
+                }
+
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+                continue;
               }
               else if (Base6Directions.GetIntVector(thisBlock.Orientation.Up).Dot(ref intVecDown) > 0
                 || Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown) < 0)
@@ -987,8 +1377,6 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5f;
               }
 
-              //var tempNode = tileDict[localVec];
-
               Node tempNode;
               gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
@@ -1010,6 +1398,10 @@ namespace AiEnabled.Ai
 
               node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
               path.Enqueue(node);
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
               continue;
             }
             else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(cubeDef))
@@ -1051,12 +1443,30 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                //pathNode = tileDict[localVec];
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                if (skipOptimization)
+                {
+                  Node node2;
+                  gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                optimizedCache[localVec] = pathNode;
-                path.Enqueue(pathNode);
+                  TempNode tempNode2;
+                  if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                    tempNode2 = new TempNode();
+
+                  tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                  path.Enqueue(tempNode2);
+                }
+                else
+                {
+                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                  path.Enqueue(pathNode);
+                  optimizedCache[localVec] = pathNode;
+                }
+
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                 continue;
               }
             }
@@ -1068,10 +1478,7 @@ namespace AiEnabled.Ai
 
             if (blockBelowThis == null && tileDict.TryGetValue(positionBelow, out n) && n?.Block != null)
             {
-              var blockGrid = n.Block.CubeGrid;
-              var worldFrom = mainGrid.GridIntegerToWorld(positionBelow);
-              var localFrom = blockGrid.WorldToGridInteger(worldFrom);
-              blockBelowThis = blockGrid.GetCubeBlock(localFrom);
+              blockBelowThis = n.Block;
             }
 
             if (blockBelowThis != null)
@@ -1122,8 +1529,6 @@ namespace AiEnabled.Ai
                 else
                   offset = downTravelDir * gridSize * 0.5f;
 
-                //var tempNode = tileDict[localVec];
-
                 Node tempNode;
                 gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
@@ -1146,6 +1551,10 @@ namespace AiEnabled.Ai
 
                 node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
+
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                 continue;
               }
               else if (isHalfSlope)
@@ -1161,8 +1570,6 @@ namespace AiEnabled.Ai
                   continue;
                 }
 
-                //var tempNode = tileDict[localVec];
-
                 Node tempNode;
                 gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
@@ -1184,6 +1591,10 @@ namespace AiEnabled.Ai
 
                 node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
+
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                 continue;
               }
               else if (isPanelHalfSlope)
@@ -1194,8 +1605,6 @@ namespace AiEnabled.Ai
                   continue;
                 }
 
-                //var tempNode = tileDict[localVec];
-
                 Node tempNode;
                 gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
@@ -1217,6 +1626,10 @@ namespace AiEnabled.Ai
 
                 node.Update(tempNode.Position, offset ?? Vector3.Zero, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
                 path.Enqueue(node);
+
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                 continue;
               }
               else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(belowDef))
@@ -1258,187 +1671,243 @@ namespace AiEnabled.Ai
                     }
                   }
 
-                  //pathNode = tileDict[localVec];
-                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                  if (skipOptimization)
+                  {
+                    Node node2;
+                    gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  optimizedCache[localVec] = pathNode;
-                  path.Enqueue(pathNode);
+                    TempNode tempNode2;
+                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                      tempNode2 = new TempNode();
+
+                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                    path.Enqueue(tempNode2);
+                  }
+                  else
+                  {
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                    path.Enqueue(pathNode);
+                    optimizedCache[localVec] = pathNode;
+                  }
+
+                  if (nextIsCatwalkExpansion)
+                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                   continue;
                 }
               }
             }
           }
 
-          Vector3I toVec;
-          IMySlimBlock nextBlock = null, afterNextBlock = null;
-          bool nextIsHalfStair = false, afterNextIsHalfStair = false;
-          bool nextIsHalfPanelSlope = false, afterNextIsHalfPanelSlope = false;
-
-          if (i > 0)
+          if (nextBlock != null)
           {
-            next = cache[i - 1];
-            nextBlock = gridGraph.GetBlockAtPosition(next); // grid.GetCubeBlock(next);
+            var nextDef = nextBlock.BlockDefinition.Id;
 
-            if (nextBlock == null && tileDict.TryGetValue(next, out n) && n?.Block != null)
+            if (thisBlock == null && nextIsHalfBlock && Base6Directions.GetIntVector(nextBlock.Orientation.Forward).Dot(ref intVecDown) == 0)
             {
-              var blockGrid = n.Block.CubeGrid;
-              var worldFrom = mainGrid.GridIntegerToWorld(next);
-              var localFrom = blockGrid.WorldToGridInteger(worldFrom);
-              nextBlock = blockGrid.GetCubeBlock(localFrom);
+              offset = -gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * 0.25;
+
+              Node tempNode;
+              gridGraph.TryGetNodeForPosition(localVec, out tempNode);
+
+              TempNode node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node))
+                node = new TempNode();
+
+              node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+              path.Enqueue(node);
+
+              if (nextIsCatwalkExpansion)
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+              continue;
             }
-
-            if (nextBlock != null)
+            else if (!thisIsHalfStair && !thisisHalfPanelSlope && !nextIsHalfStair && !nextIsHalfPanelSlope)
             {
-              var nextDef = nextBlock.BlockDefinition.Id;
-              nextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(nextDef);
-              nextIsHalfPanelSlope = !nextIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(nextDef);
-
-              if (!thisIsHalfStair && !thisisHalfPanelSlope && !nextIsHalfStair && !nextIsHalfPanelSlope)
+              var nextIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(nextDef);
+              if (nextIsLadder)
               {
-                var nextIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(nextDef);
-                if (nextIsLadder)
+                var thisIsLadder = thisBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(thisBlock.BlockDefinition.Id);
+                if (thisIsLadder)
                 {
-                  var thisIsLadder = thisBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(thisBlock.BlockDefinition.Id);
-                  if (thisIsLadder)
-                  {
-                    var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-                    offset = blockBwd * gridSize * 0.3;
+                  var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
+                  offset = blockBwd * gridSize * 0.3;
 
-                    //pathNode = tileDict[localVec];
+                  if (skipOptimization)
+                  {
+                    Node node2;
+                    gridGraph.TryGetNodeForPosition(localVec, out node2);
+
+                    TempNode tempNode2;
+                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                      tempNode2 = new TempNode();
+
+                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                    path.Enqueue(tempNode2);
+                  }
+                  else
+                  {
                     gridGraph.TryGetNodeForPosition(localVec, out pathNode);
                     pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
 
-                    optimizedCache[localVec] = pathNode;
                     path.Enqueue(pathNode);
-                    continue;
+                    optimizedCache[localVec] = pathNode;
                   }
+
+                  if (nextIsCatwalkExpansion)
+                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+                  continue;
                 }
-                else if (AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(nextDef))
+              }
+              else if (AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(nextDef))
+              {
+                var vecTo = next - current;
+                var subtype = nextDef.SubtypeName;
+                if (Base6Directions.GetIntVector(nextBlock.Orientation.Left).Dot(ref vecTo) != 0)
                 {
-                  var vecTo = next - current;
-                  var subtype = nextDef.SubtypeName;
-                  if (Base6Directions.GetIntVector(nextBlock.Orientation.Left).Dot(ref vecTo) != 0)
-                  {
-                    bool add = true;
-                    if (subtype.StartsWith("LargeBlockDesk"))
-                    {
-                      offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
-
-                      if (subtype.EndsWith("Corner"))
-                      {
-                        offset = offset.Value + gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
-                      }
-                    }
-                    else if (subtype.EndsWith("Planter") || subtype.EndsWith("Kitchen") || subtype.IndexOf("Counter") >= 0 || subtype == "LargeBlockLockers")
-                    {
-                      offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
-                    }
-                    else if (subtype.StartsWith("LargeBlockCouch"))
-                    {
-                      offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * 0.3;
-                    }
-                    else
-                    {
-                      add = false;
-                    }
-
-                    if (add)
-                    {
-
-                      //pathNode = tileDict[localVec];
-                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                      optimizedCache[localVec] = pathNode;
-                      path.Enqueue(pathNode);
-                      continue;
-                    }
-                  }
-                  else if (Base6Directions.GetIntVector(nextBlock.Orientation.Forward).Dot(ref vecTo) != 0)
-                  {
-                    bool add = true;
-                    if (subtype.EndsWith("Toilet"))
-                    {
-                      offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
-                    }
-                    else if (subtype == "LargeBlockCouchCorner" || subtype == "Jukebox" || subtype == "AtmBlock" || subtype == "VendingMachine" || subtype == "FoodDispenser")
-                    {
-                      offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * -0.3;
-                    }
-                    else if (subtype.EndsWith("CounterCorner"))
-                    {
-                      offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
-                    }
-                    else
-                    {
-                      add = false;
-                    }
-
-                    if (add)
-                    {
-
-                      //pathNode = tileDict[localVec];
-                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                      optimizedCache[localVec] = pathNode;
-                      path.Enqueue(pathNode);
-                      continue;
-                    }
-                  }
-                }
-                else if (nextDef.SubtypeName == "LargeBlockOffsetDoor")
-                {
-                  var vecTo = next - current;
-                  if (Base6Directions.GetIntVector(nextBlock.Orientation.Left).Dot(ref vecTo) != 0)
+                  bool add = true;
+                  if (subtype.StartsWith("LargeBlockDesk"))
                   {
                     offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
 
+                    if (subtype.EndsWith("Corner"))
+                    {
+                      offset = offset.Value + gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
+                    }
+                  }
+                  else if (subtype.EndsWith("Planter") || subtype.EndsWith("Kitchen") || subtype.IndexOf("Counter") >= 0 || subtype == "LargeBlockLockers")
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
+                  }
+                  else if (subtype.StartsWith("LargeBlockCouch"))
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * 0.3;
+                  }
+                  else
+                  {
+                    add = false;
+                  }
 
-                    //pathNode = tileDict[localVec];
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+                  if (add)
+                  {
+                    if (skipOptimization)
+                    {
+                      Node node2;
+                      gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    optimizedCache[localVec] = pathNode;
-                    path.Enqueue(pathNode);
+                      TempNode tempNode2;
+                      if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                        tempNode2 = new TempNode();
+
+                      tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                      path.Enqueue(tempNode2);
+                    }
+                    else
+                    {
+                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                      path.Enqueue(pathNode);
+                      optimizedCache[localVec] = pathNode;
+                    }
+
+                    if (nextIsCatwalkExpansion)
+                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+                    continue;
+                  }
+                }
+                else if (Base6Directions.GetIntVector(nextBlock.Orientation.Forward).Dot(ref vecTo) != 0)
+                {
+                  bool add = true;
+                  if (subtype.EndsWith("Toilet"))
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
+                  }
+                  else if (subtype == "LargeBlockCouchCorner" || subtype == "Jukebox" || subtype == "AtmBlock" || subtype == "VendingMachine" || subtype == "FoodDispenser")
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * -0.3;
+                  }
+                  else if (subtype.EndsWith("CounterCorner"))
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
+                  }
+                  else
+                  {
+                    add = false;
+                  }
+
+                  if (add)
+                  {
+                    if (skipOptimization)
+                    {
+                      Node node2;
+                      gridGraph.TryGetNodeForPosition(localVec, out node2);
+
+                      TempNode tempNode2;
+                      if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                        tempNode2 = new TempNode();
+
+                      tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                      path.Enqueue(tempNode2);
+                    }
+                    else
+                    {
+                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                      path.Enqueue(pathNode);
+                      optimizedCache[localVec] = pathNode;
+                    }
+
+                    if (nextIsCatwalkExpansion)
+                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
                     continue;
                   }
                 }
               }
-            }
-
-            if (i > 1)
-            {
-              var afterNext = cache[i - 2];
-              toVec = afterNext;
-
-              afterNextBlock = gridGraph.GetBlockAtPosition(afterNext); // grid.GetCubeBlock(afterNext);
-
-              if (afterNextBlock == null && tileDict.TryGetValue(afterNext, out n) && n?.Block != null)
+              else if (nextDef.SubtypeName == "LargeBlockOffsetDoor")
               {
-                // afterNextBlock = n.block; // I think this is all I need for these ???
+                var vecTo = next - current;
+                if (Base6Directions.GetIntVector(nextBlock.Orientation.Left).Dot(ref vecTo) != 0)
+                {
+                  offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
 
-                var blockGrid = n.Block.CubeGrid;
-                var worldFrom = mainGrid.GridIntegerToWorld(afterNext);
-                var localFrom = blockGrid.WorldToGridInteger(worldFrom);
-                afterNextBlock = blockGrid.GetCubeBlock(localFrom);
-              }
+                  if (skipOptimization)
+                  {
+                    Node node2;
+                    gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-              if (afterNextBlock != null)
-              {
-                var afterNextDef = afterNextBlock.BlockDefinition.Id;
-                afterNextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(afterNextDef);
-                afterNextIsHalfPanelSlope = !afterNextIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(afterNextDef);
+                    TempNode tempNode2;
+                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                      tempNode2 = new TempNode();
+
+                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                    path.Enqueue(tempNode2);
+                  }
+                  else
+                  {
+                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+
+                    path.Enqueue(pathNode);
+                    optimizedCache[localVec] = pathNode;
+                  }
+
+                  if (nextIsCatwalkExpansion)
+                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+                  continue;
+                }
               }
             }
-            else
-              toVec = next;
           }
-          else
-            toVec = localVec;
 
-          if (prevIsHalfStair || thisIsHalfStair || nextIsHalfStair || afterNextIsHalfStair)
+          if (halfStairCheck)
           {
             // Adjust the position to be center of the actual stairs. Assumes the stairs are placed properly!
 
@@ -1467,7 +1936,6 @@ namespace AiEnabled.Ai
                 else
                   extra = fwdTravelDir * gridSize * 0.5;
 
-                //var tempNode = tileDict[start];
                 Node tempNode;
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
@@ -1528,18 +1996,59 @@ namespace AiEnabled.Ai
                 // addOffsetStart is only true if the Start position is just before a stair
                 // add an extra point with offset to the current position so we are aligned before trying to move up the half stair
 
-                var dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
+                Vector3D dir, extra;
+                Node tempNode;
+                TempNode node;
+
+                if (prevIsHalfStair && prevBlock?.Position == start)
+                {
+                  // starting in the first block space
+                  // set this point to be forward of the stair so we move out from beside it where the bot tends to get stuck
+
+                  var cube = (MyCubeBlock)prevBlock.FatBlock;
+                  var localCenter = cube.PositionComp.LocalAABB.Center;
+                  var worldCenter = Vector3D.Transform(localCenter, cube.WorldMatrix);
+                  var botToBlockCenter = botMatrix.Translation - cube.PositionComp.WorldAABB.Center;
+                  var localToBlockCenter = worldCenter - cube.PositionComp.WorldAABB.Center;
+
+                  Vector3I insertStart, insertPos;
+                  if (botToBlockCenter.Dot(localToBlockCenter) < 0)
+                  {
+                    // bot is on other side of stair, move to front of stair first
+                    insertStart = start;
+                  }
+                  else
+                  {
+                    // bot on stair, move up stair instead
+                    insertStart = localVec;
+                  }
+
+                  if (gridGraph.GetValidPositionForStackedStairs(insertStart, out insertPos))
+                  {
+                    gridGraph.TryGetNodeForPosition(insertPos, out tempNode);
+
+                    if (!AiSession.Instance.NodeStack.TryPop(out node))
+                      node = new TempNode();
+
+                    dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
+                    if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
+                      dir = -dir;
+
+                    extra = dir * gridSize * 0.25;
+
+                    node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+                    path.Enqueue(node);
+                  }
+                }
+
+                dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
                 if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
                   dir = -dir;
 
-                var extra = dir * gridSize * 0.25;
+                extra = dir * gridSize * 0.25;
 
-                //var extra = fwdTravelDir * gridSize * 0.5;
-                //var tempNode = tileDict[start];
-                Node tempNode;
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
-                TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
@@ -1593,8 +2102,6 @@ namespace AiEnabled.Ai
               }
             }
 
-            //var tempNode2 = tileDict[localVec];
-
             Node tempNode2;
             gridGraph.TryGetNodeForPosition(localVec, out tempNode2);
 
@@ -1617,7 +2124,7 @@ namespace AiEnabled.Ai
             node2.Update(tempNode2.Position, offset ?? Vector3.Zero, tempNode2.NodeType, tempNode2.BlockedMask, tempNode2.Grid, tempNode2.Block);
             path.Enqueue(node2);
           }
-          else if (prevIsHalfPanelSlope || thisisHalfPanelSlope || nextIsHalfPanelSlope || afterNextIsHalfPanelSlope)
+          else if (halfSlopeCheck)
           {
             // Adjust the position to be center of the actual slope. Assumes the slope is placed properly!
 
@@ -1646,7 +2153,6 @@ namespace AiEnabled.Ai
                 else
                   extra = fwdTravelDir * gridSize * 0.5;
 
-                //var tempNode = tileDict[start];
                 Node tempNode;
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
@@ -1707,16 +2213,59 @@ namespace AiEnabled.Ai
                 // addOffsetStart is only true if the Start position is just before a slope
                 // add an extra point with offset to the current position so we are aligned before trying to move up the half slope
 
-                var dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
+                Vector3D dir, extra;
+                Node tempNode;
+                TempNode node;
+
+                if (prevIsHalfPanelSlope && prevBlock?.Position == start)
+                {
+                  // starting in the first block space
+                  // set this point to be forward of the stair so we move out from beside it where the bot tends to get stuck
+
+                  var cube = (MyCubeBlock)prevBlock.FatBlock;
+                  var localCenter = cube.PositionComp.LocalAABB.Center;
+                  var worldCenter = Vector3D.Transform(localCenter, cube.WorldMatrix);
+                  var botToBlockCenter = botMatrix.Translation - cube.PositionComp.WorldAABB.Center;
+                  var localToBlockCenter = worldCenter - cube.PositionComp.WorldAABB.Center;
+
+                  Vector3I insertStart, insertPos;
+                  if (botToBlockCenter.Dot(localToBlockCenter) < 0)
+                  {
+                    // bot is on other side of stair, move to front of stair first
+                    insertStart = start;
+                  }
+                  else
+                  {
+                    // bot on stair, move up stair instead
+                    insertStart = localVec;
+                  }
+
+                  if (gridGraph.GetValidPositionForStackedStairs(insertStart, out insertPos))
+                  {
+                    gridGraph.TryGetNodeForPosition(insertPos, out tempNode);
+
+                    if (!AiSession.Instance.NodeStack.TryPop(out node))
+                      node = new TempNode();
+
+                    dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
+                    if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
+                      dir = -dir;
+
+                    extra = dir * gridSize * 0.25;
+
+                    node.Update(tempNode.Position, extra, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
+                    path.Enqueue(node);
+                  }
+                }
+
+                dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
                 if (!thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
                   dir = -dir;
 
-                var extra = dir * gridSize * 0.25; // + fwdTravelDir * gridSize * 0.5;
+                extra = dir * gridSize * 0.25; // + fwdTravelDir * gridSize * 0.5;
 
-                Node tempNode;
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
-                TempNode node;
                 if (!AiSession.Instance.NodeStack.TryPop(out node))
                   node = new TempNode();
 
@@ -1793,17 +2342,39 @@ namespace AiEnabled.Ai
 
             node2.Update(tempNode2.Position, offset ?? Vector3.Zero, tempNode2.NodeType, tempNode2.BlockedMask, tempNode2.Grid, tempNode2.Block);
             path.Enqueue(node2);
+
+            if (nextIsCatwalkExpansion)
+              AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
           }
           else
           {
-            //pathNode = tileDict[localVec];
-            gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+            if (skipOptimization)
+            {
+              Node node2;
+              gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-            if (offset.HasValue)
-              pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
+              TempNode tempNode2;
+              if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                tempNode2 = new TempNode();
 
-            optimizedCache[localVec] = pathNode;
-            path.Enqueue(pathNode);
+              tempNode2.Update(node2.Position, (Vector3)(offset ?? node2.Offset), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+              path.Enqueue(tempNode2);
+            }
+            else
+            {
+              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
+
+              if (offset.HasValue)
+                pathNode.Offset = (Vector3)offset.Value;
+
+              path.Enqueue(pathNode);
+              optimizedCache[localVec] = pathNode;
+            }
+
+            if (nextIsCatwalkExpansion)
+            {
+              AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+            }
           }
         }
 
@@ -1811,21 +2382,647 @@ namespace AiEnabled.Ai
           Interlocked.CompareExchange(ref collection.PathToTarget, path, collection.PathToTarget);
       }
 
-      //AiSession.Instance.Logger.ClearCached();
-      //AiSession.Instance.Logger.AddLine($"Path from {start} to {end}");
-      //for (int i = 0; i < collection.PathToTarget.Count; i++)
-      //{
-      //  AiSession.Instance.Logger.AddLine($" -> {collection.PathToTarget[i].Position}");
-      //}
-      //AiSession.Instance.Logger.LogAll();
-
       cache.Clear();
     }
 
     static bool AreStairsOnLeftSide(IMySlimBlock stairBlock)
     {
-      // Mirrored has stairs on Left side
-      return stairBlock != null && AiSession.Instance.HalfStairMirroredDefinitions.Contains(stairBlock.BlockDefinition.Id);
+      if (stairBlock != null && !stairBlock.IsDestroyed)
+      {
+        // Mirrored has stairs on Left side
+        if (AiSession.Instance.HalfStairMirroredDefinitions.Contains(stairBlock.BlockDefinition.Id))
+          return true;
+
+        // Grated Catwalk Expansion
+        if (AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(stairBlock.BlockDefinition.Id)
+          && stairBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
+          return true;
+      }
+
+      return false;
+    }
+
+    static void AddOffsetForThisCatwalk(IMySlimBlock thisBlock, CubeGridMap gridGraph, MyQueue<Node> path,
+      ref Vector3I localVec, ref Vector3I next, ref MatrixD gridMatrix, ref float gridSize, bool addCenterPoint = true)
+    {
+      if (localVec == next)
+        return;
+
+      var subtype = thisBlock.BlockDefinition.Id.SubtypeName;
+      var blockFwdVector = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
+      var blockLeftVector = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
+      var gridTravelDir = Base6Directions.GetDirection(next - localVec);
+      Vector3D? offset = null;
+
+      if (subtype.EndsWith("CatwalkHalfLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = Vector3.Zero;
+        }
+        else
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("CatwalkHalfRight"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = Vector3.Zero;
+        }
+        else
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCrossoverLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.6;
+        }
+        else
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCrossoverRight"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.6;
+        }
+        else
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("CatwalkHalfTJunction") || subtype.EndsWith("HalfWidthTJunctionBalcony") || subtype.EndsWith("HalfWidthBalcony"))
+      {
+        var fwdTravelDir = gridMatrix.GetDirectionVector(gridTravelDir);
+        offset = -blockLeftVector * gridSize * 0.3 + fwdTravelDir * gridSize * 0.6;
+      }
+      else if (subtype.EndsWith("HalfMixedCrossroad"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward || Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          var fwdTravelDir = gridMatrix.GetDirectionVector(gridTravelDir);
+          offset = -blockLeftVector * gridSize * 0.3 + fwdTravelDir * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("MixedTJunctionRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("MixedTJunctionLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfWallLeft") || subtype.EndsWith("HalfWallRight")
+        || subtype.EndsWith("DiagonalBaseLeft") || subtype.EndsWith("DiagonalBaseRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          if (subtype.EndsWith("Left"))
+          {
+            offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+          }
+          else
+          {
+            offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+          }
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCornerA"))
+      {
+        offset = -blockLeftVector * gridSize * 0.5 + blockFwdVector * gridSize * 0.5;
+      }
+      else if (subtype.EndsWith("HalfWidthCornerB"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.6;
+        }
+        else // can only go forward or right
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("RoundCatwalkMixedCornerLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("RoundCatwalkMixedCornerRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCatwalk") || subtype.EndsWith("SlopeBaseCatwalkRight")
+        || subtype.EndsWith("SlopeBaseCatwalkWallRight") || subtype.EndsWith("SlopeBaseCatwalkDiagonalWallRight")
+        || subtype.EndsWith("SlopeBaseCatwalkStraightRight") || subtype.EndsWith("SlopeBaseCatwalkAcuteCornerRight"))
+      {
+        addCenterPoint = false;
+        offset = -blockLeftVector * gridSize * 0.3;
+      }
+      else if (subtype.EndsWith("HalfWidthCatwalkWall") || subtype.EndsWith("HalfWidthCatwalkWallOffset")
+        || subtype.EndsWith("HalfWidthCatwalkTJunctionBaseLeft") || subtype.EndsWith("SlopeBaseCatwalkLeft")
+        || subtype.EndsWith("SlopeBaseCatwalkWallLeft") || subtype.EndsWith("SlopeBaseCatwalkDiagonalWallLeft")
+        || subtype.EndsWith("SlopeBaseCatwalkStraightLeft") || subtype.EndsWith("SlopeBaseCatwalkAcuteCornerLeft"))
+      {
+        addCenterPoint = false;
+        offset = blockLeftVector * gridSize * 0.3;
+      }
+      else if (subtype.EndsWith("HalfWidthDiagonalCatwalk") || subtype.EndsWith("HalfWidthDiagonalCatwalkCrossroad"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left || gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.4 + blockFwdVector * gridSize * 0.4;
+        }
+        else // right or backward
+        {
+          offset = -blockLeftVector * gridSize * 0.4 - blockFwdVector * gridSize * 0.4;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkDiagonalWall") || subtype.EndsWith("HalfSlopeInvertedCatwalkHalfCornerA"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkMixedCornerRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkMixedTJunctionRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkMixedTJunctionLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkHalfCornerA"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+        else // backwards, can only go left and backward
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkHalfCornerB"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.6;
+        }
+        else // right, can only for forward or right
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedCornerLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedCornerRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedTJunctionLeft"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedTJunctionRight"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkCurvedWallLeft"))
+      {
+        var oppDir = Base6Directions.GetOppositeDirection(gridTravelDir);
+        if (oppDir == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+        else if (oppDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkCurvedWallRight"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkFullCurvedWall") || subtype.EndsWith("HalfStadiumCatwalkHalfWidthBalcony"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkDiagonalCornerLeft"))
+      {
+        var oppDir = Base6Directions.GetOppositeDirection(gridTravelDir);
+        if (oppDir == thisBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+        else if (oppDir == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkDiagonalCornerRight"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.6;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkStraight"))
+      {
+        if (gridTravelDir == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.6;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == thisBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.6;
+        }
+      }
+
+      Node node;
+      gridGraph.TryGetNodeForPosition(localVec, out node);
+
+      if (addCenterPoint)
+      {
+        TempNode tempNode2;
+        if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+          tempNode2 = new TempNode();
+
+        tempNode2.Update(node.Position, Vector3.Zero, node.NodeType, node.BlockedMask, node.Grid, node.Block);
+        path.Enqueue(tempNode2);
+      }
+
+      TempNode tempNode;
+      if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+        tempNode = new TempNode();
+
+      tempNode.Update(node.Position, (Vector3)(offset ?? Vector3D.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+      path.Enqueue(tempNode);
+    }
+
+    static void AddOffsetForNextCatwalk(IMySlimBlock nextBlock, CubeGridMap gridGraph, MyQueue<Node> path,
+      ref Vector3I localVec, ref Vector3I next, ref MatrixD gridMatrix, ref float gridSize)
+    {
+      if (localVec == next)
+        return;
+
+      // add an offset to align with entrance of next block as needed
+      var subtype = nextBlock.BlockDefinition.Id.SubtypeName;
+      var blockFwdVector = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward);
+      var blockLeftVector = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left);
+      var gridTravelDir = Base6Directions.GetDirection(next - localVec);
+      Vector3D? offset = null;
+
+      if (subtype.EndsWith("CatwalkHalfLeft"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("CatwalkHalfRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCrossoverLeft"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+        else
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCrossoverRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+        else
+        {
+          offset = -blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("CatwalkHalfTJunction") || subtype.EndsWith("HalfWidthTJunctionBalcony")
+        || subtype.EndsWith("HalfWidthBalcony") || subtype.EndsWith("HalfMixedCrossroad"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+            offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("MixedTJunctionRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("MixedTJunctionLeft"))
+      {
+        if (gridTravelDir == Base6Directions.GetOppositeDirection(nextBlock.Orientation.Left))
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("CatwalkHalfWallLeft") || subtype.EndsWith("CatwalkHalfWallRight")
+        || subtype.EndsWith("DiagonalBaseLeft") || subtype.EndsWith("DiagonalBaseRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          if (subtype.EndsWith("Left"))
+          {
+            offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+          }
+          else
+          {
+            offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+          }
+        }
+      }
+      else if (subtype.EndsWith("HalfWidthCornerA"))
+      {
+        offset = blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+      }
+      else if (subtype.EndsWith("HalfWidthCornerB"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+        else // travelDir == Backwards, can only enter from two directions
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("RoundCatwalkMixedCornerLeft"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("RoundCatwalkMixedCornerRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+      }
+      //else if (subtype.EndsWith("HalfWidthCatwalk") || subtype.EndsWith("SlopeBaseCatwalkRight")
+      //  || subtype.EndsWith("SlopeBaseCatwalkWallRight") || subtype.EndsWith("SlopeBaseCatwalkDiagonalWallRight")
+      //  || subtype.EndsWith("SlopeBaseCatwalkStraightRight") || subtype.EndsWith("SlopeBaseCatwalkAcuteCornerRight"))
+      //{
+      //  // skip?
+      //}
+      //else if (subtype.EndsWith("HalfWidthCatwalkWall") || subtype.EndsWith("HalfWidthCatwalkWallOffset")
+      //  || subtype.EndsWith("HalfWidthCatwalkTJunctionBaseLeft") || subtype.EndsWith("SlopeBaseCatwalkLeft")
+      //  || subtype.EndsWith("SlopeBaseCatwalkWallLeft") || subtype.EndsWith("SlopeBaseCatwalkDiagonalWallLeft")
+      //  || subtype.EndsWith("SlopeBaseCatwalkStraightLeft") || subtype.EndsWith("SlopeBaseCatwalkAcuteCornerLeft"))
+      //{
+      //  // skip?
+      //}
+      else if (subtype.EndsWith("HalfWidthDiagonalCatwalk") || subtype.EndsWith("HalfWidthDiagonalCatwalkCrossroad"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left || gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+        else // right or backward
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkDiagonalWall") || subtype.EndsWith("HalfSlopeInvertedCatwalkHalfCornerA"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkMixedCornerRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkMixedTJunctionRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedCatwalkMixedTJunctionLeft"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkHalfCornerA"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+        else // right
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkHalfCornerB"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+        else // backward
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedCornerLeft"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedCornerRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedTJunctionLeft"))
+      {
+        if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfSlopeInvertedRoundedCatwalkMixedTJunctionRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkCurvedWallLeft"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+        else if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkCurvedWallRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = blockLeftVector * gridSize * 0.3 + blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkFullCurvedWall") || subtype.EndsWith("HalfStadiumCatwalkHalfWidthBalcony"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkDiagonalCornerLeft"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward || gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkDiagonalCornerRight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Forward || Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+      else if (subtype.EndsWith("HalfStadiumCatwalkStraight"))
+      {
+        if (gridTravelDir == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 - blockLeftVector * gridSize * 0.3;
+        }
+        else if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Left)
+        {
+          offset = -blockFwdVector * gridSize * 0.3 + blockLeftVector * gridSize * 0.3;
+        }
+      }
+
+      if (offset.HasValue)
+      {
+        Node node;
+        gridGraph.TryGetNodeForPosition(next, out node);
+
+        TempNode tempNode;
+        if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+          tempNode = new TempNode();
+
+        tempNode.Update(node.Position, offset.Value, node.NodeType, node.BlockedMask, node.Grid, node.Block);
+        path.Enqueue(tempNode);
+      }
     }
   }
 }
