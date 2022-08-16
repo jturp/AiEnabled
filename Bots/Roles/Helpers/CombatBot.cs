@@ -50,9 +50,9 @@ namespace AiEnabled.Bots.Roles.Helpers
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
       _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(1.5f));
 
-      // testing
-      CanUseAirNodes = CanUseSpaceNodes = false;
-      JetpackEnabled = false;
+      // testing only
+      //CanUseAirNodes = CanUseSpaceNodes = false;
+      //JetpackEnabled = false;
 
       _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
       _attackSoundStrings.Add("DroneLoopSmall");
