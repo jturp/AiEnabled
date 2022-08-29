@@ -38,7 +38,7 @@ namespace AiEnabled.Bots.Roles
       "PlayerShiver003"
     };
 
-    public GhostBot(IMyCharacter bot, GridBase gridBase) : base(bot, 1, 1, gridBase)
+    public GhostBot(IMyCharacter bot, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, 1, 1, gridBase, ctrlInfo)
     {
       Behavior = new ZombieBehavior(this);
 

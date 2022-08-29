@@ -34,9 +34,7 @@ namespace AiEnabled.Networking
     [ProtoMember(12)] bool? AllowNeutralTargets;
     [ProtoMember(13)] bool? IsBotMultiplier;
     [ProtoMember(14)] float? DamageMultiplier;
-    [ProtoMember(15)] List<SerialId> RepairBotRequirements;
-    [ProtoMember(16)] List<SerialId> CombatBotRequirements;
-    [ProtoMember(17)] List<SerialId> ScavengerBotRequirements;
+    [ProtoMember(15)] List<SerializableBotPrice> BotRequirements;
 
 
     public AdminPacket() { }
@@ -48,15 +46,13 @@ namespace AiEnabled.Networking
       AllowNeutralTargets = allowNeutral;
     }
 
-    public AdminPacket(int numBots, int numHelpers, int projectileDistance, bool allowMusic, List<SerialId> repairReqs, List<SerialId> combatReqs, List<SerialId> scavengerReqs)
+    public AdminPacket(int numBots, int numHelpers, int projectileDistance, bool allowMusic, List<SerializableBotPrice> botPrices)
     {
       MaxBots = numBots;
       MaxHelpers = numHelpers;
       MaxProjectileDistance = projectileDistance;
       AllowMusic = allowMusic;
-      RepairBotRequirements = repairReqs;
-      CombatBotRequirements = combatReqs;
-      ScavengerBotRequirements = scavengerReqs;
+      BotRequirements = botPrices;
     }
 
     public AdminPacket(long identityId, bool showHealthBars)
@@ -191,13 +187,22 @@ namespace AiEnabled.Networking
         if (AllowMusic.HasValue)
           AiSession.Instance.AllowMusic = AllowMusic.Value;
 
-        AiSession.Instance.BotComponents[AiSession.BotType.Repair] = RepairBotRequirements ?? new List<SerialId>();
-        AiSession.Instance.BotComponents[AiSession.BotType.Combat] = CombatBotRequirements ?? new List<SerialId>();
-        AiSession.Instance.BotComponents[AiSession.BotType.Scavenger] = ScavengerBotRequirements ?? new List<SerialId>();
+        if (BotRequirements?.Count > 0)
+        {
+          for (int i = 0; i < BotRequirements.Count; i++)
+          {
+            var botReq = BotRequirements[i];
+            var botType = (AiSession.BotType)botReq.BotType;
+
+            AiSession.Instance.BotComponents[botType] = botReq.Components;
+            AiSession.Instance.BotPrices[botType] = botReq.SpaceCredits;
+          }
+        }
 
         var efficiency = MyAPIGateway.Session.AssemblerEfficiencyMultiplier;
         var fixedPoint = (MyFixedPoint)(1f / efficiency);
         var remainder = 1 - (fixedPoint * efficiency);
+        var componentReqs = new Dictionary<MyDefinitionId, float>(MyDefinitionId.Comparer);
 
         foreach (var kvp in AiSession.Instance.BotComponents)
         {
@@ -212,16 +217,42 @@ namespace AiEnabled.Networking
             if (items.Count == 0)
               items.Add(new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 1));
 
-            var reqs = new MyBlueprintDefinitionBase.Item[items.Count];
-
+            componentReqs.Clear();
             for (int i = 0; i < items.Count; i++)
             {
               var item = items[i];
+              var amount = item.Amount;
 
+              var compBp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(item.DefinitionId);
+              if (compBp != null)
+              {
+                var compReqs = compBp.Prerequisites;
+                if (compReqs?.Length > 0)
+                {
+                  for (int j = 0; j < compReqs.Length; j++)
+                  {
+                    var compReq = compReqs[j];
+
+                    float num;
+                    componentReqs.TryGetValue(compReq.Id, out num);
+                    componentReqs[compReq.Id] = num + (float)compReq.Amount * amount;
+                  }
+                }
+              }
+            }
+
+            if (componentReqs.Count == 0)
+              componentReqs[new MyDefinitionId(typeof(MyObjectBuilder_Ingot), "Iron")] = 100 * efficiency;
+
+            var reqs = new MyBlueprintDefinitionBase.Item[componentReqs.Count];
+            int k = 0;
+
+            foreach (var item in componentReqs)
+            {
               var req = new MyBlueprintDefinitionBase.Item
               {
-                Amount = item.Amount,
-                Id = item.DefinitionId
+                Amount = (MyFixedPoint)item.Value,
+                Id = item.Key
               };
 
               req.Amount *= efficiency;
@@ -229,13 +260,17 @@ namespace AiEnabled.Networking
               if (remainder > 0)
                 req.Amount += req.Amount * remainder + remainder;
 
-              reqs[i] = req;
+              reqs[k] = req;
+              k++;
             }
 
             bpDef.Atomic = true;
             bpDef.Prerequisites = reqs;
           }
         }
+
+        componentReqs.Clear();
+        componentReqs = null;
       }
 
       return false;

@@ -513,8 +513,10 @@ namespace AiEnabled
     public ConcurrentDictionary<long, CubeGridMap> GridGraphDict = new ConcurrentDictionary<long, CubeGridMap>();
     public ConcurrentDictionary<ulong, VoxelGridMap> VoxelGraphDict;
     public ConcurrentDictionary<long, long> EntityToIdentityDict = new ConcurrentDictionary<long, long>(2, 100);
+    public ConcurrentDictionary<long, AiSession.ControlInfo> BotToControllerInfoDict = new ConcurrentDictionary<long, ControlInfo>(); // bot entity id to controller info
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
-    public ConcurrentStack<TempNode> NodeStack = new ConcurrentStack<TempNode>();
+    public ConcurrentStack<TempNode> TempNodeStack = new ConcurrentStack<TempNode>();
+    public ConcurrentStack<Node> NodeStack = new ConcurrentStack<Node>();
     public ConcurrentStack<GraphWorkData> GraphWorkStack = new ConcurrentStack<GraphWorkData>();
     public ConcurrentStack<PathWorkData> PathWorkStack = new ConcurrentStack<PathWorkData>();
     public ConcurrentStack<RepairWorkData> RepairWorkStack = new ConcurrentStack<RepairWorkData>();
@@ -535,8 +537,13 @@ namespace AiEnabled
     public ConcurrentStack<InventoryCache> InvCacheStack = new ConcurrentStack<InventoryCache>();
     public ConcurrentStack<Dictionary<string, int>> MissingCompsDictStack = new ConcurrentStack<Dictionary<string, int>>();
     public ConcurrentStack<ApiWorkData> ApiWorkDataStack = new ConcurrentStack<ApiWorkData>();
+    public ConcurrentStack<ObstacleWorkData> ObstacleWorkDataStack = new ConcurrentStack<ObstacleWorkData>();
     public ConcurrentStack<BotStatus> BotStatusStack = new ConcurrentStack<BotStatus>();
     public ConcurrentStack<List<BotStatus>> BotStatusListStack = new ConcurrentStack<List<BotStatus>>();
+    public ConcurrentStack<List<VoxelUpdateItem>> VoxelUpdateListStack = new ConcurrentStack<List<VoxelUpdateItem>>();
+    public ConcurrentStack<MyQueue<VoxelUpdateItem>> VoxelUpdateQueueStack = new ConcurrentStack<MyQueue<VoxelUpdateItem>>();
+    public ConcurrentStack<VoxelUpdateItem> VoxelUpdateItemStack = new ConcurrentStack<VoxelUpdateItem>();
+    public ConcurrentStack<List<IMyCharacter>> CharacterListStack = new ConcurrentStack<List<IMyCharacter>>();
     public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
 
@@ -565,10 +572,10 @@ namespace AiEnabled
     public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> EmptySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>();
     public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> FactorySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>()
     {
+      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial")),
       new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial")),
       new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial")),
       new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial")),
-      new Sandbox.ModAPI.Ingame.MyInventoryItemFilter(new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial"))
     };
 
     Stack<WeaponInfo> _weaponInfoStack = new Stack<WeaponInfo>(20);

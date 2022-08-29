@@ -42,6 +42,8 @@ namespace AiEnabled.Networking
         if (block == null || block.MarkedForClose)
         {
           AiSession.Instance.Logger.Log($"Attempted to recall a bot to a null or closed block", Utilities.MessageType.WARNING);
+          var returnPkt = new SpawnPacketClient(_botEntityId, false);
+          netHandler.SendToPlayer(returnPkt, SenderId);
           return false;
         }
 
@@ -53,6 +55,8 @@ namespace AiEnabled.Networking
           if (bot.IsDead || bot.MarkedForClose || !AiSession.Instance.Bots.TryGetValue(bot.EntityId, out helper) || helper == null)
           {
             AiSession.Instance.Logger.Log($"Attempted to recall a dead or missing bot", Utilities.MessageType.WARNING);
+            var pkt = new SpawnPacketClient(_botEntityId, false);
+            netHandler.SendToPlayer(pkt, SenderId);
             return false;
           }
 
@@ -78,6 +82,9 @@ namespace AiEnabled.Networking
             var actualPosition = helper.Target.CurrentActualPosition;
             helper.StartCheckGraph(ref actualPosition, true);
           }
+
+          var returnPkt = new SpawnPacketClient(_botEntityId, false);
+          netHandler.SendToPlayer(returnPkt, SenderId);
         }
         else if (AiSession.Instance.Players.TryGetValue(_ownerIdentityId, out player))
         {
@@ -116,7 +123,7 @@ namespace AiEnabled.Networking
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in FactoryRecallPacket.Received: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in FactoryRecallPacket.Received: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
         return false;
       }
     }

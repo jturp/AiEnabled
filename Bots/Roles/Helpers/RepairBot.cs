@@ -49,7 +49,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     public string FirstMissingItemForRepairs;
 
-    public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 1, 1, gridBase, ownerId)
+    public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo, string toolType = null) : base(bot, 1, 1, gridBase, ownerId, ctrlInfo)
     {
       BotType = AiSession.BotType.Repair;
       Behavior = new WorkerBehavior(this);
@@ -94,7 +94,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in RepairBot.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in RepairBot.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {
@@ -104,6 +104,12 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     public override void AddWeapon()
     {
+      if (ToolDefinition?.PhysicalItemId == null)
+      {
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING: ToolDefinition.PhysicalItemId was NULL!", MessageType.WARNING);
+        return;
+      }
+
       var inventory = Character?.GetInventory();
       if (inventory == null)
       {
@@ -111,26 +117,10 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      var welderDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "Welder2Item");
+      var welderDefinition = ToolDefinition.PhysicalItemId;
       _toolInfo.CheckMultiplier(welderDefinition);
 
-      if (inventory.CanItemsBeAdded(1, welderDefinition))
-      {
-        var welder = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(welderDefinition);
-        inventory.AddItems(1, welder);
-
-        var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
-        if (charController.CanSwitchToWeapon(welderDefinition))
-        {
-          charController.SwitchToWeapon(welderDefinition);
-          HasWeaponOrTool = true;
-          SetShootInterval();
-        }
-        else
-          AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added welder but unable to switch to it!", MessageType.WARNING);
-      }
-      else
-        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Unable to add welder to inventory!", MessageType.WARNING);
+      base.AddWeapon();
     }
 
     void SetTargetInternal()
@@ -171,15 +161,15 @@ namespace AiEnabled.Bots.Roles.Helpers
         }
       }
 
+      if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+        return;
+
       object tgt = null;
       var graph = _currentGraph as CubeGridMap;
       var isGridGraph = graph?.MainGrid?.MarkedForClose == false;
-      bool isInventory = false;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var botMatrix = WorldMatrix;
-
-      if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
-        return;
+      bool isInventory = false;
 
       if (((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
       {
@@ -764,7 +754,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         var directToFloater = !directToBlock && isTgt && Target.IsFloater;
         bool ignoreRotation = false;
 
-        var botPosition = GetPosition();
+        var botPosition = Target.CurrentBotPosition;
         var actualPosition = Target.CurrentActualPosition;
 
         if (_currentGraph.IsGridGraph)

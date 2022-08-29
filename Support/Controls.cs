@@ -374,7 +374,8 @@ namespace AiEnabled.Support
         var position = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
         var posOr = new MyPositionAndOrientation(position, (Vector3)block.WorldMatrix.Backward, (Vector3)block.WorldMatrix.Up);
 
-        var helper = BotFactory.CreateBotObject(subtype, displayName, posOr, player.IdentityId);
+        var tuple = BotFactory.CreateBotObject(subtype, displayName, posOr, player.IdentityId);
+        var helper = tuple.Item1;
         if (helper != null)
         {
           helper.SetPosition(position);
@@ -385,7 +386,7 @@ namespace AiEnabled.Support
             helper.Physics.AngularVelocity = gridPhysics.AngularVelocity;
           }
 
-          gameLogic.SetHelper(helper, player);
+          gameLogic.SetHelper(tuple, player);
           player.RequestChangeBalance(-price);
           if (inventoryCredits > 0)
             inv?.RemoveItemsOfType((MyFixedPoint)(float)inventoryCredits, credit);

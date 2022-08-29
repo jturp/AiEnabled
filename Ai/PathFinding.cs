@@ -32,7 +32,9 @@ namespace AiEnabled.Ai
       try
       {
         if (collection == null || collection.Dirty || collection.Locked)
+        {
           return;
+        }
 
         collection.Locked = true;
 
@@ -58,10 +60,8 @@ namespace AiEnabled.Ai
         if (collection.Dirty || currentMS > maxTimeMS)
         {
           if (currentMS > maxTimeMS)
-            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded {maxTimeMS} ms", MessageType.WARNING);
-
-          collection.Locked = false;
-          return;
+            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded {maxTimeMS} ms pathing to {goal}", MessageType.WARNING);
+          pathFound = false;
         }
 
         if (pathFound)
@@ -84,16 +84,16 @@ namespace AiEnabled.Ai
               bot._noPathCounter++;
             else
               bot.Target.RemoveTarget();
-
-            if (graph.IsTemporaryBlock(goal))
-              graph.TempBlockedNodes[goal] = new byte();
-            else
-              graph.Obstacles[goal] = new byte();
           }
           else
           {
             bot._noPathCounter++;
           }
+
+          if (graph.IsTemporaryBlock(goal))
+            graph.TempBlockedNodes[goal] = new byte();
+          else
+            graph.Obstacles[goal] = new byte();
         }
 
         collection.Locked = false;
@@ -128,7 +128,7 @@ namespace AiEnabled.Ai
       var isGridGraph = graph.IsGridGraph;
       var gridGraph = graph as CubeGridMap;
       var stackedStairs = gridGraph?.StackedStairsFound;
-      var botPosition = bot.GetPosition();
+      var botPosition = bot.Target.CurrentBotPosition;
       var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
       cameFrom.Clear();
@@ -150,9 +150,6 @@ namespace AiEnabled.Ai
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
         if (collection.Dirty || currentMS > maxTimeMS)
         {
-          if (currentMS > maxTimeMS)
-            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded {maxTimeMS} ms. Breaking out of RunAlgorithm", MessageType.WARNING);
-
           break;
         }
 
@@ -320,7 +317,6 @@ namespace AiEnabled.Ai
     static void ConstructPathForVoxel(Vector3I start, Vector3I end, PathCollection collection)
     {
       var cameFrom = collection.CameFrom;
-      //var openTiles = collection.Graph.OpenTileDict;
       var graph = collection.Graph;
       var path = collection.TempPath;
       var cache = collection.Cache;
@@ -688,7 +684,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -719,7 +715,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -750,7 +746,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -821,7 +817,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -859,7 +855,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -911,7 +907,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node);
 
                     TempNode tempNode;
-                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                       tempNode = new TempNode();
 
                     tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -950,7 +946,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node);
 
                   TempNode tempNode;
-                  if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                     tempNode = new TempNode();
 
                   tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -982,7 +978,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node);
 
                     TempNode tempNode;
-                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                       tempNode = new TempNode();
 
                     tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -1018,7 +1014,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -1066,7 +1062,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -1134,7 +1130,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
               TempNode node;
-              if (!AiSession.Instance.NodeStack.TryPop(out node))
+              if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                 node = new TempNode();
 
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -1175,7 +1171,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -1223,7 +1219,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode;
-                if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
                   tempNode = new TempNode();
 
                 tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -1298,7 +1294,7 @@ namespace AiEnabled.Ai
                       gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                       TempNode tempNode2;
-                      if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                         tempNode2 = new TempNode();
 
                       tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1332,7 +1328,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                   TempNode tempNode2;
-                  if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                     tempNode2 = new TempNode();
 
                   tempNode2.Update(node2.Position, node2.Offset, node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1381,7 +1377,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
               TempNode node;
-              if (!AiSession.Instance.NodeStack.TryPop(out node))
+              if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                 node = new TempNode();
 
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -1449,7 +1445,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                   TempNode tempNode2;
-                  if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                     tempNode2 = new TempNode();
 
                   tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1534,7 +1530,7 @@ namespace AiEnabled.Ai
 
 
                 TempNode node;
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -1574,7 +1570,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
                 TempNode node;
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -1609,7 +1605,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
                 TempNode node;
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -1677,7 +1673,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                     TempNode tempNode2;
-                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                       tempNode2 = new TempNode();
 
                     tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1713,7 +1709,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out tempNode);
 
               TempNode node;
-              if (!AiSession.Instance.NodeStack.TryPop(out node))
+              if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                 node = new TempNode();
 
               node.Update(tempNode.Position, offset.Value, tempNode.NodeType, tempNode.BlockedMask, tempNode.Grid, tempNode.Block);
@@ -1741,7 +1737,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                     TempNode tempNode2;
-                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                       tempNode2 = new TempNode();
 
                     tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1799,7 +1795,7 @@ namespace AiEnabled.Ai
                       gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                       TempNode tempNode2;
-                      if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                         tempNode2 = new TempNode();
 
                       tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1848,7 +1844,7 @@ namespace AiEnabled.Ai
                       gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                       TempNode tempNode2;
-                      if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                         tempNode2 = new TempNode();
 
                       tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1883,7 +1879,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                     TempNode tempNode2;
-                    if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                       tempNode2 = new TempNode();
 
                     tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -1940,7 +1936,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
                 TempNode node;
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -2027,7 +2023,7 @@ namespace AiEnabled.Ai
                   {
                     gridGraph.TryGetNodeForPosition(insertPos, out tempNode);
 
-                    if (!AiSession.Instance.NodeStack.TryPop(out node))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                       node = new TempNode();
 
                     dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
@@ -2049,7 +2045,7 @@ namespace AiEnabled.Ai
 
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -2106,7 +2102,7 @@ namespace AiEnabled.Ai
             gridGraph.TryGetNodeForPosition(localVec, out tempNode2);
 
             TempNode node2;
-            if (!AiSession.Instance.NodeStack.TryPop(out node2))
+            if (!AiSession.Instance.TempNodeStack.TryPop(out node2))
               node2 = new TempNode();
 
             if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -2157,7 +2153,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
                 TempNode node;
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -2244,7 +2240,7 @@ namespace AiEnabled.Ai
                   {
                     gridGraph.TryGetNodeForPosition(insertPos, out tempNode);
 
-                    if (!AiSession.Instance.NodeStack.TryPop(out node))
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                       node = new TempNode();
 
                     dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
@@ -2266,7 +2262,7 @@ namespace AiEnabled.Ai
 
                 gridGraph.TryGetNodeForPosition(start, out tempNode);
 
-                if (!AiSession.Instance.NodeStack.TryPop(out node))
+                if (!AiSession.Instance.TempNodeStack.TryPop(out node))
                   node = new TempNode();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -2319,13 +2315,11 @@ namespace AiEnabled.Ai
               }
             }
 
-            //var tempNode2 = tileDict[localVec];
-
             Node tempNode2;
             gridGraph.TryGetNodeForPosition(localVec, out tempNode2);
 
             TempNode node2;
-            if (!AiSession.Instance.NodeStack.TryPop(out node2))
+            if (!AiSession.Instance.TempNodeStack.TryPop(out node2))
               node2 = new TempNode();
 
             if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
@@ -2354,7 +2348,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node2);
 
               TempNode tempNode2;
-              if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
                 tempNode2 = new TempNode();
 
               tempNode2.Update(node2.Position, (Vector3)(offset ?? node2.Offset), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
@@ -2712,7 +2706,7 @@ namespace AiEnabled.Ai
       if (addCenterPoint)
       {
         TempNode tempNode2;
-        if (!AiSession.Instance.NodeStack.TryPop(out tempNode2))
+        if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
           tempNode2 = new TempNode();
 
         tempNode2.Update(node.Position, Vector3.Zero, node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -2720,7 +2714,7 @@ namespace AiEnabled.Ai
       }
 
       TempNode tempNode;
-      if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
         tempNode = new TempNode();
 
       tempNode.Update(node.Position, (Vector3)(offset ?? Vector3D.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
@@ -3017,7 +3011,7 @@ namespace AiEnabled.Ai
         gridGraph.TryGetNodeForPosition(next, out node);
 
         TempNode tempNode;
-        if (!AiSession.Instance.NodeStack.TryPop(out tempNode))
+        if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
           tempNode = new TempNode();
 
         tempNode.Update(node.Position, offset.Value, node.NodeType, node.BlockedMask, node.Grid, node.Block);

@@ -25,7 +25,7 @@ namespace AiEnabled.Bots.Roles
 {
   public class CreatureBot : EnemyBotBase
   {
-    public CreatureBot(IMyCharacter bot, GridBase gridBase) : base(bot, 10, 15, gridBase)
+    public CreatureBot(IMyCharacter bot, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, 10, 15, gridBase, ctrlInfo)
     {
       Behavior = new CreatureBehavior(this);
 
@@ -62,6 +62,46 @@ namespace AiEnabled.Bots.Roles
         _deathSound = new MySoundPair(cDef.DeathSoundName);
         _deathSoundString = cDef.DeathSoundName;
       }
+    }
+
+    internal override bool Update()
+    {
+      if (!base.Update())
+        return false;
+
+      if (_stuckCounter > 0 || (_botState.IsFalling && !IsDead && _currentGraph?.Ready == true))
+      {
+        var position = Target.CurrentBotPosition;
+        float interference;
+        var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
+        var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
+
+        if (nGrav.LengthSquared() < 0.05 && aGrav.LengthSquared() < 0.05)
+        {
+          var gridGraph = _currentGraph as CubeGridMap;
+          var gridVelocity = Vector3.Zero;
+          if (gridGraph?.MainGrid?.Physics != null && !gridGraph.MainGrid.IsStatic)
+            gridVelocity = gridGraph.MainGrid.Physics.LinearVelocity;
+
+          var velocity = Character.Physics.LinearVelocity - gridVelocity;
+          var matrix = _currentGraph.WorldMatrix;
+          var project = VectorUtils.Project(velocity, matrix.Up);
+
+          if (project.LengthSquared() > 0.1)
+          {
+            var reject = velocity - project;
+            velocity = gridVelocity + (Vector3)(reject + project * 0.5);
+          }
+          else
+          {
+            velocity = gridVelocity + velocity + (Vector3)(matrix.Down * 0.5);
+          }
+
+          Character.Physics.SetSpeeds(velocity, Character.Physics.AngularVelocity);
+        }
+      }
+
+      return true;
     }
   }
 }

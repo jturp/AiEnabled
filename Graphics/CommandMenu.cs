@@ -195,7 +195,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.DrawRadialMenu: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CommandMenu.DrawRadialMenu: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -251,7 +251,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.DrawInteractMessage: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CommandMenu.DrawInteractMessage: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -267,13 +267,13 @@ namespace AiEnabled.Graphics
       _emitter.PlaySound(sp);
     }
 
-    bool _allKeysAllows = true;
+    bool _allKeysAllowed = true;
 
     public bool UpdateBlacklist(bool enable)
     {
       try
       {
-        if (!Registered || MyAPIGateway.Session?.Player == null || _allKeysAllows == enable)
+        if (!Registered || MyAPIGateway.Session?.Player == null || _allKeysAllowed == enable)
           return false;
 
         var identityId = MyAPIGateway.Session.Player.IdentityId;
@@ -282,24 +282,24 @@ namespace AiEnabled.Graphics
         controlString = MyControlsSpace.USE.String;
 
         if (controlString != null)
-          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
+          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
 
         controlString = MyControlsSpace.PRIMARY_TOOL_ACTION.String;
 
         if (controlString != null)
-          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
+          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
 
         controlString = MyControlsSpace.SECONDARY_TOOL_ACTION.String;
 
         if (controlString != null)
-          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
+          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
 
         foreach (var btn in _mouseButtonList)
         {
           controlString = MyAPIGateway.Input?.GetControl(btn)?.GetGameControlEnum().String;
 
           if (controlString != null)
-            MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
+            MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
         }
 
         int min = NameInputVisible ? byte.MinValue : 48;
@@ -311,15 +311,15 @@ namespace AiEnabled.Graphics
           controlString = MyAPIGateway.Input?.GetControl(key)?.GetGameControlEnum().String;
 
           if (controlString != null)
-            MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
+            MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
         }
 
         controlString = MyAPIGateway.Input?.GetControl(MyKeys.OemTilde)?.GetGameControlEnum().String;
 
         if (controlString != null)
-          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, identityId, enable);
+          MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
 
-        _allKeysAllows = enable;
+        _allKeysAllowed = enable;
         return true;
       }
       catch (Exception e)
@@ -402,7 +402,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CommandMenu.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -438,7 +438,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.CloseMenu: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CommandMenu.CloseMenu: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -455,7 +455,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.CloseInteractMessage: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CommandMenu.CloseInteractMessage: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1379,14 +1379,19 @@ namespace AiEnabled.Graphics
         else
         {
           var grid = hit.HitEntity as MyCubeGrid;
-          if (grid != null && grid.GridSize > 1)
+          if (grid != null) // && grid.GridSize > 1)
           {
             var upDir = grid.WorldMatrix.GetClosestDirection(ActiveBot.WorldMatrix.Up);
             var pos = hit.Position + hit.Normal * grid.GridSize * 0.2f;
             var localPos = grid.WorldToGridInteger(pos);
             var cube = grid.GetCubeBlock(localPos) as IMySlimBlock;
 
-            if (cube != null)
+            var seat = cube?.FatBlock as IMyCockpit;
+            if (grid.GridSize < 1 && seat == null)
+            {
+              _worldPosition = null;
+            }
+            else if (cube != null)
             {
               var upVector = grid.WorldMatrix.GetDirectionVector(upDir);
               var fwdVec = Vector3D.CalculatePerpendicularVector(upVector);
@@ -1397,10 +1402,22 @@ namespace AiEnabled.Graphics
               matrix.Translation = to;
 
               color = _validColor;
-              MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color, true, 25, 0.01f, _material_square);
+              float rad1, rad2;
+              if (grid.GridSize < 1)
+              {
+                rad1 = 0.5f;
+                rad2 = 0.375f;
+              }
+              else
+              {
+                rad1 = 1f;
+                rad2 = 0.75f;
+              }
+
+              MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, rad1, rad2, 0.25f, ref color, true, 25, 0.01f, _material_square);
 
               matrix.Translation += matrix.Down * 0.125;
-              DrawAxis(ref matrix, 0.75f, color, color, _material_square);
+              DrawAxis(ref matrix, rad2, color, color, _material_square);
             }
             else
             {

@@ -47,7 +47,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     bool _refetchBlocks = true;
     long _lastGridId;
 
-    public CrewBot(IMyCharacter bot, GridBase gridBase, long ownerId, string toolType = null) : base(bot, 12, 20, gridBase)
+    public CrewBot(IMyCharacter bot, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo, string toolType = null) : base(bot, 12, 20, gridBase, ctrlInfo)
     {
       BotType = AiSession.BotType.Crew;
       Owner = AiSession.Instance.Players.GetValueOrDefault(ownerId, null);
@@ -85,73 +85,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
 
       base.Close(cleanConfig, removeBot);
-    }
-
-    public override void AddWeapon()
-    {
-      var inventory = Character?.GetInventory();
-      if (inventory == null)
-      {
-        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING: Inventory was NULL!", MessageType.WARNING);
-        return;
-      }
-
-      var weaponDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "SemiAutoPistolItem");
-
-      if (inventory.CanItemsBeAdded(1, weaponDefinition))
-      {
-        var weapon = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(weaponDefinition);
-        inventory.AddItems(1, weapon);
-
-        string ammoSubtype = null;
-
-        var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(weaponDefinition) as MyWeaponItemDefinition;
-        if (weaponItemDef != null)
-        {
-          var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
-          ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
-        }
-        else
-        {
-          AiSession.Instance.Logger.Log($"WeaponItemDef was null for {weaponDefinition}");
-        }
-
-        if (ammoSubtype == null)
-        {
-          AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
-
-          if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
-          {
-            ammoSubtype = "NATO_5p56x45mm";
-          }
-          else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
-          {
-            ammoSubtype = "Missile200mm";
-          }
-          else if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
-          {
-            ammoSubtype = ToolDefinition.PhysicalItemId.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
-          }
-          else
-          {
-            ammoSubtype = "ElitePistolMagazine";
-          }
-        }
-
-        var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
-        var amountThatFits = ((MyInventory)inventory).ComputeAmountThatFits(ammoDefinition);
-        var amount = Math.Min((int)amountThatFits, 25);
-
-        if (inventory.CanItemsBeAdded(amount, ammoDefinition))
-        {
-          var ammo = (MyObjectBuilder_AmmoMagazine)MyObjectBuilderSerializer.CreateNewObject(ammoDefinition);
-          inventory.AddItems(amount, ammo);
-        }
-        else
-          AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added weapon but unable to add ammo!", MessageType.WARNING);
-      }
-      else
-        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Unable to add weapon to inventory!", MessageType.WARNING);
     }
 
     public void AssignToCrew(MyCubeBlock cube)
@@ -357,7 +290,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     bool FaceCube()
     {
       var worldPosition = AttachedBlock.PositionComp.GetPosition();
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var targetVector = worldPosition - botPosition;
       var vector = Vector3D.TransformNormal(targetVector, MatrixD.Transpose(WorldMatrix));
 
@@ -391,7 +324,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           return;
         }
 
-        var botPosition = GetPosition();
+        var botPosition = Target.CurrentBotPosition;
         distanceCheck = (_botState.IsRunning || _botState.IsFlying) ? 1 : 0.5;
 
         if (_moveTo.HasValue)
@@ -544,7 +477,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CrewBot.SimulateIdleMovement: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CrewBot.SimulateIdleMovement: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
   }

@@ -35,6 +35,7 @@ namespace AiEnabled.Ai.Support
     public Vector3 Offset;
     public int BlockedMask;
     public NodeType NodeType;
+    bool? _isSpaceNode;
     object _ref;
 
     public MyCubeGrid Grid => (Block?.CubeGrid ?? _ref) as MyCubeGrid;
@@ -49,6 +50,7 @@ namespace AiEnabled.Ai.Support
     public bool IsAirNode => (NodeType & NodeType.Ground) == 0;
     public bool IsTunnelNode => (NodeType & NodeType.Tunnel) > 0;
     public bool IsBlocked(Vector3I pos) => (BlockedMask & GetBlockedMask(pos)) != 0;
+    public bool IsSpaceNode(GridBase gBase) => _isSpaceNode ?? IsNodeInSpace(gBase);
 
     public Node() { }
 
@@ -83,6 +85,7 @@ namespace AiEnabled.Ai.Support
       Offset = surfaceOffset;
       NodeType = nType;
       BlockedMask = blockMask;
+      _isSpaceNode = null;
 
       if (block != null)
         _ref = block;
@@ -104,6 +107,7 @@ namespace AiEnabled.Ai.Support
       Offset = surfaceOffset;
       BlockedMask = blockMask;
       NodeType = nType;
+      _isSpaceNode = null;
 
       if (block != null)
         _ref = block;
@@ -148,16 +152,27 @@ namespace AiEnabled.Ai.Support
       return 1 << (rel.X * 9 + rel.Y * 3 + rel.Z);
     }
 
-    public bool IsSpaceNode(GridBase gBase)
+    bool IsNodeInSpace(GridBase gBase)
     {
       if ((NodeType & NodeType.Ground) > 0)
+      {
+        _isSpaceNode = false;
         return false;
+      }
 
       var worldPos = gBase.LocalToWorld(Position) + Offset;
 
+      var gridGraph = gBase as CubeGridMap;
+      if (gridGraph != null && gridGraph.UnbufferedOBB.Contains(ref worldPos))
+      {
+        _isSpaceNode = false;
+        return false;
+      }
+
       float _;
-      var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPos, out _);
-      return gravity.LengthSquared() <= 0;
+      var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPos, out _);
+      var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(worldPos, 0);
+      return nGrav.LengthSquared() <= 0 && aGrav.LengthSquared() <= 0;
     }
 
     public int Compare(Node x, Node y)

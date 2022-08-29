@@ -26,7 +26,8 @@ namespace AiEnabled.Bots
       IsRunning = 8,
       IsCrouching = 16,
       IsFalling = 32,
-      IsFlying = 64
+      IsFlying = 64,
+      IsJumping = 128
     }
 
     public bool IsOnLadder => (_state & State.IsOnLadder) > 0;
@@ -36,6 +37,7 @@ namespace AiEnabled.Bots
     public bool IsCrouching => (_state & State.IsCrouching) > 0;
     public bool IsFalling => (_state & State.IsFalling) > 0;
     public bool IsFlying => (_state & State.IsFlying) > 0;
+    public bool IsJumping => (_state & State.IsJumping) > 0;
 
     public BotBase Bot;
     State _state;
@@ -106,6 +108,16 @@ namespace AiEnabled.Bots
           {
             var onLadder = IsOnLadder;
             _state = State.IsFalling;
+
+            if (onLadder)
+              _state |= State.WasOnLadder;
+
+            return;
+          }
+        case 5: // jumping
+          {
+            var onLadder = IsOnLadder;
+            _state = State.IsJumping;
 
             if (onLadder)
               _state |= State.WasOnLadder;

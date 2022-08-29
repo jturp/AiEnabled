@@ -323,7 +323,12 @@ namespace AiEnabled.Projectiles
         {
           var matrix = character.WorldMatrix;
           matrix.Translation = hitPosition;
-          soundName = ProjectileConstants.HitMaterialToSound[materialType];
+
+          if (!ProjectileConstants.HitMaterialToSound.TryGetValue(materialType, out soundName))
+          {
+            AiSession.Instance.Logger.Log($"BotProjectile.Update: MaterialType '{materialType.String}' not found in HitMaterialToSound dictionary! Entity was {hitEntity?.GetType().FullName ?? "NULL"}", MessageType.WARNING);
+            soundName = "WepPlayRifleImpPlay";
+          }
 
           MyParticleEffect _;
           MyParticlesManager.TryCreateParticleEffect(effectName, ref matrix, ref hitPosition, uint.MaxValue, out _);
@@ -415,6 +420,8 @@ namespace AiEnabled.Projectiles
           }
           else if (!ProjectileConstants.HitMaterialToEffect.TryGetValue(materialType, out material))
           {
+            AiSession.Instance.Logger.Log($"BotProjectile.Update: MaterialType '{materialType.String}' not found in HitMaterialToEffect dictionary! Entity was {hitEntity?.GetType().FullName ?? "NULL"}", MessageType.WARNING);
+
             var blockDef = block.BlockDefinition.Id;
             if (blockDef.SubtypeName.IndexOf("window", StringComparison.OrdinalIgnoreCase) >= 0
               || blockDef.SubtypeName.IndexOf("transparent", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -429,7 +436,12 @@ namespace AiEnabled.Projectiles
             }
           }
 
-          var sound = ProjectileConstants.HitMaterialToSound[materialType];
+          string sound;
+          if (!ProjectileConstants.HitMaterialToSound.TryGetValue(materialType, out sound))
+          {
+            AiSession.Instance.Logger.Log($"BotProjectile.Update: MaterialType '{materialType.String}' not found in HitMaterialToSound dictionary! Entity was {hitEntity?.GetType().FullName ?? "NULL"}", MessageType.WARNING);
+            sound = "WepPlayRifleImpMetal";
+          }
 
           MyParticleEffect _;
           MyParticlesManager.TryCreateParticleEffect(material, ref matrix, ref hitPosition, uint.MaxValue, out _);
@@ -461,7 +473,12 @@ namespace AiEnabled.Projectiles
       }
       else if (hitEntity != null && !hitEntity.MarkedForClose && MyAPIGateway.Session.Player != null)
       {
-        soundName = ProjectileConstants.HitMaterialToSound[materialType];
+        if (!ProjectileConstants.HitMaterialToSound.TryGetValue(materialType, out soundName))
+        {
+          AiSession.Instance.Logger.Log($"BotProjectile.Update: MaterialType '{materialType.String}' not found in HitMaterialToSound dictionary! Entity was {hitEntity?.GetType().FullName ?? "NULL"}", MessageType.WARNING);
+          soundName = "WepPlayRifleImpMetal";
+        }
+
         var position = hitPosition;
         var matrix = MatrixD.Identity;
         matrix.Translation = position;

@@ -124,8 +124,8 @@ namespace AiEnabled.Networking
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in RelayToClients: Packet type = {packet?.GetType().FullName ?? "NULL"}");
-        AiSession.Instance.Logger.Log($"Exception: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in RelayToClients: Packet type = {packet?.GetType().FullName ?? "NULL"}", MessageType.ERROR);
+        AiSession.Instance.Logger.Log($"Exception: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
         return;
       }
 

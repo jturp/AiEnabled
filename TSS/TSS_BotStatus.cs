@@ -62,7 +62,7 @@ namespace AiEnabled.TSS
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in {GetType().FullName}.Dispose: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance?.Logger?.Log($"Exception in {GetType().FullName}.Dispose: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
       }
       finally
       {
@@ -104,7 +104,7 @@ namespace AiEnabled.TSS
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.Run: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.Run: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
       }
     }
 
@@ -244,7 +244,7 @@ namespace AiEnabled.TSS
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.UpdateStats: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.UpdateStats: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
       }
     }
   }

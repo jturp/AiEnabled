@@ -192,6 +192,9 @@ namespace AiEnabled.Input
 
     void UpdateBlacklist(bool enable)
     {
+      if (MyAPIGateway.Session?.Player == null)
+        return;
+
       for (int i = 0; i < _keybinds.Count; i++)
       {
         var bind = _keybinds[i];
@@ -199,7 +202,7 @@ namespace AiEnabled.Input
         if (controlString == null)
           continue;
 
-        MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, MyAPIGateway.Session.Player.IdentityId, enable);
+        MyVisualScriptLogicProvider.SetPlayerInputBlacklistState(controlString, enabled: enable);
       }
     }
 

@@ -39,7 +39,7 @@ namespace AiEnabled.Bots
     internal byte _sideNodeTimer, _sideNodeWaitTime;
     List<float> _randoms = new List<float>(10);
 
-    public NeutralBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase) : base(bot, minDamage, maxDamage, gridBase)
+    public NeutralBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
       _deathSound = new MySoundPair("PlayVocDeath");
       _deathSoundString = "PlayVocDeath";
@@ -111,7 +111,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in NeutralBotBase.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in NeutralBotBase.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {
@@ -152,7 +152,7 @@ namespace AiEnabled.Bots
         {
           if (CheckGraphNeeded && _currentGraph?.Ready == true)
           {
-            var position = GetPosition();
+            var position = Target.CurrentBotPosition;
             StartCheckGraph(ref position);
             return;
           }
@@ -205,7 +205,7 @@ namespace AiEnabled.Bots
     {
       roll = 0;
       rifleAttack = false;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var botMatrix = WorldMatrix;
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;
@@ -756,7 +756,9 @@ namespace AiEnabled.Bots
           var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
           if (charController.CanSwitchToWeapon(ToolDefinition.PhysicalItemId))
           {
-            charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+            if (!(Character.Parent is IMyCockpit))
+              charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+  
             HasWeaponOrTool = true;
             SetShootInterval();
           }
@@ -784,7 +786,9 @@ namespace AiEnabled.Bots
           var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
           if (charController.CanSwitchToWeapon(ToolDefinition.PhysicalItemId))
           {
-            charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+            if (!(Character.Parent is IMyCockpit))
+              charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+
             HasWeaponOrTool = true;
             SetShootInterval();
           }

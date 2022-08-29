@@ -25,17 +25,35 @@ namespace AiEnabled.Bots
       public Vector3D CurrentGoToPosition { get; private set; }
       public Vector3D CurrentActualPosition { get; private set; }
       public bool PositionsValid { get; private set; }
+      public Vector3D CurrentBotPosition { get; private set; }
 
       readonly BotBase _base;
-      private Vector3D? _override;
+      private Vector3D? _override, _localOverride;
 
       public Vector3D? Override 
       { 
         get { return _override; }
         private set
         {
-          if (value == null || value.IsValid())
+          if (value == null)
+          {
+            _override = null;
+            _localOverride = null;
+          }
+          else if (value.IsValid())
+          {
             _override = value;
+
+            var graph = _base?._currentGraph as CubeGridMap;
+            if (graph?.MainGrid == null || graph.MainGrid.IsStatic)
+            {
+              _localOverride = value;
+            }
+            else
+            {
+              _localOverride = Vector3D.TransformNormal(value.Value - graph.MainGrid.PositionComp.WorldAABB.Center, MatrixD.Transpose(graph.MainGrid.WorldMatrix));
+            }
+          }
         }
       }
 
@@ -327,7 +345,7 @@ namespace AiEnabled.Bots
         if (!PositionsValid)
           return double.MaxValue;
 
-        return Vector3D.DistanceSquared(CurrentActualPosition, _base.GetPosition());
+        return Vector3D.DistanceSquared(CurrentActualPosition, CurrentBotPosition);
       }
 
       public void Update()
@@ -337,11 +355,12 @@ namespace AiEnabled.Bots
 
         CurrentGoToPosition = gotoPos;
         CurrentActualPosition = actualPos;
+        CurrentBotPosition = _base?.GetPosition() ?? Vector3D.Zero;
       }
 
       bool GetTargetPosition(out Vector3D gotoPosition, out Vector3D actualPosition)
       {
-        gotoPosition = _base.GetPosition();
+        gotoPosition = CurrentBotPosition;
         actualPosition = gotoPosition;
 
         if (_base._pathCollection == null)
@@ -354,6 +373,12 @@ namespace AiEnabled.Bots
 
         if (Override.HasValue)
         {
+          var graph = _base._currentGraph as CubeGridMap;
+          if (graph?.MainGrid != null && !graph.MainGrid.IsStatic && _localOverride.HasValue)
+          {
+            Override = graph.MainGrid.PositionComp.WorldAABB.Center + Vector3D.TransformNormal(_localOverride.Value, graph.MainGrid.WorldMatrix);
+          }
+
           gotoPosition = Override.Value;
           actualPosition = gotoPosition;
           return true;

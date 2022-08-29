@@ -47,6 +47,12 @@ namespace AiEnabled.Networking
         AiSession.Instance.PlayerToActiveHelperIds[player.IdentityId] = activeHelperIds;
       }
 
+      var bot = MyEntities.GetEntityById(BotEntityId) as IMyCharacter;
+      if (bot != null)
+      {
+        AiSession.Instance.PendingBotRespawns.Remove(bot.Name);
+      }
+
       if (RemoveBot)
       {
         AiSession.Instance.RemoveGPSForBot(BotEntityId);
@@ -55,16 +61,11 @@ namespace AiEnabled.Networking
       }
       else
       {
-        var bot = MyEntities.GetEntityById(BotEntityId) as IMyCharacter;
-        AiSession.Instance.AddGPSForBot(bot);
-
         if (!helperIds.Contains(BotEntityId))
           helperIds.Add(BotEntityId);
 
         if (!activeHelperIds.Contains(BotEntityId))
           activeHelperIds.Add(BotEntityId);
-
-        AiSession.Instance.PendingBotRespawns.Remove(bot.Name);
       }
 
       return false;

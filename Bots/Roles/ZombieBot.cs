@@ -31,7 +31,7 @@ namespace AiEnabled.Bots.Roles
     EnemyParticleInfo _particleInfo;
     MyConsumableItemDefinition _consumable;
 
-    public ZombieBot(IMyCharacter bot, GridBase gridBase) : base(bot, 1, 1, gridBase)
+    public ZombieBot(IMyCharacter bot, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, 1, 1, gridBase, ctrlInfo)
     {
       Behavior = new ZombieBehavior(this);
 
@@ -82,7 +82,7 @@ namespace AiEnabled.Bots.Roles
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in ZombieBot.CleanUp: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in ZombieBot.CleanUp: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {

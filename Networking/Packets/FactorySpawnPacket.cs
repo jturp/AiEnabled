@@ -16,6 +16,7 @@ using Sandbox.ModAPI;
 
 using VRage;
 using VRage.Game;
+using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 
@@ -168,21 +169,22 @@ namespace AiEnabled.Networking
         inv?.RemoveItemsOfType((MyFixedPoint)(float)CreditsInInventory, credit);
       }
 
-      var helper = BotFactory.CreateBotObject(subtype, BotName, posOr, player.IdentityId);
+      var tuple = BotFactory.CreateBotObject(subtype, BotName, posOr, player.IdentityId);
+      var helper = tuple.Item1;
       if (helper != null)
       {
-        var packet = new SpawnPacketClient(helper.EntityId, false);
-        AiSession.Instance.Network.SendToPlayer(packet, player.SteamUserId);
-
         helper.SetPosition(position);
         if (helper.Physics != null && block.CubeGrid.Physics != null)
         {
           var gridPhysics = block.CubeGrid.Physics;
           helper.Physics.LinearVelocity = gridPhysics.LinearVelocity;
           helper.Physics.AngularVelocity = gridPhysics.AngularVelocity;
+
+          var controlEnt = helper as Sandbox.Game.Entities.IMyControllableEntity;
+          controlEnt.RelativeDampeningEntity = (MyEntity)block.CubeGrid;
         }
 
-        gameLogic.SetHelper(helper, player);
+        gameLogic.SetHelper(tuple, player);
       }
       else
         AiSession.Instance.Logger.Log($"FactorySpawnPacket.Received: Helper was null after creation", Utilities.MessageType.WARNING);

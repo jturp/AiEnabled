@@ -25,7 +25,7 @@ namespace AiEnabled.Bots.Roles
 {
   public class BruiserBot : EnemyBotBase
   {
-    public BruiserBot(IMyCharacter bot, GridBase gridBase) : base(bot, 15, 25, gridBase)
+    public BruiserBot(IMyCharacter bot, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, 15, 25, gridBase, ctrlInfo)
     {
       Behavior = new EnemyBehavior(this);
 

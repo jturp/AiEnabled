@@ -36,7 +36,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     bool _awaitItem;
     int _performTimer;
 
-    public ScavengerBot(IMyCharacter bot, GridBase gridBase, long ownerId) : base(bot, 10, 15, gridBase, ownerId)
+    public ScavengerBot(IMyCharacter bot, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo) : base(bot, 10, 15, gridBase, ownerId, ctrlInfo)
     {
       BotType = AiSession.BotType.Scavenger;
       Behavior = new ScavengerBehavior(this);
@@ -111,7 +111,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           Behavior?.Speak();
         }
       }
-      else if (Owner?.Character != null && Vector3D.DistanceSquared(Owner.Character.WorldAABB.Center, GetPosition()) < 2500)
+      else if (Owner?.Character != null && Vector3D.DistanceSquared(Owner.Character.WorldAABB.Center, Target.CurrentBotPosition) < 2500)
       {
         _performTimer = 0;
         var rand = MyUtils.GetRandomInt(0, 100);

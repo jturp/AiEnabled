@@ -52,6 +52,7 @@ namespace AiEnabled.Networking
       var crewBot = bot as CrewBot;
       var isCrew = crewBot != null;
       bot._pathCollection?.CleanUp(true);
+      MyCubeBlock cube = null;
 
       if (GoTo.HasValue)
       {
@@ -67,7 +68,6 @@ namespace AiEnabled.Networking
         MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, entList);
 
         bool shouldSit = false;
-        MyCubeBlock cube = null;
 
         for (int i = 0; i < entList.Count; i++)
         {
@@ -137,25 +137,59 @@ namespace AiEnabled.Networking
           var seat = bot.Character.Parent as IMyCockpit;
           if (seat != null)
           {
-            seat.RemovePilot();
-            Vector3D relPosition;
-            if (!AiSession.Instance.BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition))
-              relPosition = Vector3D.Forward * 2.5 + Vector3D.Up;
-
-            var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
-            bot.Character.SetPosition(position);
-
-            var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-            if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
+            if (seat.CubeGrid.GridSize < 1)
             {
-              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-              jetpack.TurnOnJetpack(true);
-              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+              // need to ensure the bot updates its map accordingly
+              BotFactory.RemoveBotFromSeat(bot);
+            }
+            else
+            {
+              seat.RemovePilot();
+              Vector3D relPosition;
+              if (!AiSession.Instance.BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition))
+                relPosition = Vector3D.Forward * 2.5 + Vector3D.Up;
+
+              var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
+              bot.Character.SetPosition(position);
+
+              var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
+              if (jetpack != null && !jetpack.TurnedOn)
+              {
+                if (bot.RequiresJetpack)
+                {
+                  var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+                  MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+                  jetpack.TurnOnJetpack(true);
+                  MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+                }
+                else if (bot.CanUseAirNodes && MyAPIGateway.Session.SessionSettings.EnableJetpack)
+                {
+                  jetpack.TurnOnJetpack(true);
+                }
+              }
             }
           }
 
-          bot.Target.SetOverride(GoTo.Value);
+          if (cube.CubeGrid.GridSize < 1)
+          {
+            var cpit = cube as IMyCockpit;
+            if (cpit != null)
+            {
+              Vector3D relPosition;
+              var vector = bot.Target.CurrentBotPosition - cube.PositionComp.WorldAABB.Center;
+              if (vector.LengthSquared() > 1000)
+                relPosition = Vector3D.Forward * 2.5 + Vector3D.Up * 2.5;
+              else
+                relPosition = Vector3D.Rotate(vector, MatrixD.Transpose(cube.WorldMatrix));
+
+              AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = relPosition;
+              BotFactory.TrySeatBot(bot, cpit);
+            }
+          }
+          else
+          {
+            bot.Target.SetOverride(GoTo.Value);
+          }
         }
       }
       else if (Resume)

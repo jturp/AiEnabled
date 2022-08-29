@@ -9,6 +9,7 @@ using AiEnabled.API;
 using AiEnabled.Bots.Roles;
 using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Networking;
+using AiEnabled.Networking.Packets;
 using AiEnabled.Parallel;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
@@ -444,14 +445,102 @@ namespace AiEnabled.Bots
       }
     }
 
+    public static IMyCharacter SwitchBotCharacter(BotBase bot)
+    {
+      var oldChar = bot?.Character;
+      if (oldChar == null)
+      {
+        return null;
+      }
+
+      var seat = oldChar.Parent as MyCockpit;
+      if (seat == null)
+      {
+        return null;
+      }
+
+      RemoveBotFromSeat(bot, false);
+
+      var displayName = oldChar.Name;
+      var subType = oldChar.Definition.Id.SubtypeName;
+      var botPlayerId = oldChar.ControllerInfo.ControllingIdentityId;
+      var hsvOffset = ((MyObjectBuilder_Character)oldChar.GetObjectBuilder()).ColorMaskHSV;
+
+      var matrix = oldChar.WorldMatrix;
+      var positionAndOrientation = new MyPositionAndOrientation(ref matrix);
+      var info = bot.BotControlInfo;
+      var ownerId = bot.Owner?.IdentityId;
+      var oldBotEntId = oldChar.EntityId;
+
+      var ob = new MyObjectBuilder_Character()
+      {
+        Name = displayName,
+        DisplayName = null,
+        SubtypeName = subType,
+        CharacterModel = subType,
+        EntityId = 0,
+        AIMode = false,
+        JetpackEnabled = subType == "Drone_Bot" || MyAPIGateway.Session.SessionSettings.EnableJetpack,
+        EnableBroadcasting = false,
+        NeedsOxygenFromSuit = false,
+        OxygenLevel = 1,
+        MovementState = MyCharacterMovementEnum.Standing,
+        PersistentFlags = MyPersistentEntityFlags2.InScene | MyPersistentEntityFlags2.Enabled,
+        PositionAndOrientation = positionAndOrientation,
+        Health = 1000,
+        OwningPlayerIdentityId = botPlayerId,
+        ColorMaskHSV = hsvOffset,
+        RelativeDampeningEntity = seat.CubeGrid.EntityId,
+      };
+
+      var newChar = MyEntities.CreateFromObjectBuilder(ob, true) as IMyCharacter;
+      bot.ChangeCharacter(newChar);
+
+      if (newChar != null)
+      {
+        newChar.Save = false;
+        newChar.Synchronized = true;
+        newChar.Flags &= ~VRage.ModAPI.EntityFlags.NeedsUpdate100;
+
+        if (newChar.PositionComp.GetPosition() == Vector3D.Zero)
+          newChar.SetPosition(positionAndOrientation.Position);
+
+        var offset = Vector3D.Rotate(newChar.GetPosition() - seat.PositionComp.WorldAABB.Center, MatrixD.Transpose(seat.WorldMatrix));
+        AiSession.Instance.BotToSeatRelativePosition[newChar.EntityId] = offset;
+
+        if (seat.CubeGrid?.Physics.LinearVelocity.LengthSquared() > 0)
+        {
+          bot.Character.Physics.SetSpeeds(seat.CubeGrid.Physics.LinearVelocity, seat.CubeGrid.Physics.AngularVelocity);
+        }
+
+        if (info != null)
+        {
+          info.EntityId = newChar.EntityId;
+          //var ident = MyAPIGateway.Players.CreateNewIdentity("", addToNpcs: true);
+          //var botPlayer = MyAPIGateway.Players.CreateNewPlayer(ident, "", false, false, true, true);
+          //info.Controller = MyAPIGateway.Players.CreateNewEntityController(botPlayer); // testing
+          info.Controller.TakeControl(newChar);
+
+          if (MyAPIGateway.Multiplayer.MultiplayerActive)
+          {
+            var packet = new CharacterSwapPacket(oldBotEntId, newChar.EntityId);
+            AiSession.Instance.Network.RelayToClients(packet);
+          }
+        }
+
+        MyEntities.Add((MyEntity)newChar, true);
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => TrySeatBot(bot, seat), "AiEnabled");
+      }
+
+      return newChar;
+    }
+
     public static bool TrySeatBotOnGrid(BotBase bot, IMyCubeGrid grid)
     {
       try
       {
         var seats = AiSession.Instance.GridSeatsAPI;
-        var useObjs = AiSession.Instance.UseObjectsAPI;
         seats.Clear();
-        useObjs.Clear();
 
         grid.GetBlocks(seats, b => b.FatBlock is IMyCockpit);
         for (int i = seats.Count - 1; i >= 0; i--)
@@ -465,66 +554,55 @@ namespace AiEnabled.Bots
             || seat.BlockDefinition.SubtypeId.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
             continue;
 
-          var useComp = seat.Components.Get<MyUseObjectsComponentBase>();
-          useComp?.GetInteractiveObjects(useObjs);
-          if (useObjs.Count > 0)
+          if (bot.HasWeaponOrTool)
           {
-            if (bot.HasWeaponOrTool)
+            var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+            controlEnt?.SwitchToWeapon(null);
+          }
+
+          var myCpit = seat as MyCockpit;
+          var seatCube = seat as MyCubeBlock;
+          var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+          bool changeBack = false;
+
+          if (shareMode != MyOwnershipShareModeEnum.All)
+          {
+            var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+            var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+            var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+            if (relation != MyRelationsBetweenPlayers.Enemies)
             {
-              var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
-              controlEnt?.SwitchToWeapon(null);
-            }
-
-            var seatCube = seat as MyCubeBlock;
-            var useObj = useObjs[0];
-
-            if (useObj != null)
-            {
-              var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
-              bool changeBack = false;
-
-              if (shareMode != MyOwnershipShareModeEnum.All)
-              {
-                var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
-                var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
-
-                var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
-                if (relation != MyRelationsBetweenPlayers.Enemies)
-                {
-                  changeBack = true;
-                  seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
-                }
-              }
-
-              if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
-              {
-                var freeSpace = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5);
-                if (freeSpace.HasValue)
-                {
-                  var offset = Vector3D.Rotate(freeSpace.Value - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
-                  AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = offset;
-                  bot.Character.SetPosition(freeSpace.Value);
-                }
-
-                var mapGrid = GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
-                bot._currentGraph = AiSession.Instance.GetNewGraph(mapGrid, bot.GetPosition(), bot.WorldMatrix);
-                useObj.Use(UseActionEnum.Manipulate, bot.Character);
-              }
-
-              if (changeBack)
-                seatCube.IDModule.ShareMode = shareMode;
-
-              bot._pathCollection?.CleanUp(true);
-              bot.Target.RemoveTarget();
-              seats.Clear();
-              useObjs.Clear();
-              return true;
+              changeBack = true;
+              seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
             }
           }
+
+          if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+          {
+            var freeSpace = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5);
+            if (freeSpace.HasValue)
+            {
+              var offset = Vector3D.Rotate(freeSpace.Value - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+              AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = offset;
+              bot.Character.SetPosition(freeSpace.Value);
+            }
+
+            var mapGrid = GridBase.GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
+            bot._currentGraph = AiSession.Instance.GetNewGraph(mapGrid, bot.Target.CurrentBotPosition, bot.WorldMatrix);
+            myCpit.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(myCpit.Pilot, bot.Character));
+          }
+
+          if (changeBack)
+            seatCube.IDModule.ShareMode = shareMode;
+
+          bot._pathCollection?.CleanUp(true);
+          bot.Target.RemoveTarget();
+          seats.Clear();
+          return true;
         }
 
         seats.Clear();
-        useObjs.Clear();
         return false;
       }
       catch (Exception ex)
@@ -538,71 +616,60 @@ namespace AiEnabled.Bots
     {
       try
       {
-        var list = AiSession.Instance.UseObjectsAPI;
-        list.Clear();
-
-        var useComp = seat.Components?.Get<MyUseObjectsComponentBase>();
-        useComp?.GetInteractiveObjects(list);
-
-        if (list.Count > 0)
+        AiSession.Instance.Logger.Log($"BotFactory.TrySeatBot Starting: Bot = {bot?.Character?.Name ?? "NULL"}, Seat = {seat?.CustomName ?? "NULL"}");
+        var myCpit = seat as MyCockpit;
+        if (myCpit != null)
         {
           var currentSeat = bot.Character.Parent as IMyCockpit;
           if (currentSeat != null)
             currentSeat.RemovePilot();
 
-          if (bot.HasWeaponOrTool)
-          {
-            var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
-            controlEnt?.SwitchToWeapon(null);
-          }
-
           var seatCube = seat as MyCubeBlock;
-          var useObj = list[0];
+          var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+          bool changeBack = false;
 
-          if (useObj != null)
+          if (shareMode != MyOwnershipShareModeEnum.All)
           {
-            var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
-            bool changeBack = false;
+            var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+            var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
 
-            if (shareMode != MyOwnershipShareModeEnum.All)
+            var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+            if (relation != MyRelationsBetweenPlayers.Enemies)
             {
-              var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
-              var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
-
-              var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
-              if (relation != MyRelationsBetweenPlayers.Enemies)
-              {
-                changeBack = true;
-                seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
-              }
+              changeBack = true;
+              seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
             }
-
-            if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
-            {
-              var freeSpace = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5);
-              if (freeSpace.HasValue)
-              {
-                var offset = Vector3D.Rotate(freeSpace.Value - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
-                AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = offset;
-                bot.Character.SetPosition(freeSpace.Value);
-              }
-
-              var grid = GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
-              bot._currentGraph = AiSession.Instance.GetNewGraph(grid, bot.GetPosition(), bot.WorldMatrix);
-              useObj.Use(UseActionEnum.Manipulate, bot.Character);
-            }
-
-            if (changeBack)
-              seatCube.IDModule.ShareMode = shareMode;
-
-            bot._pathCollection?.CleanUp(true);
-            bot.Target.RemoveTarget();
-            list.Clear();
-            return true;
           }
+
+          if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+          {
+            //var freeSpace = MyEntities.FindFreePlaceCustom(seat.GetPosition(), 5);
+            //if (freeSpace.HasValue)
+            //{
+            //  var offset = Vector3D.Rotate(freeSpace.Value - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+            //  AiSession.Instance.BotToSeatRelativePosition[bot.Character.EntityId] = offset;
+            //  bot.Character.SetPosition(freeSpace.Value);
+            //}
+
+            var grid = GridBase.GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
+
+            if (grid?.Physics.LinearVelocity.LengthSquared() > 0)
+            {
+              bot.Character.Physics.SetSpeeds(grid.Physics.LinearVelocity, grid.Physics.AngularVelocity);
+            }
+
+            bot._currentGraph = AiSession.Instance.GetNewGraph(grid, bot.Target.CurrentBotPosition, bot.WorldMatrix);
+            MyAPIGateway.Utilities.InvokeOnGameThread(() => SeatBotDeferred(bot.Character, myCpit));
+          }
+          
+          if (changeBack)
+            AiSession.Instance.BotToSeatShareMode[bot.Character.EntityId] = shareMode;
+
+          bot._pathCollection?.CleanUp(true);
+          bot.Target.RemoveTarget();
+          return true;
         }
 
-        list.Clear();
         return false;
       }
       catch (Exception ex)
@@ -612,41 +679,18 @@ namespace AiEnabled.Bots
       }
     }
 
-    public static IMyCubeGrid GetLargestGridForMap(IMyCubeGrid initialGrid)
+    static void SeatBotDeferred(IMyCharacter botChar, MyCockpit seat)
     {
       try
       {
-        if (initialGrid == null)
-          return null;
-
-        List<IMyCubeGrid> gridList;
-        if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
-          gridList = new List<IMyCubeGrid>();
-        else
-          gridList.Clear();
-
-        var biggest = initialGrid;
-        initialGrid?.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
-
-        for (int i = 0; i < gridList.Count; i++)
+        if (seat?.CubeGrid != null && !seat.CubeGrid.MarkedForClose && botChar != null && !botChar.MarkedForClose)
         {
-          var g = gridList[i];
-          if (g == null || g.MarkedForClose || g.Closed || g.GridSizeEnum == MyCubeSize.Small)
-            continue;
-
-          if (biggest.GridSizeEnum == MyCubeSize.Small || g.WorldAABB.Volume > biggest.WorldAABB.Volume)
-            biggest = g;
+          seat.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(seat.Pilot, botChar));
         }
-
-        gridList.Clear();
-        AiSession.Instance.GridGroupListStack.Push(gridList);
-
-        return (biggest?.GridSize > 1) ? biggest : null;
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotFactory.GetLargestGridForMap: {ex.Message}\n{ex.StackTrace}");
-        return null;
+        AiSession.Instance.Logger.Log($"Exception in BotFactory.SeatBotDeferred: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -660,18 +704,32 @@ namespace AiEnabled.Bots
           seat.RemovePilot();
 
           var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
-          if (jetpack != null)
+          if (jetpack != null && !jetpack.TurnedOn)
           {
-            if (bot.RequiresJetpack || bot.CanUseAirNodes)
+            if (bot.RequiresJetpack)
             {
-              if (!jetpack.TurnedOn)
-              {
-                var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-                jetpack.TurnOnJetpack(true);
-                MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-              }
+              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+              jetpack.TurnOnJetpack(true);
+              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
             }
+            else if (bot.CanUseAirNodes && MyAPIGateway.Session.SessionSettings.EnableJetpack)
+            {
+              jetpack.TurnOnJetpack(true);
+            }
+          }
+
+          var seatGrid = seat.CubeGrid;
+          var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+          if (controlEnt != null)
+            controlEnt.RelativeDampeningEntity = (MyEntity)seatGrid;
+
+          MyOwnershipShareModeEnum shareMode;
+          if (AiSession.Instance?.BotToSeatShareMode != null && AiSession.Instance.BotToSeatShareMode.TryRemove(bot.Character.EntityId, out shareMode))
+          {
+            var seatCube = seat as MyCubeBlock;
+            if (seatCube?.IDModule != null)
+              seatCube.IDModule.ShareMode = shareMode;
           }
 
           if (checkTarget)
@@ -691,7 +749,7 @@ namespace AiEnabled.Bots
           var map = bot._currentGraph;
           if (map == null)
           {
-            var grid = GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
+            var grid = GridBase.GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
             map = AiSession.Instance.GetNewGraph(grid, position, seat.WorldMatrix);
           }
 
@@ -763,12 +821,11 @@ namespace AiEnabled.Bots
           matrix.Translation = position + matrix.Down;
           bot.Character.SetWorldMatrix(matrix);
 
-          var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
           if (controlEnt != null && controlEnt.RelativeDampeningEntity != gridMap?.MainGrid)
           {
             var relativeGrid = gridMap?.MainGrid;
             if (relativeGrid == null)
-              relativeGrid = (GetLargestGridForMap(seat.CubeGrid) ?? seat.CubeGrid) as MyCubeGrid;
+              relativeGrid = (GridBase.GetLargestGridForMap(seat.CubeGrid) ?? seat.CubeGrid) as MyCubeGrid;
 
             controlEnt.RelativeDampeningEntity = relativeGrid;
           }
@@ -818,6 +875,15 @@ namespace AiEnabled.Bots
         else if (!string.IsNullOrWhiteSpace(spawnData.ToolSubtypeId) && AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, spawnData.ToolSubtypeId))
         {
           toolType = spawnData.ToolSubtypeId;
+        }
+
+        var syncRange = AiSession.Instance.SyncRange * 0.75;
+        if (MyAPIGateway.Multiplayer.MultiplayerActive && grid?.PositionComp != null && Vector3D.DistanceSquared(grid.PositionComp.WorldAABB.Center, positionAndOrientation.Position) > syncRange * syncRange)
+        {
+          var gridAABB = grid.PositionComp.WorldAABB;
+          var dirVector = grid.Physics.LinearVelocity.LengthSquared() > 0 ? Vector3D.Normalize(-grid.Physics.LinearVelocity) : grid.WorldMatrix.Backward;
+          var closePosition = gridAABB.Center + dirVector * (gridAABB.HalfExtents.AbsMax() + 50);
+          positionAndOrientation.Position = closePosition;
         }
 
         IMyCharacter botChar;
@@ -930,6 +996,15 @@ namespace AiEnabled.Bots
         else
           vList.Clear();
 
+        var syncRange = AiSession.Instance.SyncRange * 0.75;
+        if (MyAPIGateway.Multiplayer.MultiplayerActive && grid != null && Vector3D.DistanceSquared(grid.PositionComp.WorldAABB.Center, positionAndOrientation.Position) > syncRange * syncRange)
+        {
+          var gridAABB = grid.PositionComp.WorldAABB;
+          var dirVector = grid.Physics.LinearVelocity.LengthSquared() > 0 ? Vector3D.Normalize(-grid.Physics.LinearVelocity) : grid.WorldMatrix.Backward;
+          var closePosition = gridAABB.Center + dirVector * (gridAABB.HalfExtents.AbsMax() + 50);
+          positionAndOrientation.Position = closePosition;
+        }
+
         var position = positionAndOrientation.Position;
         var sphere = new BoundingSphereD(position, 10);
         MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
@@ -982,7 +1057,8 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null)
     {
-      var bot = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color);
+      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color);
+      var bot = tuple.Item1;
       if (bot != null)
       {
         var gridMap = AiSession.Instance.GetNewGraph(grid, bot.WorldAABB.Center, bot.WorldMatrix);
@@ -1032,7 +1108,7 @@ namespace AiEnabled.Bots
               bot.Name = GetUniqueName("RepairBot");
             }
 
-            robot = new RepairBot(bot, gridMap, ownerId, toolType);
+            robot = new RepairBot(bot, gridMap, ownerId, tuple.Item2, toolType);
             break;
           case BotRoleFriendly.SCAVENGER:
             if (needsName)
@@ -1040,7 +1116,7 @@ namespace AiEnabled.Bots
               bot.Name = GetUniqueName("ScavengerBot");
             }
 
-            robot = new ScavengerBot(bot, gridMap, ownerId);
+            robot = new ScavengerBot(bot, gridMap, ownerId, tuple.Item2);
             break;
           case BotRoleFriendly.CREW:
             if (needsName)
@@ -1048,7 +1124,7 @@ namespace AiEnabled.Bots
               bot.Name = GetUniqueName("CrewBot");
             }
 
-            robot = new CrewBot(bot, gridMap, ownerId);
+            robot = new CrewBot(bot, gridMap, ownerId, tuple.Item2);
 
             if (crewFunction.HasValue)
             {
@@ -1086,7 +1162,7 @@ namespace AiEnabled.Bots
               bot.Name = GetUniqueName("CombatBot");
             }
 
-            robot = new CombatBot(bot, gridMap, ownerId, toolType);
+            robot = new CombatBot(bot, gridMap, ownerId, tuple.Item2, toolType);
             break;
         }
 
@@ -1098,7 +1174,8 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, long? ownerId = null)
     {
-      var bot = CreateBotObject(subType, displayName, positionAndOrientation, null, color);
+      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, null, color);
+      var bot = tuple.Item1;
       if (bot != null)
       {
         var biggestGrid = grid;
@@ -1213,9 +1290,9 @@ namespace AiEnabled.Bots
           }
 
           if (isNomad)
-            robot = new NomadBot(bot, gridMap, toolType);
+            robot = new NomadBot(bot, gridMap, tuple.Item2, toolType);
           else
-            robot = new EnforcerBot(bot, gridMap, toolType);
+            robot = new EnforcerBot(bot, gridMap, tuple.Item2, toolType);
 
           runNeutral = true;
         }
@@ -1278,7 +1355,7 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("ZombieBot");
               }
 
-              robot = new ZombieBot(bot, gridMap);
+              robot = new ZombieBot(bot, gridMap, tuple.Item2);
               break;
             case BotRoleEnemy.GRINDER:
               if (needsName)
@@ -1286,10 +1363,10 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("GrinderBot");
               }
 
-              robot = new GrinderBot(bot, gridMap, toolType);
+              robot = new GrinderBot(bot, gridMap, tuple.Item2, toolType);
               break;
             case BotRoleEnemy.BRUISER:
-              robot = new BruiserBot(bot, gridMap);
+              robot = new BruiserBot(bot, gridMap, tuple.Item2);
               break;
             case BotRoleEnemy.GHOST:
               if (needsName)
@@ -1297,7 +1374,7 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("GhostBot");
               }
 
-              robot = new GhostBot(bot, gridMap);
+              robot = new GhostBot(bot, gridMap, tuple.Item2);
               break;
             case BotRoleEnemy.CREATURE:
               if (needsName)
@@ -1305,7 +1382,7 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("CreatureBot");
               }
 
-              robot = new CreatureBot(bot, gridMap);
+              robot = new CreatureBot(bot, gridMap, tuple.Item2);
               break;
             case BotRoleEnemy.SOLDIER:
             default:
@@ -1314,7 +1391,7 @@ namespace AiEnabled.Bots
                 bot.Name = GetUniqueName("SoldierBot");
               }
 
-              robot = new SoldierBot(bot, gridMap, toolType);
+              robot = new SoldierBot(bot, gridMap, tuple.Item2, toolType);
               break;
           }
         }
@@ -1328,20 +1405,20 @@ namespace AiEnabled.Bots
       return bot;
     }
 
-    public static IMyCharacter CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null)
+    public static MyTuple<IMyCharacter, AiSession.ControlInfo> CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null)
     {
       try
       {
         if (AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn)
-          return null;
+          return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
 
         var info = AiSession.Instance.GetBotIdentity();
         if (info == null)
         {
           if (!AiSession.Instance.EemLoaded)
             AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: Attempted to create a bot, but ControlInfo returned null. Please try again in a few moments.", MessageType.WARNING);
-  
-          return null;
+
+          return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
         }
 
         long botPlayerId = info.Identity.IdentityId;
@@ -1357,14 +1434,14 @@ namespace AiEnabled.Bots
           if (ownerFaction == null)
           {
             AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: The bot owner is not in a faction!", MessageType.WARNING);
-            return null;
+            return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
           }
 
           botFaction = null;
           if (!AiSession.Instance.BotFactions.TryGetValue(ownerFaction.FactionId, out botFaction))
           {
             AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: There was no bot faction associated with the owner!", MessageType.WARNING);
-            return null;
+            return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
 
             /*
               TODO: Switch to creating factions on the fly if Keen can default AcceptsHumans to false for NPC Factions
@@ -1458,19 +1535,6 @@ namespace AiEnabled.Bots
           positionAndOrientation.Up = Vector3.Up;
         }
 
-        var enableJetpack = subType == "Drone_Bot";
-        if (!enableJetpack)
-        {
-          float _;
-          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(positionAndOrientation.Position, out _);
-
-          if (nGrav.LengthSquared() < 1E-2)
-          {
-            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(positionAndOrientation.Position, 0);
-            enableJetpack = aGrav.LengthSquared() < 1E-2;
-          }
-        }
-
         var ob = new MyObjectBuilder_Character()
         {
           Name = displayName,
@@ -1479,7 +1543,7 @@ namespace AiEnabled.Bots
           CharacterModel = subType,
           EntityId = 0,
           AIMode = false,
-          JetpackEnabled = enableJetpack,
+          JetpackEnabled = subType == "Drone_Bot" || MyAPIGateway.Session.SessionSettings.EnableJetpack,
           EnableBroadcasting = false,
           NeedsOxygenFromSuit = false,
           OxygenLevel = 1,
@@ -1525,14 +1589,14 @@ namespace AiEnabled.Bots
           MyEntities.Add((MyEntity)bot, true);
         }
 
-        return bot;
+        return MyTuple.Create(bot, info);
       }
       catch (Exception ex)
       {
         AiSession.Instance.Logger.Log($"Exception in BotFactory.CreateBot: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
 
-      return null;
+      return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
     }
 
     public static BotRoleEnemy ParseEnemyBotRole(string role)

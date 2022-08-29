@@ -108,7 +108,7 @@ namespace AiEnabled.GameLogic
       }
       catch(Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in SpawnBlock.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance?.Logger?.Log($"Exception in SpawnBlock.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {

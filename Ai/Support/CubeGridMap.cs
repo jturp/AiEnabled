@@ -19,6 +19,7 @@ using VRage.Game.Entity.UseObject;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
+using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 
 using VRageMath;
 using AiEnabled.Support;
@@ -32,6 +33,7 @@ using AiEnabled.API;
 using VRage.Game.Components;
 using VRage.Game;
 using AiEnabled.Parallel;
+using ParallelTasks;
 
 namespace AiEnabled.Ai.Support
 {
@@ -66,6 +68,16 @@ namespace AiEnabled.Ai.Support
     /// If true, there are grids to add to or remove from the GridCollection
     /// </summary>
     public bool NeedsGridUpdate { get; private set; }
+
+    /// <summary>
+    /// If true, blocks have been added or removed the main grid
+    /// </summary>
+    public bool NeedsBlockUpdate { get; private set; }
+
+    /// <summary>
+    /// If true, need to recheck for interior nodes (blocks added or removed)
+    /// </summary>
+    public bool NeedsInteriorNodesUpdate { get; private set; }
 
     /// <summary>
     /// If true, planet tiles have already been cleared from the dictionary
@@ -128,23 +140,26 @@ namespace AiEnabled.Ai.Support
 
     internal Dictionary<Vector3I, Node> OpenTileDict = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
     Dictionary<Vector3I, Node> _planetTileDictionary = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
-    ConcurrentStack<Node> _nodeStack = new ConcurrentStack<Node>();
 
-    ParallelTasks.Task _asyncTileTask;
     Vector3D _worldPosition;
     MatrixD _lastMatrix;
-    readonly List<CubeGridMap> _additionalMaps2;
-    readonly List<IMyCubeGrid> _gridsToAdd;
-    readonly List<IMyCubeGrid> _gridsToRemove;
     public List<Vector3I> InteriorNodeList;
     readonly byte _boxExpansion;
+    List<CubeGridMap> _additionalMaps2;
+    List<IMyCubeGrid> _gridsToAdd;
+    List<IMyCubeGrid> _gridsToRemove;
+    ObstacleWorkData _tempObstaclesWorkData;
+    List<VoxelUpdateItem> _voxelUpdatesNeeded;
+    HashSet<Vector3I> _blockUpdateHash;
+    HashSet<Vector3I> _blockApplyHash;
+    MyQueue<VoxelUpdateItem> _voxelUpdatesQueue;
+    ParallelTasks.Task _obstacleTask, _updateTask, _asyncTileTask, _interiorNodesTask;
+    FastResourceLock _pendingLockObject = new FastResourceLock();
 
     public CubeGridMap(MyCubeGrid grid, MatrixD spawnBlockMatrix)
     {
       try
       {
-        Key = (ulong)grid.EntityId;
-
         if (grid == null || grid.MarkedForClose)
         {
           AiSession.Instance.Logger.Log($"CubeGridMap.ctor: Grid '{grid?.DisplayName ?? "NULL"}' was null or marked for close in constructor!", MessageType.WARNING);
@@ -174,14 +189,19 @@ namespace AiEnabled.Ai.Support
           return;
         }
 
+        Key = (ulong)grid.EntityId;
         gridGroup.OnGridAdded += GridGroup_OnGridAdded;
         gridGroup.OnGridRemoved += GridGroup_OnGridRemoved;
         gridGroup.OnReleased += GridGroup_OnReleased;
 
-        if (grid.Physics.IsStatic)
+        var isStatic = grid.Physics.IsStatic;
+        if (isStatic)
           _boxExpansion = 10;
         else
           _boxExpansion = 5;
+
+        if (!AiSession.Instance.ObstacleWorkDataStack.TryPop(out _tempObstaclesWorkData) || _tempObstaclesWorkData == null)
+          _tempObstaclesWorkData = new ObstacleWorkData();
 
         if (!AiSession.Instance.GridMapListStack.TryPop(out _additionalMaps2))
           _additionalMaps2 = new List<CubeGridMap>();
@@ -208,113 +228,195 @@ namespace AiEnabled.Ai.Support
         else
           InteriorNodeList.Clear();
 
+        if (!AiSession.Instance.VoxelUpdateListStack.TryPop(out _voxelUpdatesNeeded) || _voxelUpdatesNeeded == null)
+          _voxelUpdatesNeeded = new List<VoxelUpdateItem>(10);
+        else
+          _voxelUpdatesNeeded.Clear();
+
+        if (!AiSession.Instance.VoxelUpdateQueueStack.TryPop(out _voxelUpdatesQueue) || _voxelUpdatesQueue == null)
+          _voxelUpdatesQueue = new MyQueue<VoxelUpdateItem>(10);
+        else
+          _voxelUpdatesQueue.Clear();
+
+        if (!AiSession.Instance.LocalVectorHashStack.TryPop(out _blockUpdateHash) || _blockUpdateHash == null)
+          _blockUpdateHash = new HashSet<Vector3I>();
+        else
+          _blockUpdateHash.Clear();
+
+        if (!AiSession.Instance.LocalVectorHashStack.TryPop(out _blockApplyHash) || _blockApplyHash == null)
+          _blockApplyHash = new HashSet<Vector3I>();
+        else
+          _blockApplyHash.Clear();
+
         InventoryCache.Update(false);
 
+        MainGrid = grid;
         WorldMatrix = grid.WorldMatrix;
         _worldPosition = WorldMatrix.Translation;
         _lastMatrix = WorldMatrix;
-        MainGrid = grid;
 
-        var hExtents = grid.PositionComp.LocalAABB.HalfExtents + (new Vector3I(11) * grid.GridSize);
-        OBB = new MyOrientedBoundingBoxD(grid.PositionComp.WorldAABB.Center, hExtents, Quaternion.CreateFromRotationMatrix(WorldMatrix));
+        var hExtents = grid.PositionComp.LocalAABB.HalfExtents;
+        var center = grid.PositionComp.WorldAABB.Center;
+        var quat = Quaternion.CreateFromRotationMatrix(WorldMatrix);
+        UnbufferedOBB = new MyOrientedBoundingBoxD(center, hExtents, quat);
 
-        int numSeats, numFactories;
+        hExtents += (new Vector3I(11) * grid.GridSize);
+        OBB = new MyOrientedBoundingBoxD(center, hExtents, quat);
+
         bool matrixSet = false;
-        if (grid.HasMainCockpit())
+        bool gravityChecked = false;
+        if (isStatic)
         {
-          WorldMatrix = grid.MainCockpit.WorldMatrix;
-          matrixSet = true;
-        }
-        else if (grid.HasMainRemoteControl())
-        {
-          WorldMatrix = grid.MainRemoteControl.WorldMatrix;
-          matrixSet = true;
-        }
-        else if ((grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_Cockpit), out numSeats) && numSeats > 0)
-          || (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_RemoteControl), out numSeats) && numSeats > 0)
-          || (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_ConveyorSorter), out numFactories) && numFactories > 0))
-        {
-          foreach (var b in grid.GetFatBlocks())
+          var planet = MyGamePruningStructure.GetClosestPlanet(OBB.Center);
+          if (planet != null && planet.PositionComp.WorldVolume.Intersects(OBB.GetAABB()))
           {
-            if (b is IMyShipController || (b is MyConveyorSorter && b.BlockDefinition.Id.SubtypeName == "RoboFactory"))
+            Vector3D[] corners;
+            if (!AiSession.Instance.CornerArrayStack.TryPop(out corners) || corners == null)
+              corners = new Vector3D[8];
+
+            var gridOBB = new MyOrientedBoundingBoxD(OBB.Center, grid.PositionComp.LocalAABB.HalfExtents, quat);
+            gridOBB.GetCorners(corners, 0);
+
+            using (planet.Pin())
             {
-              WorldMatrix = b.WorldMatrix;
-              matrixSet = true;
-              break;
+              for (int i = 0; i < corners.Length; i++)
+              {
+                if (PointInsideVoxel(corners[i], planet))
+                {
+                  gravityChecked = true;
+                  break;
+                }
+              }
+            }
+
+            AiSession.Instance.CornerArrayStack.Push(corners);
+
+            if (gravityChecked)
+            {
+              float interference;
+              var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out interference);
+              var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, interference);
+              if (aGrav.LengthSquared() > 0)
+              {
+                var up = -Vector3D.Normalize(aGrav);
+                var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+                var dir = grid.WorldMatrix.GetClosestDirection(up);
+                up = grid.WorldMatrix.GetDirectionVector(dir);
+
+                dir = grid.WorldMatrix.GetClosestDirection(fwd);
+                fwd = grid.WorldMatrix.GetDirectionVector(dir);
+
+                WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+                matrixSet = true;
+              }
+              else if (nGrav.LengthSquared() > 0)
+              {
+                var up = -Vector3D.Normalize(nGrav);
+                var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+                var dir = grid.WorldMatrix.GetClosestDirection(up);
+                up = grid.WorldMatrix.GetDirectionVector(dir);
+
+                dir = grid.WorldMatrix.GetClosestDirection(fwd);
+                fwd = grid.WorldMatrix.GetDirectionVector(dir);
+
+                WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+                matrixSet = true;
+              }
             }
           }
         }
 
         if (!matrixSet)
         {
-          float _;
-          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
-          var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, 0);
-          if (aGrav.LengthSquared() > 0)
+          int numSeats, numFactories;
+          if (grid.HasMainCockpit())
           {
-            var up = -Vector3D.Normalize(aGrav);
-            var fwd = Vector3D.CalculatePerpendicularVector(up);
-
-            var dir = grid.WorldMatrix.GetClosestDirection(up);
-            up = grid.WorldMatrix.GetDirectionVector(dir);
-
-            dir = grid.WorldMatrix.GetClosestDirection(fwd);
-            fwd = grid.WorldMatrix.GetDirectionVector(dir);
-
-            WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+            WorldMatrix = grid.MainCockpit.WorldMatrix;
+            matrixSet = true;
           }
-          else if (nGrav.LengthSquared() > 0)
+          else if (grid.HasMainRemoteControl())
           {
-            var up = -Vector3D.Normalize(nGrav);
-            var fwd = Vector3D.CalculatePerpendicularVector(up);
-
-            var dir = grid.WorldMatrix.GetClosestDirection(up);
-            up = grid.WorldMatrix.GetDirectionVector(dir);
-
-            dir = grid.WorldMatrix.GetClosestDirection(fwd);
-            fwd = grid.WorldMatrix.GetDirectionVector(dir);
-
-            WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+            WorldMatrix = grid.MainRemoteControl.WorldMatrix;
+            matrixSet = true;
           }
-          else
-            WorldMatrix = spawnBlockMatrix;
-
-          bool rotate = true;
-          foreach (var block in grid.GetFatBlocks())
+          else if ((grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_Cockpit), out numSeats) && numSeats > 0)
+            || (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_RemoteControl), out numSeats) && numSeats > 0)
+            || (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_ConveyorSorter), out numFactories) && numFactories > 0))
           {
-            rotate = false;
-            break;
+            foreach (var b in grid.GetFatBlocks())
+            {
+              if (b is IMyShipController || (b is MyConveyorSorter && b.BlockDefinition.Id.SubtypeName == "RoboFactory"))
+              {
+                WorldMatrix = b.WorldMatrix;
+                matrixSet = true;
+                break;
+              }
+            }
           }
 
-          if (rotate)
+          if (!matrixSet)
           {
-            var rotatedMatrix = MatrixD.CreateRotationY(MathHelper.PiOver2) * WorldMatrix;
-            WorldMatrix = rotatedMatrix;
+            if (!gravityChecked)
+            {
+              float _;
+              var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
+              var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, 0);
+              if (aGrav.LengthSquared() > 0)
+              {
+                var up = -Vector3D.Normalize(aGrav);
+                var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+                var dir = grid.WorldMatrix.GetClosestDirection(up);
+                up = grid.WorldMatrix.GetDirectionVector(dir);
+
+                dir = grid.WorldMatrix.GetClosestDirection(fwd);
+                fwd = grid.WorldMatrix.GetDirectionVector(dir);
+
+                WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+              }
+              else if (nGrav.LengthSquared() > 0)
+              {
+                var up = -Vector3D.Normalize(nGrav);
+                var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+                var dir = grid.WorldMatrix.GetClosestDirection(up);
+                up = grid.WorldMatrix.GetDirectionVector(dir);
+
+                dir = grid.WorldMatrix.GetClosestDirection(fwd);
+                fwd = grid.WorldMatrix.GetDirectionVector(dir);
+
+                WorldMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+              }
+              else
+                WorldMatrix = spawnBlockMatrix;
+            }
+            else
+              WorldMatrix = spawnBlockMatrix;
+
+            bool rotate = true;
+            foreach (var block in grid.GetFatBlocks())
+            {
+              rotate = false;
+              break;
+            }
+
+            if (rotate)
+            {
+              var rotatedMatrix = MatrixD.CreateRotationY(MathHelper.PiOver2) * WorldMatrix;
+              WorldMatrix = rotatedMatrix;
+            }
           }
         }
 
-        HookEvents();
+        UnhookEventsForGrid(MainGrid);
+        HookEventsForGrid(MainGrid);
         AiSession.Instance.MapInitQueue.Enqueue(this);
       }
       catch (Exception ex)
       {
         AiSession.Instance.Logger.Log($"Exception in CubeGridMap.ctor: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
-      }
-    }
-
-    void HookEvents()
-    {
-      for (int i = GridCollection.Count - 1; i >= 0; i--)
-      {
-        var grid = GridCollection[i] as MyCubeGrid;
-        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.GridSizeEnum == MyCubeSize.Small)
-          continue;
-
-        if (MainGrid == null || MainGrid.MarkedForClose || grid.PositionComp.WorldAABB.Volume > MainGrid.PositionComp.WorldAABB.Volume)
-          MainGrid = grid;
-
-        UnhookEventsForGrid(grid);
-        HookEventsForGrid(grid);
       }
     }
 
@@ -374,8 +476,6 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
-        //AiSession.Instance.Logger.Log($"GridGroup_OnReleased: Group = {gridGroup?.LinkType.ToString() ?? "NULL"}");
-
         Dirty = true;
         Ready = false;
 
@@ -453,8 +553,6 @@ namespace AiEnabled.Ai.Support
           var myGrid = _gridsToAdd[i] as MyCubeGrid;
           if (myGrid != null)
           {
-            UnhookEventsForGrid(myGrid);
-            HookEventsForGrid(myGrid);
             GridCollection.Add(myGrid);
           }
         }
@@ -475,49 +573,104 @@ namespace AiEnabled.Ai.Support
       {
         IsGridGraph = false;
 
-        if (InventoryCache != null)
+        if (AiSession.Instance != null && AiSession.Instance.Registered)
         {
-          InventoryCache.SetGrid(null);
-          InventoryCache._needsUpdate = false;
-
-          AiSession.Instance.InvCacheStack.Push(InventoryCache);
-        }
-
-        if (_additionalMaps2 != null)
-        {
-          _additionalMaps2.Clear();
-          AiSession.Instance.GridMapListStack.Push(_additionalMaps2);
-        }
-
-        if (GridCollection != null)
-        {
-          for (int i = 0; i < GridCollection.Count; i++)
+          if (InventoryCache != null)
           {
-            var grid = GridCollection[i] as MyEntity;
-            if (grid != null)
-              CloseGrid(grid);
+            InventoryCache.SetGrid(null);
+            InventoryCache._needsUpdate = false;
+
+            AiSession.Instance.InvCacheStack?.Push(InventoryCache);
           }
 
-          GridCollection.Clear();
-          AiSession.Instance.GridGroupListStack.Push(GridCollection);
-        }
+          if (_additionalMaps2 != null)
+          {
+            _additionalMaps2.Clear();
+            AiSession.Instance.GridMapListStack?.Push(_additionalMaps2);
+          }
 
-        if (_gridsToAdd != null)
-        {
-          _gridsToAdd.Clear();
-          AiSession.Instance.GridGroupListStack.Push(_gridsToAdd);
-        }
+          if (GridCollection != null)
+          {
+            for (int i = 0; i < GridCollection.Count; i++)
+            {
+              var grid = GridCollection[i] as MyEntity;
+              if (grid != null)
+                CloseGrid(grid);
+            }
 
-        if (_gridsToRemove != null)
-        {
-          _gridsToRemove.Clear();
-          AiSession.Instance.GridGroupListStack.Push(_gridsToRemove);
-        }
+            GridCollection.Clear();
+            AiSession.Instance.GridGroupListStack?.Push(GridCollection);
+          }
 
-        if (InteriorNodeList != null)
+          if (_gridsToAdd != null)
+          {
+            _gridsToAdd.Clear();
+            AiSession.Instance.GridGroupListStack?.Push(_gridsToAdd);
+          }
+
+          if (_gridsToRemove != null)
+          {
+            _gridsToRemove.Clear();
+            AiSession.Instance.GridGroupListStack?.Push(_gridsToRemove);
+          }
+
+          if (InteriorNodeList != null)
+          {
+            InteriorNodeList.Clear();
+            AiSession.Instance.LineListStack?.Push(InteriorNodeList);
+          }
+
+          if (_tempObstaclesWorkData != null)
+          {
+            AiSession.Instance.ObstacleWorkDataStack?.Push(_tempObstaclesWorkData);
+          }
+
+          if (_voxelUpdatesNeeded != null)
+          {
+            AiSession.Instance.VoxelUpdateListStack?.Push(_voxelUpdatesNeeded);
+          }
+
+          if (_voxelUpdatesQueue != null)
+          {
+            AiSession.Instance.VoxelUpdateQueueStack?.Push(_voxelUpdatesQueue);
+          }
+
+          if (_blockUpdateHash != null)
+          {
+            _blockUpdateHash.Clear();
+            AiSession.Instance.LocalVectorHashStack?.Push(_blockUpdateHash);
+          }
+
+          if (_blockApplyHash != null)
+          {
+            _blockApplyHash.Clear();
+            AiSession.Instance.LocalVectorHashStack?.Push(_blockApplyHash);
+          }
+        }
+        else
         {
-          InteriorNodeList.Clear();
-          AiSession.Instance.LineListStack.Push(InteriorNodeList);
+          _gridsToAdd?.Clear();
+          _gridsToRemove?.Clear();
+          _additionalMaps2?.Clear();
+          _voxelUpdatesNeeded?.Clear();
+          _voxelUpdatesQueue?.Clear();
+          _blockUpdateHash?.Clear();
+          _blockApplyHash?.Clear();
+
+          GridCollection?.Clear();
+          InteriorNodeList?.Clear();
+
+          _tempObstaclesWorkData = null;
+          _gridsToAdd = null;
+          _gridsToRemove = null;
+          _additionalMaps2 = null;
+          _voxelUpdatesNeeded = null;
+          _voxelUpdatesQueue = null;
+          _blockUpdateHash = null;
+          _blockApplyHash = null;
+
+          InventoryCache = null;
+          GridCollection = null;
         }
 
         AllDoors?.Clear();
@@ -532,8 +685,10 @@ namespace AiEnabled.Ai.Support
         _planetTileDictionary?.Clear();
         _planetTileDictionary = null;
 
-        _nodeStack?.Clear();
-        _nodeStack = null;
+        _blockBoxList?.Clear();
+        _blockBoxList = null;
+
+        _pendingLockObject = null;
       }
       catch (Exception ex)
       {
@@ -551,18 +706,96 @@ namespace AiEnabled.Ai.Support
       { 
         if (grid != null)
         {
-          grid.OnBlockAdded += MarkDirty;
-          grid.OnBlockRemoved += MarkDirty;
+          grid.OnBlockAdded += OnBlockAddRemove;
+          grid.OnBlockRemoved += OnBlockAddRemove;
           grid.OnGridSplit += OnGridSplit;
           grid.OnMarkForClose += CloseGrid;
           grid.OnClosing += CloseGrid;
           grid.OnClose += CloseGrid;
           grid.PositionComp.OnPositionChanged += OnGridPositionChanged;
+          grid.OnStaticChanged += Grid_OnStaticChanged;
         }
       }
       catch (Exception ex)
       {
         AiSession.Instance.Logger.Log($"Exception in CubeGridMap.HookEventsForGrid: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+      }
+    }
+
+    private void Grid_OnStaticChanged(MyCubeGrid grid, bool isStatic)
+    {
+      if (isStatic && grid != null && !grid.MarkedForClose)
+      {
+        bool checkGravity = false;
+        var planet = MyGamePruningStructure.GetClosestPlanet(OBB.Center);
+        if (planet != null && planet.PositionComp.WorldVolume.Intersects(UnbufferedOBB.GetAABB()))
+        {
+          Vector3D[] corners;
+          if (!AiSession.Instance.CornerArrayStack.TryPop(out corners) || corners == null)
+            corners = new Vector3D[8];
+
+          var gridOBB = new MyOrientedBoundingBoxD(OBB.Center, grid.PositionComp.LocalAABB.HalfExtents, Quaternion.CreateFromRotationMatrix(grid.WorldMatrix));
+          gridOBB.GetCorners(corners, 0);
+
+          using (planet.Pin())
+          {
+            for (int i = 0; i < corners.Length; i++)
+            {
+              if (PointInsideVoxel(corners[i], planet))
+              {
+                checkGravity = true;
+                break;
+              }
+            }
+          }
+
+          AiSession.Instance.CornerArrayStack.Push(corners);
+
+          if (checkGravity)
+          {
+            MatrixD newMatrix = WorldMatrix;
+            Base6Directions.Direction oldUpDir = Base6Directions.Direction.Up;
+            Base6Directions.Direction newUpDir = Base6Directions.Direction.Up;
+
+            float interference;
+            var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out interference);
+            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, interference);
+            if (aGrav.LengthSquared() > 0)
+            {
+              var up = -Vector3D.Normalize(aGrav);
+              var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+              oldUpDir = WorldMatrix.GetClosestDirection(up);
+              newUpDir = grid.WorldMatrix.GetClosestDirection(up);
+              up = grid.WorldMatrix.GetDirectionVector(newUpDir);
+
+              var dir = grid.WorldMatrix.GetClosestDirection(fwd);
+              fwd = grid.WorldMatrix.GetDirectionVector(dir);
+
+              newMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+            }
+            else if (nGrav.LengthSquared() > 0)
+            {
+              var up = -Vector3D.Normalize(nGrav);
+              var fwd = Vector3D.CalculatePerpendicularVector(up);
+
+              oldUpDir = WorldMatrix.GetClosestDirection(up);
+              newUpDir = grid.WorldMatrix.GetClosestDirection(up);
+              up = grid.WorldMatrix.GetDirectionVector(newUpDir);
+
+              var dir = grid.WorldMatrix.GetClosestDirection(fwd);
+              fwd = grid.WorldMatrix.GetDirectionVector(dir);
+
+              newMatrix = MatrixD.CreateWorld(OBB.Center, fwd, up);
+            }
+
+            if (oldUpDir != newUpDir)
+            {
+              WorldMatrix = newMatrix;
+              Dirty = true;
+            }
+          }
+        }
       }
     }
 
@@ -572,13 +805,14 @@ namespace AiEnabled.Ai.Support
       {
         if (grid != null)
         {
-          grid.OnBlockAdded -= MarkDirty;
-          grid.OnBlockRemoved -= MarkDirty;
+          grid.OnBlockAdded -= OnBlockAddRemove;
+          grid.OnBlockRemoved -= OnBlockAddRemove;
           grid.OnGridSplit -= OnGridSplit;
           grid.OnMarkForClose -= CloseGrid;
           grid.OnClosing -= CloseGrid;
           grid.OnClose -= CloseGrid;
           grid.PositionComp.OnPositionChanged -= OnGridPositionChanged;
+          grid.OnStaticChanged -= Grid_OnStaticChanged;
         }
       }
       catch (Exception ex)
@@ -594,6 +828,8 @@ namespace AiEnabled.Ai.Support
         Ready = false;
         Dirty = true;
 
+        var lastMainGrid = MainGrid;
+
         for (int i = GridCollection.Count - 1; i >= 0; i--)
         {
           var grid = GridCollection[i] as MyCubeGrid;
@@ -608,6 +844,17 @@ namespace AiEnabled.Ai.Support
         {
           Close();
         }
+        else
+        {
+          if (lastMainGrid != null && lastMainGrid.EntityId != MainGrid.EntityId)
+          {
+            UnhookEventsForGrid(lastMainGrid);
+          }
+
+          UnhookEventsForGrid(MainGrid);
+          HookEventsForGrid(MainGrid);
+        }
+
       }
       catch (Exception ex)
       {
@@ -619,10 +866,10 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
-        if (!HasMoved && MainGrid != null && !MainGrid.MarkedForClose)
+        if (!HasMoved && MainGrid != null && !MainGrid.MarkedForClose && !MainGrid.IsStatic)
         {
           var pos = MainGrid.WorldMatrix.Translation;
-          if (Vector3D.DistanceSquared(_worldPosition, pos) < 1)
+          if (Vector3D.DistanceSquared(_worldPosition, pos) < 1 && MainGrid.Physics.AngularVelocity.LengthSquared() < 0.001)
             return;
 
           HasMoved = true;
@@ -707,11 +954,21 @@ namespace AiEnabled.Ai.Support
     public void ResetMovement()
     {
       _worldPosition = MainGrid.WorldMatrix.Translation;
+      WorldMatrix.Translation = _worldPosition;
       HasMoved = false;
 
-      var aabb = OBB.GetAABB();
-      if (MyGamePruningStructure.AnyVoxelMapInBox(ref aabb))
-        Dirty = true;
+      if (RootVoxel != null && !RootVoxel.MarkedForClose)
+      {
+        using (RootVoxel.Pin())
+        {
+          var tuple = RootVoxel?.GetVoxelContentInBoundingBox_Fast(BoundingBox, WorldMatrix, true) ?? MyTuple.Create(0f, 0f);
+
+          if (tuple.Item1 > 0 || tuple.Item2 > 0)
+          {
+            Dirty = true;
+          }
+        }
+      }
     }
 
     private void CloseGrid(MyEntity obj)
@@ -724,8 +981,8 @@ namespace AiEnabled.Ai.Support
         var myGrid = obj as MyCubeGrid;
         if (myGrid != null)
         {
-          myGrid.OnBlockAdded -= MarkDirty;
-          myGrid.OnBlockRemoved -= MarkDirty;
+          myGrid.OnBlockAdded -= OnBlockAddRemove;
+          myGrid.OnBlockRemoved -= OnBlockAddRemove;
           myGrid.OnGridSplit -= OnGridSplit;
           myGrid.OnMarkForClose -= CloseGrid;
           myGrid.OnClosing -= CloseGrid;
@@ -767,52 +1024,69 @@ namespace AiEnabled.Ai.Support
 
     void RemovePlanetTilesAsync()
     {
-      List<Vector3I> nodeList;
-      if (!AiSession.Instance.LineListStack.TryPop(out nodeList))
-        nodeList = new List<Vector3I>();
-      else
-        nodeList.Clear();
-
-      foreach (var kvp in _planetTileDictionary)
+      try
       {
-        if (kvp.Value.IsGridNodePlanetTile)
-          nodeList.Add(kvp.Key);
-      }
+        var iter = new Vector3I_RangeIterator(ref BoundingBox.Min, ref BoundingBox.Max);
 
-      foreach (var position in nodeList)
-      {
-        Node node;
-        if (_planetTileDictionary.TryGetValue(position, out node))
+        while (iter.IsValid())
         {
-          _nodeStack.Push(node);
-          _planetTileDictionary.Remove(position);
+          if (Dirty)
+            return;
+
+          var localPoint = iter.Current;
+          iter.MoveNext();
+
+          if (OpenTileDict.ContainsKey(localPoint))
+            continue;
+
+          Node pn;
+          if (!_planetTileDictionary.TryGetValue(localPoint, out pn) || pn == null)
+          {
+            if (!AiSession.Instance.NodeStack.TryPop(out pn) || pn == null)
+              pn = new Node();
+          }
+
+          pn.Update(localPoint, Vector3.Zero, NodeType.GridPlanet, 0, MainGrid);
+        }
+
+        foreach (var kvp in _planetTileDictionary)
+        {
+          GetBlockedNodeEdges(kvp.Value);
         }
       }
-
-      nodeList.Clear();
-      AiSession.Instance.LineListStack.Push(nodeList);
-
-      float _;
-      var gravityNorm = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
-      if (gravityNorm.LengthSquared() > 0)
-        gravityNorm.Normalize();
-      else
-        gravityNorm = WorldMatrix.Down;
-
-      var upDir = MainGrid.WorldMatrix.GetClosestDirection(WorldMatrix.Up);
-      var upVec = Base6Directions.GetIntVector(upDir);
-
-      CheckForPlanetTiles(ref BoundingBox, ref gravityNorm, ref upVec);
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.RemovePlanetTilesAsync: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+      }
     }
 
-    private void MarkDirty(IMySlimBlock obj)
+    private void OnBlockAddRemove(IMySlimBlock obj)
     {
-      Dirty = true;
+      var grid = obj?.CubeGrid as MyCubeGrid;
+
+      if (MainGrid == null || MainGrid.MarkedForClose)
+      {
+        Dirty = true;
+      }
+      else if (grid != null && !grid.MarkedForClose && !grid.IsPreview && grid.EntityId == MainGrid.EntityId)
+      {
+        // Only care about main grid because all subgrids are now obstacles
+
+        var blockPos = obj.Position;
+        _blockUpdateHash.Add(blockPos);
+
+        NeedsBlockUpdate = true;
+      }
     }
 
     private void OnGridSplit(MyCubeGrid originalGrid, MyCubeGrid newGrid)
     {
-      Dirty = true;
+      if (MainGrid == null || MainGrid.MarkedForClose
+        || originalGrid?.EntityId == MainGrid.EntityId
+        || newGrid?.EntityId == MainGrid.EntityId)
+      {
+        Dirty = true;
+      }
     }
 
     public bool IsInBufferZone(Vector3D botPosition)
@@ -844,14 +1118,17 @@ namespace AiEnabled.Ai.Support
       ExemptNodesUpper.Clear();
       ExemptNodesSide.Clear();
 
-      foreach (var kvp in OpenTileDict)
+      if (AiSession.Instance?.NodeStack != null)
       {
-        _nodeStack.Push(kvp.Value);
-      }
+        foreach (var kvp in OpenTileDict)
+        {
+          AiSession.Instance.NodeStack.Push(kvp.Value);
+        }
 
-      foreach (var kvp in _planetTileDictionary)
-      {
-        _nodeStack.Push(kvp.Value);
+        foreach (var kvp in _planetTileDictionary)
+        {
+          AiSession.Instance.NodeStack.Push(kvp.Value);
+        }
       }
 
       OpenTileDict.Clear();
@@ -926,16 +1203,34 @@ namespace AiEnabled.Ai.Support
       Node node;
       TryGetNodeForPosition(testPosition, out node);
 
-      if (node != null && !currentIsDenied && !isSlimBlock
+      if (node != null && !currentIsDenied
         && !BlockedDoors.ContainsKey(localPosition)
         && !ObstacleNodes.ContainsKey(localPosition)
         && !TempBlockedNodes.ContainsKey(localPosition))
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
-        if ((!preferGroundNode || !isAir) && (allowAirNodes || !isAir) && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
-        {
-          if (!bot.WaterNodesOnly || !isWater)
+        if ((bot.RequiresJetpack || !preferGroundNode || !isAir) && (allowAirNodes || !isAir)
+          && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes)
+          && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)) && (!bot.WaterNodesOnly || !isWater))
+        { 
+
+          if (isSlimBlock)
+          {
+            var cube = node.Block ?? GetBlockAtPosition(testPosition);
+            if (!Obstacles.ContainsKey(node.Position) 
+              && (cube == null || (cube.FatBlock is IMyTextPanel)
+              || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
+              || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
+              || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
+              || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
+              || AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)
+              || cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large")))
+            {
+              return true;
+            }
+          }
+          else
             return true;
         }
       }
@@ -1010,14 +1305,36 @@ namespace AiEnabled.Ai.Support
     {
       localPosition = testPosition;
       Node node;
-      if (!currentIsDenied && !isSlimBlock && !BlockedDoors.ContainsKey(localPosition) && !ObstacleNodes.ContainsKey(localPosition)
-        && !TempBlockedNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
+
+      if (!currentIsDenied
+        && !BlockedDoors.ContainsKey(localPosition)
+        && !ObstacleNodes.ContainsKey(localPosition)
+        && !TempBlockedNodes.ContainsKey(localPosition)
+        && TryGetNodeForPosition(localPosition, out node))
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
-        if ((!preferGroundNode || !isAir) && (allowAirNodes || !isAir) && (bot == null || ((!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))))
+        if ((bot.RequiresJetpack || !preferGroundNode || !isAir) && (allowAirNodes || !isAir)
+          && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes)
+          && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)) && (!bot.WaterNodesOnly || !isWater))
         {
-          if (bot == null || !bot.WaterNodesOnly || !isWater)
+
+          if (isSlimBlock)
+          {
+            var cube = node.Block ?? GetBlockAtPosition(testPosition);
+            if (!Obstacles.ContainsKey(node.Position)
+              && (cube == null || (cube.FatBlock is IMyTextPanel)
+              || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
+              || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
+              || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
+              || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
+              || AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)
+              || cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large")))
+            {
+              return true;
+            }
+          }
+          else
             return true;
         }
       }
@@ -1042,6 +1359,16 @@ namespace AiEnabled.Ai.Support
 
         if (bot != null && !isWaterNode && bot.WaterNodesOnly)
           continue;
+
+        if (isSlimBlock)
+        {
+          var block = node.Block;
+          if (block != null && (AiSession.Instance.RampBlockDefinitions.Contains(block.BlockDefinition.Id)
+            || AiSession.Instance.SlopeBlockDefinitions.Contains(block.BlockDefinition.Id)))
+          {
+            continue;
+          }
+        }
 
         if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes)))
         {
@@ -1247,15 +1574,11 @@ namespace AiEnabled.Ai.Support
       {
         Vector3D worldCurrent = MainGrid.GridIntegerToWorld(nCur.Position) + nCur.Offset;
         Vector3D worldNext = MainGrid.GridIntegerToWorld(nNext.Position) + nNext.Offset;
-        //var line = new LineD(worldCurrent, worldNext);
 
         using (RootVoxel.Pin())
         {
           if (LineIntersectsVoxel(worldCurrent, worldNext, RootVoxel))
             return false;
-          //Vector3D? hit;
-          //if (RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
-          //  return false;
         }
       }
 
@@ -1310,15 +1633,15 @@ namespace AiEnabled.Ai.Support
           return false;
         }
 
-        IMySlimBlock prevBlock = GetBlockAtPosition(previousNode); // MainGrid.GetCubeBlock(previousNode);
-        IMySlimBlock curBlock = GetBlockAtPosition(currentNode); // MainGrid.GetCubeBlock(currentNode);
+        IMySlimBlock prevBlock = GetBlockAtPosition(previousNode);
+        IMySlimBlock curBlock = GetBlockAtPosition(currentNode);
         bool usePrevCur = prevBlock != null && curBlock != null && prevBlock != curBlock;
 
         IMySlimBlock nextBlock = null;
         bool useCurNext = false;
         if (!usePrevCur || checkTotal < 0)
         {
-          nextBlock = GetBlockAtPosition(nextNode); // MainGrid.GetCubeBlock(nextNode);
+          nextBlock = GetBlockAtPosition(nextNode);
           useCurNext = curBlock != null && nextBlock != null && curBlock != nextBlock;
           usePrevCur = usePrevCur && !useCurNext;
         }
@@ -1409,1267 +1732,29 @@ namespace AiEnabled.Ai.Support
         var cellSize = CellSize;
         var halfCellSize = CellSize * 0.5f;
 
-        //AiSession.Instance.Logger.ClearCached();
-        //AiSession.Instance.Logger.AddLine($"GridGroup Count = {GridGroupList.Count}");
+        BoundingBox = GetMapBoundingBoxLocal();
+        upDir = MainGrid.WorldMatrix.GetClosestDirection(WorldMatrix.Up);
+        upVec = Base6Directions.GetIntVector(upDir);
 
-        BoundingBox = new BoundingBoxI(MainGrid.Min, MainGrid.Max);
-        for (int i = GridCollection.Count - 1; i >= 0; i--)
+        blocks.Clear();
+        ((IMyCubeGrid)MainGrid).GetBlocks(blocks);
+
+        foreach (var block in blocks)
         {
           if (Dirty)
             break;
 
-          var connectedGrid = GridCollection[i] as MyCubeGrid;
-          if (connectedGrid?.Physics == null || connectedGrid.MarkedForClose)
-          {
-            //AiSession.Instance.Logger.AddLine($"Removing grid {connectedGrid.DisplayName}");
-            GridCollection.RemoveAtFast(i);
+          if (block == null || block.IsDestroyed)
             continue;
-          }
 
-          bool connectedIsMain = connectedGrid.EntityId == MainGrid.EntityId;
-
-          Vector3I min, max;
-          if (connectedIsMain)
-          {
-            min = connectedGrid.Min;
-            max = connectedGrid.Max;
-          }
-          else
-          {
-            min = MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(connectedGrid.Min));
-            max = MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(connectedGrid.Max));
-          }
-
-          BoundingBox.Include(ref min);
-          BoundingBox.Include(ref max);
-
-          if (connectedGrid.GridSizeEnum == MyCubeSize.Small)
-          {
+          var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+          if (cubeDef == null || !cubeDef.HasPhysics || block.FatBlock is IMyButtonPanel || block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MotorRotor))
             continue;
-          }
 
-          upDir = connectedGrid.WorldMatrix.GetClosestDirection(WorldMatrix.Up);
-          upVec = Base6Directions.GetIntVector(upDir);
+          if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(cubeDef.Id))
+            continue;
 
-          blocks.Clear();
-          ((IMyCubeGrid)connectedGrid).GetBlocks(blocks);
-
-          //AiSession.Instance.Logger.AddLine($"({i}) Grid {connectedGrid.DisplayName} has {blocks.Count} blocks");
-
-          foreach (var block in blocks)
-          {
-            if (Dirty)
-              break;
-
-            if (block == null || block.IsDestroyed)
-              continue;
-
-            var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
-            if (cubeDef == null || !cubeDef.HasPhysics || block.FatBlock is IMyButtonPanel || block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MotorRotor))
-              continue;
-
-            if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(cubeDef.Id))
-              continue;
-
-            CheckFaces(block, upVec, cubeDef);
-
-            var position = block.Position;
-            var mainGridPosition = connectedIsMain ? position : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(position));
-
-            //AiSession.Instance.Logger.AddLine($" -> Block Position = {position}, MainGrid Position = {mainGridPosition}, Block = {cubeDef.Id.SubtypeName}");
-            var door = block.FatBlock as IMyDoor;
-            if (door != null)
-            {
-              if (door.MarkedForClose)
-                continue;
-
-              AllDoors[mainGridPosition] = door;
-
-              if (!door.Enabled && door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Open)
-                Door_EnabledChanged(door);
-
-              door.EnabledChanged -= Door_EnabledChanged;
-              door.EnabledChanged += Door_EnabledChanged;
-              door.IsWorkingChanged -= Door_EnabledChanged;
-              door.IsWorkingChanged += Door_EnabledChanged;
-              door.OnDoorStateChanged -= Door_OnDoorStateChanged;
-              door.OnDoorStateChanged += Door_OnDoorStateChanged;
-              door.OnMarkForClose -= Door_OnMarkForClose;
-              door.OnMarkForClose += Door_OnMarkForClose;
-
-              if (door is IMyAirtightHangarDoor) // TODO: Possibly - check block groups for this door and open others with it? Maybe check at open time?
-              {
-                if (block.Orientation.Up == upDir)
-                {
-                  for (int j = 1; j < cubeDef.Size.Y; j++)
-                  {
-                    var newPos = mainGridPosition - upVec * j;
-
-                    if (!OpenTileDict.ContainsKey(newPos))
-                    {
-                      Node newNode;
-                      if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                        newNode = new Node();
-
-                      newNode.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                      OpenTileDict[newPos] = newNode;
-                    }
-                  }
-                }
-                else if (block.Orientation.Up == Base6Directions.GetOppositeDirection(upDir))
-                {
-                  for (int j = 1; j < cubeDef.Size.Y; j++)
-                  {
-                    var newPos = mainGridPosition + upVec * j;
-
-                    if (j == 1 || !OpenTileDict.ContainsKey(newPos))
-                    {
-                      Node newNode;
-                      if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                        newNode = new Node();
-
-                      newNode.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-
-                      if (j == 1)
-                        newNode.SetNodeType(NodeType.Ground);
-
-                      OpenTileDict[newPos] = newNode;
-                    }
-                  }
-                }
-              }
-              else if (door.BlockDefinition.SubtypeName.StartsWith("SlidingHatchDoor"))
-              {
-                // Warfare 2 update
-
-                var newPos = door.Position;
-                if (!connectedIsMain)
-                  newPos = MainGrid.WorldToGridInteger(door.CubeGrid.GridIntegerToWorld(newPos));
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-              }
-              else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
-              {
-                // Large DLC gate
-                var center = door.WorldAABB.Center;
-                var doorMatrix = door.WorldMatrix;
-                var pos = center + doorMatrix.Down * halfCellSize;
-                var newPos = MainGrid.WorldToGridInteger(pos);
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-
-                pos += door.WorldMatrix.Left * cellSize;
-                newPos = MainGrid.WorldToGridInteger(pos);
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-
-                pos += door.WorldMatrix.Up * cellSize;
-                newPos = MainGrid.WorldToGridInteger(pos);
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-
-                pos += door.WorldMatrix.Right * cellSize;
-                newPos = MainGrid.WorldToGridInteger(pos);
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-
-                pos += door.WorldMatrix.Right * cellSize;
-                newPos = MainGrid.WorldToGridInteger(pos);
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-
-                pos += door.WorldMatrix.Down * cellSize;
-                newPos = MainGrid.WorldToGridInteger(pos);
-
-                if (!OpenTileDict.ContainsKey(newPos))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(newPos, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[newPos] = node;
-                }
-              }
-              else // if (block.Orientation.Up == upDir)
-              {
-                if (!OpenTileDict.ContainsKey(mainGridPosition))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-            }
-            else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(cubeDef.Id))
-            {
-              if (AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(cubeDef.Id))
-              {
-                if (upDir == block.Orientation.Left)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-              else if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(cubeDef.Id))
-              {
-                if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) == 0)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-              else if (AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(cubeDef.Id))
-              {
-                if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) == 0)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-
-                  var newPos = mainGridPosition + upVec;
-                  var cubeAbove = GetBlockAtPosition(newPos);
-                  var includeAbove = cubeAbove == null || cubeAbove.BlockDefinition.Id == block.BlockDefinition.Id;
-
-                  if (!includeAbove)
-                  {
-                    var cubeAboveDef = cubeAbove.BlockDefinition.Id;
-                    var entrance = block.Orientation.Forward;
-                    var entrance2 = block.Orientation.Up;
-                    var entranceIsUp = entrance == upDir || entrance2 == upDir;
-
-                    if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
-                    {
-                      includeAbove = !CheckCatwalkForRails(cubeAbove, -upVec);
-                    }
-                    else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
-                    {
-                      var aboveOr = cubeAbove.Orientation;
-                      var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
-                      if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
-                      {
-                        if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
-                        {
-                          if (entranceIsUp)
-                          {
-                            includeAbove = ((aboveOr.Up == entrance || aboveOr.Up == entrance2) && aboveOr.Forward == downDir)
-                              || ((aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) || aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance2)) && aboveOr.Up == upDir);
-
-                            if (includeAbove)
-                            {
-                              ExemptNodesUpper.Add(newPos);
-                            }
-                          }
-                          else // Up is up
-                          {
-                            includeAbove = (aboveOr.Up == downDir && (aboveOr.Forward == entrance || aboveOr.Forward == entrance2))
-                              || (aboveOr.Forward == upDir && (aboveOr.Up == Base6Directions.GetOppositeDirection(entrance) || aboveOr.Up == Base6Directions.GetOppositeDirection(entrance2)));
-
-                            if (includeAbove)
-                            {
-                              ExemptNodesUpper.Add(newPos);
-                            }
-                          }
-                        }
-                      }
-                      else
-                      {
-                        if (entranceIsUp)
-                        {
-                          includeAbove = ((aboveOr.Up == entrance || aboveOr.Up == entrance2) && aboveOr.Forward == downDir)
-                            || ((aboveOr.Forward == entrance || aboveOr.Forward == entrance2) && aboveOr.Up == downDir);
-
-                          if (includeAbove)
-                          {
-                            ExemptNodesUpper.Add(newPos);
-                          }
-                        }
-                        else // Up is up
-                        {
-                          includeAbove = (aboveOr.Up == downDir && (aboveOr.Forward == entrance || aboveOr.Forward == entrance2))
-                            || (aboveOr.Forward == downDir && (aboveOr.Up == entrance || aboveOr.Up == entrance2));
-
-                          if (includeAbove)
-                          {
-                            ExemptNodesUpper.Add(newPos);
-                          }
-                        }
-                      }
-                    }
-                  }
-
-                  if (includeAbove)
-                  {
-                    Node newNode;
-                    if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                      newNode = new Node();
-
-                    newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, connectedGrid, cubeAbove);
-                    OpenTileDict[newPos] = newNode;
-                  }
-                }
-              }
-            }
-            else if (AiSession.Instance.PassageBlockDefinitions.Contains(cubeDef.Id))
-            {
-              var downDir = Base6Directions.GetOppositeDirection(upDir);
-              if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_Passage))
-              {
-                if (block.Orientation.Forward == upDir || block.Orientation.Forward == downDir)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-              else if (!cubeDef.Id.SubtypeName.StartsWith("HalfPassageCorner"))
-              {
-                if (block.Orientation.Up == upDir || block.Orientation.Up == downDir)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-                else if (AiSession.Instance.PassageIntersectionDefinitions.Contains(cubeDef.Id))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-            }
-            else if (AiSession.Instance.BeamBlockDefinitions.ContainsItem(cubeDef.Id))
-            {
-              var beamPosition = block.Position;
-              if (!connectedIsMain)
-                beamPosition = MainGrid.WorldToGridInteger(block.CubeGrid.GridIntegerToWorld(beamPosition));
-
-              var cubeAbove = GetBlockAtPosition(beamPosition + upVec); // block.CubeGrid.GetCubeBlock(block.Position + upVec);
-              if (cubeAbove == null)
-              {
-                var blockSubtype = cubeDef.Id.SubtypeName;
-                if (blockSubtype.EndsWith("Slope"))
-                {
-                  if (block.Orientation.Forward == upDir || block.Orientation.Left == Base6Directions.GetOppositeDirection(upDir))
-                  {
-                    Node node;
-                    if (!_nodeStack.TryPop(out node) || node == null)
-                      node = new Node();
-
-                    node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                    OpenTileDict[mainGridPosition] = node;
-                  }
-                }
-                else if (blockSubtype.EndsWith("TJunction") || blockSubtype.EndsWith("Tip") || blockSubtype.EndsWith("Base"))
-                {
-                  if (block.Orientation.Left == upDir)
-                  {
-                    Node node;
-                    if (!_nodeStack.TryPop(out node) || node == null)
-                      node = new Node();
-
-                    node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                    OpenTileDict[mainGridPosition] = node;
-                  }
-                }
-                else if (block.Orientation.Left == upDir || block.Orientation.Left == Base6Directions.GetOppositeDirection(upDir))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-            }
-            else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeDef.Id))
-            {
-              if (block.Orientation.Up == upDir)
-              {
-                Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
-                  node = new Node();
-
-                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                OpenTileDict[mainGridPosition] = node;
-              }
-            }
-            else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id))
-            {
-              var positionAbove = position + upVec;
-              var cubeAbove = GetBlockAtPosition(positionAbove);
-              var entrance = Base6Directions.GetOppositeDirection(block.Orientation.Forward);
-              bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
-              bool validHalfStair = false;
-              bool includeAbove = false;
-              bool entranceIsUp = entrance == upDir;
-              bool upIsUp = !entranceIsUp && block.Orientation.Up == upDir;
-
-              bool addThis = (upIsUp && cubeAboveEmpty)
-                || (entranceIsUp && (cubeAboveEmpty || cubeAbove == block));
-
-              if (!addThis)
-              {
-                if (cubeAboveEmpty && block.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock"))
-                {
-                  addThis = upIsUp || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Forward;
-                }
-
-                if (!addThis)
-                {
-                  if (!cubeAboveEmpty && (entranceIsUp || upIsUp))
-                  {
-                    var cubeAboveDef = cubeAbove.BlockDefinition.Id;
-
-                    if (AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef.Id))
-                    {
-                      if (cubeAboveDef == cubeDef.Id && block.Orientation.Up == cubeAbove.Orientation.Up)
-                        addThis = validHalfStair = (entrance == cubeAbove.Orientation.Forward);
-
-                      if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
-                      {
-                        if (!addThis)
-                          addThis = !CheckCatwalkForRails(cubeAbove, -upVec);
-
-                        includeAbove = addThis;
-                      }
-                      else if (!addThis && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
-                      {
-                        var aboveOr = cubeAbove.Orientation;
-                        var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
-                        if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
-                        {
-                          if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
-                          {
-                            if (entranceIsUp)
-                            {
-                              addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir)
-                                || (aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) && aboveOr.Up == upDir);
-                              if (addThis)
-                              {
-                                includeAbove = true;
-                                ExemptNodesUpper.Add(positionAbove);
-                              }
-                            }
-                            else // Up is up
-                            {
-                              addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance)
-                                || (aboveOr.Forward == upDir && aboveOr.Up == Base6Directions.GetOppositeDirection(entrance));
-                              if (addThis)
-                              {
-                                includeAbove = true;
-                                ExemptNodesUpper.Add(positionAbove);
-                              }
-                            }
-                          }
-                        }
-                        else
-                        {
-                          if (entranceIsUp)
-                          {
-                            addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir) || (aboveOr.Forward == entrance && aboveOr.Up == downDir);
-                            if (addThis)
-                            {
-                              includeAbove = true;
-                              ExemptNodesUpper.Add(positionAbove);
-                            }
-                          }
-                          else // Up is up
-                          {
-                            addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance) || (aboveOr.Forward == downDir && aboveOr.Up == entrance);
-                            if (addThis)
-                            {
-                              includeAbove = true;
-                              ExemptNodesUpper.Add(positionAbove);
-                            }
-                          }
-                        }
-                      }
-                    }
-                    else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
-                    {
-                      var aboveOr = cubeAbove.Orientation;
-                      var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
-                      if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
-                      {
-                        if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
-                        {
-                          if (entranceIsUp)
-                          {
-                            addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir)
-                              || (aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) && aboveOr.Up == upDir);
-                            if (addThis)
-                            {
-                              includeAbove = true;
-                              ExemptNodesUpper.Add(positionAbove);
-                            }
-                          }
-                          else // Up is up
-                          {
-                            addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance)
-                              || (aboveOr.Forward == upDir && aboveOr.Up == Base6Directions.GetOppositeDirection(entrance));
-                            if (addThis)
-                            {
-                              includeAbove = true;
-                              ExemptNodesUpper.Add(positionAbove);
-                            }
-                          }
-                        }
-                      }
-                      else
-                      {
-                        if (entranceIsUp)
-                        {
-                          addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir) || (aboveOr.Forward == entrance && aboveOr.Up == downDir);
-                          if (addThis)
-                          {
-                            includeAbove = true;
-                            ExemptNodesUpper.Add(positionAbove);
-                          }
-                        }
-                        else // Up is up
-                        {
-                          addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance) || (aboveOr.Forward == downDir && aboveOr.Up == entrance);
-                          if (addThis)
-                          {
-                            includeAbove = true;
-                            ExemptNodesUpper.Add(positionAbove);
-                          }
-                        }
-                      }
-                    }
-                    else if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAboveDef))
-                    {
-                      // TODO: Is this needed?
-                    }
-                    else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
-                    {
-                      addThis = !CheckCatwalkForRails(cubeAbove, -upVec);
-                      includeAbove = addThis;
-                    }
-                  }
-
-                  if (!addThis)
-                  {
-                    if (cubeDef.Id.SubtypeName.IndexOf("BlockArmorSlope2") >= 0)
-                    {
-                      var blockOr = block.Orientation;
-                      var blockDown = Base6Directions.GetOppositeDirection(blockOr.Up);
-                      var blockBack = Base6Directions.GetOppositeDirection(blockOr.Forward);
-                      bool isBlockTip = cubeDef.Id.SubtypeName.EndsWith("Tip");
-
-                      if (entranceIsUp)
-                      {
-                        addThis = true;
-                        includeAbove = cubeAboveEmpty;
-
-                        if (!includeAbove)
-                        {
-                          var aboveOr = cubeAbove.Orientation;
-                          var aboveDef = cubeAbove.BlockDefinition.Id;
-                          var aboveSubtype = aboveDef.SubtypeName;
-
-                          if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id))
-                          {
-                            includeAbove = !isBlockTip && aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward;
-                          }
-                          else if (isBlockTip)
-                          {
-                            if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
-                            {
-                              if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
-                              {
-                                if (aboveSubtype.EndsWith("Tip"))
-                                {
-                                  includeAbove = aboveOr.Forward == blockBack && aboveOr.Up == blockDown;
-                                }
-                              }
-                              else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
-                              {
-                                includeAbove = aboveOr.Up == blockOr.Forward || aboveOr.Forward == blockBack;
-                              }
-                              else if (aboveSubtype.EndsWith("BlockArmorSlope"))
-                              {
-                                includeAbove = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
-                                  || (aboveOr.Forward == blockOr.Up && aboveOr.Up == blockOr.Forward);
-                              }
-                              else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
-                              {
-                                includeAbove = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
-                                  || (aboveOr.Up == blockOr.Forward && aboveOr.Forward == blockOr.Up);
-                              }
-                            }
-                          }
-                          else // block base -> add adjacent
-                          {
-                            var adjacentPos = mainGridPosition + Base6Directions.GetIntVector(blockOr.Up);
-                            var adjacentBlock = GetBlockAtPosition(adjacentPos); // connectedGrid.GetCubeBlock(adjacentPos) as IMySlimBlock;
-
-                            if (adjacentBlock != null)
-                            {
-                              var adjacentDef = adjacentBlock.BlockDefinition.Id;
-                              var adjacentOr = adjacentBlock.Orientation;
-                              bool addAdjacent = false;
-
-                              if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(adjacentDef))
-                              {
-                                addAdjacent = adjacentOr.Up == blockDown && (adjacentOr.Forward == blockBack || adjacentOr.Forward == blockOr.Forward);
-
-                                if (!addAdjacent && !adjacentDef.SubtypeName.EndsWith("Tip"))
-                                {
-                                  addAdjacent = adjacentOr.Forward == blockOr.Up && (adjacentOr.Up == blockBack || adjacentOr.Up == blockOr.Forward);
-                                }
-                              }
-                              else if (AiSession.Instance.RampBlockDefinitions.Contains(adjacentDef))
-                              {
-                                addAdjacent = adjacentOr.Forward == blockOr.Forward && adjacentOr.Up == blockDown;
-                              }
-                              else if (AiSession.Instance.SlopeBlockDefinitions.Contains(adjacentDef))
-                              {
-                                if (adjacentDef.SubtypeName.EndsWith("ArmorHalfSlopedCorner"))
-                                {
-                                  addAdjacent = adjacentOr.Left == blockDown || adjacentOr.Up == blockDown || adjacentOr.Forward == blockDown;
-                                }
-                              }
-
-                              if (addAdjacent)
-                              {
-                                var node = new Node(adjacentPos, Vector3.Zero, connectedGrid, adjacentBlock);
-                                node.SetNodeType(NodeType.Ground);
-                                OpenTileDict[adjacentPos] = node;
-                                ExemptNodesSide.Add(adjacentPos);
-                              }
-                            }
-                          }
-                        }
-                      }
-                      else if (upIsUp && !cubeAboveEmpty)
-                      {
-                        var aboveOr = cubeAbove.Orientation;
-                        var aboveDef = cubeAbove.BlockDefinition.Id;
-                        var aboveSubtype = aboveDef.SubtypeName;
-
-                        if (!isBlockTip)
-                        {
-                          // block base is the tall side - less head room
-                          if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(aboveDef))
-                          {
-                            if (aboveSubtype.EndsWith("ArmorSlope2Tip"))
-                            {
-                              addThis = aboveOr.Forward == blockBack && aboveOr.Up == blockDown;
-                            }
-                            else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
-                            {
-                              addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
-                            }
-                            else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
-                            {
-                              addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
-                                || (aboveOr.Forward == blockOr.Up && aboveOr.Left == blockOr.Left);
-                            }
-                          }
-                          else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
-                          {
-                            if (aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
-                            {
-                              addThis = blockDown == Base6Directions.GetOppositeDirection(aboveOr.Forward);
-                            }
-                            else if (aboveSubtype.EndsWith("ArmorHalfSlopedCorner"))
-                            {
-                              addThis = aboveOr.Forward == blockDown || aboveOr.Left == blockDown || aboveOr.Up == blockDown;
-                            }
-                          }
-                        }
-                        else // slope tip
-                        {
-                          if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
-                          {
-                            if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
-                            {
-                              addThis = aboveOr.Up == blockDown;
-
-                              if (addThis && aboveSubtype.EndsWith("Base"))
-                              {
-                                addThis &= aboveOr.Forward == blockBack;
-                              }
-                            }
-                            else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
-                            {
-                              addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
-                            }
-                            else if (aboveSubtype.EndsWith("BlockArmorSlope"))
-                            {
-                              addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
-                                || (aboveOr.Forward == blockOr.Up && blockBack == Base6Directions.GetOppositeDirection(aboveOr.Up));
-                            }
-                            else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
-                            {
-                              addThis = aboveOr.Up == blockDown || aboveOr.Forward == blockOr.Up;
-                            }
-                          }
-                          else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
-                          {
-                            bool isHalfSlopedCorner = aboveSubtype.EndsWith("ArmorHalfSlopedCorner") || aboveSubtype.EndsWith("Concrete_Half_Block_Slope");
-                            if (isHalfSlopedCorner || aboveSubtype.EndsWith("ArmorHalfCorner") || aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
-                            {
-                              addThis = aboveOr.Up == blockDown;
-
-                              if (addThis && isHalfSlopedCorner)
-                              {
-                                addThis &= (aboveOr.Forward == blockBack || aboveOr.Left == blockBack);
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-
-              if (addThis)
-              {
-                Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
-                  node = new Node();
-
-                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                OpenTileDict[mainGridPosition] = node;
-
-                if (includeAbove || validHalfStair || (cubeAboveEmpty && (upIsUp || entranceIsUp) && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef.Id)))
-                {
-                  var newPos = mainGridPosition + upVec;
-
-                  Node newNode;
-                  if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                    newNode = new Node();
-
-                  newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, connectedGrid, cubeAbove);
-                  OpenTileDict[newPos] = newNode;
-
-                  if (!cubeAboveEmpty && !validHalfStair)
-                  {
-                    ExemptNodesUpper.Add(newPos);
-                  }
-                }
-              }
-            }
-            else if (AiSession.Instance.RampBlockDefinitions.Contains(cubeDef.Id))
-            {
-              Matrix matrix = new Matrix
-              {
-                Forward = Base6Directions.GetVector(block.Orientation.Forward),
-                Left = Base6Directions.GetVector(block.Orientation.Left),
-                Up = Base6Directions.GetVector(block.Orientation.Up)
-              };
-
-              var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-              if (faceDict.Count < 2)
-                matrix.TransposeRotationInPlace();
-
-              var dotUp = Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref upVec);
-              var dotFwd = Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref upVec);
-
-              Vector3I center = cubeDef.Center;
-              Vector3I.TransformNormal(ref center, ref matrix, out center);
-              var adjustedPosition = block.Position - center;
-              var blockOr = block.Orientation;
-
-              foreach (var kvp in faceDict)
-              {
-                Vector3I offset = kvp.Key;
-                Vector3I.TransformNormal(ref offset, ref matrix, out offset);
-                var cell = adjustedPosition + offset;
-                var positionAbove = cell + upVec;
-                mainGridPosition = connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
-
-                var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
-                bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
-                bool isBlockTip = block.Position == cell;
-                bool addAbove = false, addThis = false;
-
-                addThis = (blockOr.Up == upDir && cubeAboveEmpty) || (blockOr.Forward == upDir && (cubeAboveEmpty || cubeAbove == block));
-
-                if (!addThis && !cubeAboveEmpty)
-                {
-                  var aboveOr = cubeAbove.Orientation;
-                  var aboveDef = cubeAbove.BlockDefinition.Id;
-                  var aboveSubtype = aboveDef.SubtypeName;
-                  var blockDown = Base6Directions.GetOppositeDirection(blockOr.Up);
-
-                  if (dotUp > 0) // normal placement
-                  {
-                    addAbove = !isBlockTip;
-
-                    if (AiSession.Instance.RampBlockDefinitions.Contains(aboveDef))
-                    {
-                      addThis = aboveOr.Up == blockDown && aboveOr.Forward == Base6Directions.GetOppositeDirection(blockOr.Forward);
-                    }
-                    else if (isBlockTip)
-                    {
-                      if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
-                      {
-                        if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
-                        {
-                          addThis = aboveOr.Up == blockDown;
-
-                          if (addThis && aboveSubtype.EndsWith("Base"))
-                          {
-                            addThis &= aboveOr.Forward == blockOr.Forward;
-                          }
-                        }
-                        else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
-                        {
-                          addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
-                        }
-                        else if (aboveSubtype.EndsWith("BlockArmorSlope"))
-                        {
-                          addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
-                            || (aboveOr.Forward == blockOr.Up && blockOr.Forward == Base6Directions.GetOppositeDirection(aboveOr.Up));
-                        }
-                        else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
-                        {
-                          addThis = aboveOr.Up == blockDown || aboveOr.Forward == blockOr.Up;
-                        }
-                      }
-                      else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
-                      {
-                        bool isHalfSlopedCorner = aboveSubtype.EndsWith("ArmorHalfSlopedCorner") || aboveSubtype.EndsWith("Concrete_Half_Block_Slope");
-                        if (isHalfSlopedCorner || aboveSubtype.EndsWith("ArmorHalfCorner") || aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
-                        {
-                          addThis = aboveOr.Up == blockDown;
-
-                          if (addThis && isHalfSlopedCorner)
-                          {
-                            addThis &= (aboveOr.Forward == blockOr.Forward || aboveOr.Left == blockOr.Forward);
-                          }
-                        }
-                      }
-                    }
-                    else // block base is the tall side - less head room
-                    {
-                      if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(aboveDef))
-                      {
-                        if (aboveSubtype.EndsWith("ArmorSlope2Tip"))
-                        {
-                          addThis = aboveOr.Forward == blockOr.Forward && aboveOr.Up == blockDown;
-                        }
-                        else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
-                        {
-                          addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
-                        }
-                        else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
-                        {
-                          addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
-                            || (aboveOr.Forward == blockOr.Up && aboveOr.Left == blockOr.Left);
-                        }
-                      }
-                      else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
-                      {
-                        if (aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
-                        {
-                          addThis = blockDown == Base6Directions.GetOppositeDirection(aboveOr.Forward);
-                        }
-                        else if (aboveSubtype.EndsWith("ArmorHalfSlopedCorner"))
-                        {
-                          addThis = aboveOr.Forward == blockDown || aboveOr.Left == blockDown || aboveOr.Up == blockDown;
-                        }
-                      }
-                    }
-                  }
-                  else if (dotFwd > 0) // steep placement
-                  {
-                    addThis = cubeAbove == block;
-                    addAbove = isBlockTip;
-
-                    if (!addThis)
-                    {
-                      if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id))
-                      {
-                        addThis = aboveOr.Up == Base6Directions.GetOppositeDirection(blockOr.Up)
-                          && aboveOr.Forward == Base6Directions.GetOppositeDirection(blockOr.Forward);
-                      }
-                      else if (isBlockTip)
-                      {
-                        var blockBack = Base6Directions.GetOppositeDirection(blockOr.Forward);
-
-                        if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
-                        {
-                          if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
-                          {
-                            if (aboveSubtype.EndsWith("Tip"))
-                            {
-                              addThis = aboveOr.Forward == blockOr.Forward && aboveOr.Up == blockDown;
-                            }
-                          }
-                          else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
-                          {
-                            addThis = aboveOr.Up == blockBack || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockBack;
-                          }
-                          else if (aboveSubtype.EndsWith("BlockArmorSlope"))
-                          {
-                            addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
-                              || (aboveOr.Forward == blockOr.Up && aboveOr.Up == blockBack);
-                          }
-                          else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
-                          {
-                            addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
-                              || (aboveOr.Up == blockBack && aboveOr.Forward == blockOr.Up);
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-                else if (cubeAboveEmpty)
-                {
-                  addAbove = (dotUp > 0 && !isBlockTip) || (dotFwd > 0 && isBlockTip);
-                }
-                else if (cubeAbove == block && !isBlockTip) // add adjacent
-                {
-                  var blockDown = Base6Directions.GetOppositeDirection(blockOr.Up);
-                  var adjacentPos = mainGridPosition + Base6Directions.GetIntVector(blockOr.Up);
-                  var adjacentBlock = GetBlockAtPosition(adjustedPosition); // connectedGrid.GetCubeBlock(adjacentPos) as IMySlimBlock;
-
-                  if (adjacentBlock != null)
-                  {
-                    var blockBack = Base6Directions.GetOppositeDirection(blockOr.Forward);
-                    var adjacentDef = adjacentBlock.BlockDefinition.Id;
-                    var adjacentOr = adjacentBlock.Orientation;
-                    bool addAdjacent = false;
-
-                    if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(adjacentDef))
-                    {
-                      addAdjacent = adjacentOr.Up == blockDown && (adjacentOr.Forward == blockBack || adjacentOr.Forward == blockOr.Forward);
-
-                      if (!addAdjacent && !adjacentDef.SubtypeName.EndsWith("Tip"))
-                      {
-                        addAdjacent = adjacentOr.Forward == blockOr.Up && (adjacentOr.Up == blockBack || adjacentOr.Up == blockOr.Forward);
-                      }
-                    }
-                    else if (AiSession.Instance.RampBlockDefinitions.Contains(adjacentDef))
-                    {
-                      addAdjacent = adjacentOr.Forward == blockBack && adjacentOr.Up == blockDown;
-                    }
-                    else if (AiSession.Instance.SlopeBlockDefinitions.Contains(adjacentDef))
-                    {
-                      if (adjacentDef.SubtypeName.EndsWith("ArmorHalfSlopedCorner"))
-                      {
-                        addAdjacent = adjacentOr.Left == blockDown || adjacentOr.Up == blockDown || adjacentOr.Forward == blockDown;
-                      }
-                    }
-
-                    if (addAdjacent)
-                    {
-                      var node = new Node(adjacentPos, Vector3.Zero, connectedGrid, adjacentBlock);
-                      node.SetNodeType(NodeType.Ground);
-                      OpenTileDict[adjacentPos] = node;
-                      ExemptNodesSide.Add(adjacentPos);
-                    }
-                  }
-                }
-
-                if (addThis)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-
-                  if (addAbove)
-                  {
-                    var newPos = mainGridPosition + upVec;
-
-                    Node newNode;
-                    if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                      newNode = new Node();
-
-                    newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, connectedGrid, cubeAbove);
-                    OpenTileDict[newPos] = newNode;
-
-                    if (!cubeAboveEmpty)
-                    {
-                      ExemptNodesUpper.Add(newPos);
-                    }
-                  }
-                }
-              }
-            }
-            else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id))
-            {
-              Base6Directions.Direction sideWithPane;
-              if (cubeDef.Id.SubtypeName == "LargeWindowSquare")
-                sideWithPane = block.Orientation.Forward;
-              else
-                sideWithPane = Base6Directions.GetOppositeDirection(block.Orientation.Left);
-
-              Matrix matrix = new Matrix
-              {
-                Forward = Base6Directions.GetVector(block.Orientation.Forward),
-                Left = Base6Directions.GetVector(block.Orientation.Left),
-                Up = Base6Directions.GetVector(block.Orientation.Up)
-              };
-
-              var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-              if (faceDict.Count < 2)
-                matrix.TransposeRotationInPlace();
-
-              Vector3I center = cubeDef.Center;
-              Vector3I.TransformNormal(ref center, ref matrix, out center);
-              var adjustedPosition = block.Position - center;
-              var downDir = Base6Directions.GetOppositeDirection(upDir);
-
-              foreach (var kvp in faceDict)
-              {
-                Vector3I offset = kvp.Key;
-                Vector3I.TransformNormal(ref offset, ref matrix, out offset);
-                var cell = adjustedPosition + offset;
-                mainGridPosition = connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
-
-                if (sideWithPane == downDir || (cubeDef.Id.SubtypeName.StartsWith("HalfWindowCorner") && block.Orientation.Forward == downDir))
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-            }
-            else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(cubeDef.Id))
-            {
-              Matrix matrix = new Matrix
-              {
-                Forward = Base6Directions.GetVector(block.Orientation.Forward),
-                Left = Base6Directions.GetVector(block.Orientation.Left),
-                Up = Base6Directions.GetVector(block.Orientation.Up)
-              };
-
-              var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-              if (faceDict.Count < 2)
-                matrix.TransposeRotationInPlace();
-
-              Vector3I center = cubeDef.Center;
-              Vector3I.TransformNormal(ref center, ref matrix, out center);
-              var adjustedPosition = block.Position - center;
-
-              bool isEdgeWindow = cubeDef.Id.SubtypeName == "LargeWindowEdge";
-
-              foreach (var kvp in faceDict)
-              {
-                Vector3I offset = kvp.Key;
-                Vector3I.TransformNormal(ref offset, ref matrix, out offset);
-                var cell = adjustedPosition + offset;
-                var positionAbove = cell + upVec;
-                mainGridPosition = connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
-
-                var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
-                bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
-
-                if (isEdgeWindow)
-                {
-                  if (cubeAboveEmpty && (block.Orientation.Up == upDir || block.Orientation.Forward == upDir))
-                  {
-                    Node node;
-                    if (!_nodeStack.TryPop(out node) || node == null)
-                      node = new Node();
-
-                    node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                    OpenTileDict[mainGridPosition] = node;
-
-                    var newPos = mainGridPosition + upVec;
-
-                    Node newNode;
-                    if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                      newNode = new Node();
-
-                    newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, connectedGrid);
-                    OpenTileDict[newPos] = newNode;
-                  }
-                }
-                else
-                {
-                  if (cubeAboveEmpty || cubeAbove == block)
-                  {
-                    var vecLeft = Base6Directions.GetIntVector(block.Orientation.Left);
-                    if (vecLeft.Dot(ref upVec) == 0)
-                    {
-                      Node node;
-                      if (!_nodeStack.TryPop(out node) || node == null)
-                        node = new Node();
-
-                      node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                      OpenTileDict[mainGridPosition] = node;
-
-                      var newPos = mainGridPosition + upVec;
-
-                      Node newNode;
-                      if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                        newNode = new Node();
-
-                      newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, connectedGrid, cubeAbove);
-                      OpenTileDict[newPos] = newNode;
-                    }
-                  }
-                }
-              }
-            }
-            else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
-            {
-              if (block.Orientation.Forward == Base6Directions.GetOppositeDirection(upDir))
-              {
-                Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
-                  node = new Node();
-
-                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                OpenTileDict[mainGridPosition] = node;
-              }
-            }
-            else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
-            {
-              Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
-                node = new Node();
-
-              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-              OpenTileDict[mainGridPosition] = node;
-
-              var blockUp = Base6Directions.GetIntVector(block.Orientation.Up);
-              if (blockUp.Dot(ref upVec) != 0)
-              {
-                var positionAbove = position + upVec;
-                var cubeAbove = GetBlockAtPosition(positionAbove);
-                if (cubeAbove == null)
-                {
-                  var newPos = mainGridPosition + upVec;
-
-                  Node newNode;
-                  if (!_nodeStack.TryPop(out newNode) || newNode == null)
-                    newNode = new Node();
-
-                  newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, connectedGrid);
-                  OpenTileDict[newPos] = newNode;
-                }
-              }
-            }
-            else if (cubeDef.Id.SubtypeName.EndsWith("HalfArmorBlock") || cubeDef.Id.SubtypeName.StartsWith("WindowWall"))
-            {
-              var blockFwd = Base6Directions.GetIntVector(block.Orientation.Forward);
-              var dotFwd = blockFwd.Dot(ref upVec);
-
-              if (dotFwd < 0)
-              {
-                var positionAbove = position + upVec;
-                var cubeAbove = GetBlockAtPosition(positionAbove);
-                if (cubeAbove == null)
-                {
-                  Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
-                    node = new Node();
-
-                  node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                  OpenTileDict[mainGridPosition] = node;
-                }
-              }
-              else if (dotFwd == 0)
-              {
-                Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
-                  node = new Node();
-
-                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, connectedGrid, block);
-                OpenTileDict[mainGridPosition] = node;
-              }
-            }
-            else if (block.FatBlock is IMyInteriorLight && block.BlockDefinition.Id.SubtypeName == "LargeLightPanel")
-            {
-              if (!OpenTileDict.ContainsKey(mainGridPosition))
-              {
-                Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
-                  node = new Node();
-
-                node.Update(mainGridPosition, Vector3.Zero, NodeType.None, 0, connectedGrid, block);
-                OpenTileDict[mainGridPosition] = node;
-              }
-            }
-          }
+          InitBlock(block, ref upVec, ref upDir, ref cellSize, ref halfCellSize, cubeDef);
         }
 
         blocks.Clear();
@@ -2777,33 +1862,6 @@ namespace AiEnabled.Ai.Support
           GetBlockedNodeEdges(tile);
         }
 
-        //Node testNode;
-        //var testVector = new Vector3I(5, 3, -5);
-        //if (TryGetNodeForPosition(testVector, out testNode))
-        //{
-        //  AiSession.Instance.Logger.Log($"Blocked edges for {testVector} (block = {testNode.Block?.BlockDefinition?.Id.SubtypeName ?? "NULL"})");
-        //  foreach (var dir in AiSession.Instance.CardinalDirections)
-        //  {
-        //    if (testNode.IsBlocked(dir))
-        //      AiSession.Instance.Logger.Log($" -> Dir = {dir}, Position = {testNode.Position + dir}");
-        //  }
-        //}
-        //else
-        //  AiSession.Instance.Logger.Log($"{testVector} was not found");
-
-        //testVector = new Vector3I(5, 3, -4);
-        //if (TryGetNodeForPosition(testVector, out testNode))
-        //{
-        //  AiSession.Instance.Logger.Log($"Blocked edges for {testVector} (block = {testNode.Block?.BlockDefinition?.Id.SubtypeName ?? "NULL"})");
-        //  foreach (var dir in AiSession.Instance.CardinalDirections)
-        //  {
-        //    if (testNode.IsBlocked(dir))
-        //      AiSession.Instance.Logger.Log($" -> Dir = {dir}, Position = {testNode.Position + dir}");
-        //  }
-        //}
-        //else
-        //  AiSession.Instance.Logger.Log($"{testVector} was not found");
-
         if (!MainGrid.Physics.IsStatic)
           AddAdditionalGridTiles();
 
@@ -2816,6 +1874,1486 @@ namespace AiEnabled.Ai.Support
       }
     }
 
+    void InitBlock(IMySlimBlock block, ref Vector3I upVec, ref Base6Directions.Direction upDir, ref float cellSize, ref float halfCellSize, MyCubeBlockDefinition cubeDef)
+    {
+
+      CheckFaces(block, upVec, cubeDef);
+
+      var position = block.Position;
+      var mainGridPosition = position; // connectedIsMain ? position : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(position));
+
+      var door = block.FatBlock as IMyDoor;
+      if (door != null)
+      {
+        if (door.MarkedForClose)
+          return;
+
+        AllDoors[mainGridPosition] = door;
+
+        if (!door.Enabled && door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Open)
+          Door_EnabledChanged(door);
+
+        door.EnabledChanged -= Door_EnabledChanged;
+        door.EnabledChanged += Door_EnabledChanged;
+        door.IsWorkingChanged -= Door_EnabledChanged;
+        door.IsWorkingChanged += Door_EnabledChanged;
+        door.OnDoorStateChanged -= Door_OnDoorStateChanged;
+        door.OnDoorStateChanged += Door_OnDoorStateChanged;
+        door.OnMarkForClose -= Door_OnMarkForClose;
+        door.OnMarkForClose += Door_OnMarkForClose;
+
+        if (door is IMyAirtightHangarDoor) // TODO: Possibly - check block groups for this door and open others with it? Maybe check at open time?
+        {
+          if (block.Orientation.Up == upDir)
+          {
+            for (int j = 1; j < cubeDef.Size.Y; j++)
+            {
+              var newPos = mainGridPosition - upVec * j;
+
+              if (!OpenTileDict.ContainsKey(newPos))
+              {
+                Node newNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+                  newNode = new Node();
+
+                newNode.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+                OpenTileDict[newPos] = newNode;
+              }
+            }
+          }
+          else if (block.Orientation.Up == Base6Directions.GetOppositeDirection(upDir))
+          {
+            for (int j = 1; j < cubeDef.Size.Y; j++)
+            {
+              var newPos = mainGridPosition + upVec * j;
+
+              if (j == 1 || !OpenTileDict.ContainsKey(newPos))
+              {
+                Node newNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+                  newNode = new Node();
+
+                newNode.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+
+                if (j == 1)
+                  newNode.SetNodeType(NodeType.Ground);
+
+                OpenTileDict[newPos] = newNode;
+              }
+            }
+          }
+        }
+        else if (door.BlockDefinition.SubtypeName.StartsWith("SlidingHatchDoor"))
+        {
+          // Warfare 2 update
+
+          var newPos = door.Position;
+          //if (!connectedIsMain)
+          //  newPos = MainGrid.WorldToGridInteger(door.CubeGrid.GridIntegerToWorld(newPos));
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+        }
+        else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
+        {
+          // Large DLC gate
+          var center = door.WorldAABB.Center;
+          var doorMatrix = door.WorldMatrix;
+          var pos = center + doorMatrix.Down * halfCellSize;
+          var newPos = MainGrid.WorldToGridInteger(pos);
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+
+          pos += door.WorldMatrix.Left * cellSize;
+          newPos = MainGrid.WorldToGridInteger(pos);
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+
+          pos += door.WorldMatrix.Up * cellSize;
+          newPos = MainGrid.WorldToGridInteger(pos);
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+
+          pos += door.WorldMatrix.Right * cellSize;
+          newPos = MainGrid.WorldToGridInteger(pos);
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+
+          pos += door.WorldMatrix.Right * cellSize;
+          newPos = MainGrid.WorldToGridInteger(pos);
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+
+          pos += door.WorldMatrix.Down * cellSize;
+          newPos = MainGrid.WorldToGridInteger(pos);
+
+          if (!OpenTileDict.ContainsKey(newPos))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(newPos, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[newPos] = node;
+          }
+        }
+        else // if (block.Orientation.Up == upDir)
+        {
+          if (!OpenTileDict.ContainsKey(mainGridPosition))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+      }
+      else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(cubeDef.Id))
+      {
+        if (AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(cubeDef.Id))
+        {
+          if (upDir == block.Orientation.Left)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+        else if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(cubeDef.Id))
+        {
+          if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) == 0)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+        else if (AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(cubeDef.Id))
+        {
+          if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) == 0)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+
+            var newPos = mainGridPosition + upVec;
+            var cubeAbove = GetBlockAtPosition(newPos);
+            var includeAbove = cubeAbove == null || cubeAbove.BlockDefinition.Id == block.BlockDefinition.Id;
+
+            if (!includeAbove)
+            {
+              var cubeAboveDef = cubeAbove.BlockDefinition.Id;
+              var entrance = block.Orientation.Forward;
+              var entrance2 = block.Orientation.Up;
+              var entranceIsUp = entrance == upDir || entrance2 == upDir;
+
+              if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
+              {
+                includeAbove = !CheckCatwalkForRails(cubeAbove, -upVec);
+              }
+              else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
+              {
+                var aboveOr = cubeAbove.Orientation;
+                var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
+                if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
+                {
+                  if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
+                  {
+                    if (entranceIsUp)
+                    {
+                      includeAbove = ((aboveOr.Up == entrance || aboveOr.Up == entrance2) && aboveOr.Forward == downDir)
+                        || ((aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) || aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance2)) && aboveOr.Up == upDir);
+
+                      if (includeAbove)
+                      {
+                        ExemptNodesUpper.Add(newPos);
+                      }
+                    }
+                    else // Up is up
+                    {
+                      includeAbove = (aboveOr.Up == downDir && (aboveOr.Forward == entrance || aboveOr.Forward == entrance2))
+                        || (aboveOr.Forward == upDir && (aboveOr.Up == Base6Directions.GetOppositeDirection(entrance) || aboveOr.Up == Base6Directions.GetOppositeDirection(entrance2)));
+
+                      if (includeAbove)
+                      {
+                        ExemptNodesUpper.Add(newPos);
+                      }
+                    }
+                  }
+                }
+                else
+                {
+                  if (entranceIsUp)
+                  {
+                    includeAbove = ((aboveOr.Up == entrance || aboveOr.Up == entrance2) && aboveOr.Forward == downDir)
+                      || ((aboveOr.Forward == entrance || aboveOr.Forward == entrance2) && aboveOr.Up == downDir);
+
+                    if (includeAbove)
+                    {
+                      ExemptNodesUpper.Add(newPos);
+                    }
+                  }
+                  else // Up is up
+                  {
+                    includeAbove = (aboveOr.Up == downDir && (aboveOr.Forward == entrance || aboveOr.Forward == entrance2))
+                      || (aboveOr.Forward == downDir && (aboveOr.Up == entrance || aboveOr.Up == entrance2));
+
+                    if (includeAbove)
+                    {
+                      ExemptNodesUpper.Add(newPos);
+                    }
+                  }
+                }
+              }
+            }
+
+            if (includeAbove)
+            {
+              Node newNode;
+              if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+                newNode = new Node();
+
+              newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+              OpenTileDict[newPos] = newNode;
+            }
+          }
+        }
+      }
+      else if (AiSession.Instance.PassageBlockDefinitions.Contains(cubeDef.Id))
+      {
+        var downDir = Base6Directions.GetOppositeDirection(upDir);
+        if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_Passage))
+        {
+          if (block.Orientation.Forward == upDir || block.Orientation.Forward == downDir)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+        else if (!cubeDef.Id.SubtypeName.StartsWith("HalfPassageCorner"))
+        {
+          if (block.Orientation.Up == upDir || block.Orientation.Up == downDir)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+          else if (AiSession.Instance.PassageIntersectionDefinitions.Contains(cubeDef.Id))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+      }
+      else if (AiSession.Instance.BeamBlockDefinitions.ContainsItem(cubeDef.Id))
+      {
+        var beamPosition = block.Position;
+        //if (!connectedIsMain)
+        //  beamPosition = MainGrid.WorldToGridInteger(block.CubeGrid.GridIntegerToWorld(beamPosition));
+
+        var cubeAbove = GetBlockAtPosition(beamPosition + upVec);
+        if (cubeAbove == null)
+        {
+          var blockSubtype = cubeDef.Id.SubtypeName;
+          if (blockSubtype.EndsWith("Slope"))
+          {
+            if (block.Orientation.Forward == upDir || block.Orientation.Left == Base6Directions.GetOppositeDirection(upDir))
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
+          else if (blockSubtype.EndsWith("TJunction") || blockSubtype.EndsWith("Tip") || blockSubtype.EndsWith("Base"))
+          {
+            if (block.Orientation.Left == upDir)
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
+          else if (block.Orientation.Left == upDir || block.Orientation.Left == Base6Directions.GetOppositeDirection(upDir))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+      }
+      else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeDef.Id))
+      {
+        if (block.Orientation.Up == upDir)
+        {
+          Node node;
+          if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+            node = new Node();
+
+          node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+          OpenTileDict[mainGridPosition] = node;
+        }
+      }
+      else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id))
+      {
+        var positionAbove = position + upVec;
+        var cubeAbove = GetBlockAtPosition(positionAbove);
+        var entrance = Base6Directions.GetOppositeDirection(block.Orientation.Forward);
+        bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
+        bool validHalfStair = false;
+        bool includeAbove = false;
+        bool entranceIsUp = entrance == upDir;
+        bool upIsUp = !entranceIsUp && block.Orientation.Up == upDir;
+
+        bool addThis = (upIsUp && cubeAboveEmpty)
+          || (entranceIsUp && (cubeAboveEmpty || cubeAbove == block));
+
+        if (!addThis)
+        {
+          if (cubeAboveEmpty && block.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock"))
+          {
+            addThis = upIsUp || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Forward;
+          }
+
+          if (!addThis)
+          {
+            if (!cubeAboveEmpty && (entranceIsUp || upIsUp))
+            {
+              var cubeAboveDef = cubeAbove.BlockDefinition.Id;
+
+              if (AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef.Id))
+              {
+                if (cubeAboveDef == cubeDef.Id && block.Orientation.Up == cubeAbove.Orientation.Up)
+                  addThis = validHalfStair = (entrance == cubeAbove.Orientation.Forward);
+
+                if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
+                {
+                  if (!addThis)
+                    addThis = !CheckCatwalkForRails(cubeAbove, -upVec);
+
+                  includeAbove = addThis;
+                }
+                else if (!addThis && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
+                {
+                  var aboveOr = cubeAbove.Orientation;
+                  var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
+                  if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
+                  {
+                    if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
+                    {
+                      if (entranceIsUp)
+                      {
+                        addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir)
+                          || (aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) && aboveOr.Up == upDir);
+                        if (addThis)
+                        {
+                          includeAbove = true;
+                          ExemptNodesUpper.Add(positionAbove);
+                        }
+                      }
+                      else // Up is up
+                      {
+                        addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance)
+                          || (aboveOr.Forward == upDir && aboveOr.Up == Base6Directions.GetOppositeDirection(entrance));
+                        if (addThis)
+                        {
+                          includeAbove = true;
+                          ExemptNodesUpper.Add(positionAbove);
+                        }
+                      }
+                    }
+                  }
+                  else
+                  {
+                    if (entranceIsUp)
+                    {
+                      addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir) || (aboveOr.Forward == entrance && aboveOr.Up == downDir);
+                      if (addThis)
+                      {
+                        includeAbove = true;
+                        ExemptNodesUpper.Add(positionAbove);
+                      }
+                    }
+                    else // Up is up
+                    {
+                      addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance) || (aboveOr.Forward == downDir && aboveOr.Up == entrance);
+                      if (addThis)
+                      {
+                        includeAbove = true;
+                        ExemptNodesUpper.Add(positionAbove);
+                      }
+                    }
+                  }
+                }
+              }
+              else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef))
+              {
+                var aboveOr = cubeAbove.Orientation;
+                var downDir = Base6Directions.GetOppositeDirection(block.Orientation.Up);
+                if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeAboveDef))
+                {
+                  if (!cubeAboveDef.SubtypeName.EndsWith("Slope2Base"))
+                  {
+                    if (entranceIsUp)
+                    {
+                      addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir)
+                        || (aboveOr.Forward == Base6Directions.GetOppositeDirection(entrance) && aboveOr.Up == upDir);
+                      if (addThis)
+                      {
+                        includeAbove = true;
+                        ExemptNodesUpper.Add(positionAbove);
+                      }
+                    }
+                    else // Up is up
+                    {
+                      addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance)
+                        || (aboveOr.Forward == upDir && aboveOr.Up == Base6Directions.GetOppositeDirection(entrance));
+                      if (addThis)
+                      {
+                        includeAbove = true;
+                        ExemptNodesUpper.Add(positionAbove);
+                      }
+                    }
+                  }
+                }
+                else
+                {
+                  if (entranceIsUp)
+                  {
+                    addThis = (aboveOr.Up == entrance && aboveOr.Forward == downDir) || (aboveOr.Forward == entrance && aboveOr.Up == downDir);
+                    if (addThis)
+                    {
+                      includeAbove = true;
+                      ExemptNodesUpper.Add(positionAbove);
+                    }
+                  }
+                  else // Up is up
+                  {
+                    addThis = (aboveOr.Up == downDir && aboveOr.Forward == entrance) || (aboveOr.Forward == downDir && aboveOr.Up == entrance);
+                    if (addThis)
+                    {
+                      includeAbove = true;
+                      ExemptNodesUpper.Add(positionAbove);
+                    }
+                  }
+                }
+              }
+              else if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAboveDef))
+              {
+                // TODO: Is this needed?
+              }
+              else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
+              {
+                addThis = !CheckCatwalkForRails(cubeAbove, -upVec);
+                includeAbove = addThis;
+              }
+            }
+
+            if (!addThis)
+            {
+              if (cubeDef.Id.SubtypeName.IndexOf("BlockArmorSlope2") >= 0)
+              {
+                var blockOr = block.Orientation;
+                var blockDown = Base6Directions.GetOppositeDirection(blockOr.Up);
+                var blockBack = Base6Directions.GetOppositeDirection(blockOr.Forward);
+                bool isBlockTip = cubeDef.Id.SubtypeName.EndsWith("Tip");
+
+                if (entranceIsUp)
+                {
+                  addThis = true;
+                  includeAbove = cubeAboveEmpty;
+
+                  if (!includeAbove)
+                  {
+                    var aboveOr = cubeAbove.Orientation;
+                    var aboveDef = cubeAbove.BlockDefinition.Id;
+                    var aboveSubtype = aboveDef.SubtypeName;
+
+                    if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id))
+                    {
+                      includeAbove = !isBlockTip && aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward;
+                    }
+                    else if (isBlockTip)
+                    {
+                      if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
+                      {
+                        if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
+                        {
+                          if (aboveSubtype.EndsWith("Tip"))
+                          {
+                            includeAbove = aboveOr.Forward == blockBack && aboveOr.Up == blockDown;
+                          }
+                        }
+                        else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
+                        {
+                          includeAbove = aboveOr.Up == blockOr.Forward || aboveOr.Forward == blockBack;
+                        }
+                        else if (aboveSubtype.EndsWith("BlockArmorSlope"))
+                        {
+                          includeAbove = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
+                            || (aboveOr.Forward == blockOr.Up && aboveOr.Up == blockOr.Forward);
+                        }
+                        else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
+                        {
+                          includeAbove = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
+                            || (aboveOr.Up == blockOr.Forward && aboveOr.Forward == blockOr.Up);
+                        }
+                      }
+                    }
+                    else // block base -> add adjacent
+                    {
+                      var adjacentPos = mainGridPosition + Base6Directions.GetIntVector(blockOr.Up);
+                      var adjacentBlock = GetBlockAtPosition(adjacentPos);
+
+                      if (adjacentBlock != null)
+                      {
+                        var adjacentDef = adjacentBlock.BlockDefinition.Id;
+                        var adjacentOr = adjacentBlock.Orientation;
+                        bool addAdjacent = false;
+
+                        if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(adjacentDef))
+                        {
+                          addAdjacent = adjacentOr.Up == blockDown && (adjacentOr.Forward == blockBack || adjacentOr.Forward == blockOr.Forward);
+
+                          if (!addAdjacent && !adjacentDef.SubtypeName.EndsWith("Tip"))
+                          {
+                            addAdjacent = adjacentOr.Forward == blockOr.Up && (adjacentOr.Up == blockBack || adjacentOr.Up == blockOr.Forward);
+                          }
+                        }
+                        else if (AiSession.Instance.RampBlockDefinitions.Contains(adjacentDef))
+                        {
+                          addAdjacent = adjacentOr.Forward == blockOr.Forward && adjacentOr.Up == blockDown;
+                        }
+                        else if (AiSession.Instance.SlopeBlockDefinitions.Contains(adjacentDef))
+                        {
+                          if (adjacentDef.SubtypeName.EndsWith("ArmorHalfSlopedCorner"))
+                          {
+                            addAdjacent = adjacentOr.Left == blockDown || adjacentOr.Up == blockDown || adjacentOr.Forward == blockDown;
+                          }
+                        }
+
+                        if (addAdjacent)
+                        {
+                          var node = new Node(adjacentPos, Vector3.Zero, MainGrid, adjacentBlock); // connectedGrid, adjacentBlock);
+                          node.SetNodeType(NodeType.Ground);
+                          OpenTileDict[adjacentPos] = node;
+                          ExemptNodesSide.Add(adjacentPos);
+                        }
+                      }
+                    }
+                  }
+                }
+                else if (upIsUp && !cubeAboveEmpty)
+                {
+                  var aboveOr = cubeAbove.Orientation;
+                  var aboveDef = cubeAbove.BlockDefinition.Id;
+                  var aboveSubtype = aboveDef.SubtypeName;
+
+                  if (!isBlockTip)
+                  {
+                    // block base is the tall side - less head room
+                    if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(aboveDef))
+                    {
+                      if (aboveSubtype.EndsWith("ArmorSlope2Tip"))
+                      {
+                        addThis = aboveOr.Forward == blockBack && aboveOr.Up == blockDown;
+                      }
+                      else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
+                      {
+                        addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
+                      }
+                      else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
+                      {
+                        addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
+                          || (aboveOr.Forward == blockOr.Up && aboveOr.Left == blockOr.Left);
+                      }
+                    }
+                    else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
+                    {
+                      if (aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
+                      {
+                        addThis = blockDown == Base6Directions.GetOppositeDirection(aboveOr.Forward);
+                      }
+                      else if (aboveSubtype.EndsWith("ArmorHalfSlopedCorner"))
+                      {
+                        addThis = aboveOr.Forward == blockDown || aboveOr.Left == blockDown || aboveOr.Up == blockDown;
+                      }
+                    }
+                  }
+                  else // slope tip
+                  {
+                    if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
+                    {
+                      if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
+                      {
+                        addThis = aboveOr.Up == blockDown;
+
+                        if (addThis && aboveSubtype.EndsWith("Base"))
+                        {
+                          addThis &= aboveOr.Forward == blockBack;
+                        }
+                      }
+                      else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
+                      {
+                        addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
+                      }
+                      else if (aboveSubtype.EndsWith("BlockArmorSlope"))
+                      {
+                        addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockBack)
+                          || (aboveOr.Forward == blockOr.Up && blockBack == Base6Directions.GetOppositeDirection(aboveOr.Up));
+                      }
+                      else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
+                      {
+                        addThis = aboveOr.Up == blockDown || aboveOr.Forward == blockOr.Up;
+                      }
+                    }
+                    else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
+                    {
+                      bool isHalfSlopedCorner = aboveSubtype.EndsWith("ArmorHalfSlopedCorner") || aboveSubtype.EndsWith("Concrete_Half_Block_Slope");
+                      if (isHalfSlopedCorner || aboveSubtype.EndsWith("ArmorHalfCorner") || aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
+                      {
+                        addThis = aboveOr.Up == blockDown;
+
+                        if (addThis && isHalfSlopedCorner)
+                        {
+                          addThis &= (aboveOr.Forward == blockBack || aboveOr.Left == blockBack);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        if (addThis)
+        {
+          Node node;
+          if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+            node = new Node();
+
+          node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+          OpenTileDict[mainGridPosition] = node;
+
+          if (includeAbove || validHalfStair || (cubeAboveEmpty && (upIsUp || entranceIsUp) && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef.Id)))
+          {
+            var newPos = mainGridPosition + upVec;
+
+            Node newNode;
+            if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+              newNode = new Node();
+
+            newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid, cubeAbove); // connectedGrid, cubeAbove);
+            OpenTileDict[newPos] = newNode;
+
+            if (!cubeAboveEmpty && !validHalfStair)
+            {
+              ExemptNodesUpper.Add(newPos);
+            }
+          }
+        }
+      }
+      else if (AiSession.Instance.RampBlockDefinitions.Contains(cubeDef.Id))
+      {
+        Matrix matrix = new Matrix
+        {
+          Forward = Base6Directions.GetVector(block.Orientation.Forward),
+          Left = Base6Directions.GetVector(block.Orientation.Left),
+          Up = Base6Directions.GetVector(block.Orientation.Up)
+        };
+
+        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+        if (faceDict.Count < 2)
+          matrix.TransposeRotationInPlace();
+
+        var dotUp = Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref upVec);
+        var dotFwd = Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref upVec);
+
+        Vector3I center = cubeDef.Center;
+        Vector3I.TransformNormal(ref center, ref matrix, out center);
+        var adjustedPosition = block.Position - center;
+        var blockOr = block.Orientation;
+
+        foreach (var kvp in faceDict)
+        {
+          Vector3I offset = kvp.Key;
+          Vector3I.TransformNormal(ref offset, ref matrix, out offset);
+          var cell = adjustedPosition + offset;
+          var positionAbove = cell + upVec;
+          mainGridPosition = cell; // connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
+
+          var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
+          bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
+          bool isBlockTip = block.Position == cell;
+          bool addAbove = false, addThis = false;
+
+          addThis = (blockOr.Up == upDir && cubeAboveEmpty) || (blockOr.Forward == upDir && (cubeAboveEmpty || cubeAbove == block));
+
+          if (!addThis && !cubeAboveEmpty)
+          {
+            var aboveOr = cubeAbove.Orientation;
+            var aboveDef = cubeAbove.BlockDefinition.Id;
+            var aboveSubtype = aboveDef.SubtypeName;
+            var blockDown = Base6Directions.GetOppositeDirection(blockOr.Up);
+
+            if (dotUp > 0) // normal placement
+            {
+              addAbove = !isBlockTip;
+
+              if (AiSession.Instance.RampBlockDefinitions.Contains(aboveDef))
+              {
+                addThis = aboveOr.Up == blockDown && aboveOr.Forward == Base6Directions.GetOppositeDirection(blockOr.Forward);
+              }
+              else if (isBlockTip)
+              {
+                if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
+                {
+                  if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
+                  {
+                    addThis = aboveOr.Up == blockDown;
+
+                    if (addThis && aboveSubtype.EndsWith("Base"))
+                    {
+                      addThis &= aboveOr.Forward == blockOr.Forward;
+                    }
+                  }
+                  else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
+                  {
+                    addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
+                  }
+                  else if (aboveSubtype.EndsWith("BlockArmorSlope"))
+                  {
+                    addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
+                      || (aboveOr.Forward == blockOr.Up && blockOr.Forward == Base6Directions.GetOppositeDirection(aboveOr.Up));
+                  }
+                  else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
+                  {
+                    addThis = aboveOr.Up == blockDown || aboveOr.Forward == blockOr.Up;
+                  }
+                }
+                else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
+                {
+                  bool isHalfSlopedCorner = aboveSubtype.EndsWith("ArmorHalfSlopedCorner") || aboveSubtype.EndsWith("Concrete_Half_Block_Slope");
+                  if (isHalfSlopedCorner || aboveSubtype.EndsWith("ArmorHalfCorner") || aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
+                  {
+                    addThis = aboveOr.Up == blockDown;
+
+                    if (addThis && isHalfSlopedCorner)
+                    {
+                      addThis &= (aboveOr.Forward == blockOr.Forward || aboveOr.Left == blockOr.Forward);
+                    }
+                  }
+                }
+              }
+              else // block base is the tall side - less head room
+              {
+                if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(aboveDef))
+                {
+                  if (aboveSubtype.EndsWith("ArmorSlope2Tip"))
+                  {
+                    addThis = aboveOr.Forward == blockOr.Forward && aboveOr.Up == blockDown;
+                  }
+                  else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
+                  {
+                    addThis = aboveOr.Up == blockDown || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockDown;
+                  }
+                  else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
+                  {
+                    addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
+                      || (aboveOr.Forward == blockOr.Up && aboveOr.Left == blockOr.Left);
+                  }
+                }
+                else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(aboveDef))
+                {
+                  if (aboveSubtype.EndsWith("HalfArmorBlock") || aboveSubtype.StartsWith("WindowWall"))
+                  {
+                    addThis = blockDown == Base6Directions.GetOppositeDirection(aboveOr.Forward);
+                  }
+                  else if (aboveSubtype.EndsWith("ArmorHalfSlopedCorner"))
+                  {
+                    addThis = aboveOr.Forward == blockDown || aboveOr.Left == blockDown || aboveOr.Up == blockDown;
+                  }
+                }
+              }
+            }
+            else if (dotFwd > 0) // steep placement
+            {
+              addThis = cubeAbove == block;
+              addAbove = isBlockTip;
+
+              if (!addThis)
+              {
+                if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id))
+                {
+                  addThis = aboveOr.Up == Base6Directions.GetOppositeDirection(blockOr.Up)
+                    && aboveOr.Forward == Base6Directions.GetOppositeDirection(blockOr.Forward);
+                }
+                else if (isBlockTip)
+                {
+                  var blockBack = Base6Directions.GetOppositeDirection(blockOr.Forward);
+
+                  if (AiSession.Instance.SlopeBlockDefinitions.Contains(aboveDef))
+                  {
+                    if (aboveSubtype.IndexOf("ArmorSlope2") >= 0)
+                    {
+                      if (aboveSubtype.EndsWith("Tip"))
+                      {
+                        addThis = aboveOr.Forward == blockOr.Forward && aboveOr.Up == blockDown;
+                      }
+                    }
+                    else if (aboveSubtype.EndsWith("ArmorHalfSlopeCorner")) // SlopeCorner vs SlopedCorner, gotta love it :/
+                    {
+                      addThis = aboveOr.Up == blockBack || Base6Directions.GetOppositeDirection(aboveOr.Forward) == blockBack;
+                    }
+                    else if (aboveSubtype.EndsWith("BlockArmorSlope"))
+                    {
+                      addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
+                        || (aboveOr.Forward == blockOr.Up && aboveOr.Up == blockBack);
+                    }
+                    else if (aboveSubtype.EndsWith("HalfSlopeArmorBlock"))
+                    {
+                      addThis = (aboveOr.Up == blockDown && aboveOr.Forward == blockOr.Forward)
+                        || (aboveOr.Up == blockBack && aboveOr.Forward == blockOr.Up);
+                    }
+                  }
+                }
+              }
+            }
+          }
+          else if (cubeAboveEmpty)
+          {
+            addAbove = (dotUp > 0 && !isBlockTip) || (dotFwd > 0 && isBlockTip);
+          }
+          else if (cubeAbove == block && !isBlockTip) // add adjacent
+          {
+            var blockDown = Base6Directions.GetOppositeDirection(blockOr.Up);
+            var adjacentPos = mainGridPosition + Base6Directions.GetIntVector(blockOr.Up);
+            var adjacentBlock = GetBlockAtPosition(adjustedPosition); // connectedGrid.GetCubeBlock(adjacentPos) as IMySlimBlock;
+
+            if (adjacentBlock != null)
+            {
+              var blockBack = Base6Directions.GetOppositeDirection(blockOr.Forward);
+              var adjacentDef = adjacentBlock.BlockDefinition.Id;
+              var adjacentOr = adjacentBlock.Orientation;
+              bool addAdjacent = false;
+
+              if (AiSession.Instance.SlopedHalfBlockDefinitions.Contains(adjacentDef))
+              {
+                addAdjacent = adjacentOr.Up == blockDown && (adjacentOr.Forward == blockBack || adjacentOr.Forward == blockOr.Forward);
+
+                if (!addAdjacent && !adjacentDef.SubtypeName.EndsWith("Tip"))
+                {
+                  addAdjacent = adjacentOr.Forward == blockOr.Up && (adjacentOr.Up == blockBack || adjacentOr.Up == blockOr.Forward);
+                }
+              }
+              else if (AiSession.Instance.RampBlockDefinitions.Contains(adjacentDef))
+              {
+                addAdjacent = adjacentOr.Forward == blockBack && adjacentOr.Up == blockDown;
+              }
+              else if (AiSession.Instance.SlopeBlockDefinitions.Contains(adjacentDef))
+              {
+                if (adjacentDef.SubtypeName.EndsWith("ArmorHalfSlopedCorner"))
+                {
+                  addAdjacent = adjacentOr.Left == blockDown || adjacentOr.Up == blockDown || adjacentOr.Forward == blockDown;
+                }
+              }
+
+              if (addAdjacent)
+              {
+                var node = new Node(adjacentPos, Vector3.Zero, MainGrid, adjacentBlock); // connectedGrid, adjacentBlock);
+                node.SetNodeType(NodeType.Ground);
+                OpenTileDict[adjacentPos] = node;
+                ExemptNodesSide.Add(adjacentPos);
+              }
+            }
+          }
+
+          if (addThis)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+
+            if (addAbove)
+            {
+              var newPos = mainGridPosition + upVec;
+
+              Node newNode;
+              if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+                newNode = new Node();
+
+              newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid, cubeAbove); // connectedGrid, cubeAbove);
+              OpenTileDict[newPos] = newNode;
+
+              if (!cubeAboveEmpty)
+              {
+                ExemptNodesUpper.Add(newPos);
+              }
+            }
+          }
+        }
+      }
+      else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id))
+      {
+        Base6Directions.Direction sideWithPane;
+        if (cubeDef.Id.SubtypeName == "LargeWindowSquare")
+          sideWithPane = block.Orientation.Forward;
+        else
+          sideWithPane = Base6Directions.GetOppositeDirection(block.Orientation.Left);
+
+        Matrix matrix = new Matrix
+        {
+          Forward = Base6Directions.GetVector(block.Orientation.Forward),
+          Left = Base6Directions.GetVector(block.Orientation.Left),
+          Up = Base6Directions.GetVector(block.Orientation.Up)
+        };
+
+        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+        if (faceDict.Count < 2)
+          matrix.TransposeRotationInPlace();
+
+        Vector3I center = cubeDef.Center;
+        Vector3I.TransformNormal(ref center, ref matrix, out center);
+        var adjustedPosition = block.Position - center;
+        var downDir = Base6Directions.GetOppositeDirection(upDir);
+
+        foreach (var kvp in faceDict)
+        {
+          Vector3I offset = kvp.Key;
+          Vector3I.TransformNormal(ref offset, ref matrix, out offset);
+          var cell = adjustedPosition + offset;
+          mainGridPosition = cell; // connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
+
+          if (sideWithPane == downDir || (cubeDef.Id.SubtypeName.StartsWith("HalfWindowCorner") && block.Orientation.Forward == downDir))
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+      }
+      else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(cubeDef.Id))
+      {
+        Matrix matrix = new Matrix
+        {
+          Forward = Base6Directions.GetVector(block.Orientation.Forward),
+          Left = Base6Directions.GetVector(block.Orientation.Left),
+          Up = Base6Directions.GetVector(block.Orientation.Up)
+        };
+
+        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+        if (faceDict.Count < 2)
+          matrix.TransposeRotationInPlace();
+
+        Vector3I center = cubeDef.Center;
+        Vector3I.TransformNormal(ref center, ref matrix, out center);
+        var adjustedPosition = block.Position - center;
+
+        bool isEdgeWindow = cubeDef.Id.SubtypeName == "LargeWindowEdge";
+
+        foreach (var kvp in faceDict)
+        {
+          Vector3I offset = kvp.Key;
+          Vector3I.TransformNormal(ref offset, ref matrix, out offset);
+          var cell = adjustedPosition + offset;
+          var positionAbove = cell + upVec;
+          mainGridPosition = cell; // connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
+
+          var cubeAbove = GetBlockAtPosition(positionAbove); // connectedGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
+          bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
+
+          if (isEdgeWindow)
+          {
+            if (cubeAboveEmpty && (block.Orientation.Up == upDir || block.Orientation.Forward == upDir))
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+              OpenTileDict[mainGridPosition] = node;
+
+              var newPos = mainGridPosition + upVec;
+
+              Node newNode;
+              if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+                newNode = new Node();
+
+              newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid); // connectedGrid);
+              OpenTileDict[newPos] = newNode;
+            }
+          }
+          else
+          {
+            if (cubeAboveEmpty || cubeAbove == block)
+            {
+              var vecLeft = Base6Directions.GetIntVector(block.Orientation.Left);
+              if (vecLeft.Dot(ref upVec) == 0)
+              {
+                Node node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                  node = new Node();
+
+                node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+                OpenTileDict[mainGridPosition] = node;
+
+                var newPos = mainGridPosition + upVec;
+
+                Node newNode;
+                if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+                  newNode = new Node();
+
+                newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid, cubeAbove); // connectedGrid, cubeAbove);
+                OpenTileDict[newPos] = newNode;
+              }
+            }
+          }
+        }
+      }
+      else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
+      {
+        if (block.Orientation.Forward == Base6Directions.GetOppositeDirection(upDir))
+        {
+          Node node;
+          if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+            node = new Node();
+
+          node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+          OpenTileDict[mainGridPosition] = node;
+        }
+      }
+      else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
+      {
+        Node node;
+        if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+          node = new Node();
+
+        node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+        OpenTileDict[mainGridPosition] = node;
+
+        var blockUp = Base6Directions.GetIntVector(block.Orientation.Up);
+        if (blockUp.Dot(ref upVec) != 0)
+        {
+          var positionAbove = position + upVec;
+          var cubeAbove = GetBlockAtPosition(positionAbove);
+          if (cubeAbove == null)
+          {
+            var newPos = mainGridPosition + upVec;
+
+            Node newNode;
+            if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+              newNode = new Node();
+
+            newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid); // connectedGrid);
+            OpenTileDict[newPos] = newNode;
+          }
+        }
+      }
+      else if (cubeDef.Id.SubtypeName.EndsWith("HalfArmorBlock") || cubeDef.Id.SubtypeName.StartsWith("WindowWall"))
+      {
+        if (OpenTileDict.ContainsKey(position))
+          return;
+
+        var blockFwd = Base6Directions.GetIntVector(block.Orientation.Forward);
+        var dotFwd = blockFwd.Dot(ref upVec);
+
+        if (dotFwd < 0)
+        {
+          var positionAbove = position + upVec;
+          var cubeAbove = GetBlockAtPosition(positionAbove);
+          if (cubeAbove == null)
+          {
+            Node node;
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+              node = new Node();
+
+            node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block); // connectedGrid, block);
+            OpenTileDict[mainGridPosition] = node;
+          }
+        }
+        else if (dotFwd == 0)
+        {
+          Node node;
+          if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+            node = new Node();
+
+          node.Update(mainGridPosition, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+          OpenTileDict[mainGridPosition] = node;
+        }
+      }
+      else if (block.FatBlock is IMyInteriorLight && block.BlockDefinition.Id.SubtypeName == "LargeLightPanel")
+      {
+        if (!OpenTileDict.ContainsKey(mainGridPosition))
+        {
+          Node node;
+          if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+            node = new Node();
+
+          node.Update(mainGridPosition, Vector3.Zero, NodeType.None, 0, MainGrid, block); // connectedGrid, block);
+          OpenTileDict[mainGridPosition] = node;
+        }
+      }
+    }
+
+    List<BoundingBoxI> _blockBoxList = new List<BoundingBoxI>();
+
+    public void ProcessBlockChanges()
+    {
+      try
+      {
+        using (_pendingLockObject.AcquireExclusiveUsing())
+        {
+          if (GraphLocked || !Ready || !_updateTask.IsComplete)
+            return;
+
+          if (_updateTask.Exceptions != null)
+          {
+            AiSession.Instance.Logger.ClearCached();
+            AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
+            foreach (var ex in _updateTask.Exceptions)
+              AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+
+            AiSession.Instance.Logger.LogAll();
+            MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
+          }
+
+          InteriorNodesReady = false;
+          NeedsBlockUpdate = false;
+          GraphLocked = true;
+          Ready = false;
+
+          _blockApplyHash.Clear();
+          _blockApplyHash.UnionWith(_blockUpdateHash);
+          _updateTask = MyAPIGateway.Parallel.Start(ApplyBlockChanges, SetReady);
+        }
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.ProcessBlockChanges: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+      }
+    }
+
+    void ApplyBlockChanges()
+    {
+      try
+      {
+        //AiSession.Instance.Logger.Log($"ApplyBlockChanges: Start");
+
+        _blockBoxList.Clear();
+        var dirArray = AiSession.Instance.CardinalDirections;
+
+        foreach (var pos in _blockApplyHash)
+        {
+          var box = BoundingBoxI.CreateInvalid();
+          box.Include(pos);
+
+          foreach (var dir in dirArray)
+          {
+            box.Include(pos + dir);
+          }
+
+          box.Inflate(1);
+
+          bool found = false;
+          for (int i = 0; i < _blockBoxList.Count; i++)
+          {
+            var otherBox = _blockBoxList[i];
+
+            if (otherBox.Intersects(box))
+            {
+              found = true;
+              otherBox.Include(ref box);
+              _blockBoxList[i] = otherBox;
+              break;
+            }
+          }
+
+          if (!found)
+          {
+            _blockBoxList.Add(box);
+          }
+        }
+
+        var newBox = GetMapBoundingBoxLocal();
+        newBox.Inflate(_boxExpansion);
+
+        var worldCenter = MainGrid.GridIntegerToWorld(newBox.Center);
+        var quat = Quaternion.CreateFromRotationMatrix(MainGrid.WorldMatrix);
+        var halfVector = Vector3D.Half * CellSize;
+        var newOBB = new MyOrientedBoundingBoxD(worldCenter, newBox.HalfExtents * CellSize + halfVector, quat);
+
+        if (newOBB.HalfExtent.LengthSquared() > OBB.HalfExtent.LengthSquared())
+        {
+          Dirty = true;
+          return;
+        }
+
+        var upDir = MainGrid.WorldMatrix.GetClosestDirection(WorldMatrix.Up);
+        var upVec = Base6Directions.GetIntVector(upDir);
+        Vector3I upVecPlanet;
+
+        var cellSize = CellSize;
+        var halfCellSize = CellSize * 0.5f;
+
+        float _;
+        var gravityNorm = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
+
+        if (gravityNorm.LengthSquared() > 0)
+        {
+          gravityNorm.Normalize();
+
+          var upDirPlanet = MainGrid.WorldMatrix.GetClosestDirection(-gravityNorm);
+          upVecPlanet = Base6Directions.GetIntVector(upDirPlanet);
+        }
+        else
+        {
+          gravityNorm = WorldMatrix.Down;
+          upVecPlanet = upVec;
+        }  
+
+        for (int i = 0; i < _blockBoxList.Count; i++)
+        {
+          var box = _blockBoxList[i];
+          box.Min = Vector3I.Max(box.Min, BoundingBox.Min);
+          box.Max = Vector3I.Min(box.Max, BoundingBox.Max);
+
+          var iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+
+          while (iter.IsValid())
+          {
+            var pos = iter.Current;
+            iter.MoveNext();
+
+            Node n;
+            if (_planetTileDictionary.TryGetValue(pos, out n))
+            {
+              _planetTileDictionary.Remove(pos);
+              AiSession.Instance.NodeStack.Push(n);
+            }
+            else if (OpenTileDict.TryGetValue(pos, out n))
+            {
+              OpenTileDict.Remove(pos);
+              AiSession.Instance.NodeStack.Push(n);
+            }
+
+            OptimizedCache.TryRemove(pos, out n);
+
+            byte b;
+            Obstacles.TryRemove(pos, out b);
+          }
+
+          iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+
+          while (iter.IsValid())
+          {
+            var pos = iter.Current;
+            iter.MoveNext();
+
+            var slim = GetBlockAtPosition(pos);
+            if (slim != null)
+            {
+              var cubeDef = slim.BlockDefinition as MyCubeBlockDefinition;
+              InitBlock(slim, ref upVec, ref upDir, ref cellSize, ref halfCellSize, cubeDef);
+            }
+          }
+
+          CheckForPlanetTiles(ref box, ref gravityNorm, ref upVecPlanet);
+
+          iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+
+          while (iter.IsValid())
+          {
+            var pos = iter.Current;
+            iter.MoveNext();
+
+            Node n;
+            if (OpenTileDict.TryGetValue(pos, out n))
+            {
+              GetBlockedNodeEdges(n);
+            }
+          }
+
+          iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+
+          while (iter.IsValid())
+          {
+            var pos = iter.Current;
+            iter.MoveNext();
+
+            Node n;
+            if (_planetTileDictionary.TryGetValue(pos, out n))
+            {
+              GetBlockedNodeEdges(n);
+            }
+          }
+        }
+
+        _blockApplyHash.Clear();
+
+        NeedsInteriorNodesUpdate = true;
+        //AiSession.Instance.Logger.Log($"ApplyBlockChanges: Finish");
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception during block update task: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+      }
+    }
+
+    public void InteriorNodesCheck()
+    {
+      if (_interiorNodesTask.IsComplete)
+      {
+        if (_interiorNodesTask.Exceptions != null)
+        {
+          AiSession.Instance.Logger.ClearCached();
+          AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
+          foreach (var ex in _interiorNodesTask.Exceptions)
+            AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+
+          AiSession.Instance.Logger.LogAll();
+          MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
+        }
+
+        NeedsInteriorNodesUpdate = false;
+
+        ApiWorkData data;
+        if (!AiSession.Instance.ApiWorkDataStack.TryPop(out data) || data == null)
+          data = new ApiWorkData();
+
+        data.Grid = MainGrid;
+        data.NodeList = InteriorNodeList;
+        data.EnclosureRating = 5;
+        data.AirtightNodesOnly = false;
+        data.AllowAirNodes = false;
+        data.CallBack = InteriorNodeCallback;
+
+        _interiorNodesTask = MyAPIGateway.Parallel.StartBackground(BotFactory.GetInteriorNodes, BotFactory.GetInteriorNodesCallback, data);
+      }
+    }
+
+    void InteriorNodeCallback()
+    {
+      //AiSession.Instance.Logger.Log($"InteriorNodeCallback");
+      InteriorNodesReady = true;
+    }
+
+    BoundingBoxI GetMapBoundingBoxLocal()
+    {
+      var box = new BoundingBoxI(MainGrid.Min, MainGrid.Max);
+      for (int i = GridCollection.Count - 1; i >= 0; i--)
+      {
+        var connectedGrid = GridCollection[i] as MyCubeGrid;
+        if (connectedGrid?.Physics == null || connectedGrid.MarkedForClose)
+        {
+          GridCollection.RemoveAtFast(i);
+          continue;
+        }
+
+        bool connectedIsMain = connectedGrid.EntityId == MainGrid.EntityId;
+
+        Vector3I min, max;
+        if (connectedIsMain)
+        {
+          min = connectedGrid.Min;
+          max = connectedGrid.Max;
+        }
+        else
+        {
+          min = MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(connectedGrid.Min));
+          max = MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(connectedGrid.Max));
+        }
+
+        box.Include(ref min);
+        box.Include(ref max);
+      }
+
+      return box;
+    }
+
     private void Door_OnDoorStateChanged(IMyDoor door, bool open)
     {
       Door_EnabledChanged(door);
@@ -2823,26 +3361,44 @@ namespace AiEnabled.Ai.Support
 
     private void Door_OnMarkForClose(VRage.ModAPI.IMyEntity ent)
     {
-      if (ent != null)
+      try
       {
-        ent.OnMarkForClose -= Door_OnMarkForClose;
-
-        var door = ent as IMyDoor;
-        if (door != null)
+        if (ent != null)
         {
-          Door_EnabledChanged(door);
-          door.EnabledChanged -= Door_EnabledChanged;
-          door.IsWorkingChanged -= Door_EnabledChanged;
-          door.OnDoorStateChanged -= Door_OnDoorStateChanged;
+          ent.OnMarkForClose -= Door_OnMarkForClose;
+
+          var door = ent as IMyDoor;
+          if (door != null)
+          {
+            door.EnabledChanged -= Door_EnabledChanged;
+            door.IsWorkingChanged -= Door_EnabledChanged;
+            door.OnDoorStateChanged -= Door_OnDoorStateChanged;
+
+            Door_EnabledChanged(door);
+          }
         }
+      }
+      catch (Exception ex)
+      {
+        var msg = $"Exception in CubeGridMap.Door_OnMarkForClose: {ex.Message}\n{ex.StackTrace}";
+        AiSession.Instance.Logger.Log(msg, MessageType.ERROR);
+
+        if (MyAPIGateway.Session?.Player != null)
+          AiSession.Instance.ShowMessage(msg);
       }
     }
 
     internal void Door_EnabledChanged(IMyCubeBlock block)
     {
-      var door = block as IMyDoor;
-      if (door != null)
+      try
       {
+        if (!IsValid || AiSession.Instance == null || !AiSession.Instance.Registered)
+          return;
+
+        var door = block as IMyDoor;
+        if (door == null)
+          return;
+
         Vector3I pos = block.Position;
         var grid = block.CubeGrid as MyCubeGrid;
         var needsPositionAdjusted = MainGrid.EntityId != grid.EntityId;
@@ -2920,6 +3476,14 @@ namespace AiEnabled.Ai.Support
             BlockedDoors[position] = door;
           }
         }
+      }
+      catch (Exception ex)
+      {
+        var msg = $"Exception in CubeGridMap.Door_EnabledChanged: {ex.Message}\n{ex.StackTrace}";
+        AiSession.Instance.Logger.Log(msg, MessageType.ERROR);
+
+        if (MyAPIGateway.Session?.Player != null)
+          AiSession.Instance.ShowMessage(msg);
       }
     }
 
@@ -3244,17 +3808,20 @@ namespace AiEnabled.Ai.Support
 
         if (add)
         {
-          if (addNodeBelow && DoesBlockExist(localBelow, false))
+          if (addNodeBelow)
           {
-            var block = GetBlockAtPosition(localBelow);
-            if (block != null && AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
+            var blockBelow = GetBlockAtPosition(localBelow);
+            if (blockBelow != null && blockBelow.CubeGrid.EntityId == MainGrid.EntityId)
             {
-              var turretBasePosition = block.Position - Base6Directions.GetIntVector(block.Orientation.Up);
-              if (turretBasePosition == localBelow || block.Position == localBelow)
+              if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(blockBelow.BlockDefinition.Id))
+              {
+                var turretBasePosition = blockBelow.Position - Base6Directions.GetIntVector(blockBelow.Orientation.Up);
+                if (turretBasePosition == localBelow || blockBelow.Position == localBelow)
+                  addNodeBelow = false;
+              }
+              else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(blockBelow.BlockDefinition.Id))
                 addNodeBelow = false;
             }
-            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id))
-              addNodeBelow = false;
           }
 
           if (Dirty)
@@ -3262,10 +3829,10 @@ namespace AiEnabled.Ai.Support
             return;
           }
 
-          if (DoesBlockExist(localPoint, false))
+          var block = GetBlockAtPosition(localPoint);
+          if (block != null && block.CubeGrid.EntityId == MainGrid.EntityId)
           {
-            var block = GetBlockAtPosition(localPoint);
-            if (block != null && AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
+            if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
             {
               var turretBasePosition = block.Position - Base6Directions.GetIntVector(block.Orientation.Up);
               if (turretBasePosition == localPoint || localPoint == block.Position)
@@ -3279,7 +3846,7 @@ namespace AiEnabled.Ai.Support
           {
             var localAbove = localPoint + upVec;
             var slim = GetBlockAtPosition(localAbove);
-            if (slim != null)
+            if (slim != null && slim.CubeGrid.EntityId == MainGrid.EntityId)
             {
               if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slim.BlockDefinition.Id))
               {
@@ -3307,55 +3874,6 @@ namespace AiEnabled.Ai.Support
             return;
           }
 
-          //for (int i = GridCollection.Count - 1; i >= 0; i--)
-          //{
-          //  if (Dirty)
-          //  {
-          //    return;
-          //  }
-
-          //  var otherGrid = GridCollection[i];
-          //  if (otherGrid == null || otherGrid.MarkedForClose)
-          //    continue;
-
-          //  if (addNodeBelow)
-          //  {
-          //    var localBelowOther = otherGrid.WorldToGridInteger(worldBelow);
-          //    var slimBelow = otherGrid.GetCubeBlock(localBelowOther) as IMySlimBlock;
-          //    if (slimBelow != null && ((MyCubeBlockDefinition)slimBelow.BlockDefinition).HasPhysics)
-          //      addNodeBelow = false;
-          //  }
-
-          //  var localPointOther = otherGrid.WorldToGridInteger(worldPoint);
-          //  var slim = otherGrid.GetCubeBlock(localPointOther) as IMySlimBlock;
-          //  if (slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics)
-          //  {
-          //    add = false;
-          //    break;
-          //  }
-
-          //  if (isGroundNode)
-          //  {
-          //    var worldAbove = worldPoint - gravityNorm;
-          //    var localAbove = otherGrid.WorldToGridInteger(worldAbove);
-          //    var cubeAbove = otherGrid.GetCubeBlock(localAbove);
-          //    if (cubeAbove != null)
-          //    {
-          //      if (!AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAbove.BlockDefinition.Id) || Base6Directions.GetIntVector(cubeAbove.Orientation.Up) != -upVec)
-          //      {
-          //        var downVec = otherGrid.WorldMatrix.GetDirectionVector(Base6Directions.GetDirection(-upVec));
-          //        var actualSurface = groundPoint + gravityNorm;
-          //        var bottomEdge = otherGrid.GridIntegerToWorld(localAbove) + downVec * otherGrid.GridSize * 0.5;
-          //        if (Vector3D.DistanceSquared(actualSurface, bottomEdge) < 5)
-          //        {
-          //          add = false;
-          //          break;
-          //        }
-          //      }
-          //    }
-          //  }
-          //}
-
           if (add)
           {
             var isInWater = checkForWater && WaterAPI.IsUnderwater(groundPoint);
@@ -3369,10 +3887,10 @@ namespace AiEnabled.Ai.Support
               nType |= NodeType.Tunnel;
 
             var offset = (Vector3)(groundPoint - LocalToWorld(localPoint));
-            var block = GetBlockAtPosition(localPoint);
+            block = GetBlockAtPosition(localPoint);
 
             Node newNode;
-            if (!_nodeStack.TryPop(out newNode) || newNode == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
               newNode = new Node();
 
             newNode.Update(localPoint, offset, nType, 0, MainGrid, block);
@@ -3393,7 +3911,7 @@ namespace AiEnabled.Ai.Support
               offset = (Vector3)(groundPointBelow - LocalToWorld(localBelow));
 
               Node nodeBelow;
-              if (!_nodeStack.TryPop(out nodeBelow) || nodeBelow == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out nodeBelow) || nodeBelow == null)
                 nodeBelow = new Node();
 
               nodeBelow.Update(localBelow, offset, nType, newNode.BlockedMask, MainGrid);
@@ -3415,29 +3933,45 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    BoundingBoxI? _pendingChanges;
-    readonly object _pendingLockObject = new object();
     private void Planet_RangeChanged(MyVoxelBase storage, Vector3I minVoxelChanged, Vector3I maxVoxelChanged, MyStorageDataTypeFlags changedData)
     {
       try
       {
-        var min = minVoxelChanged;
-        var max = maxVoxelChanged;
+        if (AiSession.Instance == null || !AiSession.Instance.Registered || !IsValid)
+          return;
 
-        if (_pendingChanges.HasValue)
+        using (_pendingLockObject.AcquireExclusiveUsing())
         {
-          min = Vector3I.Min(min, _pendingChanges.Value.Min);
-          max = Vector3I.Max(max, _pendingChanges.Value.Max);
-        }
+          var min = minVoxelChanged;
+          var max = maxVoxelChanged;
 
-        lock(_pendingLockObject)
-          _pendingChanges = new BoundingBoxI(min, max);
-  
-        NeedsVoxelUpate = true;
+          bool found = false;
+          for (int i = _voxelUpdatesNeeded.Count - 1; i >= 0; i--)
+          {
+            var updateItem = _voxelUpdatesNeeded[i];
+            if (updateItem.Check(ref min, ref max))
+            {
+              found = true;
+              break;
+            }  
+          }
+
+          if (!found)
+          {
+            VoxelUpdateItem updateItem;
+            if (!AiSession.Instance.VoxelUpdateItemStack.TryPop(out updateItem) || updateItem == null)
+              updateItem = new VoxelUpdateItem();
+
+            updateItem.Init(ref min, ref max);
+            _voxelUpdatesNeeded.Add(updateItem);
+          }
+
+          NeedsVoxelUpdate = true;
+        }
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in Planet_RangeChanged: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.Planet_RangeChanged: {ex.Message}\n{ex.StackTrace}");
       }
     }
 
@@ -3445,20 +3979,53 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
-        if (RootVoxel == null || RootVoxel.MarkedForClose || !Ready)
+        if (RootVoxel == null || RootVoxel.MarkedForClose)
+        {
+          NeedsVoxelUpdate = false;
+          return;
+        }
+
+        if (!Ready || GraphLocked)
           return;
 
-        NeedsVoxelUpate = false;
-
-        if (_pendingChanges.HasValue)
+        using (_pendingLockObject.AcquireExclusiveUsing())
         {
-          Ready = false;
-          MyAPIGateway.Parallel.Start(ApplyVoxelChanges, SetReady);
+          for (int i = _voxelUpdatesNeeded.Count - 1; i >= 0; i--)
+          {
+            var updateItem = _voxelUpdatesNeeded[i];
+            if (updateItem.Update())
+            {
+              _voxelUpdatesNeeded.RemoveAtFast(i);
+              _voxelUpdatesQueue.Enqueue(updateItem);
+            }
+          }
+
+          if (_updateTask.IsComplete)
+          {
+            if (_updateTask.Exceptions != null)
+            {
+              AiSession.Instance.Logger.ClearCached();
+              AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
+              foreach (var ex in _updateTask.Exceptions)
+                AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+
+              AiSession.Instance.Logger.LogAll();
+              MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
+            }
+
+            if (_voxelUpdatesQueue.Count > 0)
+            {
+              Ready = false;
+              _updateTask = MyAPIGateway.Parallel.Start(ApplyVoxelChanges, SetReady);
+            }
+
+            NeedsVoxelUpdate = _voxelUpdatesNeeded.Count > 0;
+          }
         }
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in UpdateVoxels: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.UpdateVoxels: {ex.Message}\n{ex.StackTrace}");
       }
     }
 
@@ -3466,67 +4033,88 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
-        Vector3D minWorld, maxWorld;
-        lock (_pendingLockObject)
+        while (_voxelUpdatesQueue.Count > 0)
         {
-          minWorld = Vector3D.Transform(_pendingChanges.Value.Min - RootVoxel.SizeInMetresHalf, RootVoxel.WorldMatrix);
-          maxWorld = Vector3D.Transform(_pendingChanges.Value.Max - RootVoxel.SizeInMetresHalf, RootVoxel.WorldMatrix);
-          _pendingChanges = null;
-        }
+          var updateItem = _voxelUpdatesQueue.Dequeue();
+          var updateBox = updateItem.BoundingBox;
 
-        if (!OBB.Contains(ref minWorld) && !OBB.Contains(ref maxWorld))
-          return;
+          var minWorld = Vector3D.Transform((Vector3)updateBox.Min - RootVoxel.SizeInMetresHalf, RootVoxel.WorldMatrix);
+          var maxWorld = Vector3D.Transform((Vector3)updateBox.Max - RootVoxel.SizeInMetresHalf, RootVoxel.WorldMatrix);
 
-        var mapMin = Vector3I.Max(BoundingBox.Min, WorldToLocal(minWorld) - 3);
-        var mapMax = Vector3I.Min(BoundingBox.Max, WorldToLocal(maxWorld) + 3);
-
-        var iter = new Vector3I_RangeIterator(ref mapMin, ref mapMax);
-
-        while (iter.IsValid())
-        {
-          if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
-            return;
-
-          var current = iter.Current;
-          iter.MoveNext();
-
-          Node node;
-          if (_planetTileDictionary.TryGetValue(current, out node))
+          if (!OBB.Contains(ref minWorld) && !OBB.Contains(ref maxWorld))
           {
-            _nodeStack.Push(node);
-            _planetTileDictionary.Remove(current);
+            AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
+            return;
           }
 
-          byte b;
-          ObstacleNodes.TryRemove(current, out b);
-          Obstacles.TryRemove(current, out b);
-        }
+          var min = WorldToLocal(minWorld);
+          var max = WorldToLocal(maxWorld);
+          Vector3I.MinMax(ref min, ref max);
 
-        float _;
-        var gravityNorm = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
-        gravityNorm.Normalize();
+          var mapMin = Vector3I.Max(BoundingBox.Min, min - 3);
+          var mapMax = Vector3I.Min(BoundingBox.Max, max + 3);
 
-        var upDir = MainGrid.WorldMatrix.GetClosestDirection(-gravityNorm);
-        var upVec = Base6Directions.GetIntVector(upDir);
-        var box = new BoundingBoxI(mapMin, mapMax);
+          var iter = new Vector3I_RangeIterator(ref mapMin, ref mapMax);
 
-        CheckForPlanetTiles(ref box, ref gravityNorm, ref upVec);
-
-        iter = new Vector3I_RangeIterator(ref mapMin, ref mapMax);
-
-        while (iter.IsValid())
-        {
-          if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
-            return;
-
-          var current = iter.Current;
-          iter.MoveNext();
-
-          Node node;
-          if (_planetTileDictionary.TryGetValue(current, out node))
+          while (iter.IsValid())
           {
-            GetBlockedNodeEdges(node);
+            if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
+            {
+              AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
+              return;
+            }
+
+            var current = iter.Current;
+            iter.MoveNext();
+
+            Node node;
+            if (_planetTileDictionary.TryGetValue(current, out node))
+            {
+              if (node != null)
+              {
+                AiSession.Instance.NodeStack.Push(node);
+              }
+
+              _planetTileDictionary.Remove(current);
+            }
+
+            byte b;
+            ObstacleNodes.TryRemove(current, out b);
+            Obstacles.TryRemove(current, out b);
+            OptimizedCache.TryRemove(current, out node);
           }
+
+          float _;
+          var gravityNorm = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
+          gravityNorm.Normalize();
+
+          var upDir = MainGrid.WorldMatrix.GetClosestDirection(-gravityNorm);
+          var upVec = Base6Directions.GetIntVector(upDir);
+          var box = new BoundingBoxI(mapMin, mapMax);
+
+          CheckForPlanetTiles(ref box, ref gravityNorm, ref upVec);
+
+          iter = new Vector3I_RangeIterator(ref mapMin, ref mapMax);
+
+          while (iter.IsValid())
+          {
+            if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
+            {
+              AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
+              return;
+            }
+
+            var current = iter.Current;
+            iter.MoveNext();
+
+            Node node;
+            if (_planetTileDictionary.TryGetValue(current, out node))
+            {
+              GetBlockedNodeEdges(node);
+            }
+          }
+
+          AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
         }
       }
       catch (Exception ex)
@@ -3708,7 +4296,7 @@ namespace AiEnabled.Ai.Support
           if (aboveisScaffold)
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3717,7 +4305,7 @@ namespace AiEnabled.Ai.Support
           else if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3726,7 +4314,7 @@ namespace AiEnabled.Ai.Support
           else if (cubeAbove.FatBlock is IMyInteriorLight && cubeAbove.BlockDefinition.Id.SubtypeName == "LargeLightPanel")
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3735,7 +4323,7 @@ namespace AiEnabled.Ai.Support
           else if (cubeAbove.BlockDefinition.Id.SubtypeName.StartsWith("DeadBody"))
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3750,7 +4338,7 @@ namespace AiEnabled.Ai.Support
             if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) > 0 && positionAbove != cubeAbovePosition)
             {
               Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                 node = new Node();
 
               node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3762,7 +4350,7 @@ namespace AiEnabled.Ai.Support
             if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) > 0)
             {
               Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                 node = new Node();
 
               node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3772,7 +4360,7 @@ namespace AiEnabled.Ai.Support
           else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef.Id))
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3781,7 +4369,7 @@ namespace AiEnabled.Ai.Support
           else if (cubeAboveDef.Id.SubtypeName.StartsWith("LargeCoverWall") || cubeAboveDef.Id.SubtypeName.StartsWith("FireCover"))
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3792,7 +4380,7 @@ namespace AiEnabled.Ai.Support
             if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) > 0)
             {
               Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                 node = new Node();
 
               node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3807,7 +4395,7 @@ namespace AiEnabled.Ai.Support
               if (Base6Directions.GetIntVector(cubeAbove.Orientation.Left).Dot(ref normal) == 0)
               {
                 Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
+                if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                   node = new Node();
 
                 node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3817,7 +4405,7 @@ namespace AiEnabled.Ai.Support
             else
             {
               Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                 node = new Node();
 
               node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3827,7 +4415,7 @@ namespace AiEnabled.Ai.Support
           else if (AiSession.Instance.FreightBlockDefinitions.ContainsItem(cubeAboveDef.Id))
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3842,7 +4430,7 @@ namespace AiEnabled.Ai.Support
             if (turretBasePosition != positionAbove || cubeAboveDef.Id.TypeId == typeof(MyObjectBuilder_InteriorTurret))
             {
               Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                 node = new Node();
 
               node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3852,7 +4440,7 @@ namespace AiEnabled.Ai.Support
           else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAboveDef.Id))
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3861,7 +4449,7 @@ namespace AiEnabled.Ai.Support
           else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeAboveDef.Id))
           {
             Node node;
-            if (!_nodeStack.TryPop(out node) || node == null)
+            if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
               node = new Node();
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3881,7 +4469,7 @@ namespace AiEnabled.Ai.Support
                 if (positionAbove != doorPosition)
                 {
                   Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
+                  if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                     node = new Node();
 
                   node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3893,7 +4481,7 @@ namespace AiEnabled.Ai.Support
                 if (positionAbove == doorPosition)
                 {
                   Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
+                  if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                     node = new Node();
 
                   node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3909,7 +4497,7 @@ namespace AiEnabled.Ai.Support
                 if (vector.LengthSquared() < 8)
                 {
                   Node node;
-                  if (!_nodeStack.TryPop(out node) || node == null)
+                  if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                     node = new Node();
 
                   node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3919,7 +4507,7 @@ namespace AiEnabled.Ai.Support
               else
               {
                 Node node;
-                if (!_nodeStack.TryPop(out node) || node == null)
+                if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                   node = new Node();
 
                 node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -3929,7 +4517,7 @@ namespace AiEnabled.Ai.Support
             else if (cubeAbove.FatBlock is IMyTextPanel || cubeAbove.FatBlock is IMySolarPanel || cubeAbove.FatBlock is IMyButtonPanel)
             {
               Node node;
-              if (!_nodeStack.TryPop(out node) || node == null)
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
                 node = new Node();
 
               node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
@@ -4554,7 +5142,7 @@ namespace AiEnabled.Ai.Support
                   continue;
                 }
               }
-              else if (thisBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_TextPanel)) // blockSubtype.IndexOf("lcd", StringComparison.OrdinalIgnoreCase) >= 0)
+              else if (thisBlock.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_TextPanel))
               {
                 if (dir != thisBlock.Orientation.Left && oppositeDir != thisBlock.Orientation.Left)
                 {
@@ -5303,22 +5891,11 @@ namespace AiEnabled.Ai.Support
           }
           else if (thisIsHalfBlock)
           {
-            if (dir == thisBlock.Orientation.Forward) // || oppositeDir == thisBlock.Orientation.Forward)
+            if (dir == thisBlock.Orientation.Forward)
             {
               node.SetBlocked(dirVec); 
               continue;
             }
-
-            //if (!nextBlockEmpty)
-            //{
-            //  //var downDir = Base6Directions.GetOppositeDirection(upDir);
-
-            //  if (nextIsHalfBlock && thisBlock.Orientation.Forward != nextBlock.Orientation.Forward) // downDir == thisBlock.Orientation.Forward && downDir != nextBlock.Orientation.Forward)
-            //  {
-            //    node.SetBlocked(dirVec); 
-            //    continue;
-            //  }
-            //}
           }
           else if (thisIsCoverWall)
           {
@@ -6579,9 +7156,7 @@ namespace AiEnabled.Ai.Support
 
             if (thisIsHalfBlock)
             {
-              //var downDir = Base6Directions.GetOppositeDirection(upDir);
-
-              if (thisBlock.Orientation.Forward != nextBlock.Orientation.Forward) // downDir == thisBlock.Orientation.Forward && downDir != nextBlock.Orientation.Forward)
+              if (thisBlock.Orientation.Forward != nextBlock.Orientation.Forward)
               {
                 node.SetBlocked(dirVec); 
                 continue;
@@ -6867,7 +7442,6 @@ namespace AiEnabled.Ai.Support
         {
           node.SetBlocked(dirVec); 
         }
-        //else if (!OpenTileDict.TryGetValue(next, out nextNode))
         else if (!TryGetNodeForPosition(next, out nextNode))
         {
           node.SetBlocked(dirVec); 
@@ -6888,7 +7462,6 @@ namespace AiEnabled.Ai.Support
           {
             node.SetBlocked(dirVec); 
           }
-          //else if (!OpenTileDict.TryGetValue(next, out nextNode))
           else if (!TryGetNodeForPosition(next, out nextNode))
           {
             node.SetBlocked(dirVec); 
@@ -6932,7 +7505,7 @@ namespace AiEnabled.Ai.Support
       else
         localNodes.Clear();
 
-      var botPosition = bot.GetPosition();
+      var botPosition = bot.Target.CurrentBotPosition;
       var collection = bot._pathCollection;
       var botWorldMatrix = bot.WorldMatrix;
 
@@ -7028,7 +7601,7 @@ namespace AiEnabled.Ai.Support
       else
         testList.Clear();
 
-      MainGrid.RayCastCells(bot.GetPosition(), requestedPosition, nodeList, new Vector3I(11));
+      MainGrid.RayCastCells(bot.Target.CurrentBotPosition, requestedPosition, nodeList, new Vector3I(11));
 
       bool getGroundFirst = !bot.CanUseAirNodes;
 
@@ -7085,7 +7658,6 @@ namespace AiEnabled.Ai.Support
       groundPos = pos;
 
       Node node;
-      //if (OpenTileDict.TryGetValue(pos, out node) && node.IsGroundNode)
       if (TryGetNodeForPosition(pos, out node) && node.IsGroundNode)
       {
         groundPos = node.Position;
@@ -7109,7 +7681,6 @@ namespace AiEnabled.Ai.Support
       {
         var localPos = list[i];
 
-        //if (OpenTileDict.TryGetValue(localPos, out node) && node.IsGroundNode)
         if (TryGetNodeForPosition(localPos, out node) && node.IsGroundNode)
         {
           var dManhattan = Vector3I.DistanceManhattan(localPos, pos);
@@ -7127,82 +7698,143 @@ namespace AiEnabled.Ai.Support
 
     public override void UpdateTempObstacles()
     {
+      if (!_obstacleTask.IsComplete)
+        return;
+
+      if (_obstacleTask.Exceptions != null)
+      {
+        AiSession.Instance.Logger.ClearCached();
+        AiSession.Instance.Logger.AddLine($"Exceptions found during pathfinder task!\n");
+        foreach (var ex in _obstacleTask.Exceptions)
+          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+
+        AiSession.Instance.Logger.LogAll();
+        MyAPIGateway.Utilities.ShowNotification($"Exception during ObstacleTask!");
+      }
+
       List<MyEntity> tempEntities;
-      if (!AiSession.Instance.EntListStack.TryPop(out tempEntities) || tempEntities == null)
+      if (!AiSession.Instance.EntListStack.TryPop(out tempEntities))
         tempEntities = new List<MyEntity>();
       else
         tempEntities.Clear();
 
-      Vector3D[] corners;
-      if (!AiSession.Instance.CornerArrayStack.TryPop(out corners) || corners == null)
-        corners = new Vector3D[8];
+      List<IMySlimBlock> blocks;
+      if (!AiSession.Instance.SlimListStack.TryPop(out blocks) || blocks == null)
+        blocks = new List<IMySlimBlock>();
+      else
+        blocks.Clear();
 
-      ObstacleNodesTemp.Clear();
       var sphere = new BoundingSphereD(OBB.Center, OBB.HalfExtent.AbsMax());
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, tempEntities);
 
       for (int i = tempEntities.Count - 1; i >= 0; i--)
       {
         var grid = tempEntities[i] as MyCubeGrid;
-        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.Closed)
+        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.EntityId == MainGrid?.EntityId)
           continue;
 
-        if (grid.IsSameConstructAs(MainGrid) && grid.GridSizeEnum == MyCubeSize.Large)
-          continue;
-
-        var orientation = Quaternion.CreateFromRotationMatrix(grid.WorldMatrix);
-        var obb = new MyOrientedBoundingBoxD(grid.PositionComp.WorldAABB.Center, grid.PositionComp.LocalAABB.HalfExtents, orientation);
-
-        var containType = OBB.Contains(ref obb);
-        if (containType == ContainmentType.Disjoint)
-          continue;
-
-        BoundingBoxI box = BoundingBoxI.CreateInvalid();
-        obb.GetCorners(corners, 0);
-        for (int j = 0; j < corners.Length; j++)
-        {
-          var localCorner = grid.WorldToGridInteger(corners[j]);
-          box.Include(localCorner);
-        }
-
-        if (containType == ContainmentType.Intersects)
-        {
-          BoundingBoxI otherBox = BoundingBoxI.CreateInvalid();
-          OBB.GetCorners(corners, 0);
-          for (int j = 0; j < corners.Length; j++)
-          {
-            var localCorner = grid.WorldToGridInteger(corners[j]);
-            otherBox.Include(localCorner);
-          }
-
-          box.IntersectWith(ref otherBox);
-        }
-
-        box.Inflate(1);
-        Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
-
-        while (iter.IsValid())
-        {
-          var gridLocal = iter.Current;
-          iter.MoveNext();
-
-          if (!grid.CubeExists(gridLocal))
-            continue;
-
-          var gridWorld = grid.GridIntegerToWorld(gridLocal);
-          var graphLocal = WorldToLocal(gridWorld);
-
-          //if (OpenTileDict.ContainsKey(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal) && !Obstacles.ContainsKey(graphLocal))
-          if (!ObstacleNodesTemp.ContainsKey(graphLocal) && !Obstacles.ContainsKey(graphLocal) && IsOpenTile(graphLocal))
-            ObstacleNodesTemp[graphLocal] = new byte();
-        }
+        ((IMyCubeGrid)grid).GetBlocks(blocks);
       }
 
+      tempEntities.Clear();
+      _tempObstaclesWorkData.Blocks = blocks;
+      _tempObstaclesWorkData.Entities = tempEntities;
+      _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
+    }
+
+    void UpdateTempObstaclesAsync(WorkData data)
+    {
+      var obstacleData = data as ObstacleWorkData;
+      if (obstacleData == null || AiSession.Instance?.BlockFaceDictionary == null || !AiSession.Instance.Registered)
+        return;
+
+      ObstacleNodesTemp.Clear();
+      var blocks = obstacleData.Blocks;
+      var tempEntities = obstacleData.Entities;
+      Quaternion gridRotation = Quaternion.CreateFromRotationMatrix(WorldMatrix);
+
+      for (int i = 0; i < blocks.Count; i++)
+      {
+        var b = blocks[i];
+        if (b?.CubeGrid == null || b.IsDestroyed || b.CubeGrid.MarkedForClose)
+          continue;
+
+        Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
+        if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(b.BlockDefinition.Id, out faceDict))
+          continue;
+
+        Matrix matrix = new Matrix
+        {
+          Forward = Base6Directions.GetVector(b.Orientation.Forward),
+          Left = Base6Directions.GetVector(b.Orientation.Left),
+          Up = Base6Directions.GetVector(b.Orientation.Up)
+        };
+
+        if (faceDict.Count < 2)
+          matrix.TransposeRotationInPlace();
+
+        var cubeDef = b.BlockDefinition as MyCubeBlockDefinition;
+        Vector3I center = cubeDef.Center;
+        Vector3I.TransformNormal(ref center, ref matrix, out center);
+        var adjustedPosition = b.Position - center;
+
+        foreach (var kvp in faceDict)
+        {
+          var cell = kvp.Key;
+          Vector3I.TransformNormal(ref cell, ref matrix, out cell);
+          var position = adjustedPosition + cell;
+
+          var worldPoint = b.CubeGrid.GridIntegerToWorld(position);
+          if (!OBB.Contains(ref worldPoint))
+            continue;
+
+          var graphLocal = WorldToLocal(worldPoint);
+          if (IsOpenTile(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal) && !Obstacles.ContainsKey(graphLocal))
+          {
+            ObstacleNodesTemp[graphLocal] = new byte();
+          }
+
+          var sphere = new BoundingSphereD(worldPoint, b.CubeGrid.GridSize * 0.6f);
+
+          foreach (var dir in AiSession.Instance.CardinalDirections)
+          {
+            var otherLocal = graphLocal + dir;
+
+            if (IsOpenTile(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal) && !Obstacles.ContainsKey(otherLocal))
+            {
+              var otherWorld = LocalToWorld(otherLocal);
+              var otherSphere = new BoundingSphereD(otherWorld, 1);
+
+              if (sphere.Contains(otherSphere) != ContainmentType.Disjoint)
+              {
+                ObstacleNodesTemp[otherLocal] = new byte();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    void UpdateTempObstaclesCallback(WorkData data)
+    {
       Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
 
-      tempEntities.Clear();
-      AiSession.Instance.EntListStack.Push(tempEntities);
-      AiSession.Instance.CornerArrayStack.Push(corners);
+      if (AiSession.Instance != null && AiSession.Instance.Registered)
+      {
+        var obstacleData = data as ObstacleWorkData;
+
+        if (obstacleData?.Blocks != null && AiSession.Instance.ObstacleWorkDataStack != null)
+        {
+          obstacleData.Blocks.Clear();
+          AiSession.Instance.SlimListStack.Push(obstacleData.Blocks);
+        }
+
+        if (obstacleData?.Entities != null && AiSession.Instance.EntListStack != null)
+        {
+          obstacleData.Entities.Clear();
+          AiSession.Instance.EntListStack.Push(obstacleData.Entities);
+        }
+      }
     }
 
     public override Node GetReturnHomePoint(BotBase bot)
@@ -7210,56 +7842,35 @@ namespace AiEnabled.Ai.Support
       if (bot == null || bot.IsDead)
         return null;
 
+      Node node = null;
+      Node backup = null;
       foreach (var kvp in OpenTileDict)
       {
-        if (!kvp.Value.IsGridNode)
-          continue;
-
-        var localPosition = kvp.Key;
-        if (!BlockedDoors.ContainsKey(localPosition) && !TempBlockedNodes.ContainsKey(localPosition) && !ObstacleNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition))
-          return kvp.Value;
-      }
-
-      List<Vector3I> localNodes;
-      if (!AiSession.Instance.LineListStack.TryPop(out localNodes))
-        localNodes = new List<Vector3I>();
-      else
-        localNodes.Clear();
-
-      var from = OBB.Center - OBB.HalfExtent.Y;
-      var to = OBB.Center + OBB.HalfExtent.Y;
-
-      MainGrid.RayCastCells(from, to, localNodes);
-      Node node = null;
-
-      for (int i = 0; i < localNodes.Count; i++)
-      {
-        var localPosition = localNodes[i];
-
-        if (IsPositionUsable(bot, LocalToWorld(localPosition), out node))
-          break;
-
-        if (GetClosestValidNode(bot, localPosition, out localPosition) && TryGetNodeForPosition(localPosition, out node))
-          break;
-      }
-
-      if (node == null)
-      {
-        while (PointInsideVoxel(from, RootVoxel))
-          from += WorldMatrix.Up * 0.1;
-
-        var fromNode = MainGrid.WorldToGridInteger(from);
-        if (!TryGetNodeForPosition(fromNode, out node))
+        if (IsPositionUsable(bot, kvp.Key))
         {
-          Vector3I testNode;
-          if (GetClosestValidNode(bot, fromNode, out testNode))
-            TryGetNodeForPosition(testNode, out node);
+          node = kvp.Value;
+
+          if (node.IsGroundNode)
+            return node;
+          else if (backup == null)
+            backup = node;
         }
       }
 
-      localNodes.Clear();
-      AiSession.Instance.LineListStack.Push(localNodes);
-      return node;
+      foreach (var kvp in _planetTileDictionary)
+      {
+        if (IsPositionUsable(bot, kvp.Key))
+        {
+          node = kvp.Value;
+
+          if (node.IsGroundNode)
+            return node;
+          else if (backup == null)
+            backup = node;
+        }
+      }
+
+      return node ?? backup;
     }
 
     public Vector3D GetLastValidNodeOnLine(Vector3D start, Vector3D directionNormalized, double desiredDistance, bool ensureOpenTiles = true)
@@ -7279,7 +7890,7 @@ namespace AiEnabled.Ai.Support
       for (int i = 0; i < nodeList.Count; i++)
       {
         var localPos = nodeList[i];
-        var cube = GetBlockAtPosition(localPos); // MainGrid.GetCubeBlock(localPos) as IMySlimBlock;
+        var cube = GetBlockAtPosition(localPos);
         var def = cube?.BlockDefinition as MyCubeBlockDefinition;
 
         if (!ensureOpenTiles && def?.HasPhysics != true)
@@ -7293,7 +7904,6 @@ namespace AiEnabled.Ai.Support
         }
 
         Node node;
-        //if (!OpenTileDict.TryGetValue(localPos, out node) || BlockedDoors.ContainsKey(localPos) || TempBlockedNodes.ContainsKey(localPos) || ObstacleNodes.ContainsKey(localPos))
         if (BlockedDoors.ContainsKey(localPos) || TempBlockedNodes.ContainsKey(localPos) || ObstacleNodes.ContainsKey(localPos) || !TryGetNodeForPosition(localPos, out node))
           break;
 
@@ -7302,7 +7912,6 @@ namespace AiEnabled.Ai.Support
           if (node.IsBlocked(prevNode - localPos))
             break;
 
-          //if (OpenTileDict.TryGetValue(prevNode, out node) && node.IsBlocked(localPos - prevNode))
           if (TryGetNodeForPosition(prevNode, out node) && node.IsBlocked(localPos - prevNode))
             break;
         }
@@ -7334,11 +7943,27 @@ namespace AiEnabled.Ai.Support
 
     public void RecalculateOBB()
     {
-      var box = BoundingBox;
+      var box = GetMapBoundingBoxLocal();
+      box.Inflate(_boxExpansion);
+
       var worldCenter = MainGrid.GridIntegerToWorld(box.Center);
       var quat = Quaternion.CreateFromRotationMatrix(MainGrid.WorldMatrix);
       var halfVector = Vector3D.Half * CellSize;
-      OBB = new MyOrientedBoundingBoxD(worldCenter, box.HalfExtents * CellSize + halfVector, quat);
+
+      var newOBB = new MyOrientedBoundingBoxD(worldCenter, box.HalfExtents * CellSize + halfVector, quat);
+
+      if (newOBB.HalfExtent.LengthSquared() > OBB.HalfExtent.LengthSquared())
+      {
+        Dirty = true;
+      }
+      else
+      {
+        box = BoundingBox;
+        worldCenter = MainGrid.GridIntegerToWorld(box.Center);
+        newOBB = new MyOrientedBoundingBoxD(worldCenter, box.HalfExtents * CellSize + halfVector, quat);
+      }
+
+      OBB = newOBB;
 
       box.Inflate(-_boxExpansion);
       UnbufferedOBB = new MyOrientedBoundingBoxD(worldCenter, box.HalfExtents * CellSize + halfVector, quat);
@@ -7378,7 +8003,7 @@ namespace AiEnabled.Ai.Support
 
     public void AdjustWorldMatrix()
     {
-      if (MainGrid?.Physics == null || MainGrid.Physics.IsStatic || MainGrid.WorldMatrix == _lastMatrix)
+      if (MainGrid?.Physics == null || MainGrid.Physics.IsStatic || MainGrid.WorldMatrix.EqualsFast(ref _lastMatrix))
         return;
 
       int numSeats, numFactories;
@@ -7477,10 +8102,7 @@ namespace AiEnabled.Ai.Support
 
     public override bool IsOpenTile(Vector3I position)
     {
-      if (_planetTileDictionary.ContainsKey(position) || OpenTileDict.ContainsKey(position))
-        return true;
-
-      return false;
+      return _planetTileDictionary.ContainsKey(position) || OpenTileDict.ContainsKey(position);
     }
 
     public override bool IsObstacle(Vector3I position, bool includeTemp)
@@ -7507,27 +8129,27 @@ namespace AiEnabled.Ai.Support
 
     public override IMySlimBlock GetBlockAtPosition(Vector3I mainGridPosition)
     {
-      var block = MainGrid.GetCubeBlock(mainGridPosition) as IMySlimBlock;
+      var block = MainGrid?.GetCubeBlock(mainGridPosition) as IMySlimBlock;
 
-      if (block == null)
-      {
-        var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
+      //if (block == null)
+      //{
+      //  var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
 
-        for (int i = 0; i < GridCollection.Count; i++)
-        {
-          var grid = GridCollection[i] as MyCubeGrid;
-          if (grid?.Physics == null || grid.MarkedForClose || grid.IsPreview || grid.EntityId == MainGrid?.EntityId)
-          {
-            continue;
-          }
+      //  for (int i = 0; i < GridCollection.Count; i++)
+      //  {
+      //    var grid = GridCollection[i] as MyCubeGrid;
+      //    if (grid?.Physics == null || grid.MarkedForClose || grid.IsPreview || grid.EntityId == MainGrid?.EntityId)
+      //    {
+      //      continue;
+      //    }
 
-          var localPosition = grid.WorldToGridInteger(worldPosition);
-          block = grid.GetCubeBlock(localPosition);
+      //    var localPosition = grid.WorldToGridInteger(worldPosition);
+      //    block = grid.GetCubeBlock(localPosition);
 
-          if (block != null)
-            break;
-        }
-      }
+      //    if (block != null)
+      //      break;
+      //  }
+      //}
 
       return block;
     }

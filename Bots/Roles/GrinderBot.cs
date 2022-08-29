@@ -31,7 +31,7 @@ namespace AiEnabled.Bots.Roles
 {
   public class GrinderBot : EnemyBotBase
   {
-    public GrinderBot(IMyCharacter bot, GridBase gridBase, string toolType = null) : base(bot, 5, 15, gridBase)
+    public GrinderBot(IMyCharacter bot, GridBase gridBase, AiSession.ControlInfo ctrlInfo, string toolType = null) : base(bot, 5, 15, gridBase, ctrlInfo)
     {
       Behavior = new ZombieBehavior(this);
       var toolSubtype = toolType ?? "AngleGrinder2Item";
@@ -55,35 +55,6 @@ namespace AiEnabled.Bots.Roles
       _attackSoundStrings.Add("ZombieAttack004");
 
       MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
-    }
-
-    public override void AddWeapon()
-    {
-      var inventory = Character?.GetInventory();
-      if (inventory == null)
-      {
-        AiSession.Instance.Logger.Log($"GrinderBot.AddWeapon: WARNING: Inventory was NULL!", MessageType.WARNING);
-        return;
-      }
-
-      var grinderDefinition = ToolDefinition?.PhysicalItemId ?? new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), "AngleGrinder2Item");
-      if (inventory.CanItemsBeAdded(1, grinderDefinition))
-      {
-        var welder = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(grinderDefinition);
-        inventory.AddItems(1, welder);
-
-        var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
-        if (charController.CanSwitchToWeapon(grinderDefinition))
-        {
-          charController.SwitchToWeapon(grinderDefinition);
-          HasWeaponOrTool = true;
-          SetShootInterval();
-        }
-        else
-          AiSession.Instance.Logger.Log($"GrinderBot.AddWeapon: WARNING! Added grinder but unable to switch to it!", MessageType.WARNING);
-      }
-      else
-        AiSession.Instance.Logger.Log($"GrinderBot.AddWeapon: WARNING! Unable to add grinder to inventory!", MessageType.WARNING);
     }
 
     internal override void Attack()

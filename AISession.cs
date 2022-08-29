@@ -75,10 +75,11 @@ namespace AiEnabled
 
     public readonly MyStringHash RoboDogSubtype = MyStringHash.GetOrCompute("RoboDog");
     public readonly MyStringHash PlushieSubtype = MyStringHash.GetOrCompute("Plushie_Astronaut");
+    public readonly MyStringHash RoboPlushieSubtype = MyStringHash.GetOrCompute("Robo_Plushie");
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v0.19b";
+    public const string VERSION = "v1.0";
     const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
@@ -121,6 +122,7 @@ namespace AiEnabled
     public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded, EemLoaded;
     public bool InfiniteAmmoEnabled;
     public readonly MyStringHash FactorySorterHash = MyStringHash.GetOrCompute("RoboFactory");
+    public double SyncRange = 3000; 
 
     public List<HelperInfo> MyHelperInfo;
     public CommandMenu CommandMenu;
@@ -157,34 +159,9 @@ namespace AiEnabled
 
     public CubeGridMap GetGridGraph(MyCubeGrid grid, MatrixD worldMatrix)
     {
+      grid = GridBase.GetLargestGridForMap(grid) as MyCubeGrid;
       if (grid == null || grid.MarkedForClose)
         return null;
-
-      List<IMyCubeGrid> gridGroup;
-      if (!GridGroupListStack.TryPop(out gridGroup))
-      {
-        gridGroup = new List<IMyCubeGrid>();
-      }
-      else
-      {
-        gridGroup.Clear();
-      }
-
-      grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
-      foreach (var g in gridGroup)
-      {
-        if (g == null || g.MarkedForClose || g.EntityId == grid.EntityId || g.GridSizeEnum == MyCubeSize.Small)
-          continue;
-
-        var mygrid = g as MyCubeGrid;
-        if (mygrid.BlocksCount > grid.BlocksCount || grid.GridSizeEnum == MyCubeSize.Small)
-        {
-          grid = mygrid;
-        }
-      }
-
-      gridGroup.Clear();
-      GridGroupListStack.Push(gridGroup);
 
       if (grid.GridSizeEnum == MyCubeSize.Small)
       {
@@ -293,9 +270,7 @@ namespace AiEnabled
 
       pc.Locked = false;
       pc.CleanUp(true);
-
       pc.Bot = null;
-      pc.Graph = null;
 
       if (_pathCollections != null)
         _pathCollections.Push(pc);
@@ -537,6 +512,14 @@ namespace AiEnabled
       PendingBotRespawns?.Clear();
       ScaffoldBlockDefinitions?.Clear();
       GratedCatwalkExpansionBlocks?.Clear();
+      ObstacleWorkDataStack?.Clear();
+      VoxelUpdateListStack?.Clear();
+      VoxelUpdateItemStack?.Clear();
+      VoxelUpdateQueueStack?.Clear();
+      NodeStack?.Clear();
+      TempNodeStack?.Clear();
+      BotToControllerInfoDict?.Clear();
+      CharacterListStack?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -659,6 +642,14 @@ namespace AiEnabled
       PendingBotRespawns = null;
       ScaffoldBlockDefinitions = null;
       GratedCatwalkExpansionBlocks = null;
+      ObstacleWorkDataStack = null;
+      VoxelUpdateItemStack = null;
+      VoxelUpdateListStack = null;
+      VoxelUpdateQueueStack = null;
+      NodeStack = null;
+      TempNodeStack = null;
+      BotToControllerInfoDict = null;
+      CharacterListStack = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -719,38 +710,47 @@ namespace AiEnabled
         _controllerCacheNum = Math.Max(20, MyAPIGateway.Session.MaxPlayers * 2);
 
         bool sessionOK = MyAPIGateway.Session != null;
-        if (sessionOK && MyAPIGateway.Session.Mods?.Count > 0)
+        if (sessionOK)
         {
-          foreach (var mod in MyAPIGateway.Session.Mods)
-          {
-            if (mod.PublishedFileId == 1365616918 || mod.PublishedFileId == 2372872458
-              || mod.GetPath().Contains("AppData\\Roaming\\SpaceEngineers\\Mods\\DefenseShields"))
-            {
-              ShieldAPILoaded = ShieldAPI.Load();
-              Logger.Log($"Defense Shields Mod found. API loaded successfully = {ShieldAPILoaded}");
-            }
-            else if (mod.PublishedFileId == 2200451495)
-            {
-              Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} found");
-            }
-            else if (mod.PublishedFileId == 1918681825)
-            {
-              WcAPI.Load(WeaponCoreRegistered);
-            }
-            else if (mod.PublishedFileId == 2344068716)
-            {
-              IndOverhaulLoaded = true;
-            }
-            else if (mod.PublishedFileId == 531659576)
-            {
-              EemLoaded = true;
+          SyncRange = MyAPIGateway.Session.SessionSettings?.SyncDistance ?? 3000;
 
-              if (!MyAPIGateway.Utilities.IsDedicated)
+          if (MyAPIGateway.Session.Mods?.Count > 0)
+          {
+            foreach (var mod in MyAPIGateway.Session.Mods)
+            {
+              if (mod.PublishedFileId == 1365616918 || mod.PublishedFileId == 2372872458
+                || mod.GetPath().Contains("AppData\\Roaming\\SpaceEngineers\\Mods\\DefenseShields"))
               {
-                Logger.Log($"EEM Mod found. Spawns will be delayed until EEM faction validation passes.");
-                //MyAPIGateway.Utilities.ShowMessage("AiEnabled", "Spawns will be delayed until EEM faction validation passes.");
+                ShieldAPILoaded = ShieldAPI.Load();
+                Logger.Log($"Defense Shields Mod found. API loaded successfully = {ShieldAPILoaded}");
+              }
+              else if (mod.PublishedFileId == 2200451495)
+              {
+                Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} found");
+              }
+              else if (mod.PublishedFileId == 1918681825)
+              {
+                WcAPI.Load(WeaponCoreRegistered);
+              }
+              else if (mod.PublishedFileId == 2344068716)
+              {
+                IndOverhaulLoaded = true;
+              }
+              else if (mod.PublishedFileId == 531659576)
+              {
+                EemLoaded = true;
+
+                if (!MyAPIGateway.Utilities.IsDedicated)
+                {
+                  Logger.Log($"EEM Mod found. Spawns will be delayed until EEM faction validation passes.");
+                  //MyAPIGateway.Utilities.ShowMessage("AiEnabled", "Spawns will be delayed until EEM faction validation passes.");
+                }
               }
             }
+          }
+          else
+          {
+            Logger.Log($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}", MessageType.WARNING);
           }
         }
         else
@@ -789,16 +789,29 @@ namespace AiEnabled
           }
         }
 
+        foreach (var charDef in MyDefinitionManager.Static.Characters)
+        {
+          if (charDef == null)
+            continue;
+
+          var subtype = charDef.Id.SubtypeName;
+
+          if (charDef.Id.SubtypeId == PlushieSubtype || charDef.Id.SubtypeId == RoboPlushieSubtype
+            || subtype.IndexOf("SmallSpider", StringComparison.OrdinalIgnoreCase) >= 0)
+          {
+            // Fix for turrets shooting over their heads
+            charDef.HeadServerOffset = -1.25f;
+          }
+
+          if (IsServer)
+            AnimationControllerDictionary[subtype] = charDef.AnimationController;
+  
+          RobotSubtypes.Add(subtype);
+        }
+
         if (IsServer)
         {
           _localBotAPI = new LocalBotAPI();
-
-          foreach (var def in MyDefinitionManager.Static.Characters)
-          {
-            var subtype = def.Id.SubtypeName;
-            AnimationControllerDictionary[subtype] = def.AnimationController;
-            RobotSubtypes.Add(subtype);
-          }
 
           foreach (var def in AllGameDefinitions)
           {
@@ -838,11 +851,29 @@ namespace AiEnabled
               var bType = kvp.Key;
               var credits = kvp.Value;
 
+              List<SerialId> comps;
+              if (!BotComponents.TryGetValue(bType, out comps))
+              {
+                Logger.Log($"BeforeStart: BotComponents did not contain an entry for {bType}, initializing to empty list", MessageType.WARNING);
+                comps = new List<SerialId>()
+                {
+                  new SerialId()
+                };
+              }
+              else if (comps == null)
+              {
+                Logger.Log($"BeforeStart: Component list for {bType} was null, initializing to empty list", MessageType.WARNING);
+                comps = new List<SerialId>()
+                {
+                  new SerialId()
+                };
+              }
+
               var bp = new BotPrice
               {
                 BotType = bType,
                 SpaceCredits = credits,
-                Components = BotComponents.GetValueOrDefault(bType, new List<SerialId>() { new SerialId() })
+                Components = new List<SerialId>(comps)
               };
 
               ModPriceData.BotPrices.Add(bp);
@@ -850,6 +881,52 @@ namespace AiEnabled
           }
           else
           {
+            foreach (var kvp in BotPrices)
+            {
+              var bType = kvp.Key;
+
+              bool found = false;
+              for (int i = 0; i < ModPriceData.BotPrices.Count; i++)
+              {
+                var modPrice = ModPriceData.BotPrices[i];
+                if (modPrice.BotType == bType)
+                {
+                  found = true;
+                  break;
+                }
+              }
+
+              if (!found)
+              {
+                List<SerialId> comps;
+                if (!BotComponents.TryGetValue(bType, out comps))
+                {
+                  Logger.Log($"BeforeStart: BotComponents did not contain an entry for {bType}, initializing to empty list", MessageType.WARNING);
+                  comps = new List<SerialId>()
+                  {
+                    new SerialId()
+                  };
+                }
+                else if (comps == null)
+                {
+                  Logger.Log($"BeforeStart: Component list for {bType} was null, initializing to empty list", MessageType.WARNING);
+                  comps = new List<SerialId>()
+                  {
+                    new SerialId()
+                  };
+                }
+
+                var priceData = new BotPrice()
+                {
+                  BotType = bType,
+                  SpaceCredits = kvp.Value,
+                  Components = new List<SerialId>(comps)
+                };
+
+                ModPriceData.BotPrices.Add(priceData);
+              }
+            }
+
             foreach (var botPrice in ModPriceData.BotPrices)
             {
               if (botPrice?.BotType != null && BotPrices.ContainsKey(botPrice.BotType.Value))
@@ -864,7 +941,9 @@ namespace AiEnabled
                     var def = c.DefinitionId;
 
                     if (!def.TypeId.IsNull && AllGameDefinitions.ContainsKey(def))
+                    {
                       comps.Add(c);
+                    }
                   }
 
                   BotComponents[botPrice.BotType.Value] = comps;
@@ -874,8 +953,7 @@ namespace AiEnabled
                   BotComponents[botPrice.BotType.Value]?.Clear();
                 }
 
-                if (botPrice.SpaceCredits.HasValue)
-                  BotPrices[botPrice.BotType.Value] = botPrice.SpaceCredits.Value;
+                BotPrices[botPrice.BotType.Value] = botPrice.SpaceCredits ?? 0;
               }
             }
           }
@@ -1472,7 +1550,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in HudAPICallback: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in HudAPICallback: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1488,7 +1566,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionAutoAcceptChanged: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in Factions_FactionAutoAcceptChanged: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1524,7 +1602,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionStateChanged: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in Factions_FactionStateChanged: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1576,7 +1654,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionEdited: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in Factions_FactionEdited: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1616,13 +1694,12 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionCreated: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in Factions_FactionCreated: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
     public void ClearBotControllers()
     {
-      //Logger.Log($"Clearing bot controllers");
       _controlSpawnTimer = 0;
       _checkControlTimer = true;
       _controllerSet = false;
@@ -1632,9 +1709,21 @@ namespace AiEnabled
 
     public void CheckControllerForPlayer(long playerId, long botEntId)
     {
-      //Logger.Log($"CheckControllerForPlayer: {playerId}, EntityId = {botEntId}");
       _newPlayerIds[playerId] = botEntId;
       MyAPIGateway.Utilities.InvokeOnGameThread(GetBotControllerClient, "AiEnabled");
+    }
+
+    public void UpdateControllerAfterResync(long oldBotId, long newBotId)
+    {
+      for (int i = 0; i < _controllerInfo.Count; i++)
+      {
+        var info = _controllerInfo[i];
+        if (info.EntityId == oldBotId)
+        {
+          info.EntityId = newBotId;
+          break;
+        }
+      }
     }
 
     public void UpdateControllerForPlayer(long playerId, long botId, long? ownerId = null)
@@ -1644,6 +1733,7 @@ namespace AiEnabled
         var info = _controllerInfo[i];
         if (info.Identity.IdentityId == playerId)
         {
+          BotToControllerInfoDict[botId] = info;
           info.EntityId = botId;
           if (ownerId.HasValue)
           {
@@ -1769,12 +1859,19 @@ namespace AiEnabled
             }
 
             var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
-            if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
+            if (jetpack != null && !jetpack.TurnedOn)
             {
-              var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-              MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-              jetpack.TurnOnJetpack(true);
-              MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+              if (bot.RequiresJetpack)
+              {
+                var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+                MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+                jetpack.TurnOnJetpack(true);
+                MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+              }
+              else if (bot.CanUseAirNodes && MyAPIGateway.Session.SessionSettings.EnableJetpack)
+              {
+                jetpack.TurnOnJetpack(true);
+              }
             }
 
             bot.Target.RemoveTarget();
@@ -1872,7 +1969,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerLeftCockpitDelayed: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in PlayerLeftCockpitDelayed: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1886,11 +1983,11 @@ namespace AiEnabled
           return;
         }
 
-        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName), "AiEnabled", 10);
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName), "AiEnabled", MyAPIGateway.Session.GameplayFrameCounter + 10);
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerLeftCockpit: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in PlayerLeftCockpit: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1975,7 +2072,7 @@ namespace AiEnabled
               continue;
             }
 
-            var botPosition = bot.GetPosition();
+            var botPosition = bot.Target.CurrentBotPosition;
 
             if (!bot.CanUseSeats || Vector3D.DistanceSquared(ownerPos, botPosition) > 10000)
               continue;
@@ -2058,7 +2155,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerEnteredCockpitDelayed: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in PlayerEnteredCockpitDelayed: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -2072,11 +2169,11 @@ namespace AiEnabled
           return;
         }
 
-        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName), "AiEnabled", 10);
+        MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName), "AiEnabled", MyAPIGateway.Session.GameplayFrameCounter + 10);
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerEnteredCockpit: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in PlayerEnteredCockpit: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -2724,7 +2821,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in AiSession.OnEntityRemove: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in AiSession.OnEntityRemove: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -2736,13 +2833,41 @@ namespace AiEnabled
         if (character?.Definition == null || !string.IsNullOrWhiteSpace(character.DisplayName) || !RobotSubtypes.Contains(character.Definition.Id.SubtypeName))
           return;
 
+        if (!IsServer && MyAPIGateway.Session.Player != null)
+        {
+          List<long> helperIds;
+          var player = MyAPIGateway.Session.Player;
+          if (!PlayerToHelperIdentity.TryGetValue(player.IdentityId, out helperIds) || helperIds == null)
+          {
+            helperIds = new List<long>();
+            PlayerToHelperIdentity[player.IdentityId] = helperIds;
+          }
+          else if (helperIds.Contains(character.EntityId))
+          {
+            PendingBotRespawns.Remove(character.Name);
+          }
+        }
+
         if (Bots.ContainsKey(character.EntityId))
+        {
+          if (!MyAPIGateway.Utilities.IsDedicated)
+          {
+            ControlInfo info;
+            if (BotToControllerInfoDict.TryGetValue(character.EntityId, out info) && info != null)
+            {
+              info.Controller.TakeControl(character);
+            }
+          }
+
           return;
+        }
 
         if (!_isControlBot && !MyAPIGateway.Utilities.IsDedicated) // IsClient)
         {
           if (character.ControllerInfo?.Controller == null && _controllerInfo.Count > 0)
           {
+            bool found = false;
+
             for (int i = 0; i < _controllerInfo.Count; i++)
             {
               var info = _controllerInfo[i];
@@ -2752,15 +2877,22 @@ namespace AiEnabled
                 _controllerInfo.ApplyChanges();
 
                 info.Controller.TakeControl(character);
+
+                BotToControllerInfoDict[character.EntityId] = info;
+                found = true;
                 break;
               }
             }
 
-            //ControlInfo info;
-            //if (_controllerInfo.TryRemove(character.EntityId, out info) && info != null)
-            //{
-            //  info.Controller.TakeControl(character);
-            //}
+            if (!found && !IsServer)
+            {
+              ControlInfo info;
+              if (BotToControllerInfoDict.TryGetValue(character.EntityId, out info) && info != null)
+              {
+                found = true;
+                info.Controller.TakeControl(character);
+              }
+            }
           }
 
           if (character.Definition.Id.SubtypeName == "Drone_Bot")
@@ -2850,7 +2982,7 @@ namespace AiEnabled
 
           if (num != MaxBots)
           {
-            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic, null, null, null);
+            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic, null);
             Network.SendToServer(packet);
           }
         }
@@ -3108,7 +3240,7 @@ namespace AiEnabled
       catch (Exception ex)
       {
         ShowMessage($"Error during command execution: {ex.Message}");
-        Logger.Log($"Exception during command execution: '{messageText}'\n {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception during command execution: '{messageText}'\n {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -3861,7 +3993,7 @@ namespace AiEnabled
       }
       catch(Exception ex)
       {
-        Logger.Log($"Exception in DoTickNow.IsClient: {ex.Message}\n{ex.StackTrace}");
+        Logger.Log($"Exception in DoTickNow.IsClient: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
         return;
       }
 
@@ -3920,18 +4052,23 @@ namespace AiEnabled
                 var spawnIdentityId = bot.ControllerInfo.ControllingIdentityId;
                 var spawnFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(spawnIdentityId);
 
-                if (spawnFaction != null)
+                foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
                 {
-                  foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
+                  if (kvp.Key != spawnFaction?.FactionId && kvp.Value.IsMember(spawnIdentityId))
                   {
-                    if (kvp.Key != spawnFaction.FactionId && kvp.Value.IsMember(spawnIdentityId))
-                    {
-                      Logger.Log($"Found duplicate identity in faction {kvp.Value.Name} (discarding identity)", MessageType.WARNING);
-                      useBot = false;
-                      bot.Close();
-                      break;
-                    }
+                    Logger.Log($"Found duplicate identity in faction {kvp.Value.Name} (discarding identity)", MessageType.WARNING);
+                    useBot = false;
+                    bot.Close();
+                    break;
                   }
+                }
+
+                IMyPlayer p;
+                if (Players.TryGetValue(spawnIdentityId, out p) && p != null && p.Character?.EntityId != bot.EntityId)
+                {
+                  Logger.Log($"Found duplicate identity for player {p.DisplayName} (discarding identity)", MessageType.WARNING);
+                  useBot = false;
+                  bot.Close();
                 }
               }
 
@@ -4150,7 +4287,7 @@ namespace AiEnabled
               graph.RemovePlanetTiles();
 
             var grid = graph.MainGrid;
-            if (grid.Physics.LinearVelocity.LengthSquared() < 0.01)
+            if (grid.IsStatic || (grid.Physics.LinearVelocity.LengthSquared() < 0.01 && grid.Physics.AngularVelocity.LengthSquared() < 0.001))
               graph.ResetMovement();
           }
         }
@@ -4168,7 +4305,6 @@ namespace AiEnabled
 
         _graphRemovals.Clear();
       }
-
 
       foreach (var kvp in VoxelGraphDict)
       {
@@ -4269,7 +4405,7 @@ namespace AiEnabled
       }
     }
 
-    bool _gpsUpdatesAvailable, _controlIdentOK;
+    bool _gpsUpdatesAvailable;
     int _planetCheckTimer;
     void DoTick100()
     {
@@ -4293,9 +4429,8 @@ namespace AiEnabled
             var controlInfo = _controllerInfo[0];
 
             var steamId = MyAPIGateway.Players.TryGetSteamId(controlInfo.Identity.IdentityId);
-            if (steamId != 0) // || !_controlIdentOK)
+            if (steamId != 0)
             {
-              _controlIdentOK = (steamId == 0);
               allowSpawns = false;
             }
           }
@@ -4421,8 +4556,12 @@ namespace AiEnabled
           if (checkPlanets)
             graph.CheckPlanet();
 
-          if (graph.NeedsVoxelUpate)
+          if (graph.NeedsBlockUpdate)
+            graph.ProcessBlockChanges();
+          else if (graph.NeedsVoxelUpdate)
             graph.UpdateVoxels();
+          else if (graph.NeedsInteriorNodesUpdate)
+            graph.InteriorNodesCheck();
 
           if (graph.Ready)
             graph.UpdateTempObstacles();
@@ -4446,7 +4585,7 @@ namespace AiEnabled
             continue;
           }
 
-          if (graph.NeedsVoxelUpate)
+          if (graph.NeedsVoxelUpdate)
             graph.UpdateVoxels();
 
           if (graph.Ready)
@@ -4487,7 +4626,6 @@ namespace AiEnabled
         var steamId = MyAPIGateway.Players.TryGetSteamId(info.Identity.IdentityId);
         if (steamId != 0)
         {
-          _controlIdentOK = false;
           return null;
         }
       }

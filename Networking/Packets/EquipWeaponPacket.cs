@@ -12,6 +12,7 @@ using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.ModAPI;
 
 using VRage;
 using VRage.Game;
@@ -68,7 +69,9 @@ namespace AiEnabled.Networking
         var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
         if (AiSession.Instance.IsBotAllowedToUse(bot, _itemDefinition.SubtypeId, out reason) && controlEnt.CanSwitchToWeapon(_itemDefinition))
         {
-          controlEnt.SwitchToWeapon(_itemDefinition);
+          if (!(bot.Character?.Parent is IMyCockpit))
+            controlEnt.SwitchToWeapon(_itemDefinition);
+  
           bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(_itemDefinition);
           bot.HasWeaponOrTool = true;
           bot.SetShootInterval();

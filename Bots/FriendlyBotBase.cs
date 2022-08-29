@@ -37,7 +37,7 @@ namespace AiEnabled.Bots
 
     internal List<float> _randoms = new List<float>(10);
 
-    public FriendlyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, long ownerId) : base(bot, minDamage, maxDamage, gridBase)
+    public FriendlyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
       Owner = AiSession.Instance.Players.GetValueOrDefault(ownerId, null); // AiSession.Instance.Players[ownerId];
 
@@ -93,7 +93,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in FriendlyBotBase.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in FriendlyBotBase.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {
@@ -123,7 +123,7 @@ namespace AiEnabled.Bots
         return;
       }
 
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       if (Target.IsDestroyed())
       {
         Target.RemoveTarget();
@@ -587,7 +587,7 @@ namespace AiEnabled.Bots
     {
       roll = 0;
       rifleAttack = false;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var botMatrix = WorldMatrix;
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;

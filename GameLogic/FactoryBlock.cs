@@ -27,6 +27,8 @@ using AiEnabled.Utilities;
 using AiEnabled.Particles;
 using AiEnabled.ConfigData;
 using Sandbox.Definitions;
+using Sandbox.Game;
+using VRage;
 
 namespace AiEnabled.GameLogic
 {
@@ -38,7 +40,7 @@ namespace AiEnabled.GameLogic
     public HelperInfo SelectedHelper;
     public StringBuilder BotName;
     public bool ButtonPressed;
-    public bool HasHelper => _helperBot != null;
+    public bool HasHelper => _helperInfo.Item1 != null;
 
     public struct BotInfo
     {
@@ -53,7 +55,7 @@ namespace AiEnabled.GameLogic
 
     FactoryParticleInfo _particleInfo;
     IMyTerminalBlock _block;
-    IMyCharacter _helperBot;
+    MyTuple<IMyCharacter, AiSession.ControlInfo> _helperInfo;
     int _controlTicks, _soundTicks;
     bool _soundPlaying, _playBuildSound;
     List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
@@ -78,6 +80,18 @@ namespace AiEnabled.GameLogic
       if (_block == null)
         return;
 
+      var inv = _block.GetInventory() as MyInventory;
+
+      if (inv.Constraint == null)
+      {
+        inv.Constraint = new MyInventoryConstraint("AiEnabled_Constraint");
+      }
+      else
+      {
+        inv.Constraint.Clear();
+        inv.Constraint.IsWhitelist = true;
+      }
+
       var sorter = _block as IMyConveyorSorter;
       sorter.DrainAll = true;
 
@@ -85,7 +99,10 @@ namespace AiEnabled.GameLogic
       sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, AiSession.Instance.EmptySorterCache);
 
       foreach (var itemFilter in AiSession.Instance.FactorySorterCache)
+      {
+        inv.Constraint.Add(itemFilter.ItemType);  
         sorter.AddItem(itemFilter);
+      }
 
       _block.AppendingCustomInfo += AppendingCustomInfo;
       _block.OnMarkForClose += OnMarkForClose;
@@ -100,15 +117,16 @@ namespace AiEnabled.GameLogic
       AiSession.Instance.FactoryControlsHooked = true;
     }
 
-    public void SetHelper(IMyCharacter bot, IMyPlayer owner)
+    public void SetHelper(MyTuple<IMyCharacter, AiSession.ControlInfo> botInfo, IMyPlayer owner)
     {
+      var bot = botInfo.Item1;
       if (_block == null || _block.MarkedForClose || bot == null || owner == null)
         return;
 
-      if (_soundPlaying && _helperBot != null)
+      if (_soundPlaying && _helperInfo.Item1 != null)
         return;
 
-      _helperBot = bot;
+      _helperInfo = botInfo;
       bot.CharacterDied += OnCharacterDied;
       bot.OnMarkForClose += Char_OnMarkForClose;
 
@@ -158,7 +176,7 @@ namespace AiEnabled.GameLogic
         }
       }
 
-      if (_helperBot?.EntityId == bot.EntityId)
+      if (_helperInfo.Item1?.EntityId == bot.EntityId)
       {
         if (_soundPlaying)
         {
@@ -166,7 +184,7 @@ namespace AiEnabled.GameLogic
           _soundPlaying = false;
         }
 
-        _helperBot = null;
+        _helperInfo = new MyTuple<IMyCharacter, AiSession.ControlInfo>(null, null);
       }
     }
 
@@ -175,7 +193,7 @@ namespace AiEnabled.GameLogic
       try
       {
         base.UpdateAfterSimulation();
-        if (_helperBot == null)
+        if (_helperInfo.Item1 == null)
           return;
 
         if (_soundPlaying)
@@ -184,7 +202,7 @@ namespace AiEnabled.GameLogic
         if (!_playBuildSound)
           return;
 
-        _particleInfo?.Set(_helperBot);
+        _particleInfo?.Set(_helperInfo.Item1);
         _playBuildSound = false;
         _soundPlaying = true;
       }
@@ -195,25 +213,25 @@ namespace AiEnabled.GameLogic
       }
     }
 
-    BotBase CreateBot(IMyCharacter bot, GridBase gBase, long ownerId)
+    BotBase CreateBot(MyTuple<IMyCharacter, AiSession.ControlInfo> botInfo, GridBase gBase, long ownerId)
     {
       BotBase botBase = null;
       switch (SelectedRole)
       {
         case AiSession.BotType.Repair:
-          botBase = new RepairBot(bot, gBase, ownerId);
+          botBase = new RepairBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
           MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
           break;
         case AiSession.BotType.Combat:
-          botBase = new CombatBot(bot, gBase, ownerId);
+          botBase = new CombatBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
           MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
           break;
         case AiSession.BotType.Crew:
-          botBase = new CrewBot(bot, gBase, ownerId);
+          botBase = new CrewBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
           MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
           break;
         case AiSession.BotType.Scavenger:
-          botBase = new ScavengerBot(bot, gBase, ownerId);
+          botBase = new ScavengerBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
           break;
         default:
           SelectedHelper = null;
@@ -242,13 +260,13 @@ namespace AiEnabled.GameLogic
 
             if (MyAPIGateway.Multiplayer.MultiplayerActive && AiSession.Instance.IsServer)
             {
-              var packet = new ParticlePacket(_helperBot.EntityId, ParticleInfoBase.ParticleType.Factory, remove: true);
+              var packet = new ParticlePacket(_helperInfo.Item1.EntityId, ParticleInfoBase.ParticleType.Factory, remove: true);
               AiSession.Instance.Network.RelayToClients(packet);
             }
 
             try
             {
-              var botInfo = AiSession.Instance.FactoryBotInfoDict[_helperBot.EntityId];
+              var botInfo = AiSession.Instance.FactoryBotInfoDict[_helperInfo.Item1.EntityId];
               var ownerId = botInfo.OwnerId;
 
               var gridMap = _gridGraph;
@@ -266,25 +284,32 @@ namespace AiEnabled.GameLogic
                   grid = g as MyCubeGrid;
                 }
 
-                gridMap = AiSession.Instance.GetGridGraph(grid, _helperBot.WorldMatrix);
+                gridMap = AiSession.Instance.GetGridGraph(grid, _helperInfo.Item1.WorldMatrix);
               }
               else if (gridMap.LastActiveTicks > 100)
               { 
                 gridMap.LastActiveTicks = 10;
               }
 
-              var botChar = CreateBot(_helperBot, gridMap, ownerId);
+              var botChar = CreateBot(_helperInfo, gridMap, ownerId);
               AiSession.Instance.AddBot(botChar, ownerId);
+
+              IMyPlayer player;
+              if (AiSession.Instance.Players.TryGetValue(ownerId, out player) && player != null)
+              {
+                var packet = new SpawnPacketClient(botChar.Character.EntityId, false);
+                AiSession.Instance.Network.SendToPlayer(packet, player.SteamUserId);
+              }
             }
             catch (Exception ex)
             {
-              AiSession.Instance.Logger.Log($"Error trying to spawn bot: {ex.Message}\n{ex.StackTrace}");
+              AiSession.Instance.Logger.Log($"Error trying to spawn bot: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
 
               if (MyAPIGateway.Session?.Player != null)
                 MyAPIGateway.Utilities.ShowNotification($"Error trying to spawn bot: {ex.Message}");
             }
 
-            _helperBot = null;
+            _helperInfo = new MyTuple<IMyCharacter, AiSession.ControlInfo>(null, null);
           }
         }
 
@@ -342,7 +367,7 @@ namespace AiEnabled.GameLogic
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in FactoryBlock.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance?.Logger?.Log($"Exception in FactoryBlock.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -370,11 +395,11 @@ namespace AiEnabled.GameLogic
         .Append(def?.DisplayNameText ?? comp.SubtypeName)
         .Append('\n');
 
-      List<SerialId> comps;
-      if (AiSession.Instance.BotComponents.TryGetValue(SelectedRole, out comps) && comps?.Count > 0)
+      long price;
+      if (AiSession.Instance.BotPrices.TryGetValue(SelectedRole, out price) && price > 0)
       {
         sb.Append(" - ")
-          .Append(AiSession.Instance.BotPrices[SelectedRole].ToString("#,###,##0"))
+          .Append(price.ToString("#,###,##0"))
           .Append(" Space Credits")
           .Append('\n', 2);
       }

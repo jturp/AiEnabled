@@ -54,6 +54,7 @@ namespace AiEnabled.Projectiles
       { MyMaterialType.WOOD, "WepPlayRifleImpWood" },
       { MyMaterialType.AMMO, "WepPlayRifleImpMetal" },
       { MyStringHash.GetOrCompute("CharacterFemale"), "WepPlayRifleImpPlay" },
+      { MyStringHash.GetOrCompute("Wheel"), "WepPlayRifleImpMetal" },
       { MyStringHash.GetOrCompute("Wolf"), "WepPlayRifleImpPlay" },
       { MyStringHash.GetOrCompute("Spider"), "WepPlayRifleImpPlay" },
       { MyStringHash.GetOrCompute("Glass"), "WepPlayRifleImpGlass" },
@@ -74,7 +75,6 @@ namespace AiEnabled.Projectiles
     };
 
     public static MyStringId ProjectileTrailLine = MyStringId.GetOrCompute("ProjectileTrailLine");
-
     public static MyStringHash BlockSkin_Wood = MyStringHash.GetOrCompute("Wood_Armor");
     public static MyStringHash BlockSkin_Concrete = MyStringHash.GetOrCompute("Concrete_Armor");
     public static MyStringHash Material_Wood = MyStringHash.GetOrCompute("MaterialHit_Wood");

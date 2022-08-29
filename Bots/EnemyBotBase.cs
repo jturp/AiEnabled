@@ -38,7 +38,7 @@ namespace AiEnabled.Bots
     internal byte _sideNodeTimer, _sideNodeWaitTime;
     List<float> _randoms = new List<float>(10);
 
-    public EnemyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase) : base(bot, minDamage, maxDamage, gridBase)
+    public EnemyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
       var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
       var jetAllowed = jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
@@ -137,7 +137,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in EnemyBotBase.Close: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in EnemyBotBase.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
       finally
       {
@@ -193,7 +193,7 @@ namespace AiEnabled.Bots
     {
       roll = 0;
       rifleAttack = false;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var botMatrix = WorldMatrix;
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;

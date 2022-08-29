@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using AiEnabled.Bots;
+using AiEnabled.Bots.Roles;
 using AiEnabled.Utilities;
 
 using Sandbox.Definitions;
@@ -15,6 +16,7 @@ using Sandbox.ModAPI;
 
 using VRage;
 using VRage.Collections;
+using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -102,7 +104,7 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// Whether or not any voxel changes have occurred
     /// </summary>
-    public bool NeedsVoxelUpate;
+    public bool NeedsVoxelUpdate;
 
     /// <summary>
     /// Determines whether the given position is still within this graph's limits
@@ -380,7 +382,7 @@ namespace AiEnabled.Ai.Support
         }
         else
         {
-          var botPosition = bot.GetPosition();
+          var botPosition = bot.Target.CurrentBotPosition;
           if (planet != null)
             surfacePoint = planet.GetClosestSurfacePointGlobal(ref botPosition) + upVector;
           else
@@ -592,52 +594,60 @@ namespace AiEnabled.Ai.Support
 
     public virtual void TeleportNearby(BotBase bot)
     {
-      var botPostion = bot.GetPosition();
+      var botPostion = bot.Target.CurrentBotPosition;
       var graph = bot._currentGraph;
+
+      if (!graph.IsPositionValid(botPostion) && bot.Owner == null)
+      {
+        AiSession.Instance.Logger.Log($"GridBase.TeleportNearby: Bot found outside of map bounds", MessageType.WARNING);
+        bot.Character.Kill();
+        return;
+      }
+
       var botLocal = graph.WorldToLocal(botPostion);
       int distanceCheck = 20;
 
       Vector3I? center = null;
 
-      for (int i = 1; i < distanceCheck + 1; i++)
+      for (int i = 1; i <= distanceCheck; i++)
       {
         var testPoint = botLocal + Vector3I.Up * i;
-        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        if (IsPositionUsable(bot, testPoint))
         {
           center = testPoint;
           break;
         }
 
         testPoint = botLocal + Vector3I.Down * i;
-        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        if (IsPositionUsable(bot, testPoint))
         {
           center = testPoint;
           break;
         }
 
         testPoint = botLocal + Vector3I.Left * i;
-        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        if (IsPositionUsable(bot, testPoint))
         {
           center = testPoint;
           break;
         }
 
         testPoint = botLocal + Vector3I.Right * i;
-        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        if (IsPositionUsable(bot, testPoint))
         {
           center = testPoint;
           break;
         }
 
         testPoint = botLocal + Vector3I.Forward * i;
-        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        if (IsPositionUsable(bot, testPoint))
         {
           center = testPoint;
           break;
         }
 
         testPoint = botLocal + Vector3I.Backward * i;
-        if (graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+        if (IsPositionUsable(bot, testPoint))
         {
           center = testPoint;
           break;
@@ -653,12 +663,37 @@ namespace AiEnabled.Ai.Support
 
       if (center.HasValue)
       {
-        var worldPoint = graph.LocalToWorld(center.Value) + bot.Character.WorldMatrix.Down * 0.5;
-        bot.Character.SetPosition(worldPoint);
+        Vector3D worldPoint;
+        Vector3 velocity;
+        Node node;
+        if (graph.TryGetNodeForPosition(center.Value, out node))
+        {
+          worldPoint = graph.LocalToWorld(center.Value) + node.Offset + WorldMatrix.Down * 0.5;
+          velocity = (node.IsGroundNode || !bot.CanUseAirNodes || bot is CreatureBot) ? (Vector3)WorldMatrix.Down * 0.5f : Vector3.Zero;
+        }
+        else
+        {
+          worldPoint = graph.LocalToWorld(center.Value) + WorldMatrix.Down * 0.5;
+          velocity = (!bot.CanUseAirNodes || bot is CreatureBot) ? (Vector3)WorldMatrix.Down * 0.5f : Vector3.Zero;
+        }
+
+        var gridGraph = bot._currentGraph as CubeGridMap;
+        if (gridGraph?.MainGrid?.Physics != null && !gridGraph.MainGrid.IsStatic)
+          velocity += gridGraph.MainGrid.Physics.LinearVelocity;
+
+        var matrix = WorldMatrix;
+        matrix.Translation = worldPoint;
+
+        bot.Character.SetWorldMatrix(matrix);
+        bot.Character.Physics.SetSpeeds(velocity, Vector3.Zero);
+        bot._pathCollection?.CleanUp(true);
       }
       else
       {
         AiSession.Instance.Logger.Log($"GridBase.TeleportNearby: Unable to find placement for bot", MessageType.WARNING);
+
+        if (bot.Owner == null)
+          bot.Character.Kill();
       }
     }
 
@@ -797,6 +832,44 @@ namespace AiEnabled.Ai.Support
 
       localPoint = WorldToLocal(closestSurfacePoint);
       return TryGetNodeForPosition(localPoint, out node) && node.IsGroundNode;
+    }
+
+    public static IMyCubeGrid GetLargestGridForMap(IMyCubeGrid initialGrid)
+    {
+      try
+      {
+        if (initialGrid == null)
+          return null;
+
+        List<IMyCubeGrid> gridList;
+        if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
+          gridList = new List<IMyCubeGrid>();
+        else
+          gridList.Clear();
+
+        var biggest = initialGrid;
+        initialGrid?.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
+
+        for (int i = 0; i < gridList.Count; i++)
+        {
+          var g = gridList[i];
+          if (g == null || g.MarkedForClose || g.Closed || g.GridSizeEnum == MyCubeSize.Small)
+            continue;
+
+          if (biggest == null || biggest.GridSizeEnum == MyCubeSize.Small || g.WorldAABB.Volume > biggest.WorldAABB.Volume || (g.IsStatic && !biggest.IsStatic))
+            biggest = g;
+        }
+
+        gridList.Clear();
+        AiSession.Instance.GridGroupListStack.Push(gridList);
+
+        return (biggest?.GridSize > 1) ? biggest : null;
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in BotFactory.GetLargestGridForMap: {ex.Message}\n{ex.StackTrace}");
+        return null;
+      }
     }
 
     public static Vector3D GetClosestSurfacePointFast(Vector3D worldPosition, Vector3D upVec, GridBase map, out bool pointOnGround)
@@ -967,6 +1040,80 @@ namespace AiEnabled.Ai.Support
         var point = from + line.Direction * i;
         if (PointInsideVoxel(point, voxel))
           return true;
+      }
+
+      return false;
+    }
+
+    /// <summary>
+    /// Converted from MyVoxelBase.GetMaterialsInShape.
+    /// </summary>
+    /// <param name="worldBoundaries">WorldAABB to check</param>
+    /// <param name="voxel">Root voxel to check</param>
+    /// <param name="lod">Voxel LOD to check</param>
+    /// <returns>true if any materials are found in the AABB, otherwise false</returns>
+    public bool HasMaterialsInBox(BoundingBoxD worldBoundaries, MyVoxelBase voxel, int lod = 0)
+    {
+      if (voxel == null || voxel.MarkedForClose)
+        return false;
+
+      Vector3I max = voxel.Storage.Size - 1;
+      Vector3D bottomLeftCorner = voxel.PositionLeftBottomCorner;
+      Vector3I voxelCoordMin, voxelCoordMax;
+
+      MyVoxelCoordSystems.WorldPositionToVoxelCoord(bottomLeftCorner, ref worldBoundaries.Min, out voxelCoordMin);
+      MyVoxelCoordSystems.WorldPositionToVoxelCoord(bottomLeftCorner, ref worldBoundaries.Max, out voxelCoordMax);
+      Vector3I voxelCoord3 = voxelCoordMin - 1;
+      Vector3I voxelCoord4 = voxelCoordMax + 1;
+
+      Vector3I.Clamp(ref voxelCoord3, ref Vector3I.Zero, ref max, out voxelCoord3);
+      Vector3I.Clamp(ref voxelCoord4, ref Vector3I.Zero, ref max, out voxelCoord4);
+
+      voxelCoord3 >>= lod;
+      voxelCoord3 -= 1;
+      voxelCoord4 >>= lod;
+      voxelCoord4 += 1;
+
+      MyStorageData tmpStorage;
+      if (!AiSession.StorageStack.TryPop(out tmpStorage))
+        tmpStorage = new MyStorageData();
+
+      tmpStorage.Resize(voxelCoord3, voxelCoord4);
+
+      if (voxel != null && !voxel.MarkedForClose)
+      {
+        using (voxel.Pin())
+        {
+          voxel.Storage.ReadRange(tmpStorage, MyStorageDataTypeFlags.Material, lod, voxelCoord3, voxelCoord4);
+        }
+      }
+      else
+        return false;
+
+      Vector3I vector3I = default(Vector3I);
+      vector3I.X = voxelCoord3.X;
+      while (vector3I.X <= voxelCoord4.X)
+      {
+        vector3I.Y = voxelCoord3.Y;
+        while (vector3I.Y <= voxelCoord4.Y)
+        {
+          vector3I.Z = voxelCoord3.Z;
+          while (vector3I.Z <= voxelCoord4.Z)
+          {
+            Vector3I p = vector3I - voxelCoord3;
+            int linearIdx = tmpStorage.ComputeLinear(ref p);
+            byte b = tmpStorage.Material(linearIdx);
+
+            if (b != byte.MaxValue)
+            {
+              return true;
+            }
+
+            vector3I.Z++;
+          }
+          vector3I.Y++;
+        }
+        vector3I.X++;
       }
 
       return false;

@@ -99,6 +99,7 @@ namespace AiEnabled.Bots
     public long BotIdentityId;
     public MyHandItemDefinition ToolDefinition;
     public AiSession.BotType BotType;
+    public AiSession.ControlInfo BotControlInfo;
 
     public bool CanDamageGrid
     {
@@ -684,14 +685,14 @@ namespace AiEnabled.Bots
     internal Vector3D? _prevMoveTo, _moveTo, _sideNode;
     internal GridBase _currentGraph, _nextGraph, _previousGraph;
     internal PathCollection _pathCollection;
-    internal Node _transitionPoint;
+    internal Node _transitionPoint, _moveToNode;
     internal BotState _botState;
     internal IMyUseObject UseObject;
     internal Task _task;
     internal Vector3D _lastEnd;
     internal Vector3I _lastCurrent, _lastPrevious, _lastEndLocal;
     internal short _patrolIndex = -1;
-    internal int _stuckCounter, _stuckTimer, _stuckTimerReset;
+    internal int _stuckCounter, _stuckTimer, _stuckTimerReset, _teleportCounter;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter;
     internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
     internal uint _ticksSinceFoundTarget, _damageTicks, _despawnTicks = 25000;
@@ -724,16 +725,11 @@ namespace AiEnabled.Bots
     public void SetShootInterval()
     {
       var gun = Character?.EquippedTool as IMyHandheldGunObject<MyGunBase>;
-      if (gun == null)
-      {
-        TicksBetweenProjectiles = 10;
-        DamageModifier = 1;
-      }
-      else
+      if (gun != null)
       {
         var multiplier = 0.334f;
 
-        var weaponItemDef = gun.PhysicalItemDefinition as MyWeaponItemDefinition;
+        var weaponItemDef = gun?.PhysicalItemDefinition as MyWeaponItemDefinition;
         if (weaponItemDef != null)
         {
           var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
@@ -743,14 +739,42 @@ namespace AiEnabled.Bots
         TicksBetweenProjectiles = (int)Math.Ceiling(gun.GunBase.ShootIntervalInMiliseconds / 16.667f * 1.5f);
         DamageModifier = multiplier;
       }
+      else if (ToolDefinition != null)
+      {
+        var physItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(ToolDefinition.PhysicalItemId);
+        var weaponItemDef = physItemDef as MyWeaponItemDefinition;
+
+        if (weaponItemDef != null)
+        {
+          var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
+          DamageModifier = weaponDef.DamageMultiplier;
+
+          var ammoId = weaponDef.AmmoMagazinesId[0];
+          var ammoMagDef = MyDefinitionManager.Static.GetAmmoMagazineDefinition(ammoId);
+          var ammoDefinition = MyDefinitionManager.Static.GetAmmoDefinition(ammoMagDef.AmmoDefinitionId);
+          var intervalMS = weaponDef.WeaponAmmoDatas[(int)ammoDefinition.AmmoType].ShootIntervalInMiliseconds;
+          TicksBetweenProjectiles = (int)Math.Ceiling(intervalMS / 16.667f * 1.5f);
+        }
+        else
+        {
+          TicksBetweenProjectiles = 10;
+          DamageModifier = 0.334f;
+        }
+      }
+      else
+      {
+        TicksBetweenProjectiles = 10;
+        DamageModifier = 1;
+      }
     }
 
-    public BotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase)
+    public BotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo)
     {
       Character = bot;
       BotIdentityId = bot.ControllerInfo.ControllingIdentityId;
       Target = new TargetInfo(this);
       UsePathFinder = gridBase != null;
+      BotControlInfo = ctrlInfo;
 
       _botState = new BotState(this);
       _currentGraph = gridBase;
@@ -782,6 +806,39 @@ namespace AiEnabled.Bots
         _patrolList = new List<Vector3D>();
       else
         _patrolList.Clear();
+    }
+
+    public void ChangeCharacter(IMyCharacter newCharacter)
+    {
+      var oldChar = Character;
+      if (Character != null)
+      {
+        Character.OnClosing -= Character_OnClosing;
+        Character.OnClose -= Character_OnClosing;
+        Character.CharacterDied -= Character_CharacterDied;
+
+        BotBase _;
+        AiSession.Instance.Bots.TryRemove(Character.EntityId, out _);
+      }
+
+      if (newCharacter != null)
+      {
+        Character = newCharacter;
+        newCharacter.OnClosing += Character_OnClosing;
+        newCharacter.OnClose += Character_OnClosing;
+        newCharacter.CharacterDied += Character_CharacterDied;
+
+        AiSession.Instance.Bots[Character.EntityId] = this;
+
+        if (ToolDefinition != null)
+          MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+
+        oldChar?.Close();
+      }
+      else
+      {
+        Close(true);
+      }
     }
 
     private void Character_CharacterDied(IMyCharacter bot)
@@ -817,8 +874,58 @@ namespace AiEnabled.Bots
         }
       }
 
+      MyAPIGateway.Utilities.InvokeOnGameThread(() => InitDeadBodyPhysics(bot), "AiEnabled", MyAPIGateway.Session.GameplayFrameCounter + 100);
+
       PlayDeathSound();
       CleanUp(true);
+    }
+
+    void InitDeadBodyPhysics(IMyCharacter bot)
+    {
+      try
+      {
+        if (bot?.Physics != null && !bot.Closed)
+        {
+          var physDef = bot.Physics.Definition;
+          var linearVel = bot.Physics.LinearVelocity;
+          var angularVel = bot.Physics.AngularVelocity;
+          var extents = bot.LocalAABB.HalfExtents * 0.9f;
+
+          var settings = new PhysicsSettings()
+          {
+            Entity = bot,
+            CollisionLayer = 10,
+            IsPhantom = false,
+            AngularDamping = bot.Physics.AngularDamping,
+            LinearDamping = bot.Physics.LinearDamping,
+            RigidBodyFlags = RigidBodyFlag.RBF_DEFAULT,
+            LocalCenter = bot.LocalAABB.Center,
+            WorldMatrix = bot.WorldMatrix,
+            MaterialType = bot.Physics.MaterialType,
+            Mass = MyAPIGateway.Physics.CreateMassForBox(extents, bot.Physics.Mass)
+          };
+
+          bot.Physics.Enabled = false;
+          bot.Physics.Close();
+          bot.Physics = null;
+
+          MyAPIGateway.Physics.CreateBoxPhysics(settings, extents, 0.05f);
+          bot.Physics.Init(physDef);
+          bot.Physics.SetSpeeds(linearVel, angularVel);
+          bot.Physics.Friction = 0.5f;
+
+          float interference;
+          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(bot.WorldAABB.Center, out interference);
+          if (nGrav.LengthSquared() > 0)
+            bot.Physics.Gravity = nGrav;
+          else
+            bot.Physics.Gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(bot.WorldAABB.Center, interference);
+        }
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in BotBase.InitDeadBodyPhysics: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+      }
     }
 
     private void Character_OnClosing(IMyEntity bot)
@@ -943,6 +1050,7 @@ namespace AiEnabled.Bots
       _pathWorkCallBack = null;
       _graphWorkAction = null;
       _graphWorkCallBack = null;
+      _moveToNode = null;
     }
 
     internal virtual void PlayDeathSound()
@@ -1057,6 +1165,8 @@ namespace AiEnabled.Bots
           center += Character.WorldMatrix.Up * 0.75;
         else if (subtype == AiSession.Instance.PlushieSubtype)
           center += Character.WorldMatrix.Up * 0.5;
+        else if (subtype.String.StartsWith("SpaceSmallSpider"))
+          center += Character.WorldMatrix.Up * 0.25;
         else
           center += Character.WorldMatrix.Up * 0.1;
 
@@ -1129,7 +1239,7 @@ namespace AiEnabled.Bots
 
         var direction = GetTravelDirection();
         var distance = MyUtils.GetRandomInt(10, (int)_currentGraph.OBB.HalfExtent.AbsMax());
-        var botPosition = GetPosition();
+        var botPosition = Target.CurrentBotPosition;
 
         if (_currentGraph.IsGridGraph)
         {
@@ -1338,14 +1448,16 @@ namespace AiEnabled.Bots
             Target.RemoveTarget();
         }
 
-        if (HasWeaponOrTool)
+        if (HasWeaponOrTool && !inSeat)
         {
           var tool = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
           if (tool == null)
           {
             var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
-            //charController?.SwitchToWeapon(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), ToolSubtype));
-            charController?.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+            if (charController?.CanSwitchToWeapon(ToolDefinition.PhysicalItemId) == true)
+            {
+              charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+            }
           }
         }
 
@@ -1356,13 +1468,22 @@ namespace AiEnabled.Bots
         {
           CheckGraphNeeded = true;
 
-          if (_currentGraph != null && _currentGraph.IsValid && Character != null && !IsDead
-            && Math.Abs(VectorUtils.GetAngleBetween(Character.WorldMatrix.Up, _currentGraph.WorldMatrix.Up)) > MathHelper.ToRadians(3))
+          if (_currentGraph != null && _currentGraph.IsValid && Character != null && !IsDead)
           {
-            var matrix = _currentGraph.WorldMatrix;
-            matrix.Translation = Character.WorldMatrix.Translation;
+            float interference;
+            var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(Target.CurrentBotPosition, out interference);
+            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(Target.CurrentBotPosition, interference);
 
-            Character.SetWorldMatrix(matrix);
+            if (nGrav.LengthSquared() < 0.05 && aGrav.LengthSquared() < 0.05
+              && Math.Abs(VectorUtils.GetAngleBetween(Character.WorldMatrix.Up, _currentGraph.WorldMatrix.Up)) > MathHelper.ToRadians(3))
+            {
+              var matrix = _currentGraph.WorldMatrix;
+              var charMatrix = Character.WorldMatrix;
+              var newMatrix = MatrixD.AlignRotationToAxes(ref charMatrix, ref matrix);
+              newMatrix.Translation = Character.WorldMatrix.Translation;
+
+              Character.SetWorldMatrix(newMatrix);
+            }
           }
 
           if (Owner?.Character != null)
@@ -1371,7 +1492,7 @@ namespace AiEnabled.Bots
               Character.SwitchLights();
 
             if (CanUseSeats && !UseAPITargets && !PatrolMode && Owner.Character.Parent is IMyCockpit && !(Character.Parent is IMyCockpit)
-              && Vector3D.DistanceSquared(GetPosition(), Owner.Character.WorldAABB.Center) <= 10000)
+              && Vector3D.DistanceSquared(Target.CurrentBotPosition, Owner.Character.WorldAABB.Center) <= 10000)
               AiSession.Instance.PlayerEnteredCockpit(null, Owner.IdentityId, null);
           }
           else if (Character.EnabledLights)
@@ -1466,7 +1587,7 @@ namespace AiEnabled.Bots
 
       if (_currentGraph != null)
       {
-        var botPosition = GetPosition();
+        var botPosition = Target.CurrentBotPosition;
         var positionInTwo = botPosition + velocity;
 
         float desiredVelocity;
@@ -1633,13 +1754,114 @@ namespace AiEnabled.Bots
 
     internal virtual bool IsInRangeOfTarget()
     {
-      if (Target?.HasTarget != true || Vector3D.IsZero(GetPosition()))
+      if (Target?.HasTarget != true || Vector3D.IsZero(Target.CurrentBotPosition))
         return false;
 
       return Target.IsFriendly() || Target.GetDistanceSquared() < 650000;
     }
 
-    public virtual void AddWeapon() { }
+    public virtual void AddWeapon()
+    {
+      if (ToolDefinition?.PhysicalItemId == null)
+      {
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING: ToolDefinition.PhysicalItemId was NULL!", MessageType.WARNING);
+        return;
+      }
+
+      var inventory = Character?.GetInventory();
+      if (inventory == null)
+      {
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING: Inventory was NULL!", MessageType.WARNING);
+        return;
+      }
+
+      var toolDefinitionId = ToolDefinition.PhysicalItemId;
+
+      if (inventory.CanItemsBeAdded(1, toolDefinitionId))
+      {
+        var toolItem = (MyObjectBuilder_PhysicalGunObject)MyObjectBuilderSerializer.CreateNewObject(toolDefinitionId);
+        inventory.AddItems(1, toolItem);
+
+        if (ToolDefinition.WeaponType != MyItemWeaponType.None)
+        {
+          string ammoSubtype = null;
+
+          var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(toolDefinitionId) as MyWeaponItemDefinition;
+          if (weaponItemDef != null)
+          {
+            var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
+            ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
+          }
+          else
+          {
+            AiSession.Instance.Logger.Log($"WeaponItemDef was null for {toolDefinitionId}");
+          }
+
+          if (ammoSubtype == null)
+          {
+            AiSession.Instance.Logger.Log($"AmmoSubtype was still null");
+
+            if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
+            {
+              ammoSubtype = "NATO_5p56x45mm";
+            }
+            else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
+            {
+              ammoSubtype = "Missile200mm";
+            }
+            else if (ToolDefinition.PhysicalItemId.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              ammoSubtype = ToolDefinition.PhysicalItemId.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+            }
+            else
+            {
+              ammoSubtype = "ElitePistolMagazine";
+            }
+          }
+
+          var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
+          var amountThatFits = ((MyInventory)inventory).ComputeAmountThatFits(ammoDefinition);
+          var maxAmount = Owner != null ? 25 : 10;
+          var amount = Math.Min((int)amountThatFits, maxAmount);
+
+          if (inventory.CanItemsBeAdded(amount, ammoDefinition))
+          {
+            var ammo = (MyObjectBuilder_AmmoMagazine)MyObjectBuilderSerializer.CreateNewObject(ammoDefinition);
+            inventory.AddItems(amount, ammo);
+
+            var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
+            if (charController.CanSwitchToWeapon(toolDefinitionId))
+            {
+              if (!(Character.Parent is IMyCockpit))
+                charController.SwitchToWeapon(toolDefinitionId);
+              
+              HasWeaponOrTool = true;
+            }
+            else
+              AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added weapon and ammo but unable to switch to weapon!", MessageType.WARNING);
+          }
+          else
+            AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added weapon but unable to add ammo!", MessageType.WARNING);
+        }
+        else
+        {
+          var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
+          if (charController.CanSwitchToWeapon(toolDefinitionId))
+          {
+            if (!(Character.Parent is IMyCockpit))
+              charController.SwitchToWeapon(toolDefinitionId);
+
+            HasWeaponOrTool = true;
+          }
+          else
+            AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Added welder but unable to switch to it!", MessageType.WARNING);
+        }
+      }
+      else
+        AiSession.Instance.Logger.Log($"{this.GetType().Name}.AddWeapon: WARNING! Unable to add welder to inventory!", MessageType.WARNING);
+
+      SetShootInterval();
+    }
 
     public virtual void EquipWeapon()
     {
@@ -1651,7 +1873,9 @@ namespace AiEnabled.Bots
       var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
       if (charController?.CanSwitchToWeapon(weaponDefinition) == true)
       {
-        charController.SwitchToWeapon(weaponDefinition);
+        if (!(Character.Parent is IMyCockpit))
+          charController.SwitchToWeapon(weaponDefinition);
+  
         HasWeaponOrTool = true;
         SetShootInterval();
       }
@@ -1695,7 +1919,7 @@ namespace AiEnabled.Bots
       else
         checkedGridIDs.Clear();
 
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var sphere = new BoundingSphereD(botPosition, AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy);
       var blockDestroEnabled = MyAPIGateway.Session.SessionSettings.DestructibleBlocks;
       var queryType = blockDestroEnabled ? MyEntityQueryType.Both : MyEntityQueryType.Dynamic;
@@ -1957,7 +2181,7 @@ namespace AiEnabled.Bots
             if (bot.IsDead)
               continue;
 
-            var d = Vector3D.DistanceSquared(bot.GetPosition(), botPosition);
+            var d = Vector3D.DistanceSquared(bot.Target.CurrentBotPosition, botPosition);
             if (d < distance * 0.6)
             {
               tgt = bot.Character;
@@ -2010,12 +2234,12 @@ namespace AiEnabled.Bots
       botInNewBox = false;
       newGraphPosition = targetPosition;
       intermediary = targetPosition;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
 
-      bool positionValid = _currentGraph.IsPositionValid(targetPosition);
+      bool positionValid = _currentGraph?.IsPositionValid(targetPosition) == true;
       bool getNewGraph = !positionValid && !force;
 
-      if (getNewGraph) 
+      if (getNewGraph && _currentGraph != null)
       {
         double maxLength, lengthToTop;
         var graphCenter = _currentGraph.OBB.Center;
@@ -2234,10 +2458,14 @@ namespace AiEnabled.Bots
 
         MyCubeGrid biggest = grid;
 
-        foreach (MyCubeGrid g in gridGroups)
+        for (int i = 0; i < gridGroups.Count; i++)
         {
-          if (g != null && !g.MarkedForClose && g.GridSize > 1 && g.BlocksCount > biggest.BlocksCount)
-            biggest = g;
+          var g = gridGroups[i];
+          if (g == null || g.MarkedForClose || g.Closed || g.GridSizeEnum == MyCubeSize.Small)
+            continue;
+
+          if (biggest == null || biggest.GridSizeEnum == MyCubeSize.Small || g.WorldAABB.Volume > biggest.PositionComp.WorldAABB.Volume || (g.IsStatic && !biggest.IsStatic))
+            biggest = (MyCubeGrid)g;
         }
 
         checkedGridIDs.Add(biggest.EntityId);
@@ -2294,11 +2522,11 @@ namespace AiEnabled.Bots
       AiSession.Instance.OverlapResultListStack.Push(rayEntities);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
 
-      if (newGrid != null && newGridOBB != null)
+      if (newGrid != null && newGrid.EntityId != gridGraph?.MainGrid?.EntityId && newGridOBB != null)
       {
         botInNewBox = newGridOBB.Value.Contains(ref botPosition);
 
-        if (!botInNewBox)
+        if (!botInNewBox && _currentGraph != null)
         {
           var curOBB = _currentGraph.OBB;
           if (!newGridOBB.Value.Intersects(ref curOBB))
@@ -2316,7 +2544,7 @@ namespace AiEnabled.Bots
     internal bool CheckIfCloseEnoughToAct(ref Vector3D targetPosition, out bool shouldReturn)
     {
       shouldReturn = false;
-      var botPos = GetPosition();
+      var botPos = Target.CurrentBotPosition;
       var localBot = _currentGraph.WorldToLocal(botPos);
       var localTgt = _currentGraph.WorldToLocal(targetPosition);
       var manhattanDist = Vector3I.DistanceManhattan(localTgt, localBot);
@@ -2348,10 +2576,10 @@ namespace AiEnabled.Bots
           {
             if (CanUseSeats && seat.Pilot == null && (localTgt - localBot).AbsMax() < 2 && manhattanDist <= 2)
             {
-              var seatCube = seat as MyCubeBlock;
-              var useObj = _pathCollection.GetBlockUseObject(seatCube);
-              if (useObj != null)
+              var cPit = seat as MyCockpit;
+              if (cPit != null)
               {
+                var seatCube = seat as MyCubeBlock;
                 var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
                 bool changeBack = false;
 
@@ -2372,11 +2600,12 @@ namespace AiEnabled.Bots
                 {
                   var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
                   AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
-                  useObj.Use(UseActionEnum.Manipulate, Character);
+
+                  cPit.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(cPit.Pilot, Character));
                 }
 
                 if (changeBack)
-                  seatCube.IDModule.ShareMode = shareMode;
+                  AiSession.Instance.BotToSeatShareMode[Character.EntityId] = shareMode;
 
                 shouldReturn = true;
                 return true;
@@ -2662,21 +2891,23 @@ namespace AiEnabled.Bots
       _stuckCounter = 0;
       BotMoved = false;
 
-      Vector3I start = _currentGraph.WorldToLocal(GetPosition());
+      Vector3I start = _currentGraph.WorldToLocal(Target.CurrentBotPosition);
       bool startDenied = _pathCollection.DeniedDoors.ContainsKey(start);
       if (!_currentGraph.GetClosestValidNode(this, start, out start, currentIsDenied: startDenied))
       {
-        //var pn = _currentGraph.GetReturnHomePoint(this);
-        //if (pn != null)
-        //{
-        //  _moveTo = _currentGraph.LocalToWorld(pn.Position) + pn.Offset;
-        //}
-
-        _currentGraph.TeleportNearby(this);
+        if (!_botState.IsJumping && ++_teleportCounter > 3)
+        {
+          _teleportCounter = 0;
+          _currentGraph.TeleportNearby(this);
+        }
+        else
+          _pathCollection?.CleanUp(true);
+  
         _idlePathTimer = 0;
         return;
       }
 
+      _teleportCounter = 0;
       Vector3I goal = _currentGraph.WorldToLocal(moveTo);
       bool goalDenied = _pathCollection.DeniedDoors.ContainsKey(goal);
       if (!_currentGraph.GetClosestValidNode(this, goal, out goal, currentIsDenied: goalDenied) || start == goal)
@@ -2714,7 +2945,7 @@ namespace AiEnabled.Bots
         return;
       }
 
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var botMatrix = WorldMatrix;
 
       var pos = botPosition + botMatrix.Up * 0.4; // close to the muzzle height
@@ -2910,7 +3141,7 @@ namespace AiEnabled.Bots
         else if (nextGraphOK)
         {
           bool switchNow = true;
-          var botPosition = GetPosition();
+          var botPosition = Target.CurrentBotPosition;
 
           var localBot = _currentGraph.WorldToLocal(botPosition);
           var currentNode = _currentGraph.GetValueOrDefault(localBot, null);
@@ -2955,7 +3186,6 @@ namespace AiEnabled.Bots
 
             if (_pathCollection != null)
             {
-              _pathCollection.Graph = _currentGraph;
               _pathCollection.CleanUp(true);
             }
           }
@@ -2964,7 +3194,7 @@ namespace AiEnabled.Bots
       else if (!CheckGraphValidity(targetPosition, ref force, out newGrid, out newGraphPosition, out intermediatePosition, out botInNewBox))
       {
         NeedsTransition = !force;
-        var botPosition = GetPosition();
+        var botPosition = Target.CurrentBotPosition;
         var botMatrix = WorldMatrix;
 
         if (newGrid != null || _currentGraph.IsGridGraph || !_currentGraph.IsPositionValid(newGraphPosition))
@@ -3012,7 +3242,6 @@ namespace AiEnabled.Bots
                 var localNode = _currentGraph.WorldToLocal(bufferZonePosition.Value);
                 if (_currentGraph.GetClosestValidNode(this, localNode, out localNode))
                 {
-                  //tgtPoint = _currentGraph.OpenTileDict[localNode];
                   _currentGraph.TryGetNodeForPosition(localNode, out tgtPoint);
                 }
               }
@@ -3064,7 +3293,6 @@ namespace AiEnabled.Bots
             var intermediateNode = _currentGraph.WorldToLocal(intermediatePosition);
             if (_currentGraph.GetClosestValidNode(this, intermediateNode, out intermediateNode))
             {
-              //_transitionPoint = _currentGraph.OpenTileDict[intermediateNode];
               _currentGraph.TryGetNodeForPosition(intermediateNode, out _transitionPoint);
             }
           }
@@ -3081,7 +3309,6 @@ namespace AiEnabled.Bots
 
           if (_pathCollection != null)
           {
-            _pathCollection.Graph = _currentGraph;
             _pathCollection.CleanUp(true);
           }
         }
@@ -3126,11 +3353,10 @@ namespace AiEnabled.Bots
             NeedsTransition = false;
 
             _previousGraph = null;
-            _currentGraph = AiSession.Instance.GetVoxelGraph(GetPosition(), WorldMatrix, true);
+            _currentGraph = AiSession.Instance.GetVoxelGraph(Target.CurrentBotPosition, WorldMatrix, true);
 
             if (_pathCollection != null)
             {
-              _pathCollection.Graph = _currentGraph;
               _pathCollection.CleanUp(true);
             }
           }
@@ -3142,12 +3368,11 @@ namespace AiEnabled.Bots
         {
           _pathCollection = AiSession.Instance.GetCollection();
           _pathCollection.Bot = this;
-          _pathCollection.Graph = _currentGraph;
         }
 
         #region debugOnly
         if (AiSession.Instance.DrawDebug) // && Owner != null)
-          _pathCollection.DrawFreeSpace(GetPosition(), gotoPosition);
+          _pathCollection.DrawFreeSpace(Target.CurrentBotPosition, gotoPosition);
         #endregion
 
         if (CheckGraphNeeded)
@@ -3232,7 +3457,7 @@ namespace AiEnabled.Bots
             {
               var node = NextIsLadder ? _pathCollection.NextNode.Position : _pathCollection.PathToTarget.Peek().Position;
               var worldNode = _currentGraph.LocalToWorld(node);
-              var rotated = Vector3D.Rotate(worldNode - GetPosition(), MatrixD.Transpose(WorldMatrix));
+              var rotated = Vector3D.Rotate(worldNode - Target.CurrentBotPosition, MatrixD.Transpose(WorldMatrix));
               forceUse = rotated.Y < -1;
             }
 
@@ -3310,30 +3535,40 @@ namespace AiEnabled.Bots
 
     void CheckNode(ref float distanceToCheck)
     {
-      if (_stuckCounter > 2 || _pathCollection.UpdateDistanceToNextNode())
+      bool counterOverTwo = _stuckCounter > 2;
+      if (counterOverTwo || _pathCollection.UpdateDistanceToNextNode())
       {
         _stuckTimer = 0;
         _stuckCounter = 0;
-
         _sideNode = null;
+
         BotMoved = true;
         NextIsLadder = false;
         AfterNextIsLadder = false;
         UseLadder = false;
 
-        if (_stuckCounter > 2)
+        if (counterOverTwo)
         {
-          if (!_currentGraph.IsGridGraph)
+          var current = _currentGraph.WorldToLocal(Target.CurrentBotPosition);
+          var lastNode = _pathCollection.LastNode;
+          var nextNode = _pathCollection.NextNode;
+
+          bool isGridGraph = _currentGraph.IsGridGraph;
+          bool addTo = false;
+
+          if (isGridGraph)
           {
-            var voxelGraph = _currentGraph as VoxelGridMap;
-            var lastNode = _pathCollection.LastNode;
-            var nextNode = _pathCollection.NextNode;
+            Node currentNode;
+            addTo = lastNode?.IsGridNodePlanetTile == true || nextNode?.IsGridNodePlanetTile == true 
+              || _currentGraph.TryGetNodeForPosition(current, out currentNode) && currentNode?.IsGridNodePlanetTile == true;
+          }
 
-            var currentNode = _currentGraph.WorldToLocal(GetPosition());
-            var last = lastNode != null ? lastNode.Position : currentNode;
-            var next = nextNode != null ? nextNode.Position : currentNode;
+          if (addTo || !isGridGraph)
+          {
+            var last = lastNode != null ? lastNode.Position : current;
+            var next = nextNode != null ? nextNode.Position : current;
 
-            voxelGraph.AddToObstacles(last, currentNode, next);
+            _currentGraph.AddToObstacles(last, current, next);
             _pathCollection.CleanUp(true);
           }
           else
@@ -3352,7 +3587,7 @@ namespace AiEnabled.Bots
         var pNode = _pathCollection.NextNode;
         var worldNode = _currentGraph.LocalToWorld(pNode.Position) + pNode.Offset;
 
-        var vector = worldNode - GetPosition();
+        var vector = worldNode - Target.CurrentBotPosition;
         var relVector = Vector3D.TransformNormal(vector, MatrixD.Transpose(WorldMatrix));
         var flattenedVector = new Vector3D(relVector.X, 0, relVector.Z);
         var flattenedLengthSquared = flattenedVector.LengthSquared();
@@ -3387,19 +3622,23 @@ namespace AiEnabled.Bots
       _stuckTimer = 0;
       _stuckCounter = 0;
       BotMoved = false;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
 
       Vector3I start = _currentGraph.WorldToLocal(botPosition);
       if (!_currentGraph.GetClosestValidNode(this, start, out start))
       {
-        _pathCollection.CleanUp(true);
-
-        // TODO: Sometimes they can't find a teleport position and flash back and forth - fix it!
-        _currentGraph.TeleportNearby(this);
+        if (!_botState.IsJumping && ++_teleportCounter > 3)
+        {
+          _teleportCounter = 0;
+          _currentGraph.TeleportNearby(this);
+        }
+        else
+          _pathCollection?.CleanUp(true);
 
         return;
       }
 
+      _teleportCounter = 0;
       var isSlimTarget = Target.IsSlimBlock;
       var isSlimBlock = isSlimTarget;
 
@@ -3482,7 +3721,7 @@ namespace AiEnabled.Bots
           lock (_pathCollection.PathToTarget)
           {
             TempNode temp;
-            if (!AiSession.Instance.NodeStack.TryPop(out temp))
+            if (!AiSession.Instance.TempNodeStack.TryPop(out temp))
               temp = new TempNode();
 
             temp.Update(position, Vector3.Zero, NodeType.None, 0, grid, block);
@@ -3533,7 +3772,7 @@ namespace AiEnabled.Bots
       }
       else
       {
-        var distanceToTgtSqd = Vector3D.DistanceSquared(GetPosition(), targetPosition);
+        var distanceToTgtSqd = Vector3D.DistanceSquared(Target.CurrentBotPosition, targetPosition);
         checkTime = distanceToTgtSqd < 10 ? 1 : distanceToTgtSqd < 100 ? 10 : 100;
       }
 
@@ -3634,7 +3873,7 @@ namespace AiEnabled.Bots
       var adjustedLadderPosition = slim.CubeGrid.GridIntegerToWorld(slim.Position) + cubeForward * slim.CubeGrid.GridSize * -0.5;
 
       var botMatrixT = MatrixD.Transpose(botMatrix);
-      var vectorToLadder = adjustedLadderPosition - GetPosition();
+      var vectorToLadder = adjustedLadderPosition - Target.CurrentBotPosition;
       var rotatedVector = Vector3D.Rotate(vectorToLadder, botMatrixT);
 
       if (force || _botState.IsFalling || (rotatedVector.Z < 0 && Math.Abs(rotatedVector.X) < 0.5))
@@ -3693,7 +3932,7 @@ namespace AiEnabled.Bots
     void UpdatePathAndMove(ref float distanceToCheck)
     {
       PathFinderActive = true;
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var pNode = _pathCollection.NextNode;
       var worldNode = _currentGraph.LocalToWorld(pNode.Position) + pNode.Offset;
 
@@ -3715,7 +3954,7 @@ namespace AiEnabled.Bots
 
     void GetNextNodeAndMove(ref float distanceToCheck)
     {
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       bool useLadderNow, findNewPath, wait, nextIsAirNode, nextIsLadder, afterNextIsLadder;
       _pathCollection.GetNextNode(botPosition, _botState.IsOnLadder, _transitionPoint != null,
         out nextIsLadder, out afterNextIsLadder, out UseObject, out useLadderNow, out findNewPath, out nextIsAirNode);
@@ -3778,8 +4017,9 @@ namespace AiEnabled.Bots
         if (Character == null || Character.MarkedForClose || Character.IsDead)
           return false;
 
-        var checkDoors = stuckTimer > 60;
-        var botPosition = GetPosition();
+        var gridGraph = _currentGraph as CubeGridMap;
+        var checkDoors = gridGraph != null && stuckTimer > 60;
+        var botPosition = Target.CurrentBotPosition;
         var botMatrix = WorldMatrix;
 
         List<IHitInfo> hitlist;
@@ -3857,8 +4097,6 @@ namespace AiEnabled.Bots
 
         if (swerve)
           return true;
-
-        var gridGraph = _currentGraph as CubeGridMap;
 
         if (foundTarget || !checkDoors || gridGraph == null)
           return false;
@@ -4183,31 +4421,35 @@ namespace AiEnabled.Bots
       if (_currentGraph?.Ready == true && PathFinderActive && !UseLadder && !_botState.IsOnLadder && !_botState.WasOnLadder)
       {
         bool swerve, doorFound;
+        bool isGridGraph = _currentGraph.IsGridGraph;
 
-        if (!_currentGraph.IsGridGraph)
+        if (_stuckTimer > 120)
         {
-          if (_stuckTimer > 120)
+          var current = _currentGraph.WorldToLocal(Target.CurrentBotPosition);
+          var lastNode = _pathCollection.LastNode;
+          var nextNode = _pathCollection.NextNode;
+
+          bool addTo = false;
+
+          if (isGridGraph)
           {
-            if (_pathCollection.HasNode && !_currentGraph.IsGridGraph)
-            {
-              //var currentPosition = GetPosition();
-              var currentNode = _currentGraph.WorldToLocal(GetPosition());
+            Node currentNode;
+            addTo = lastNode?.IsGridNodePlanetTile == true || nextNode?.IsGridNodePlanetTile == true
+              || _currentGraph.TryGetNodeForPosition(current, out currentNode) && currentNode?.IsGridNodePlanetTile == true;
+          }
 
-              var nextPosition = _pathCollection.NextNode.Position; // _currentGraph.LocalToWorld(_pathCollection.NextNode.Position) + _pathCollection.NextNode.Offset;
-              var fromPosition = _pathCollection.LastNode != null ? _pathCollection.LastNode.Position : currentNode; 
-              // _currentGraph.LocalToWorld(_pathCollection.LastNode.Position) + _pathCollection.LastNode.Offset : currentPosition;
+          if (addTo || !isGridGraph)
+          {
+            var last = lastNode != null ? lastNode.Position : current;
+            var next = nextNode != null ? nextNode.Position : current;
 
-              var vGrid = _currentGraph as VoxelGridMap;
-              vGrid?.AddToObstacles(fromPosition, currentNode, nextPosition);
-            }
-
-            _stuckTimer = 0;
-            _stuckCounter++;
+            _currentGraph.AddToObstacles(last, current, next);
             _pathCollection.CleanUp(true);
             return;
           }
         }
-        else if (_stuckTimer > 180)
+
+        if (_stuckTimer > 180)
         {
           _stuckCounter++;
           WaitForStuckTimer = true;
@@ -4283,23 +4525,31 @@ namespace AiEnabled.Bots
 
       _sideNode = null;
 
-      var botPosition = GetPosition();
+      var botPosition = Target.CurrentBotPosition;
       var botMatrix = WorldMatrix;
 
       if (towardOwner)
       {
         _moveTo = null;
+        _moveToNode = null;
+
         _idleTimer = 0;
         _ticksSinceLastIdleTransition = 0;
       }
       else if (_moveTo.HasValue) 
       {
+        if (_moveToNode != null && _currentGraph != null)
+        {
+          _moveTo = _currentGraph.LocalToWorld(_moveToNode.Position) + _moveToNode.Offset;
+        }
+
         var vector = Vector3D.TransformNormal(_moveTo.Value - botPosition, Matrix.Transpose(botMatrix));
         var flattenedVector = new Vector3D(vector.X, 0, vector.Z);
 
         if (flattenedVector.LengthSquared() <= distanceCheck)
         {
           _moveTo = null;
+          _moveToNode = null;
         }
         else if (_prevMoveTo.HasValue)
         {
@@ -4315,6 +4565,7 @@ namespace AiEnabled.Bots
             if (_idleTimer >= 180)
             {
               _moveTo = null;
+              _moveToNode = null;
               _pathCollection?.CleanUp(true);
             }
           }
@@ -4326,7 +4577,6 @@ namespace AiEnabled.Bots
       {
         _pathCollection = AiSession.Instance.GetCollection();
         _pathCollection.Bot = this;
-        _pathCollection.Graph = _currentGraph;
       }
 
       //if (AiSession.Instance.DrawDebug && _pathCollection != null)
@@ -4338,6 +4588,8 @@ namespace AiEnabled.Bots
 
       if (_moveTo == null)
       {
+        _moveToNode = null;
+
         if (towardOwner)
         {
           var pos = Owner.Character.WorldAABB.Center;
@@ -4358,14 +4610,32 @@ namespace AiEnabled.Bots
           {
             var localOwner = _currentGraph.WorldToLocal(pos);
             if (_currentGraph.GetClosestValidNode(this, localOwner, out localOwner, botMatrix.Up))
+            {
               _moveTo = _currentGraph.LocalToWorld(localOwner);
+
+              Node n;
+              if (_currentGraph.TryGetNodeForPosition(localOwner, out n) && n != null)
+              {
+                _moveToNode = n;
+                _moveTo = _moveTo.Value + n.Offset;
+              }
+            }
+            else
+            {
+              _moveToNode = null;
+              _moveTo = null;
+            }
           }
           else
+          {
             _moveTo = pos;
+          }
         }
 
         if (_moveTo == null)
         {
+          _moveToNode = null;
+
           if (_idlePathTimer > 300)
           {
             _idlePathTimer = 0;
@@ -4387,6 +4657,7 @@ namespace AiEnabled.Bots
                   {
                     pos = _currentGraph.LocalToWorld(_transitionPoint.Position) + _transitionPoint.Offset;
                     _moveTo = pos;
+                    _moveToNode = _transitionPoint;
                   }
 
                   StartCheckGraph(ref pos);
@@ -4414,11 +4685,15 @@ namespace AiEnabled.Bots
                 if (_currentGraph.GetRandomOpenNode(this, pos, out moveNode))
                 {
                   _moveTo = _currentGraph.LocalToWorld(moveNode.Position) + moveNode.Offset;
+                  _moveToNode = moveNode;
                 }
               }
             }
             else
+            {
               _moveTo = botPosition + direction * MyUtils.GetRandomInt(10, 26);
+              _moveToNode = null;
+            }
           }
           else
             _stuckCounter = _stuckTimer = 0;
@@ -4428,7 +4703,10 @@ namespace AiEnabled.Bots
         _idleTimer = 0;
 
         if (_moveTo == null)
+        {
+          _moveToNode = null;
           return;
+        }
       }
 
       if (graphReady)

@@ -513,6 +513,12 @@ namespace AiEnabled.API
     /// <param name="includeNeutral">whether or not to include Nomad bots</param>
     public void GetBots(Dictionary<long, IMyCharacter> botDict, bool includeFriendly = true, bool includeEnemy = true, bool includeNeutral = true) => _getBots?.Invoke(botDict, includeFriendly, includeEnemy, includeNeutral);
 
+    /// <summary>
+    /// Used to generate new characters in order to relieve the invisible bot issue. USE ONLY IN MULTIPLAYER!
+    /// </summary>
+    /// <param name="gridEntityId">the EntityId of the grid to work on</param>
+    /// <param name="callBackAction">this method will be called at some point in the future, after all bots are created and seated. The list will contain all new bot characters.</param>
+    public void ReSyncBotCharacters(long gridEntityId, Action<List<IMyCharacter>> callBackAction) => _reSyncBotCharacters?.Invoke(gridEntityId, callBackAction);
 
     /////////////////////////////////////////////
     //API Methods End
@@ -558,6 +564,7 @@ namespace AiEnabled.API
     private Action<Dictionary<long, IMyCharacter>, bool, bool, bool> _getBots;
     private Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action> _getInteriorNodes;
     private Func<IMyCubeGrid, bool> _isGridValidForPathfinding;
+    private Action<long, Action<List<IMyCharacter>>> _reSyncBotCharacters;
 
     private void ReceiveModMessage(object payload)
     {
@@ -610,6 +617,7 @@ namespace AiEnabled.API
         _getBots = dict["GetBots"] as Action<Dictionary<long, IMyCharacter>, bool, bool, bool>;
         _getInteriorNodes = dict["GetInteriorNodes"] as Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action>;
         _isGridValidForPathfinding = dict["IsValidForPathfinding"] as Func<IMyCubeGrid, bool>;
+        _reSyncBotCharacters = dict["ReSyncBotCharacters"] as Action<long, Action<List<IMyCharacter>>>;
 
       }
       catch

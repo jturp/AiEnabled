@@ -86,6 +86,7 @@ namespace AiEnabled.API
         { "GetBots", new Action<Dictionary<long, IMyCharacter>, bool, bool, bool>(GetBots) },
         { "GetInteriorNodes", new Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action>(GetInteriorNodes) },
         { "IsValidForPathfinding", new Func<IMyCubeGrid, bool>(IsValidForPathfinding) },
+        { "ReSyncBotCharacters", new Action<long, Action<List<IMyCharacter>>>(ReSyncBotCharacters) },
      };
 
       return dict;
@@ -268,7 +269,70 @@ namespace AiEnabled.API
         return false;
 
       CubeGridMap gridMap;
-      return AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) && gridMap != null && gridMap.Ready;
+      return AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) && gridMap != null/* && gridMap.Ready*/;
+    }
+
+    /// <summary>
+    /// Used to generate new characters in order to relieve the invisible bot issue. USE ONLY IN MULTIPLAYER!
+    /// </summary>
+    /// <param name="gridEntityId">the EntityId of the grid to work on</param>
+    /// <param name="callBackAction">this method will be called at some point in the future, after all bots are created and seated. The list will contain all new bot characters.</param>
+    public void ReSyncBotCharacters(long gridEntityId, Action<List<IMyCharacter>> callBackAction)
+    {
+      var grid = MyEntities.GetEntityById(gridEntityId) as MyCubeGrid;
+
+      if (grid == null || grid.MarkedForClose)
+        return;
+
+      List<IMyCharacter> newBotList;
+      if (!AiSession.Instance.CharacterListStack.TryPop(out newBotList) || newBotList == null)
+        newBotList = new List<IMyCharacter>();
+      else
+        newBotList.Clear();
+
+      var occupiedSeats = grid.OccupiedBlocks.ToList();
+
+      for (int i = 0; i < occupiedSeats.Count; i++)
+      {
+        var block = occupiedSeats[i];
+        var pilot = block?.Pilot as IMyCharacter;
+
+        if (pilot == null || pilot.IsDead)
+        {
+          continue;
+        }
+
+        BotBase bot;
+        if (AiSession.Instance.Bots.TryGetValue(pilot.EntityId, out bot) && bot != null && !bot.IsDead)
+        {
+          var newBot = BotFactory.SwitchBotCharacter(bot);
+          if (newBot != null && newBotList != null)
+            newBotList.Add(newBot);
+        }
+      }
+
+      MyAPIGateway.Utilities.InvokeOnGameThread(() => ExecuteCallBack(newBotList, callBackAction), "AiEnabled_ReSyncBotCharactersCallback", MyAPIGateway.Session.GameplayFrameCounter + 10);
+    }
+
+    void ExecuteCallBack(List<IMyCharacter> newBotList, Action<List<IMyCharacter>> callBack)
+    {
+      if (newBotList?.Count > 0)
+      {
+        for (int i = newBotList.Count - 1; i >= 0; i--)
+        {
+          var ch = newBotList[i];
+          if (ch == null || ch.IsDead || ch.Parent == null)
+            newBotList.RemoveAtFast(i);
+        }
+      }
+
+      callBack?.Invoke(newBotList);
+
+      if (newBotList != null)
+      {
+        newBotList.Clear();
+        AiSession.Instance.CharacterListStack.Push(newBotList);
+      }
     }
 
     /// <summary>
@@ -551,7 +615,6 @@ namespace AiEnabled.API
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot == null || bot.IsDead)
         return false;
 
-      AiSession.Instance.Logger.Log($"Setting Bot Override to {goTo}");
       bot.UseAPITargets = true;
       bot.Target.SetOverride(goTo);
       bot._pathCollection?.CleanUp(true);
@@ -628,7 +691,6 @@ namespace AiEnabled.API
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.IsDead != false)
         return false;
 
-      AiSession.Instance.Logger.Log($"Setting Override Action to {action?.Method.Name ?? "NULL"}");
       bot.Target.OverrideComplete = action;
       return true;
     }
@@ -811,7 +873,7 @@ namespace AiEnabled.API
       if (AiSession.Instance == null || !AiSession.Instance.Registered)
         return false;
 
-      return BotFactory.GetLargestGridForMap(grid) != null;
+      return GridBase.GetLargestGridForMap(grid) != null;
     }
 
     /// <summary>
@@ -1138,13 +1200,13 @@ namespace AiEnabled.API
         switch (role)
         {
           case BotFactory.BotRoleFriendly.COMBAT:
-            newBot = new CombatBot(character, graph, bot.Owner.IdentityId, toolType);
+            newBot = new CombatBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleFriendly.REPAIR:
-            newBot = new RepairBot(character, graph, bot.Owner.IdentityId, toolType);
+            newBot = new RepairBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleFriendly.SCAVENGER:
-            newBot = new ScavengerBot(character, graph, bot.Owner.IdentityId);
+            newBot = new ScavengerBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo);
             break;
           default:
             AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid friendly role: {newRole}", MessageType.WARNING);
@@ -1153,7 +1215,11 @@ namespace AiEnabled.API
       }
       else if (newRole.Equals("nomad", StringComparison.OrdinalIgnoreCase))
       {
-        newBot = new NomadBot(character, graph);
+        newBot = new NomadBot(character, graph, bot.BotControlInfo);
+      }
+      else if (newRole.Equals("enforcer", StringComparison.OrdinalIgnoreCase))
+      {
+        newBot = new EnforcerBot(character, graph, bot.BotControlInfo);
       }
       else
       {
@@ -1161,22 +1227,22 @@ namespace AiEnabled.API
         switch (role)
         {
           case BotFactory.BotRoleEnemy.BRUISER:
-            newBot = new BruiserBot(character, graph);
+            newBot = new BruiserBot(character, graph, bot.BotControlInfo);
             break;
           case BotFactory.BotRoleEnemy.CREATURE:
-            newBot = new CreatureBot(character, graph);
+            newBot = new CreatureBot(character, graph, bot.BotControlInfo);
             break;
           case BotFactory.BotRoleEnemy.GHOST:
-            newBot = new GhostBot(character, graph);
+            newBot = new GhostBot(character, graph, bot.BotControlInfo);
             break;
           case BotFactory.BotRoleEnemy.GRINDER:
-            newBot = new GrinderBot(character, graph, toolType);
+            newBot = new GrinderBot(character, graph, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleEnemy.SOLDIER:
-            newBot = new SoldierBot(character, graph, toolType);
+            newBot = new SoldierBot(character, graph, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleEnemy.ZOMBIE:
-            newBot = new ZombieBot(character, graph);
+            newBot = new ZombieBot(character, graph, bot.BotControlInfo);
             break;
           default:
             AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid enemy role: {newRole}", MessageType.WARNING);
@@ -1304,13 +1370,13 @@ namespace AiEnabled.API
         switch(role)
         {
           case BotFactory.BotRoleFriendly.COMBAT:
-            newBot = new CombatBot(character, graph, bot.Owner.IdentityId, toolType);
+            newBot = new CombatBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleFriendly.REPAIR:
-            newBot = new RepairBot(character, graph, bot.Owner.IdentityId, toolType);
+            newBot = new RepairBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleFriendly.SCAVENGER:
-            newBot = new ScavengerBot(character, graph, bot.Owner.IdentityId);
+            newBot = new ScavengerBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo);
             break;
           default:
             AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid friendly role: {newRole}", MessageType.WARNING);
@@ -1319,11 +1385,11 @@ namespace AiEnabled.API
       }
       else if (newRole.Equals("nomad", StringComparison.OrdinalIgnoreCase))
       {
-        newBot = new NomadBot(character, graph);
+        newBot = new NomadBot(character, graph, bot.BotControlInfo);
       }
       else if (newRole.Equals("enforcer", StringComparison.OrdinalIgnoreCase))
       {
-        newBot = new EnforcerBot(character, graph);
+        newBot = new EnforcerBot(character, graph, bot.BotControlInfo);
       }
       else
       {
@@ -1331,22 +1397,22 @@ namespace AiEnabled.API
         switch (role)
         {
           case BotFactory.BotRoleEnemy.BRUISER:
-            newBot = new BruiserBot(character, graph);
+            newBot = new BruiserBot(character, graph, bot.BotControlInfo);
             break;
           case BotFactory.BotRoleEnemy.CREATURE:
-            newBot = new CreatureBot(character, graph);
+            newBot = new CreatureBot(character, graph, bot.BotControlInfo);
             break;
           case BotFactory.BotRoleEnemy.GHOST:
-            newBot = new GhostBot(character, graph);
+            newBot = new GhostBot(character, graph, bot.BotControlInfo);
             break;
           case BotFactory.BotRoleEnemy.GRINDER:
-            newBot = new GrinderBot(character, graph, toolType);
+            newBot = new GrinderBot(character, graph, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleEnemy.SOLDIER:
-            newBot = new SoldierBot(character, graph, toolType);
+            newBot = new SoldierBot(character, graph, bot.BotControlInfo, toolType);
             break;
           case BotFactory.BotRoleEnemy.ZOMBIE:
-            newBot = new ZombieBot(character, graph);
+            newBot = new ZombieBot(character, graph, bot.BotControlInfo);
             break;
           default:
             AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid enemy role: {newRole}", MessageType.WARNING);

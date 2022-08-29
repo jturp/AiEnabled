@@ -174,7 +174,7 @@ namespace AiEnabled.Graphics
         int newAmount = (int)Math.Ceiling(num);
         UpdateMaxBots(newAmount);
 
-        var pkt = new AdminPacket(newAmount, AiSession.Instance.MaxHelpers, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null, null, null);
+        var pkt = new AdminPacket(newAmount, AiSession.Instance.MaxHelpers, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null);
         AiSession.Instance.Network.SendToServer(pkt);
       }
     }
@@ -193,7 +193,7 @@ namespace AiEnabled.Graphics
         int newAmount = (int)Math.Ceiling(num);
         UpdateMaxHelpers(newAmount);
 
-        var pkt = new AdminPacket(AiSession.Instance.MaxBots, newAmount, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null, null, null);
+        var pkt = new AdminPacket(AiSession.Instance.MaxBots, newAmount, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null);
         AiSession.Instance.Network.SendToServer(pkt);
       }
     }

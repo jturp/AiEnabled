@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.ConfigData;
 using AiEnabled.Networking.Packets;
 
 using ProtoBuf;
@@ -38,6 +39,8 @@ namespace AiEnabled.Networking
   [ProtoInclude(1024, typeof(ShieldHitPacket))]
   [ProtoInclude(1025, typeof(BotStatusPacket))]
   [ProtoInclude(1026, typeof(BotStatusRequestPacket))]
+  [ProtoInclude(1027, typeof(CharacterSwapPacket))]
+  [ProtoInclude(1028, typeof(SerializableBotPrice))]
   [ProtoContract]
   public abstract class PacketBase
   {
