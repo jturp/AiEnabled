@@ -21,6 +21,7 @@ namespace AiEnabled.ConfigData
     public bool ShowHealthBars = true;
     public float MouseSensitivityModifier = 1f;
     public SerializableVector3? RepairBotIgnoreColorHSV = null;
+    public SerializableVector3? RepairBotGrindColorHSV = null;
     public List<SerializableKeybind> Keybinds = new List<SerializableKeybind>();
     public List<SerializableRoute> PatrolRoutes = new List<SerializableRoute>();
   }

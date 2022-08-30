@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
 
 using ProtoBuf;
 
@@ -112,6 +113,9 @@ namespace AiEnabled.Networking
                 bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(itemDef);
                 bot.HasWeaponOrTool = true;
                 bot.SetShootInterval();
+
+                var rBot = bot as RepairBot;
+                rBot?.UpdateWeaponInfo();
               }
               else
               {

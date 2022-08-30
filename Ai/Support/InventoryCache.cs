@@ -43,9 +43,9 @@ namespace AiEnabled.Ai.Support
 
     ConcurrentDictionary<IMyInventory, List<MyInventoryItem>> _inventories = new ConcurrentDictionary<IMyInventory, List<MyInventoryItem>>();
     ConcurrentDictionary<Vector3I, IMyTerminalBlock> _inventoryPositions = new ConcurrentDictionary<Vector3I, IMyTerminalBlock>(Vector3I.Comparer);
+    ConcurrentStack<List<MyInventoryItem>> _invItemListStack = new ConcurrentStack<List<MyInventoryItem>>();
     Dictionary<string, float> _itemCounts = new Dictionary<string, float>(); // component subtype to count
     HashSet<Vector3I> _terminals = new HashSet<Vector3I>(Vector3I.Comparer);
-    List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     ParallelTasks.Task _task;
     internal bool _needsUpdate = true;
     bool _refreshInvList;
@@ -76,7 +76,6 @@ namespace AiEnabled.Ai.Support
       _inventoryPositions.Clear();
       _itemCounts.Clear();
       _terminals.Clear();
-      _invItems.Clear();
     }
 
     public void Close()
@@ -107,6 +106,15 @@ namespace AiEnabled.Ai.Support
         _inventories = null;
       }
 
+      if (_invItemListStack != null)
+      {
+        foreach (var list in _invItemListStack)
+          list?.Clear();
+
+        _invItemListStack?.Clear();
+        _invItemListStack = null;
+      }
+
       _inventoryPositions?.Clear();
       _inventoryPositions = null;
 
@@ -116,9 +124,6 @@ namespace AiEnabled.Ai.Support
       _itemCounts?.Clear();
       _itemCounts = null;
 
-      _invItems?.Clear();
-      _invItems = null;
-
       _workAction = null;
       _workCallBack = null;
     }
@@ -126,6 +131,7 @@ namespace AiEnabled.Ai.Support
     public IMySlimBlock GetClosestInventory(Vector3I localBot, BotBase bot)
     {
       var range = int.MaxValue;
+      var rBot = bot as RepairBot;
       IMySlimBlock inv = null;
 
       foreach (var kvp in _inventoryPositions)
@@ -143,6 +149,9 @@ namespace AiEnabled.Ai.Support
 
         var block = kvp.Value.SlimBlock;
         if (block.IsBlockUnbuilt())
+          continue;
+
+        if (rBot?.CurrentBuildMode == RepairBot.BuildMode.Grind && (block.FatBlock is IMyProductionBlock || block.FatBlock is IMyShipToolBase))
           continue;
 
         var dist = Vector3I.DistanceManhattan(node, localBot);
@@ -284,18 +293,25 @@ namespace AiEnabled.Ai.Support
       var data = workData as RepairWorkData;
       var block = data.Block;
       var bot = data.Bot?.Character;
-
       var botInv = bot?.GetInventory();
+      var rBot = data.Bot as RepairBot;
+
       if (bot == null || bot.MarkedForClose || botInv == null)
         return;
 
-      _invItems.Clear();
-      botInv.GetItems(_invItems);
+      List<MyInventoryItem> invItems;
+      if (!_invItemListStack.TryPop(out invItems) || invItems == null)
+        invItems = new List<MyInventoryItem>();
+      else
+        invItems.Clear();
+      
+      botInv.GetItems(invItems);
       var tool = data.Bot.ToolDefinition?.PhysicalItemId.SubtypeName;
+      var grindMode = rBot?.CurrentBuildMode == RepairBot.BuildMode.Grind;
 
-      for (int i = _invItems.Count - 1; i >= 0; i--)
+      for (int i = invItems.Count - 1; i >= 0; i--)
       {
-        var item = _invItems[i];
+        var item = invItems[i];
 
         VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
         if (!AiSession.Instance.ComponentInfoDict.TryGetValue(item.Type, out itemInfo))
@@ -304,8 +320,10 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
         }
 
-        if (itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent
-          || (itemInfo.IsTool && item.Type.SubtypeId != tool))
+        if (itemInfo.IsTool && item.Type.SubtypeId == tool)
+          continue;
+
+        if (grindMode || itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent)
         {
           var itemAmount = item.Amount;
           foreach (var invKvp in Inventories)
@@ -318,6 +336,9 @@ namespace AiEnabled.Ai.Support
 
             var invOwner = inv.Owner as IMyTerminalBlock;
             if (invOwner == null)
+              continue;
+
+            if (grindMode && (invOwner is IMyProductionBlock || invOwner is IMyShipToolBase))
               continue;
 
             List<MyItemType> acceptedItems;
@@ -347,7 +368,7 @@ namespace AiEnabled.Ai.Support
 
               if (amount >= itemAmount)
               {
-                _invItems.RemoveAtFast(i);
+                invItems.RemoveAtFast(i);
                 break;
               }
 
@@ -357,8 +378,11 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (botInv.IsFull || block == null || block.IsDestroyed)
+      if (grindMode || botInv.IsFull || block == null || block.IsDestroyed)
       {
+        invItems.Clear();
+        _invItemListStack.Push(invItems);
+
         return;
       }
 
@@ -391,6 +415,10 @@ namespace AiEnabled.Ai.Support
       {
         missingComps.Clear();
         AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+
+        invItems.Clear();
+        _invItemListStack.Push(invItems);
+
         return;
       }
 
@@ -400,9 +428,9 @@ namespace AiEnabled.Ai.Support
       {
         float needed = kvp.Value;
 
-        for (int i = 0; i < _invItems.Count; i++)
+        for (int i = 0; i < invItems.Count; i++)
         {
-          var item = _invItems[i];
+          var item = invItems[i];
           if (item.Type.SubtypeId == kvp.Key)
             needed -= (float)item.Amount;
         }
@@ -467,6 +495,9 @@ namespace AiEnabled.Ai.Support
 
       missingComps.Clear();
       AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+
+      invItems.Clear();
+      _invItemListStack.Push(invItems);
     }
 
     void RemoveItemsComplete(WorkData workData)

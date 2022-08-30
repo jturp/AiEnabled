@@ -474,6 +474,7 @@ namespace AiEnabled
     public enum BotType { Repair, Scavenger, Combat, Crew };
     public enum BotModel { Default, DroneBot, TargetBot, AstronautMale, AstronautFemale };
 
+    public HashSet<string> KnownLootContainerIds { get; protected set; } = new HashSet<string>();
     public HashSet<MyDefinitionId> AllCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> CatwalkBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> SlopeBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);

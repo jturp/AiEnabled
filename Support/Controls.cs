@@ -232,21 +232,22 @@ namespace AiEnabled.Support
         return;
       }
 
-      long balance;
-      player.TryGetBalanceInfo(out balance);
-
       var botRole = gameLogic.SelectedRole;
       var botModel = (botRole == AiSession.BotType.Scavenger) ? AiSession.BotModel.Default : gameLogic.SelectedModel;
-      var price = AiSession.Instance.BotPrices[botRole];
       var credit = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalObject), "SpaceCredit");
       var inv = player.Character?.GetInventory() as MyInventory;
       var inventoryCredits = 0L;
+      var price = 0L;
 
       var creativeMode = MyAPIGateway.Session.CreativeMode;
       var copyPasteEnabled = MyAPIGateway.Session.EnableCopyPaste;
 
       if (!creativeMode && !copyPasteEnabled)
       {
+        long balance;
+        player.TryGetBalanceInfo(out balance);
+        price = AiSession.Instance.BotPrices[botRole];
+
         if (price > balance)
         {
           var needed = price - balance;
@@ -431,6 +432,20 @@ namespace AiEnabled.Support
 
       var pkt = new FactoryDismissPacket(helperInfo.HelperId, player.IdentityId);
       AiSession.Instance.Network.SendToServer(pkt);
+
+      var helpers = AiSession.Instance.MyHelperInfo;
+      for (int i = 0; i < helpers.Count; i++)
+      {
+        var helper = helpers[i];
+        if (helper == null)
+          continue;
+
+        if (helper.DisplayName == helperInfo.DisplayName)
+        {
+          helpers.RemoveAt(i);
+          break;
+        }
+      }
 
       gameLogic.SelectedHelper = null;
       SetContextMessage(block, $"Dismissing {helperInfo.DisplayName}...");

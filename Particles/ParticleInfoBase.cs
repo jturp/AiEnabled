@@ -16,7 +16,7 @@ namespace AiEnabled.Particles
 {
   public abstract class ParticleInfoBase
   {
-    public enum ParticleType { Zombie, Ghost, Factory, Builder, Shield }
+    public enum ParticleType { Zombie, Ghost, Factory, Weld, Grind, Shield }
 
     public IMyCharacter Bot;
     public ParticleType Type;

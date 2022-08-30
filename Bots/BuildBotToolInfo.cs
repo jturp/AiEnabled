@@ -1,4 +1,7 @@
-﻿using Sandbox.Definitions;
+﻿using AiEnabled.Bots.Roles.Helpers;
+
+using Sandbox.Common.ObjectBuilders;
+using Sandbox.Definitions;
 using Sandbox.ModAPI;
 
 using System;
@@ -14,25 +17,25 @@ namespace AiEnabled.Bots
   public class BuildBotToolInfo
   {
     // from the source files
-    const float WELDER_AMOUNT_PER_SECOND = 1f;
+    const float WELDER_AMOUNT_PER_SECOND = 1f / 30f;
+    const float GRINDER_AMOUNT_PER_SECOND = 2f / 30f;
     const float WELDER_MAX_REPAIR_BONE_MOVEMENT_SPEED = 0.6f;
     const float TOOL_COOLDOWN_MS = 250;
 
-    float _weldSpeedMultiplier = 1f;
-    bool _multiplierChecked;
+    float _toolSpeedMultiplier = 1f;
 
-    public float WeldAmount => MyAPIGateway.Session.WelderSpeedMultiplier * WELDER_AMOUNT_PER_SECOND * _weldSpeedMultiplier * TOOL_COOLDOWN_MS * 0.001f;
+    public float WeldAmount => MyAPIGateway.Session.WelderSpeedMultiplier * WELDER_AMOUNT_PER_SECOND * _toolSpeedMultiplier * TOOL_COOLDOWN_MS * 0.001f;
+    public float GrindAmount => MyAPIGateway.Session.GrinderSpeedMultiplier * GRINDER_AMOUNT_PER_SECOND * _toolSpeedMultiplier * TOOL_COOLDOWN_MS * 0.001f;
     public float BoneFixAmount => WELDER_MAX_REPAIR_BONE_MOVEMENT_SPEED * TOOL_COOLDOWN_MS * 0.001f;
 
-    public void CheckMultiplier(MyDefinitionId toolDefinition)
+    public void CheckMultiplier(MyHandItemDefinition toolDef, out RepairBot.BuildMode buildMode)
     {
-      if (_multiplierChecked)
-        return;
-
-      _multiplierChecked = true;
-      var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(toolDefinition);
+      var def = toolDef?.PhysicalItemId ?? new MyDefinitionId();
+      var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(def);
       var toolBaseDef = handItemDef as MyEngineerToolBaseDefinition;
-      _weldSpeedMultiplier = toolBaseDef?.SpeedMultiplier ?? 1f;
+
+      buildMode = (handItemDef != null && handItemDef.Id.TypeId == typeof(MyObjectBuilder_AngleGrinder)) ? RepairBot.BuildMode.Grind : RepairBot.BuildMode.Weld;
+      _toolSpeedMultiplier = toolBaseDef?.SpeedMultiplier ?? 1f;
     }
   }
 }

@@ -79,7 +79,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.0";
+    public const string VERSION = "v1.1";
     const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
@@ -98,7 +98,10 @@ namespace AiEnabled
         if (!Registered || _controllerInfo == null || BotNumber >= MaxBots)
           return false;
 
-        if (_controllerInfo.Count - (FutureBotAPIQueue?.Count ?? 0) - (FutureBotQueue?.Count ?? 0) < MIN_SPAWN_COUNT)
+        var queueCount = FutureBotQueue?.Count ?? 0;
+        var queueCountAPI = FutureBotAPIQueue?.Count ?? 0;
+
+        if (_controllerInfo.Count - queueCount - queueCountAPI < MIN_SPAWN_COUNT)
           return false;
 
         if (!MyAPIGateway.Utilities.IsDedicated)
@@ -520,6 +523,7 @@ namespace AiEnabled
       TempNodeStack?.Clear();
       BotToControllerInfoDict?.Clear();
       CharacterListStack?.Clear();
+      KnownLootContainerIds?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -650,6 +654,7 @@ namespace AiEnabled
       TempNodeStack = null;
       BotToControllerInfoDict = null;
       CharacterListStack = null;
+      KnownLootContainerIds = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -758,6 +763,15 @@ namespace AiEnabled
           Logger.Log($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}", MessageType.WARNING);
         }
 
+        foreach (var botDef in MyDefinitionManager.Static.GetBotDefinitions())
+        {
+          var agentDef = botDef as MyAgentDefinition;
+          if (agentDef != null)
+          {
+            KnownLootContainerIds.Add(agentDef.InventoryContainerTypeId.SubtypeName);
+          }
+        }
+
         foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
         {
           if (def == null || !def.Public || def.Id.SubtypeName == "ZoneChip")
@@ -781,7 +795,7 @@ namespace AiEnabled
                 foreach (MyBlueprintDefinitionBase.Item result in bp.Results)
                 {
                   var compDef = MyDefinitionManager.Static.GetDefinition(result.Id) as MyComponentDefinition;
-                  if (compDef != null && !AllGameDefinitions.ContainsKey(compDef.Id))
+                  if (compDef != null && compDef.Public && compDef.Id.SubtypeName != "ZoneChip" && !AllGameDefinitions.ContainsKey(compDef.Id))
                     AllGameDefinitions[compDef.Id] = compDef;
                 }
               }
@@ -2625,7 +2639,7 @@ namespace AiEnabled
 
           if (!playerFound)
           {
-            var playerData = new HelperData(playerId, null);
+            var playerData = new HelperData(playerId, null, null);
             foreach (var bot in botList)
             {
               var gridGraph = bot._currentGraph as CubeGridMap;
@@ -3532,10 +3546,11 @@ namespace AiEnabled
       
       if (bot is RepairBot)
       {
-        bool allowed = handItemDef != null && handItemDef.Id.TypeId == typeof(MyObjectBuilder_Welder);
+        bool allowed = handItemDef != null 
+          && (handItemDef.Id.TypeId == typeof(MyObjectBuilder_Welder) || handItemDef.Id.TypeId == typeof(MyObjectBuilder_AngleGrinder));
 
         if (!allowed)
-          reason = "The RepairBot can only use welders";
+          reason = "The RepairBot can only use welders and grinders";
 
         return allowed;
       }
@@ -3557,7 +3572,7 @@ namespace AiEnabled
       {
         if (botRole.IndexOf("Repair", StringComparison.OrdinalIgnoreCase) >= 0)
         {
-          return handItemDef.Id.TypeId == typeof(MyObjectBuilder_Welder);
+          return handItemDef.Id.TypeId == typeof(MyObjectBuilder_Welder) || handItemDef.Id.TypeId == typeof(MyObjectBuilder_AngleGrinder);
         }
 
         if (botRole.IndexOf("Combat", StringComparison.OrdinalIgnoreCase) >= 0 
@@ -4187,12 +4202,15 @@ namespace AiEnabled
           case ParticleInfoBase.ParticleType.Ghost:
             ParticleInfoDict.TryAdd(val.BotEntityId, new EnemyParticleInfo(bot, "GhostIce"));
             break;
-          case ParticleInfoBase.ParticleType.Builder:
+          case ParticleInfoBase.ParticleType.Weld:
+          case ParticleInfoBase.ParticleType.Grind:
+
+            var isWeld = val.IsWelderParticle && val.ParticleType == ParticleInfoBase.ParticleType.Weld;
             if (val.BlockEntityId > 0)
             {
               var block = MyEntities.GetEntityById(val.BlockEntityId) as IMyTerminalBlock;
               if (block != null)
-                ParticleInfoDict.TryAdd(val.BotEntityId, new BuilderParticleInfo(bot, block.SlimBlock, val.IsWelderParticle));
+                ParticleInfoDict.TryAdd(val.BotEntityId, new BuilderParticleInfo(bot, block.SlimBlock, isWeld));
             }
             else if (val.GridEntityId > 0 && val.BlockPosition != null)
             {
@@ -4201,7 +4219,7 @@ namespace AiEnabled
               {
                 var slim = grid.GetCubeBlock(val.BlockPosition.Value) as IMySlimBlock;
                 if (slim != null)
-                  ParticleInfoDict.TryAdd(val.BotEntityId, new BuilderParticleInfo(bot, slim, val.IsWelderParticle));
+                  ParticleInfoDict.TryAdd(val.BotEntityId, new BuilderParticleInfo(bot, slim, isWeld));
               }
             }
             break;
@@ -5098,7 +5116,7 @@ namespace AiEnabled
 
         if (!found)
         {
-          var data = new HelperData(ownerId, null);
+          var data = new HelperData(ownerId, null, null);
           var gridGraph = bot._currentGraph as CubeGridMap;
           var grid = gridGraph?.MainGrid ?? null;
           var botType = bot.BotType;

@@ -103,14 +103,16 @@ namespace AiEnabled.ConfigData
   {
     public long OwnerIdentityId;
     public Vector3? RepairBotIgnoreColorMask;
+    public Vector3? RepairBotGrindColorMask;
     public List<HelperInfo> Helpers;
 
     public HelperData() { }
 
-    public HelperData(long ident, Vector3? hsv)
+    public HelperData(long ident, Vector3? hsvRepair, Vector3? hsvGrind)
     {
       OwnerIdentityId = ident;
-      RepairBotIgnoreColorMask = hsv;
+      RepairBotIgnoreColorMask = hsvRepair;
+      RepairBotGrindColorMask = hsvGrind;
       Helpers = new List<HelperInfo>();
     }
 

@@ -18,14 +18,16 @@ namespace AiEnabled.Networking
   public class ColorUpdatePacket : PacketBase
   {
     [ProtoMember(1)] long _playerIdentityId;
-    [ProtoMember(2)] SerializableVector3? _color;
+    [ProtoMember(2)] SerializableVector3? _repairColor;
+    [ProtoMember(3)] SerializableVector3? _grindColor;
 
     public ColorUpdatePacket() { }
 
-    public ColorUpdatePacket(long playerId, Vector3? clr)
+    public ColorUpdatePacket(long playerId, Vector3? clrRepair, Vector3? clrGrind)
     {
       _playerIdentityId = playerId;
-      _color = clr;
+      _repairColor = clrRepair;
+      _grindColor = clrGrind;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -39,14 +41,15 @@ namespace AiEnabled.Networking
         if (playerData.OwnerIdentityId == _playerIdentityId)
         {
           found = true;
-          playerData.RepairBotIgnoreColorMask = _color;
+          playerData.RepairBotIgnoreColorMask = _repairColor;
+          playerData.RepairBotGrindColorMask = _grindColor;
           break;
         }
       }
 
       if (!found)
       {
-        var playerData = new HelperData(_playerIdentityId, _color);
+        var playerData = new HelperData(_playerIdentityId, _repairColor, _grindColor);
         data.PlayerHelperData.Add(playerData);
       }
 

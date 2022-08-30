@@ -1267,6 +1267,7 @@ namespace AiEnabled.Ai.Support
               max = MainGrid.WorldToGridInteger(maxWorld);
             }
 
+            Vector3I.MinMax(ref min, ref max);
             Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref min, ref max);
 
             while (iter.IsValid())

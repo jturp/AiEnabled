@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
 
 using ProtoBuf;
 
@@ -60,26 +61,30 @@ namespace AiEnabled.Networking
               }
 
               inv.ConsumeItem(usable.Id, 1, bot.Character.EntityId);
-              return false;
             }
           }
         }
-
-        string reason;
-        var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
-        if (AiSession.Instance.IsBotAllowedToUse(bot, _itemDefinition.SubtypeId, out reason) && controlEnt.CanSwitchToWeapon(_itemDefinition))
-        {
-          if (!(bot.Character?.Parent is IMyCockpit))
-            controlEnt.SwitchToWeapon(_itemDefinition);
-  
-          bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(_itemDefinition);
-          bot.HasWeaponOrTool = true;
-          bot.SetShootInterval();
-        }
         else
         {
-          var pkt = new MessagePacket(reason ?? "Bot was unable to switch weapons.");
-          netHandler.SendToPlayer(pkt, bot.Owner.SteamUserId);
+          string reason;
+          var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+          if (AiSession.Instance.IsBotAllowedToUse(bot, _itemDefinition.SubtypeId, out reason) && controlEnt.CanSwitchToWeapon(_itemDefinition))
+          {
+            if (!(bot.Character?.Parent is IMyCockpit))
+              controlEnt.SwitchToWeapon(_itemDefinition);
+
+            bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(_itemDefinition);
+            bot.HasWeaponOrTool = true;
+            bot.SetShootInterval();
+
+            var rBot = bot as RepairBot;
+            rBot?.UpdateWeaponInfo();
+          }
+          else
+          {
+            var pkt = new MessagePacket(reason ?? "Bot was unable to switch weapons.");
+            netHandler.SendToPlayer(pkt, bot.Owner.SteamUserId);
+          }
         }
       }
 

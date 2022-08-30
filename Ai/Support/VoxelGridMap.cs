@@ -258,32 +258,171 @@ namespace AiEnabled.Ai.Support
       return false;
     }
 
-    public override bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true)
+    public override bool GetClosestValidNode(BotBase bot, Vector3I testPosition, out Vector3I nodePosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true)
     {
-      node = testNode;
-      Node n;
-      if (!currentIsDenied && _openTileDict.TryGetValue(node, out n) && !Obstacles.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
+      nodePosition = testPosition;
+      if (!IsValid || !Ready)
+        return false;
+
+      Node node;
+      TryGetNodeForPosition(testPosition, out node);
+
+      if (node != null && !currentIsDenied
+        && !ObstacleNodes.ContainsKey(nodePosition)
+        && !TempBlockedNodes.ContainsKey(nodePosition))
       {
-        if (preferGroundNode)
+        var isAir = node.IsAirNode;
+        var isWater = node.IsWaterNode;
+        if ((bot.RequiresJetpack || !preferGroundNode || !isAir) && (allowAirNodes || !isAir)
+          && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes)
+          && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)) && (!bot.WaterNodesOnly || !isWater))
         {
-          if (!n.IsAirNode)
+
+          if (isSlimBlock)
+          {
+            var cube = node.Block ?? GetBlockAtPosition(testPosition);
+            if (!Obstacles.ContainsKey(node.Position)
+              && (cube == null || (cube.FatBlock is IMyTextPanel)
+              || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
+              || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
+              || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
+              || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
+              || AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)))
+            {
+              return true;
+            }
+          }
+          else
             return true;
         }
-        else if (allowAirNodes || !n.IsAirNode)
-          return true;
       }
 
-      var center = node;
+      var localPosition = nodePosition;
+      IMySlimBlock block = null;
+      
+      if (isSlimBlock)
+      {
+        block = GetBlockAtPosition(localPosition);
+
+        if (block != null && !block.IsDestroyed)
+        {
+          var min = block.Min;
+          var max = block.Max;
+
+          if ((max - min) != Vector3I.Zero)
+          {
+            var minWorld = block.CubeGrid.GridIntegerToWorld(block.Min);
+            var maxWorld = block.CubeGrid.GridIntegerToWorld(block.Max);
+            min = WorldToLocal(minWorld);
+            max = WorldToLocal(maxWorld);
+
+            Vector3I.MinMax(ref min, ref max);
+            Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref min, ref max);
+
+            while (iter.IsValid())
+            {
+              var current = iter.Current;
+              iter.MoveNext();
+
+              if (GetClosestNodeInternal(bot, current, out nodePosition, up, isSlimBlock, currentIsDenied, allowAirNodes, preferGroundNode, block))
+                return true;
+            }
+
+            return false;
+          }
+        }
+      }
+
+      return GetClosestNodeInternal(bot, localPosition, out nodePosition, up, isSlimBlock, currentIsDenied, allowAirNodes, preferGroundNode, block);
+    }
+
+    bool GetClosestNodeInternal(BotBase bot, Vector3I testPosition, out Vector3I nodePosition, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true, IMySlimBlock block = null)
+    {
       double localDistance = double.MaxValue;
       double groundDistance = double.MaxValue;
-      var worldPosition = LocalToWorld(testNode);
+      var worldPosition = LocalToWorld(testPosition);
       Vector3I? closestGround = null;
+      nodePosition = testPosition;
 
-      foreach (var point in Neighbors(bot, center, center, worldPosition, false, currentIsObstacle: true, up: up))
+      if (isSlimBlock)
       {
-        _openTileDict.TryGetValue(point, out n);
-        var isAirNode = n.IsAirNode;
-        var isWaterNode = n.IsWaterNode;
+        bool TryTwice = block?.CubeGrid.GridSizeEnum == MyCubeSize.Large;
+
+        foreach (var dir in AiSession.Instance.CardinalDirections)
+        {
+          Node n;
+          if (TryGetNodeForPosition(testPosition + dir, out n) && n != null)
+          {
+            if (!IsObstacle(n.Position, true) && IsPositionUsable(bot, n.Position))
+            {
+              nodePosition = n.Position;
+              return true;
+            }
+          }
+
+          if (TryTwice && TryGetNodeForPosition(testPosition + dir * 2, out n) && n != null)
+          {
+            if (!IsObstacle(n.Position, true) && IsPositionUsable(bot, n.Position))
+            {
+              nodePosition = n.Position;
+              return true;
+            }
+          }
+        }
+
+        foreach (var dir in AiSession.Instance.DiagonalDirections)
+        {
+          Node n;
+          if (TryGetNodeForPosition(testPosition + dir, out n) && n != null)
+          {
+            if (!IsObstacle(n.Position, true) && IsPositionUsable(bot, n.Position))
+            {
+              nodePosition = n.Position;
+              return true;
+            }
+          }
+
+          if (TryTwice && TryGetNodeForPosition(testPosition + dir * 2, out n) && n != null)
+          {
+            if (!IsObstacle(n.Position, true) && IsPositionUsable(bot, n.Position))
+            {
+              nodePosition = n.Position;
+              return true;
+            }
+          }
+        }
+
+        foreach (var dir in AiSession.Instance.VoxelMovementDirections)
+        {
+          Node n;
+          if (TryGetNodeForPosition(testPosition + dir, out n) && n != null)
+          {
+            if (!IsObstacle(n.Position, true) && IsPositionUsable(bot, n.Position))
+            {
+              nodePosition = n.Position;
+              return true;
+            }
+          }
+
+          if (TryTwice && TryGetNodeForPosition(testPosition + dir * 2, out n) && n != null)
+          {
+            if (!IsObstacle(n.Position, true) && IsPositionUsable(bot, n.Position))
+            {
+              nodePosition = n.Position;
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      foreach (var point in Neighbors(bot, testPosition, testPosition, worldPosition, false, currentIsObstacle: true, isSlimBlock: isSlimBlock, up: up))
+      {
+        Node node;
+        _openTileDict.TryGetValue(point, out node);
+        var isAirNode = node.IsAirNode;
+        var isWaterNode = node.IsWaterNode;
 
         if (!allowAirNodes && isAirNode)
           continue;
@@ -291,16 +430,16 @@ namespace AiEnabled.Ai.Support
         if (bot != null && !isWaterNode && bot.WaterNodesOnly)
           continue;
 
-        if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!n.IsSpaceNode(this) || bot.CanUseSpaceNodes)))
+        if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this))))
         {
 
-          var testPosition = LocalToWorld(point);
-          var dist = Vector3D.DistanceSquared(testPosition, worldPosition);
+          var worldTest = LocalToWorld(point);
+          var dist = Vector3D.DistanceSquared(worldTest, worldPosition);
 
           if (dist < localDistance)
           {
             localDistance = dist;
-            node = point;
+            nodePosition = point;
           }
 
           if (preferGroundNode && !isAirNode && dist < groundDistance)
@@ -312,7 +451,7 @@ namespace AiEnabled.Ai.Support
       }
 
       if (preferGroundNode && closestGround.HasValue)
-        node = closestGround.Value;
+        nodePosition = closestGround.Value;
 
       return localDistance < double.MaxValue;
     }
@@ -1239,6 +1378,35 @@ namespace AiEnabled.Ai.Support
       return defaultValue;
     }
 
-    public override IMySlimBlock GetBlockAtPosition(Vector3I localPosition) => null;
+    public override IMySlimBlock GetBlockAtPosition(Vector3I localPosition)
+    {
+      var worldPosition = LocalToWorld(localPosition);
+      var sphere = new BoundingSphereD(worldPosition, 0.25);
+
+      List<MyEntity> entList;
+      if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
+        entList = new List<MyEntity>();
+      else
+        entList.Clear();
+
+      MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+      IMySlimBlock block = null;
+
+      for (int i = 0; i < entList.Count; i++)
+      {
+        var grid = entList[i] as IMyCubeGrid;
+        if (grid == null || grid.MarkedForClose)
+          continue;
+
+        var gridLocal = grid.WorldToGridInteger(worldPosition);
+        block = grid.GetCubeBlock(gridLocal);
+
+        if (block != null)
+          break;
+      }
+
+      return block;
+    }
   }
 }

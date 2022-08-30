@@ -59,6 +59,7 @@ namespace AiEnabled.GameLogic
     List<MyIniKey> _iniKeys = new List<MyIniKey>();
     List<string> _iniLines = new List<string>();
     Dictionary<string, KeyValuePair<string, string>> _subtypeToRole = new Dictionary<string, KeyValuePair<string, string>>(10);
+    Dictionary<string, string> _botTypeToLootContainerId = new Dictionary<string, string>(10);
     Stack<WeaponInfo> _wepInfoStack = new Stack<WeaponInfo>(10);
     List<string> _allSubtypes = new List<string>(10);
     List<string> _creatureTypes = new List<string>(5);
@@ -75,7 +76,7 @@ namespace AiEnabled.GameLogic
     MyShipController _fakeBlock = new MyShipController();
     MyIni _ini = new MyIni();
     CubeGridMap _gridMap;
-    string _lastConfig;
+    string _lastConfig, _knownLootContainers;
     bool _hasSpawned = true, _isClient, _isServer;
     bool _allowBossBot = true, _nomadBotOnly, _enforcerBotOnly, _neutralBotOnly, _creatureBotOnly;
     int _nextSpawnTime = 1000, _spawnTimer, _currentSpawnCount;
@@ -93,6 +94,7 @@ namespace AiEnabled.GameLogic
         _neutralTypes?.Clear();
         _weaponSubtypes?.Clear();
         _wepInfoStack?.Clear();
+        _botTypeToLootContainerId?.Clear();
 
         _fakeBlock = null;
         _allSubtypes = null;
@@ -105,6 +107,7 @@ namespace AiEnabled.GameLogic
         _neutralTypes = null;
         _weaponSubtypes = null;
         _wepInfoStack = null;
+        _botTypeToLootContainerId = null;
       }
       catch(Exception ex)
       {
@@ -134,6 +137,28 @@ namespace AiEnabled.GameLogic
 
         if (_isClient || _block?.CubeGrid?.Physics == null)
           return;
+
+        if (string.IsNullOrEmpty(_knownLootContainers))
+        {
+          if (AiSession.Instance.KnownLootContainerIds.Count > 0)
+          {
+            _knownLootContainers = " " + string.Join("\n ", AiSession.Instance.KnownLootContainerIds);
+          }
+          else
+          {
+            _knownLootContainers = "";
+            foreach (var botDef in MyDefinitionManager.Static.GetBotDefinitions())
+            {
+              var agentDef = botDef as MyAgentDefinition;
+              if (agentDef != null)
+              {
+                _knownLootContainers += $" {agentDef.InventoryContainerTypeId.SubtypeName}\n";
+              }
+            }
+          }
+
+          _knownLootContainers.TrimEnd('\n', ' ');
+        }
 
         SetupIni();
         NeedsUpdate = MyEntityUpdateEnum.EACH_100TH_FRAME;
@@ -176,28 +201,39 @@ namespace AiEnabled.GameLogic
       _neutralTypes.Add("Default_Astronaut_Female");
 
       _ini.Clear();
+      _ini.Set("AiEnabled", "Known Loot Container Ids", _knownLootContainers);
       _ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       _ini.Set("AiEnabled", "Use Random Spawn Colors", true);
       _ini.Set("AiEnabled", "Allow SoldierBot", true);
       _ini.Set("AiEnabled", "SoldierBot Color", hexColor);
+      _ini.Set("AiEnabled", "SoldierBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "Allow GrinderBot", true);
       _ini.Set("AiEnabled", "GrinderBot Color", hexColor);
+      _ini.Set("AiEnabled", "GrinderBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "Allow ZombieBot", true);
       _ini.Set("AiEnabled", "ZombieBot Color", hexColor);
+      _ini.Set("AiEnabled", "ZombieBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "Allow GhostBot", true);
+      _ini.Set("AiEnabled", "GhostBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "Allow BruiserBot", true);
+      _ini.Set("AiEnabled", "BruiserBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       _ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       _ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
       _ini.Set("AiEnabled", "NomadBot Color", hexColor);
       _ini.Set("AiEnabled", "EnforcerBot Color", hexColor);
+      _ini.Set("AiEnabled", "NomadBot Loot Container Id", string.Empty);
+      _ini.Set("AiEnabled", "EnforcerBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
       _ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
       _ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
+      _ini.Set("AiEnabled", "Wolf Loot Container Id", string.Empty);
+      _ini.Set("AiEnabled", "Spider Loot Container Id", string.Empty);
 
-      _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
+      _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n Loot Container Ids are taken from mod / game files, leave blank\n to use the value from the character definition.\n ");
+      _ini.SetComment("AiEnabled", "Known Loot Container Ids", " \n These are the loot container ids found by the mod. This may not be\n all of them. NOTE: you only need to assign them if you want to\n override the defaults.\n ");
       _ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
       _ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       _ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
@@ -329,6 +365,27 @@ namespace AiEnabled.GameLogic
       {
         _spawnTimer = _nextSpawnTime - 300;
       }
+
+      var soldierLoot = ini.Get("AiEnabled", "SoldierBot Loot Container Id").ToString(string.Empty);
+      var grinderLoot = ini.Get("AiEnabled", "GrinderBot Loot Container Id").ToString(string.Empty);
+      var zombieLoot = ini.Get("AiEnabled", "ZombieBot Loot Container Id").ToString(string.Empty);
+      var ghostLoot = ini.Get("AiEnabled", "GhostBot Loot Container Id").ToString(string.Empty);
+      var bruiserLoot = ini.Get("AiEnabled", "BruiserBot Loot Container Id").ToString(string.Empty);
+      var nomadLoot = ini.Get("AiEnabled", "NomadBot Loot Container Id").ToString(string.Empty);
+      var enforcerLoot = ini.Get("AiEnabled", "EnforcerBot Loot Container Id").ToString(string.Empty);
+      var wolfLoot = ini.Get("AiEnabled", "Wolf Loot Container Id").ToString(string.Empty);
+      var spiderLoot = ini.Get("AiEnabled", "Spider Loot Container Id").ToString(string.Empty);
+
+      _botTypeToLootContainerId.Clear();
+      _botTypeToLootContainerId["SoldierLoot"] = soldierLoot;
+      _botTypeToLootContainerId["GrinderLoot"] = grinderLoot;
+      _botTypeToLootContainerId["ZombieLoot"] = zombieLoot;
+      _botTypeToLootContainerId["GhostLoot"] = ghostLoot;
+      _botTypeToLootContainerId["BruiserLoot"] = bruiserLoot;
+      _botTypeToLootContainerId["NomadLoot"] = nomadLoot;
+      _botTypeToLootContainerId["EnforcerLoot"] = enforcerLoot;
+      _botTypeToLootContainerId["WolfLoot"] = wolfLoot;
+      _botTypeToLootContainerId["SpiderLoot"] = spiderLoot;
 
       _iniKeys.Clear();
       ini.GetKeys("SoldierBot Weapon Subtypes", _iniKeys);
@@ -502,28 +559,39 @@ namespace AiEnabled.GameLogic
       }
 
       ini.Clear();
+      ini.Set("AiEnabled", "Known Loot Container Ids", _knownLootContainers);
       ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       ini.Set("AiEnabled", "Use Random Spawn Colors", _useRandomColor);
-      ini.Set("AiEnabled", "Allow SoldierBot", allowSoldier);
-      ini.Set("AiEnabled", "SoldierBot Color", _soldierColor);
-      ini.Set("AiEnabled", "Allow GrinderBot", allowGrinder);
-      ini.Set("AiEnabled", "GrinderBot Color", _grinderColor);
-      ini.Set("AiEnabled", "Allow ZombieBot", allowZombie);
-      ini.Set("AiEnabled", "ZombieBot Color", _zombieColor);
-      ini.Set("AiEnabled", "Allow GhostBot", allowGhost);
-      ini.Set("AiEnabled", "Allow BruiserBot", _allowBossBot);
+      ini.Set("AiEnabled", "Allow SoldierBot", true);
+      ini.Set("AiEnabled", "SoldierBot Color", hexColor);
+      ini.Set("AiEnabled", "SoldierBot Loot Container Id", soldierLoot);
+      ini.Set("AiEnabled", "Allow GrinderBot", true);
+      ini.Set("AiEnabled", "GrinderBot Color", hexColor);
+      ini.Set("AiEnabled", "GrinderBot Loot Container Id", grinderLoot);
+      ini.Set("AiEnabled", "Allow ZombieBot", true);
+      ini.Set("AiEnabled", "ZombieBot Color", hexColor);
+      ini.Set("AiEnabled", "ZombieBot Loot Container Id", zombieLoot);
+      ini.Set("AiEnabled", "Allow GhostBot", true);
+      ini.Set("AiEnabled", "GhostBot Loot Container Id", ghostLoot);
+      ini.Set("AiEnabled", "Allow BruiserBot", true);
+      ini.Set("AiEnabled", "BruiserBot Loot Container Id", bruiserLoot);
       ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
       ini.Set("AiEnabled", "NomadBot Color", hexColor);
       ini.Set("AiEnabled", "EnforcerBot Color", hexColor);
+      ini.Set("AiEnabled", "NomadBot Loot Container Id", nomadLoot);
+      ini.Set("AiEnabled", "EnforcerBot Loot Container Id", enforcerLoot);
       ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
       ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
       ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
+      ini.Set("AiEnabled", "Wolf Loot Container Id", wolfLoot);
+      ini.Set("AiEnabled", "Spider Loot Container Id", spiderLoot);
 
-      ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n ");
+      ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n Loot Container Ids are taken from mod / game files, leave blank\n to use the value from the character definition.\n ");
+      ini.SetComment("AiEnabled", "Known Loot Container Ids", " \n These are the loot container ids found by the mod. This may not be\n all of them. NOTE: you only need to assign them if you want to\n override the defaults.\n ");
       ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
       ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
@@ -646,7 +714,7 @@ namespace AiEnabled.GameLogic
           var playerPosition = player.PositionComp.WorldAABB.Center;
           if (Vector3D.DistanceSquared(playerPosition, _block.WorldAABB.Center) < maxPlayerDistance)
           {
-            string botType, role = null;
+            string botType, lootType = null, role = null;
             bool assignRole = true;
 
             if (_creatureBotOnly && _creatureTypes?.Count > 0)
@@ -659,16 +727,13 @@ namespace AiEnabled.GameLogic
               {
                 num = 0;
               }
-              else if (_spidersOnly)
-              {
-                num = MyUtils.GetRandomInt(1, 5);
-              }
               else
               {
                 num = MyUtils.GetRandomInt(0, _creatureTypes.Count);
               }
 
               botType = _creatureTypes[num];
+              lootType = botType.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0 ? _botTypeToLootContainerId["WolfLoot"] : _botTypeToLootContainerId["SpiderLoot"];
             }
             else if (_neutralBotOnly && _neutralTypes?.Count > 0)
             {
@@ -682,12 +747,15 @@ namespace AiEnabled.GameLogic
                 role = "NOMAD";
               else
                 role = MyUtils.GetRandomInt(0, 10) > 5 ? "ENFORCER" : "NOMAD";
+
+              lootType = (role == "NOMAD") ? _botTypeToLootContainerId["NomadLoot"] : _botTypeToLootContainerId["EnforcerLoot"];
             }
             else if (_allowBossBot && (!hasRegular || _gridMap.TotalSpawnCount > 10 && MyUtils.GetRandomInt(1, 101) >= _gridMap.BossSpawnChance))
             {
               _gridMap.BossSpawnChance = 100;
               _gridMap.TotalSpawnCount = 0;
               botType = "Boss_Bot";
+              lootType = _botTypeToLootContainerId["BruiserLoot"];
             }
             else if (hasRegular)
             {
@@ -719,6 +787,40 @@ namespace AiEnabled.GameLogic
   
               if (!_useRandomColor)
                 color = ColorExtensions.FromHtml(roleAndColor.Value);
+
+              if (string.IsNullOrEmpty(lootType))
+              {
+                switch (role.ToUpperInvariant())
+                {
+                  case "NOMAD":
+                    lootType = _botTypeToLootContainerId["NomadLoot"];
+                    break;
+                  case "ENFORCER":
+                    lootType = _botTypeToLootContainerId["EnforcerLoot"];
+                    break;
+                  case "SOLDIER":
+                    lootType = _botTypeToLootContainerId["SoldierLoot"];
+                    break;
+                  case "ZOMBIE":
+                    lootType = _botTypeToLootContainerId["ZombieLoot"];
+                    break;
+                  case "GHOST":
+                    lootType = _botTypeToLootContainerId["GhostLoot"];
+                    break;
+                  case "GRINDER":
+                    lootType = _botTypeToLootContainerId["GrinderLoot"];
+                    break;
+                  case "BRUISER":
+                    lootType = _botTypeToLootContainerId["BruiserLoot"];
+                    break;
+                  case "CREATURE":
+                    if (botType.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0)
+                      lootType = _botTypeToLootContainerId["WolfLoot"];
+                    else
+                      lootType = _botTypeToLootContainerId["SpiderLoot"];
+                    break;
+                }
+              }
             }
             else if (!_useRandomColor)
             {
@@ -799,15 +901,24 @@ namespace AiEnabled.GameLogic
             var spawnPoint = _block.CubeGrid.GridIntegerToWorld(localPoint);
             var posOr = new MyPositionAndOrientation(spawnPoint, (Vector3)_block.WorldMatrix.Backward, (Vector3)_block.WorldMatrix.Up);
 
-            var bot = BotFactory.SpawnNPC(botType, "", posOr, grid, role, toolType, color: color);
-            if (bot != null)
+            var botChar = BotFactory.SpawnNPC(botType, "", posOr, grid, role, toolType, color: color);
+            if (botChar != null)
             {
               AiSession.Instance.GlobalSpawnTimer = 0;
               _currentSpawnCount++;
               _gridMap.TotalSpawnCount++;
-              bot.OnMarkForClose += Bot_OnMarkForClose;
-              bot.CharacterDied += Bot_OnMarkForClose;
-              bot.OnClose += Bot_OnMarkForClose;
+              botChar.OnMarkForClose += Bot_OnMarkForClose;
+              botChar.CharacterDied += Bot_OnMarkForClose;
+              botChar.OnClose += Bot_OnMarkForClose;
+
+              if (!string.IsNullOrEmpty(lootType))
+              {
+                BotBase bot;
+                if (AiSession.Instance.Bots.TryGetValue(botChar.EntityId, out bot) && bot != null)
+                {
+                  bot._lootContainerSubtype = lootType;
+                }
+              }
             }
 
             _hasSpawned = true;

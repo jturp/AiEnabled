@@ -864,7 +864,7 @@ namespace AiEnabled.Bots
 
           var botDef = new MyDefinitionId(_animalBotType, subtype);
           var agentDef = MyDefinitionManager.Static.GetBotDefinition(botDef) as MyAgentDefinition;
-          var lootContainer = agentDef?.InventoryContainerTypeId.SubtypeName ?? "DroidLoot";
+          var lootContainer = agentDef?.InventoryContainerTypeId.SubtypeName ?? "RobotLoot";
           container = MyDefinitionManager.Static.GetContainerTypeDefinition(lootContainer);
         }
 
@@ -985,7 +985,7 @@ namespace AiEnabled.Bots
             {
               if (Target.IsSlimBlock)
               {
-                var packet2 = new ParticlePacket(Character.EntityId, Particles.ParticleInfoBase.ParticleType.Builder, remove: true);
+                var packet2 = new ParticlePacket(Character.EntityId, Particles.ParticleInfoBase.ParticleType.Weld, remove: true);
 
                 if (MyAPIGateway.Session.Player != null)
                   packet.Received(AiSession.Instance.Network);
@@ -2763,7 +2763,7 @@ namespace AiEnabled.Bots
           }
 
           var hitGrid = hitEnt as IMyCubeGrid;
-          if (hitGrid != null && (Target.IsCubeBlock || Target.IsSlimBlock))
+          if (hitGrid != null && (Target.IsCubeBlock || Target.IsSlimBlock || Target.IsInventory))
           {
             var localPos = hitGrid.WorldToGridInteger(hit.Position);
             var cube = hitGrid.GetCubeBlock(localPos);
@@ -2774,7 +2774,7 @@ namespace AiEnabled.Bots
               cube = hitGrid.GetCubeBlock(localPos);
             }
 
-            var targetCube = Target.IsCubeBlock ? (Target.Entity as IMyCubeBlock)?.SlimBlock : Target.Entity as IMySlimBlock;
+            var targetCube = Target.IsInventory ? Target.Inventory : Target.IsCubeBlock ? (Target.Entity as IMyCubeBlock).SlimBlock : Target.Entity as IMySlimBlock;
             var checkCube = cube != null && targetCube != null;
 
             if (checkCube)
@@ -2798,6 +2798,12 @@ namespace AiEnabled.Bots
                 var worldCube = cube.CubeGrid.GridIntegerToWorld(cube.Position);
                 result = Vector3D.DistanceSquared(hit.Position, worldCube) < 13;
               }
+              else if (cube.FatBlock is IMyMechanicalConnectionBlock && targetCube.FatBlock is IMyAttachableTopBlock)
+              {
+                var mechBlock = cube.FatBlock as IMyMechanicalConnectionBlock;
+                var topBlock = targetCube.FatBlock as IMyAttachableTopBlock;
+                result = mechBlock.Top == topBlock;
+              }
               else
                 result = false;
             }
@@ -2819,7 +2825,7 @@ namespace AiEnabled.Bots
           var voxelBase = hitEnt as MyVoxelBase;
           if (voxelBase != null && (Target.IsCubeBlock || Target.IsSlimBlock || Target.IsInventory))
           {
-            var slim = Target.IsCubeBlock ? (Target.Entity as IMyCubeBlock).SlimBlock : Target.Entity as IMySlimBlock;
+            var slim = Target.IsCubeBlock ? (Target.Entity as IMyCubeBlock).SlimBlock : Target.IsInventory ? Target.Inventory : Target.Entity as IMySlimBlock;
             if (slim != null)
             {
               Node node;

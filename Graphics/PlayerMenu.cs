@@ -48,7 +48,7 @@ namespace AiEnabled.Graphics
     internal MenuItem ShowHealthBars;
     internal MenuSliderInput MouseSensitivity;
     internal MenuKeybindInput RecallBotsKeyBind;
-    internal MenuTextInput RepairBotIgnoreColorInput, MaxBots, MaxHelpers;
+    internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     PlayerData _playerData;
 
     public PlayerMenu(PlayerData playerData)
@@ -72,7 +72,15 @@ namespace AiEnabled.Graphics
       var z = vec?.Z.ToString() ?? "N";
 
       var color = (vec == null) ? "<color=yellow>" : "<color=green>";
-      RepairBotIgnoreColorInput = new MenuTextInput($"RepairBot ignore color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the ignore color for Repair Bots, in format H,S,V", TextInput_Submitted);
+      RepairBotIgnoreColorInput = new MenuTextInput($"RepairBot ignore color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the ignore color for Repair Bots, in format H,S,V", TextInputIgnore_Submitted);
+
+      vec = _playerData.RepairBotGrindColorHSV;
+      x = vec?.X.ToString() ?? "N";
+      y = vec?.Y.ToString() ?? "N";
+      z = vec?.Z.ToString() ?? "N";
+
+      color = (vec == null) ? "<color=yellow>" : "<color=green>";
+      RepairBotGrindColorInput = new MenuTextInput($"RepairBot grind color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the grind color for Repair Bots, in format H,S,V", TextInputGrind_Submitted);
 
       var keyBindMenu = new MenuSubCategory("Key Bindings                <color=teal>==>", Menu, "Key Bindings");
       RecallBotsKeyBind = new MenuKeybindInput($"Recall Bots: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
@@ -244,7 +252,7 @@ namespace AiEnabled.Graphics
       }
     }
 
-    internal void TextInput_Submitted(string text)
+    internal void TextInputIgnore_Submitted(string text)
     {
       var split = text.Split(',');
       if (split.Length != 3)
@@ -257,14 +265,41 @@ namespace AiEnabled.Graphics
         s = (float)Math.Round(MathHelper.Clamp(s, 0, 100), 1);
         v = (float)Math.Round(MathHelper.Clamp(v, 0, 100), 1);
 
-
         var vec = new Vector3(h, s, v);
         var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=green>";
 
         _playerData.RepairBotIgnoreColorHSV = vec;
         RepairBotIgnoreColorInput.Text = $"RepairBot ignore color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
 
-        var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, vec);
+        var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, vec, _playerData.RepairBotIgnoreColorHSV);
+        AiSession.Instance.Network.SendToServer(pkt);
+      }
+      else
+      {
+        AiSession.Instance.ShowMessage("HSV was in improper format. Use format: H,S,V", timeToLive: 5000);
+      }
+    }
+
+    internal void TextInputGrind_Submitted(string text)
+    {
+      var split = text.Split(',');
+      if (split.Length != 3)
+        return;
+
+      float h, s, v;
+      if (float.TryParse(split[0], out h) && float.TryParse(split[1], out s) && float.TryParse(split[2], out v))
+      {
+        h = (float)Math.Round(MathHelper.Clamp(h, 0, 360), 1);
+        s = (float)Math.Round(MathHelper.Clamp(s, 0, 100), 1);
+        v = (float)Math.Round(MathHelper.Clamp(v, 0, 100), 1);
+
+        var vec = new Vector3(h, s, v);
+        var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=green>";
+
+        _playerData.RepairBotGrindColorHSV = vec;
+        RepairBotGrindColorInput.Text = $"RepairBot grind color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
+
+        var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, _playerData.RepairBotIgnoreColorHSV, vec);
         AiSession.Instance.Network.SendToServer(pkt);
       }
       else
