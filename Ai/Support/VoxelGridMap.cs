@@ -344,9 +344,10 @@ namespace AiEnabled.Ai.Support
       Vector3I? closestGround = null;
       nodePosition = testPosition;
 
-      if (isSlimBlock)
+      var isFloater = bot?.Target.IsFloater == true;
+      if (isSlimBlock || isFloater)
       {
-        bool TryTwice = block?.CubeGrid.GridSizeEnum == MyCubeSize.Large;
+        bool TryTwice = isFloater || block?.CubeGrid.GridSizeEnum == MyCubeSize.Large;
 
         foreach (var dir in AiSession.Instance.CardinalDirections)
         {
@@ -424,7 +425,7 @@ namespace AiEnabled.Ai.Support
         var isAirNode = node.IsAirNode;
         var isWaterNode = node.IsWaterNode;
 
-        if (!allowAirNodes && isAirNode)
+        if (!allowAirNodes && isAirNode && !bot.RequiresJetpack)
           continue;
 
         if (bot != null && !isWaterNode && bot.WaterNodesOnly)

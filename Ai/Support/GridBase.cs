@@ -121,7 +121,6 @@ namespace AiEnabled.Ai.Support
     public virtual bool IsPositionAvailable(Vector3D position)
     {
       var node = WorldToLocal(position);
-      //return IsPositionValid(position) && OpenTileDict.ContainsKey(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);
       return IsPositionValid(position) && IsOpenTile(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);
     }
 

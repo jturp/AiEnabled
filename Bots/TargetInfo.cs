@@ -24,8 +24,10 @@ namespace AiEnabled.Bots
       public IMySlimBlock Inventory { get; private set; }
       public Vector3D CurrentGoToPosition { get; private set; }
       public Vector3D CurrentActualPosition { get; private set; }
-      public bool PositionsValid { get; private set; }
       public Vector3D CurrentBotPosition { get; private set; }
+      public Vector3D CurrentGravityAtTarget { get; private set; }
+      public Vector3D CurrentGravityAtBot { get; private set; }
+      public bool PositionsValid { get; private set; }
 
       readonly BotBase _base;
       private Vector3D? _override, _localOverride;
@@ -350,12 +352,30 @@ namespace AiEnabled.Bots
 
       public void Update()
       {
+        CurrentBotPosition = _base?.GetPosition() ?? Vector3D.Zero;
+
+        float interference;
+        CurrentGravityAtBot = MyAPIGateway.Physics.CalculateNaturalGravityAt(CurrentBotPosition, out interference);
+        if (CurrentGravityAtBot.LengthSquared() == 0)
+        {
+          CurrentGravityAtBot = MyAPIGateway.Physics.CalculateArtificialGravityAt(CurrentBotPosition, interference);
+        }
+
         Vector3D gotoPos, actualPos;
         PositionsValid = GetTargetPosition(out gotoPos, out actualPos);
 
         CurrentGoToPosition = gotoPos;
         CurrentActualPosition = actualPos;
-        CurrentBotPosition = _base?.GetPosition() ?? Vector3D.Zero;
+      }
+
+      void AssignGravityAtTarget(ref Vector3D targetPosition)
+      {
+        float interference;
+        CurrentGravityAtTarget = MyAPIGateway.Physics.CalculateNaturalGravityAt(targetPosition, out interference);
+        if (CurrentGravityAtTarget.LengthSquared() == 0)
+        {
+          CurrentGravityAtTarget = MyAPIGateway.Physics.CalculateArtificialGravityAt(targetPosition, interference);
+        }
       }
 
       bool GetTargetPosition(out Vector3D gotoPosition, out Vector3D actualPosition)
@@ -381,6 +401,31 @@ namespace AiEnabled.Bots
 
           gotoPosition = Override.Value;
           actualPosition = gotoPosition;
+          AssignGravityAtTarget(ref actualPosition);
+          return true;
+        }
+
+        var floater = Entity as IMyFloatingObject;
+        if (floater != null)
+        {
+          actualPosition = floater.GetPosition();
+          AssignGravityAtTarget(ref actualPosition);
+
+          if (CurrentGravityAtTarget.LengthSquared() > 0)
+          {
+            gotoPosition = actualPosition - Vector3D.Normalize(CurrentGravityAtTarget);
+          }
+          else if (_base._currentGraph?.Ready == true)
+          {
+            var graphLocal = _base._currentGraph.WorldToLocal(actualPosition);
+            if (!_base._currentGraph.IsOpenTile(graphLocal))
+            {
+              graphLocal += Vector3I.Up;
+            }
+
+            gotoPosition = _base._currentGraph.LocalToWorld(graphLocal);
+          }
+
           return true;
         }
 
@@ -396,6 +441,8 @@ namespace AiEnabled.Bots
         {
           var turretGrid = cube.CubeGrid;
           actualPosition = cube.WorldAABB.Center + cube.WorldMatrix.Up * (turretGrid.GridSize > 1 ? 1 : 0.5);
+          AssignGravityAtTarget(ref actualPosition);
+
           var cubePosition = actualPosition;
 
           CubeGridMap turretGraph;
@@ -550,6 +597,8 @@ namespace AiEnabled.Bots
 
           gotoPosition = Inventory.CubeGrid.GridIntegerToWorld(center);
           actualPosition = gotoPosition;
+          AssignGravityAtTarget(ref actualPosition);
+
           return true;
         }
 
@@ -564,6 +613,16 @@ namespace AiEnabled.Bots
 
           gotoPosition = center;
           actualPosition = center;
+          AssignGravityAtTarget(ref actualPosition);
+
+          if (_base is RepairBot && cube.CubeGrid.GridSizeEnum == MyCubeSize.Small)
+          {
+            if (CurrentGravityAtTarget.LengthSquared() > 0)
+              gotoPosition -= Vector3D.Normalize(CurrentGravityAtTarget);
+            else
+              gotoPosition += _base._currentGraph?.WorldMatrix.Up ?? _base.WorldMatrix.Up;
+          }
+
           return true;
         }
 
@@ -572,6 +631,16 @@ namespace AiEnabled.Bots
         {
           gotoPosition = slim.CubeGrid.GridIntegerToWorld(slim.Position);
           actualPosition = gotoPosition;
+          AssignGravityAtTarget(ref actualPosition);
+
+          if (_base is RepairBot && slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
+          {
+            if (CurrentGravityAtTarget.LengthSquared() > 0)
+              gotoPosition -= Vector3D.Normalize(CurrentGravityAtTarget);
+            else
+              gotoPosition += _base._currentGraph?.WorldMatrix.Up ?? _base.WorldMatrix.Up;
+          }
+
           return true;
         }
 
@@ -608,6 +677,7 @@ namespace AiEnabled.Bots
             actualPosition = gotoPosition;
           }
 
+          AssignGravityAtTarget(ref actualPosition);
           return true;
         }
 
@@ -615,6 +685,7 @@ namespace AiEnabled.Bots
         {
           gotoPosition = Player.Character.WorldAABB.Center;
           actualPosition = gotoPosition;
+          AssignGravityAtTarget(ref actualPosition);
           return true;
         }
 

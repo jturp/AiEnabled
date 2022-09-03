@@ -692,7 +692,7 @@ namespace AiEnabled.Bots
     internal Vector3D _lastEnd;
     internal Vector3I _lastCurrent, _lastPrevious, _lastEndLocal;
     internal short _patrolIndex = -1;
-    internal int _stuckCounter, _stuckTimer, _stuckTimerReset, _teleportCounter;
+    internal int _stuckCounter, _stuckTimer, _stuckTimerReset, _teleportCounter, _floaterCounter;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter;
     internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
     internal uint _ticksSinceFoundTarget, _damageTicks, _despawnTicks = 25000;
@@ -715,6 +715,7 @@ namespace AiEnabled.Bots
     BotInfo _botInfo;
     byte _ticksSinceLastIdleTransition;
     bool _transitionIdle;
+    MyFloatingObject _lastFloater;
 
     Action<WorkData> _graphWorkAction, _graphWorkCallBack;
     Action<WorkData> _pathWorkAction, _pathWorkCallBack;
@@ -1470,11 +1471,7 @@ namespace AiEnabled.Bots
 
           if (_currentGraph != null && _currentGraph.IsValid && Character != null && !IsDead)
           {
-            float interference;
-            var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(Target.CurrentBotPosition, out interference);
-            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(Target.CurrentBotPosition, interference);
-
-            if (nGrav.LengthSquared() < 0.05 && aGrav.LengthSquared() < 0.05
+            if ((JetpackEnabled || (Target.CurrentGravityAtBot.LengthSquared() < 0.05))
               && Math.Abs(VectorUtils.GetAngleBetween(Character.WorldMatrix.Up, _currentGraph.WorldMatrix.Up)) > MathHelper.ToRadians(3))
             {
               var matrix = _currentGraph.WorldMatrix;
@@ -1483,6 +1480,7 @@ namespace AiEnabled.Bots
               newMatrix.Translation = Character.WorldMatrix.Translation;
 
               Character.SetWorldMatrix(newMatrix);
+              Character.Physics.SetSpeeds((Vector3)newMatrix.Up, Vector3.Zero); // typically we're stuck when this happens so push bot up to get feet unstuck
             }
           }
 
@@ -1526,7 +1524,7 @@ namespace AiEnabled.Bots
             BehaviorReady = false;
             UseBehavior();
           }
-          else if (AiSession.Instance?.GlobalSpeakTimer > 1000) // && (inSeat || (Target.Entity != null && Target.GetDistanceSquared() < 2500 && !Target.IsFriendly())))
+          else if (AiSession.Instance?.GlobalSpeakTimer > 1000)
           {
             AiSession.Instance.GlobalSpeakTimer = 0;
             BehaviorReady = false;
@@ -2688,7 +2686,6 @@ namespace AiEnabled.Bots
 
         var tgtPos = Target.IsSlimBlock ? _currentGraph.LocalToWorld(localTgt) : targetPosition;
         var dSquared = Vector3D.DistanceSquared(tgtPos, botPos);
-
         if (dSquared > checkDistance)
         {
           return false;
@@ -2815,10 +2812,9 @@ namespace AiEnabled.Bots
           
           if (Target.IsFloater)
           {
-            var floater = Target.Entity as MyFloatingObject;
-            var floaterPosition = floater?.PositionComp.WorldAABB.Center ?? Vector3D.PositiveInfinity;
+            var floaterPosition = Target.CurrentGoToPosition;
             var distanceToFloater = Vector3D.DistanceSquared(floaterPosition, hit.Position);
-            result = distanceToFloater < 1.5;
+            result = distanceToFloater < 2.25;
             break;
           }
 
@@ -2828,18 +2824,14 @@ namespace AiEnabled.Bots
             var slim = Target.IsCubeBlock ? (Target.Entity as IMyCubeBlock).SlimBlock : Target.IsInventory ? Target.Inventory : Target.Entity as IMySlimBlock;
             if (slim != null)
             {
-              Node node;
-              if (!_currentGraph.TryGetNodeForPosition(slim.Position, out node) || node?.IsGridNodeUnderGround == true)
-              {
-                BoundingBoxD box;
-                slim.GetWorldBoundingBox(out box, true);
-                var checkDistance = (float)box.HalfExtents.AbsMax() + 1.5f;
+              BoundingBoxD box;
+              slim.GetWorldBoundingBox(out box, true);
+              var checkDistance = (float)box.HalfExtents.AbsMax() + 1.5f;
 
-                if (Vector3D.DistanceSquared(hit.Position, box.Center) < checkDistance * checkDistance)
-                {
-                  result = true;
-                  break;
-                }
+              if (Vector3D.DistanceSquared(hit.Position, box.Center) < checkDistance * checkDistance)
+              {
+                result = true;
+                break;
               }
             }
           }
@@ -3422,6 +3414,10 @@ namespace AiEnabled.Bots
             {
               checkDistance = 5;
             }
+            else if (Target.IsFloater)
+            {
+              checkDistance = 2.5;
+            }
             else
             {
               var ch = Target.Entity as IMyCharacter;
@@ -3689,6 +3685,9 @@ namespace AiEnabled.Bots
         }
       }
 
+      bool isInventory = Target.IsInventory;
+      bool isFloater = Target.IsFloater;
+
       if (!found && !_currentGraph.GetClosestValidNode(this, goal, out goal, isSlimBlock: isSlimBlock))
       {
         bool goBack = true;
@@ -3703,26 +3702,80 @@ namespace AiEnabled.Bots
           if (Target.Override.HasValue && exit == Target.Override)
             Target.RemoveOverride(false);
 
-          if (isSlimTarget || Target.IsInventory)
+          if (isSlimTarget || isInventory || isFloater)
           {
-            _currentGraph.TempBlockedNodes[_currentGraph.WorldToLocal(exit)] = new byte();
+            if (NeedsTransition)
+            {
+              NeedsTransition = false;
+              _transitionPoint = null;
+            }
+
+            var floater = Target.Entity as MyFloatingObject;
             Target.RemoveTarget();
+
+            if (floater != null && this is RepairBot && Vector3D.DistanceSquared(botPosition, targetPosition) <= 10)
+            {
+              if (_lastFloater == null || _lastFloater.EntityId != floater.EntityId)
+              {
+                _floaterCounter = 0;
+                _lastFloater = floater;
+              }
+              else if (++_floaterCounter > 3)
+              {
+                _floaterCounter = 0;
+                var inv = Character.GetInventory() as MyInventory;
+                if (inv != null && !inv.IsFull)
+                {
+                  var item = floater.Item;
+                  var amount = MyFixedPoint.Min(item.Amount, inv.ComputeAmountThatFits(item.Content.GetId()));
+                  if (amount > 0 && inv.AddItems(amount, item.Content))
+                  {
+                    floater.Close();
+                    return;
+                  }
+                }
+              }
+            }
+
+            _currentGraph.TempBlockedNodes[_currentGraph.WorldToLocal(exit)] = new byte();
           }
 
           return;
         }
       }
 
+      _lastFloater = null;
+      _floaterCounter = 0;
+
       if (start == goal)
       {
-        if (isSlimTarget || Target.IsInventory)
+        if (isSlimTarget || isInventory || isFloater)
         {
           _pathCollection.CleanUp(true);
 
-          var block = isSlimTarget ? Target.Entity as IMySlimBlock : Target.Inventory;
-          var grid = block.CubeGrid as MyCubeGrid;
-          var worldPostion = grid.GridIntegerToWorld(block.Position);
-          var position = _currentGraph.WorldToLocal(worldPostion);
+          Vector3I position;
+          Vector3 offset;
+          MyCubeGrid grid = null;
+          IMySlimBlock block = null;
+
+          if (isSlimTarget || isInventory)
+          {
+            block = isSlimTarget ? Target.Entity as IMySlimBlock : Target.Inventory;
+            grid = block.CubeGrid as MyCubeGrid;
+            var worldPostion = grid.GridIntegerToWorld(block.Position);
+            position = _currentGraph.WorldToLocal(worldPostion);
+
+            if (grid.GridSizeEnum == MyCubeSize.Large)
+              offset = Vector3.Zero;
+            else
+              offset = (Vector3)(worldPostion - _currentGraph.LocalToWorld(position));
+          }
+          else // isFloater
+          {
+            var floaterWorld = Target.CurrentGoToPosition;
+            position = _currentGraph.WorldToLocal(floaterWorld);
+            offset = (Vector3)(floaterWorld - _currentGraph.LocalToWorld(position));
+          }
 
           lock (_pathCollection.PathToTarget)
           {
@@ -3730,7 +3783,7 @@ namespace AiEnabled.Bots
             if (!AiSession.Instance.TempNodeStack.TryPop(out temp))
               temp = new TempNode();
 
-            temp.Update(position, Vector3.Zero, NodeType.None, 0, grid, block);
+            temp.Update(position, offset, NodeType.None, 0, grid, block);
             _pathCollection.PathToTarget.Enqueue(temp);
           }
         }
@@ -3983,11 +4036,7 @@ namespace AiEnabled.Bots
           var current = _currentGraph.WorldToLocal(botPosition);
           if (!_currentGraph.TryGetNodeForPosition(current, out curNode) || !curNode.IsAirNode)
           {
-            float _;
-            var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(botPosition, out _);
-            var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(botPosition, 0);
-
-            if (nGrav.LengthSquared() > 0 || aGrav.LengthSquared() > 0)
+            if (Target.CurrentGravityAtBot.LengthSquared() > 0)
               TrySwitchJetpack(false);
           }
         }
@@ -4386,14 +4435,11 @@ namespace AiEnabled.Bots
 
     internal void AdjustMovementForFlight(ref Vector3D relVectorBot, ref Vector3 movement, ref Vector3D botPosition, bool towardBlock = false)
     {
-      float multiplier;
-      var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(botPosition, out multiplier);
-      var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(botPosition, multiplier);
-      var gravity = nGrav.LengthSquared() > 0 ? nGrav : aGrav;
+      var gravity = Target.CurrentGravityAtBot;
 
-      multiplier = 0;
+      float multiplier = 0;
       if (gravity.LengthSquared() > 0)
-        multiplier = MathHelper.Clamp(gravity.Length() / 9.81f, 0, 2);
+        multiplier = MathHelper.Clamp((float)gravity.Length() / 9.81f, 0, 2);
 
       if (Math.Sign(relVectorBot.Y) > 0)
       {

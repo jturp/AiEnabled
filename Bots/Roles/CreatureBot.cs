@@ -72,11 +72,9 @@ namespace AiEnabled.Bots.Roles
       if (_stuckCounter > 0 || (_botState.IsFalling && !IsDead && _currentGraph?.Ready == true))
       {
         var position = Target.CurrentBotPosition;
-        float interference;
-        var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
-        var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
+        var gravity = Target.CurrentGravityAtBot;
 
-        if (nGrav.LengthSquared() < 0.05 && aGrav.LengthSquared() < 0.05)
+        if (gravity.LengthSquared() < 0.05)
         {
           var gridGraph = _currentGraph as CubeGridMap;
           var gridVelocity = Vector3.Zero;

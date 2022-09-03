@@ -128,6 +128,8 @@ namespace AiEnabled.Networking
       {
         bot.Target.RemoveTarget();
         bot.Target.RemoveOverride(false);
+        bot._transitionPoint = null;
+        bot.NeedsTransition = false;
         bot.PatrolMode = false;
         bot.FollowMode = false;
         bot.UseAPITargets = Stay || !isCrew;
@@ -197,6 +199,8 @@ namespace AiEnabled.Networking
         bot.PatrolMode = false;
         bot.FollowMode = false;
         bot.UseAPITargets = false;
+        bot._transitionPoint = null;
+        bot.NeedsTransition = false;
         bot.Target.RemoveTarget();
         bot.Target.RemoveOverride(false);
 
@@ -226,6 +230,8 @@ namespace AiEnabled.Networking
         bot.UseAPITargets = false;
         bot.PatrolMode = false;
         bot.FollowMode = true;
+        bot._transitionPoint = null;
+        bot.NeedsTransition = false;
         bot.Target.RemoveTarget();
         bot.Target.RemoveOverride(false);
 
@@ -255,6 +261,8 @@ namespace AiEnabled.Networking
         bot.UseAPITargets = false;
         bot.PatrolMode = true;
         bot.FollowMode = false;
+        bot._transitionPoint = null;
+        bot.NeedsTransition = false;
         bot.Target.RemoveOverride(false);
 
         if (bot is RepairBot)

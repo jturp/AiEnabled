@@ -8,8 +8,10 @@ using AiEnabled.Bots.Roles.Helpers;
 
 using ProtoBuf;
 
+using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.ModAPI;
+using Sandbox.ModAPI.Weapons;
 
 using VRage;
 using VRage.Game.ModAPI;
@@ -52,10 +54,16 @@ namespace AiEnabled.Bots
         }
         else if (bot.BotType == AiSession.BotType.Repair)
         {
+          var grinder = bot.Character.EquippedTool as IMyAngleGrinder;
+          RepairBot.BuildMode buildMode = grinder != null ? RepairBot.BuildMode.Grind : RepairBot.BuildMode.Weld;
+
           if (bot.Target.IsInventory)
           {
             var terminal = bot.Target.Inventory.FatBlock as IMyTerminalBlock;
-            Action = $"Gathering mats from {terminal.CustomName}";
+            if (buildMode == RepairBot.BuildMode.Weld)
+              Action = $"Gathering mats from {terminal.CustomName}";
+            else
+              Action = $"Placing mats in {terminal.CustomName}";
           }
           else if (bot.Target.IsFloater)
           {
@@ -66,15 +74,21 @@ namespace AiEnabled.Bots
           {
             var slim = bot.Target.Entity as IMySlimBlock;
             var terminal = slim.FatBlock as IMyTerminalBlock;
+            string slimName;
             if (terminal != null)
             {
-              Action = $"Repairing {terminal.CustomName}";
+              slimName = terminal.CustomName;
             }
             else
             {
               var def = slim.BlockDefinition as MyCubeBlockDefinition;
-              Action = $"Repairing {def.DisplayNameText}";
+              slimName = def.DisplayNameText;
             }
+
+            if (buildMode == RepairBot.BuildMode.Weld)
+              Action = $"Repairing {slimName}";
+            else
+              Action = $"Grinding {slimName}";
           }
           else if (bot.PatrolMode && bot._patrolList?.Count > 0)
           {
@@ -86,8 +100,15 @@ namespace AiEnabled.Bots
             Action = "Idle";
           }
 
-          var rBot = bot as RepairBot;
-          NeededItem = rBot?.FirstMissingItemForRepairs;
+          if (buildMode == RepairBot.BuildMode.Weld)
+          {
+            var rBot = bot as RepairBot;
+            NeededItem = rBot?.FirstMissingItemForRepairs;
+          }
+          else
+          {
+            NeededItem = null;
+          }
         }
         else if (bot.BotType == AiSession.BotType.Crew)
         {

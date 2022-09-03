@@ -564,24 +564,24 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       ini.Set("AiEnabled", "Use Random Spawn Colors", _useRandomColor);
-      ini.Set("AiEnabled", "Allow SoldierBot", true);
-      ini.Set("AiEnabled", "SoldierBot Color", hexColor);
+      ini.Set("AiEnabled", "Allow SoldierBot", allowSoldier);
+      ini.Set("AiEnabled", "SoldierBot Color", _soldierColor);
       ini.Set("AiEnabled", "SoldierBot Loot Container Id", soldierLoot);
-      ini.Set("AiEnabled", "Allow GrinderBot", true);
-      ini.Set("AiEnabled", "GrinderBot Color", hexColor);
+      ini.Set("AiEnabled", "Allow GrinderBot", allowGrinder);
+      ini.Set("AiEnabled", "GrinderBot Color", _grinderColor);
       ini.Set("AiEnabled", "GrinderBot Loot Container Id", grinderLoot);
-      ini.Set("AiEnabled", "Allow ZombieBot", true);
-      ini.Set("AiEnabled", "ZombieBot Color", hexColor);
+      ini.Set("AiEnabled", "Allow ZombieBot", allowZombie);
+      ini.Set("AiEnabled", "ZombieBot Color", _zombieColor);
       ini.Set("AiEnabled", "ZombieBot Loot Container Id", zombieLoot);
-      ini.Set("AiEnabled", "Allow GhostBot", true);
+      ini.Set("AiEnabled", "Allow GhostBot", allowGhost);
       ini.Set("AiEnabled", "GhostBot Loot Container Id", ghostLoot);
-      ini.Set("AiEnabled", "Allow BruiserBot", true);
+      ini.Set("AiEnabled", "Allow BruiserBot", _allowBossBot);
       ini.Set("AiEnabled", "BruiserBot Loot Container Id", bruiserLoot);
       ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
-      ini.Set("AiEnabled", "NomadBot Color", hexColor);
-      ini.Set("AiEnabled", "EnforcerBot Color", hexColor);
+      ini.Set("AiEnabled", "NomadBot Color", _nomadColor);
+      ini.Set("AiEnabled", "EnforcerBot Color", _enforcerColor);
       ini.Set("AiEnabled", "NomadBot Loot Container Id", nomadLoot);
       ini.Set("AiEnabled", "EnforcerBot Loot Container Id", enforcerLoot);
       ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
@@ -733,7 +733,10 @@ namespace AiEnabled.GameLogic
               }
 
               botType = _creatureTypes[num];
-              lootType = botType.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0 ? _botTypeToLootContainerId["WolfLoot"] : _botTypeToLootContainerId["SpiderLoot"];
+              if (botType.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0)
+                lootType = _botTypeToLootContainerId.GetValueOrDefault("WolfLoot");
+              else 
+                lootType = _botTypeToLootContainerId.GetValueOrDefault("SpiderLoot");
             }
             else if (_neutralBotOnly && _neutralTypes?.Count > 0)
             {
@@ -748,14 +751,17 @@ namespace AiEnabled.GameLogic
               else
                 role = MyUtils.GetRandomInt(0, 10) > 5 ? "ENFORCER" : "NOMAD";
 
-              lootType = (role == "NOMAD") ? _botTypeToLootContainerId["NomadLoot"] : _botTypeToLootContainerId["EnforcerLoot"];
+              if (role == "NOMAD")
+                lootType = _botTypeToLootContainerId.GetValueOrDefault("NomadLoot");
+              else
+                lootType = _botTypeToLootContainerId.GetValueOrDefault("EnforcerLoot");
             }
             else if (_allowBossBot && (!hasRegular || _gridMap.TotalSpawnCount > 10 && MyUtils.GetRandomInt(1, 101) >= _gridMap.BossSpawnChance))
             {
               _gridMap.BossSpawnChance = 100;
               _gridMap.TotalSpawnCount = 0;
               botType = "Boss_Bot";
-              lootType = _botTypeToLootContainerId["BruiserLoot"];
+              lootType = _botTypeToLootContainerId.GetValueOrDefault("BruiserLoot");
             }
             else if (hasRegular)
             {
@@ -764,6 +770,28 @@ namespace AiEnabled.GameLogic
 
               if (_gridMap.TotalSpawnCount > 3)
                 _gridMap.BossSpawnChance--;
+
+              if (string.IsNullOrEmpty(lootType))
+              {
+                switch (botType)
+                {
+                  case "Police_Bot":
+                    lootType = _botTypeToLootContainerId.GetValueOrDefault("SoldierLoot");
+                    break;
+                  case "Space_Zombie":
+                    lootType = _botTypeToLootContainerId.GetValueOrDefault("ZombieLoot");
+                    break;
+                  case "Ghost_Bot":
+                    lootType = _botTypeToLootContainerId.GetValueOrDefault("GhostLoot");
+                    break;
+                  case "Space_Skeleton":
+                    lootType = _botTypeToLootContainerId.GetValueOrDefault("GrinderLoot");
+                    break;
+                  case "Boss_Bot":
+                    lootType = _botTypeToLootContainerId.GetValueOrDefault("BruiserLoot");
+                    break;
+                }
+              }
             }
             else
               break;
@@ -787,40 +815,6 @@ namespace AiEnabled.GameLogic
   
               if (!_useRandomColor)
                 color = ColorExtensions.FromHtml(roleAndColor.Value);
-
-              if (string.IsNullOrEmpty(lootType))
-              {
-                switch (role.ToUpperInvariant())
-                {
-                  case "NOMAD":
-                    lootType = _botTypeToLootContainerId["NomadLoot"];
-                    break;
-                  case "ENFORCER":
-                    lootType = _botTypeToLootContainerId["EnforcerLoot"];
-                    break;
-                  case "SOLDIER":
-                    lootType = _botTypeToLootContainerId["SoldierLoot"];
-                    break;
-                  case "ZOMBIE":
-                    lootType = _botTypeToLootContainerId["ZombieLoot"];
-                    break;
-                  case "GHOST":
-                    lootType = _botTypeToLootContainerId["GhostLoot"];
-                    break;
-                  case "GRINDER":
-                    lootType = _botTypeToLootContainerId["GrinderLoot"];
-                    break;
-                  case "BRUISER":
-                    lootType = _botTypeToLootContainerId["BruiserLoot"];
-                    break;
-                  case "CREATURE":
-                    if (botType.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0)
-                      lootType = _botTypeToLootContainerId["WolfLoot"];
-                    else
-                      lootType = _botTypeToLootContainerId["SpiderLoot"];
-                    break;
-                }
-              }
             }
             else if (!_useRandomColor)
             {

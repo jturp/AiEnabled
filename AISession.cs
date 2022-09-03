@@ -1854,7 +1854,12 @@ namespace AiEnabled
             bot.PatrolMode = false;
             bot.FollowMode = false;
             bot.UseAPITargets = false;
-            bot.Target?.RemoveOverride(false);
+
+            if (bot.Target != null)
+            {
+              bot.Target.RemoveOverride(false);
+              bot.Target.RemoveTarget();
+            }
           }
           else if (bot.UseAPITargets)
             continue;
@@ -2295,7 +2300,8 @@ namespace AiEnabled
             }
             else if (targetIsBot && (character.Definition.Id.SubtypeName == "Default_Astronaut" || character.Definition.Id.SubtypeName == "Default_Astronaut_Female"))
             {
-              damageAmount = info.Amount * 0.4f;
+              var ajustedAmount = info.Amount * 0.4f;
+              damageAmount = Math.Max(ajustedAmount, Math.Min(1.5f * ModSaveData.BotWeaponDamageModifier, info.Amount));
             }
             else
             {
@@ -2352,6 +2358,8 @@ namespace AiEnabled
 
             if (ch != null && Players.ContainsKey(ownerIdentityId))
             {
+              damageAmount = info.Amount;
+
               if (targetIsBot)
                 damageAmount *= ModSaveData.PlayerWeaponDamageModifier;
             }
@@ -2424,7 +2432,7 @@ namespace AiEnabled
               {
                 var subtype = character.Definition.Id.SubtypeName;
                 if (subtype.StartsWith("Default_Astronaut", StringComparison.OrdinalIgnoreCase))
-                  damageAmount = 10f;
+                  damageAmount = Math.Max(10f, Math.Min(info.Amount, 1.5f * ModSaveData.BotWeaponDamageModifier));
                 else
                   damageAmount = info.Amount;
               }
@@ -2445,6 +2453,7 @@ namespace AiEnabled
             else if (targetIsPlayer && Bots.ContainsKey(ownerId))
             {
               damageAmount *= ModSaveData.BotWeaponDamageModifier;
+              damageAmount = Math.Max(damageAmount, Math.Min(info.Amount, 1.5f * ModSaveData.BotWeaponDamageModifier));
             }
 
             break;

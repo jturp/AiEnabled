@@ -1204,8 +1204,7 @@ namespace AiEnabled.Ai.Support
       TryGetNodeForPosition(testPosition, out node);
 
       if (node != null && !currentIsDenied
-        && !BlockedDoors.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition)
+        && !IsObstacle(testPosition, true)
         && !TempBlockedNodes.ContainsKey(localPosition))
       {
         var isAir = node.IsAirNode;
@@ -1218,14 +1217,13 @@ namespace AiEnabled.Ai.Support
           if (isSlimBlock)
           {
             var cube = node.Block ?? GetBlockAtPosition(testPosition);
-            if (!Obstacles.ContainsKey(node.Position) 
-              && (cube == null || (cube.FatBlock is IMyTextPanel)
+            if (cube == null || (cube.FatBlock is IMyTextPanel)
               || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
               || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
               || AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)
-              || cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large")))
+              || cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large"))
             {
               return true;
             }
@@ -1308,9 +1306,7 @@ namespace AiEnabled.Ai.Support
       Node node;
 
       if (!currentIsDenied
-        && !BlockedDoors.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition)
-        && !TempBlockedNodes.ContainsKey(localPosition)
+        && !IsObstacle(localPosition, true)
         && TryGetNodeForPosition(localPosition, out node))
       {
         var isAir = node.IsAirNode;
@@ -1323,14 +1319,13 @@ namespace AiEnabled.Ai.Support
           if (isSlimBlock)
           {
             var cube = node.Block ?? GetBlockAtPosition(testPosition);
-            if (!Obstacles.ContainsKey(node.Position)
-              && (cube == null || (cube.FatBlock is IMyTextPanel)
+            if (cube == null || (cube.FatBlock is IMyTextPanel)
               || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
               || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
               || AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)
-              || cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large")))
+              || cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large"))
             {
               return true;
             }
@@ -1352,7 +1347,7 @@ namespace AiEnabled.Ai.Support
         var isAirNode = node.IsAirNode;
         var isWaterNode = node.IsWaterNode;
 
-        if (!allowAirNodes && isAirNode)
+        if (!allowAirNodes && isAirNode && !bot.RequiresJetpack)
           continue;
 
         if (BlockedDoors.ContainsKey(point) || ObstacleNodes.ContainsKey(point) || TempBlockedNodes.ContainsKey(point))
@@ -1449,7 +1444,7 @@ namespace AiEnabled.Ai.Support
         yield break;
       }
 
-      if (isVoxelNode || currentIsObstacle)
+      if (isVoxelNode || (currentIsObstacle && bot?.Target.IsFloater != true))
       {
         foreach (var dir in AiSession.Instance.DiagonalDirections)
         {
@@ -1548,10 +1543,23 @@ namespace AiEnabled.Ai.Support
         for (int i = 0; i < hitInfoList.Count; i++)
         {
           var hit = hitInfoList[i];
-          if (hit?.HitEntity?.GetTopMostParent() is MyCubeGrid)
+          var grid = hit?.HitEntity?.GetTopMostParent() as MyCubeGrid;
+          if (grid != null)
           {
-            result = false;
-            break;
+            if (grid.GridSizeEnum == MyCubeSize.Small)
+            {
+              var gridLocal = grid.WorldToGridInteger(castTo);
+              if (grid.CubeExists(gridLocal))
+              {
+                result = false;
+                break;
+              }
+            }
+            else
+            {
+              result = false;
+              break;
+            }
           }
         }
 
@@ -7752,7 +7760,6 @@ namespace AiEnabled.Ai.Support
       ObstacleNodesTemp.Clear();
       var blocks = obstacleData.Blocks;
       var tempEntities = obstacleData.Entities;
-      Quaternion gridRotation = Quaternion.CreateFromRotationMatrix(WorldMatrix);
 
       for (int i = 0; i < blocks.Count; i++)
       {
@@ -7760,9 +7767,13 @@ namespace AiEnabled.Ai.Support
         if (b?.CubeGrid == null || b.IsDestroyed || b.CubeGrid.MarkedForClose)
           continue;
 
+        var cubeDef = b.BlockDefinition as MyCubeBlockDefinition;
         Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
         if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(b.BlockDefinition.Id, out faceDict))
+        {
+          AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {b.CubeGrid.DisplayName}, Position = {b.Position})", MessageType.WARNING);
           continue;
+        }
 
         Matrix matrix = new Matrix
         {
@@ -7774,7 +7785,6 @@ namespace AiEnabled.Ai.Support
         if (faceDict.Count < 2)
           matrix.TransposeRotationInPlace();
 
-        var cubeDef = b.BlockDefinition as MyCubeBlockDefinition;
         Vector3I center = cubeDef.Center;
         Vector3I.TransformNormal(ref center, ref matrix, out center);
         var adjustedPosition = b.Position - center;
@@ -7790,7 +7800,7 @@ namespace AiEnabled.Ai.Support
             continue;
 
           var graphLocal = WorldToLocal(worldPoint);
-          if (IsOpenTile(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal) && !Obstacles.ContainsKey(graphLocal))
+          if (IsOpenTile(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal))
           {
             ObstacleNodesTemp[graphLocal] = new byte();
           }
@@ -7801,7 +7811,7 @@ namespace AiEnabled.Ai.Support
           {
             var otherLocal = graphLocal + dir;
 
-            if (IsOpenTile(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal) && !Obstacles.ContainsKey(otherLocal))
+            if (IsOpenTile(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal))
             {
               var otherWorld = LocalToWorld(otherLocal);
               var otherSphere = new BoundingSphereD(otherWorld, 1);

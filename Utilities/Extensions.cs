@@ -183,11 +183,12 @@ namespace AiEnabled.Utilities
       return 4f / 3f * MathHelper.Pi * r * r * r;
     }
 
-    public static void ShellSort(this List<MyEntity> list, Vector3D checkPosition)
+    public static void ShellSort(this List<MyEntity> list, Vector3D checkPosition, bool reverse = false)
     {
       int length = list.Count;
+      var half = length / 2;
 
-      for (int h = length / 2; h > 0; h /= 2)
+      for (int h = half; h > 0; h /= 2)
       {
         for (int i = h; i < length; i += 1)
         {
@@ -203,6 +204,16 @@ namespace AiEnabled.Utilities
           }
 
           list[j] = tempValue;
+        }
+      }
+
+      if (reverse)
+      {
+        for (int i = 0; i < half; i++)
+        {
+          var tmp = list[i];
+          list[i] = list[length - i - 1];
+          list[length - i - 1] = tmp;
         }
       }
     }

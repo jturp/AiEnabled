@@ -68,6 +68,7 @@ namespace AiEnabled.Networking
 
           helper.UseAPITargets = false;
           helper.NeedsTransition = false;
+          helper._transitionPoint = null;
           helper.PatrolMode = false;
           helper.FollowMode = false;
           helper._patrolList?.Clear();
@@ -75,6 +76,8 @@ namespace AiEnabled.Networking
 
           if (helper.Target != null)
           {
+            helper.Target.RemoveInventory();
+            helper.Target.RemoveOverride(false);
             helper.Target.RemoveTarget();
             helper.SetTarget();
 
