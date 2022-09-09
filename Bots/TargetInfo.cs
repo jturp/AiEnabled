@@ -486,7 +486,7 @@ namespace AiEnabled.Bots
 
           var upVec = botMatrix.Up;
           var toCenter = cubePosition - turretGrid.WorldAABB.Center;
-          var projectUp = VectorUtils.Project(toCenter, upVec);
+          var projectUp = AiUtils.Project(toCenter, upVec);
           var reject = toCenter - projectUp;
 
           if (Vector3D.IsZero(reject))
@@ -552,42 +552,42 @@ namespace AiEnabled.Bots
             for (int i = 1; i < distanceCheck + 1; i++)
             {
               var testPoint = center + Vector3I.Up * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Down * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Left * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Right * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Forward * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Backward * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, true))
+              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;

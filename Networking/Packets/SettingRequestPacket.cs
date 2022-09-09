@@ -27,7 +27,8 @@ namespace AiEnabled.Networking
         prices.Add(serialPrice);
       }
 
-      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers, AiSession.Instance.ModSaveData.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, prices);
+      var data = AiSession.Instance.ModSaveData;
+      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers, data.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, prices, data.AdditionalHelperSubtypes);
       netHandler.SendToPlayer(pkt, SenderId);
 
       return false;

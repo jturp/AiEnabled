@@ -158,11 +158,23 @@ namespace AiEnabled.Graphics
 
     public void AddPatrolRoutes(List<SerializableRoute> routeList)
     {
+      if (_patrolMenu?.RouteBox == null)
+      {
+        AiSession.Instance.Logger.Log($"CommandMenu.AddPatrolRoutes: Attempted to add routes before Patrol Menu was ready", MessageType.WARNING);
+        return;
+      }
+
       _patrolMenu.RouteBox.SetStoredRoutes(routeList);
     }
 
     public void GetPatrolRoutes(List<SerializableRoute> routeList)
     {
+      if (_patrolMenu?.RouteBox == null)
+      {
+        AiSession.Instance.Logger.Log($"CommandMenu.GetPatrolRoutes: Attempted to get routes before Patrol Menu was ready", MessageType.WARNING);
+        return;
+      }
+
       _patrolMenu.RouteBox.GetStoredRoutes(routeList);
     }
 
@@ -632,7 +644,7 @@ namespace AiEnabled.Graphics
       _cursorPosition = Vector2.ClampToSphere(_cursorPosition + movement, 50);
 
       var vector = new Vector3D(_cursorPosition.X, -_cursorPosition.Y, 0);
-      var angle = (float)VectorUtils.GetAngleBetween(Vector3D.Up, vector);
+      var angle = (float)AiUtils.GetAngleBetween(Vector3D.Up, vector);
       if (vector.X != 0)
         angle *= Math.Sign(vector.X);
 
@@ -1930,7 +1942,7 @@ namespace AiEnabled.Graphics
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBBTopLeft.Rotation = (float)-VectorUtils.PiOver3;
+        _radialBBTopLeft.Rotation = (float)-AiUtils.PiOver3;
         _radialBBTopLeft.Options |= options;
         _radialBBTopLeft.Visible = false;
 
@@ -1950,7 +1962,7 @@ namespace AiEnabled.Graphics
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBBTopRight.Rotation = (float)VectorUtils.PiOver3;
+        _radialBBTopRight.Rotation = (float)AiUtils.PiOver3;
         _radialBBTopRight.Options |= options;
         _radialBBTopRight.Visible = false;
 
@@ -1990,7 +2002,7 @@ namespace AiEnabled.Graphics
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBBBottomLeft.Rotation = MathHelper.Pi + (float)VectorUtils.PiOver3;
+        _radialBBBottomLeft.Rotation = MathHelper.Pi + (float)AiUtils.PiOver3;
         _radialBBBottomLeft.Options |= options;
         _radialBBBottomLeft.Visible = false;
 
@@ -2010,7 +2022,7 @@ namespace AiEnabled.Graphics
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBBBottomRight.Rotation = MathHelper.Pi - (float)VectorUtils.PiOver3;
+        _radialBBBottomRight.Rotation = MathHelper.Pi - (float)AiUtils.PiOver3;
         _radialBBBottomRight.Options |= options;
         _radialBBBottomRight.Visible = false;
 

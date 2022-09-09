@@ -296,9 +296,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (vector.Z < 0)
       {
-        var reject = VectorUtils.Project(targetVector, Character.WorldMatrix.Up);
+        var reject = AiUtils.Project(targetVector, Character.WorldMatrix.Up);
         var flattenedVector = targetVector - reject;
-        var angle = VectorUtils.GetAngleBetween(flattenedVector, Character.WorldMatrix.Forward);
+        var angle = AiUtils.GetAngleBetween(flattenedVector, Character.WorldMatrix.Forward);
 
         if (Math.Abs(angle) < MathHelper.ToRadians(3))
           return true;

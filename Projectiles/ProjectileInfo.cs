@@ -146,7 +146,7 @@ namespace AiEnabled.Projectiles
       var perpVec = Vector3D.CalculatePerpendicularVector(targetVec);
       var addVecLength = MyUtils.GetRandomFloat(0, 1) * botBase._shotAngleDeviationTan * targetVec.Length();
       var direction = Vector3D.Normalize(targetVec + perpVec * addVecLength);
-      var addedVelocity = VectorUtils.Project(bot.Physics.LinearVelocity, bot.WorldMatrix.Right);
+      var addedVelocity = AiUtils.Project(bot.Physics.LinearVelocity, bot.WorldMatrix.Right);
       //var weaponSubtype = botBase.ToolSubtype.StartsWith("Basic") ? "BasicHandHeldLauncherGun" : "AdvancedHandHeldLauncherGun";
 
       var weaponItemDef = gunObj.PhysicalItemDefinition as MyWeaponItemDefinition;
@@ -222,7 +222,7 @@ namespace AiEnabled.Projectiles
 
       var displacementVector = tgtPos - botPos;
       var relativeVelocity = tgtVel - botVel;
-      var cosTheta = VectorUtils.GetCosineAngleBetween(-displacementVector, tgtVel) * Math.Sign(tgtVel.Dot(-displacementVector));
+      var cosTheta = AiUtils.GetCosineAngleBetween(-displacementVector, tgtVel) * Math.Sign(tgtVel.Dot(-displacementVector));
       if (cosTheta == 0)
         cosTheta = 1;
 

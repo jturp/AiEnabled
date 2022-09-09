@@ -79,7 +79,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.1";
+    public const string VERSION = "v1.2";
     const int MIN_SPAWN_COUNT = 5;
 
     public int MaxBots = 100;
@@ -121,7 +121,7 @@ namespace AiEnabled
     public bool FactoryControlsCreated;
     public bool FactoryActionsCreated;
     public bool IsServer, IsClient;
-    public bool DrawDebug;
+    public bool DrawDebug, DrawDebug2;
     public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded, EemLoaded;
     public bool InfiniteAmmoEnabled;
     public readonly MyStringHash FactorySorterHash = MyStringHash.GetOrCompute("RoboFactory");
@@ -151,6 +151,8 @@ namespace AiEnabled
     bool? _allowEnemyFlight, _allowNeutralTargets;
     float? _botDamageMult, _playerDamageMult;
     int _maxHuntEnemy, _maxHuntFriendly, _maxProjectile;
+    FastResourceLock _voxelMapResourceLock = new FastResourceLock();
+    FastResourceLock _gridMapResourceLock = new FastResourceLock();
 
     public GridBase GetNewGraph(MyCubeGrid grid, Vector3D newGraphPosition, MatrixD worldMatrix)
     {
@@ -168,61 +170,76 @@ namespace AiEnabled
 
       if (grid.GridSizeEnum == MyCubeSize.Small)
       {
-        Logger.Log($"GetGridGraph: Attempted to get a graph for a small grid!", MessageType.WARNING);
+        Logger.Log($"GetGridGraph: Attempted to get a graph for a small grid ({grid.DisplayName})!", MessageType.WARNING);
         return null;
       }
 
-      CubeGridMap gridBase;
-      if (!GridGraphDict.TryGetValue(grid.EntityId, out gridBase) || gridBase == null || !gridBase.IsValid)
+      using (_gridMapResourceLock.AcquireExclusiveUsing())
       {
-        gridBase = new CubeGridMap(grid, worldMatrix);
-        GridGraphDict.TryAdd(grid.EntityId, gridBase);
-      }
+        CubeGridMap gridBase;
+        if (!GridGraphDict.TryGetValue(grid.EntityId, out gridBase) || gridBase == null || !gridBase.IsValid)
+        {
+          gridBase = new CubeGridMap(grid, worldMatrix);
+          GridGraphDict.TryAdd(grid.EntityId, gridBase);
+        }
 
-      return gridBase;
+        return gridBase;
+      }
     }
 
     ulong _lastVoxelId;
     public VoxelGridMap GetVoxelGraph(Vector3D worldPosition, MatrixD worldMatrix, bool forceRefresh = false, bool returnFirstFound = true)
     {
-      foreach (var voxelGraph in VoxelGraphDict.Values)
+      using (_voxelMapResourceLock.AcquireExclusiveUsing())
       {
-        if (voxelGraph == null || !voxelGraph.IsValid)
+        double minDistance = double.MaxValue;
+        double checkDistance = VoxelGridMap.DefaultHalfSize * 0.5;
+        checkDistance *= checkDistance;
+
+        VoxelGridMap closestMap = null;
+        foreach (var voxelGraph in VoxelGraphDict.Values)
         {
-          VoxelGridMap _;
-          VoxelGraphDict.TryRemove(voxelGraph.Key, out _);
-          continue;
+          if (voxelGraph == null || !voxelGraph.IsValid)
+          {
+            VoxelGridMap _;
+            VoxelGraphDict.TryRemove(voxelGraph.Key, out _);
+          }
+          else if (voxelGraph.OBB.Contains(ref worldPosition))
+          {
+            if (returnFirstFound)
+            {
+              if (forceRefresh)
+                voxelGraph.Refresh();
+
+              return voxelGraph;
+            }
+
+            var graphDistance = Vector3D.DistanceSquared(worldPosition, voxelGraph.OBB.Center);
+            if (graphDistance < minDistance)
+            {
+              closestMap = voxelGraph;
+              minDistance = graphDistance;
+            }
+
+            if (graphDistance < checkDistance)
+            {
+              if (forceRefresh)
+                voxelGraph.Refresh();
+
+              return voxelGraph;
+            }
+          }
         }
 
-        if (voxelGraph.OBB.Contains(ref worldPosition))
+        var graph = new VoxelGridMap(worldPosition, worldMatrix)
         {
-          if (returnFirstFound)
-          {
-            if (forceRefresh)
-              voxelGraph.Refresh();
+          Key = _lastVoxelId
+        };
 
-            return voxelGraph;
-          }
-
-          var graphDistance = Vector3D.DistanceSquared(worldPosition, voxelGraph.OBB.Center);
-          if (graphDistance < 10)
-          {
-            if (forceRefresh)
-              voxelGraph.Refresh();
-
-            return voxelGraph;
-          }
-        }
+        VoxelGraphDict[_lastVoxelId] = graph;
+        _lastVoxelId++;
+        return graph;
       }
-
-      var graph = new VoxelGridMap(worldPosition, worldMatrix)
-      {
-        Key = _lastVoxelId
-      };
-
-      VoxelGraphDict[_lastVoxelId] = graph;
-      _lastVoxelId++;
-      return graph;
     }
 
     public void StartWeaponFire(long botId, long targetId, float damage, float angleDeviationTan, List<float> rand, int ticksBetweenAttacks, int ammoRemaining, bool isGrinder, bool isWelder, bool leadTargets)
@@ -380,6 +397,24 @@ namespace AiEnabled
         PlayerToActiveHelperIds.Clear();
       }
 
+      if (Bots != null)
+      {
+        foreach (var bot in Bots.Values)
+        {
+          bot?.Close();
+        }
+
+        Bots.Clear();
+      }
+
+      if (_pathCollections != null)
+      {
+        foreach (var collection in _pathCollections)
+          collection?.Close();
+
+        _pathCollections.Clear();
+      }
+
       if (GridGraphDict != null)
       {
         foreach (var kvp in GridGraphDict)
@@ -405,14 +440,6 @@ namespace AiEnabled
         }
 
         VoxelGraphDict.Clear();
-      }
-
-      if (_pathCollections != null)
-      {
-        foreach (var collection in _pathCollections)
-          collection?.Close();
-
-        _pathCollections.Clear();
       }
 
       if (InvCacheStack != null)
@@ -524,6 +551,10 @@ namespace AiEnabled
       BotToControllerInfoDict?.Clear();
       CharacterListStack?.Clear();
       KnownLootContainerIds?.Clear();
+      BotModelDict?.Clear();
+      BotModelList?.Clear();
+      AnimationControllerDictionary?.Clear();
+      SubtypeToSkeletonDictionary?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -655,6 +686,10 @@ namespace AiEnabled
       BotToControllerInfoDict = null;
       CharacterListStack = null;
       KnownLootContainerIds = null;
+      BotModelDict = null;
+      BotModelList = null;
+      AnimationControllerDictionary = null;
+      SubtypeToSkeletonDictionary = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -689,6 +724,8 @@ namespace AiEnabled
       _botSpeakers = null;
       _botAnalyzers = null;
       _healthBars = null;
+      _voxelMapResourceLock = null;
+      _gridMapResourceLock = null;
 
       ProjectileConstants.Close();
 
@@ -772,6 +809,15 @@ namespace AiEnabled
           }
         }
 
+        // Easter Egg block :)
+        var hiddenBlock = new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeDeadAstronaut");
+        var hiddenDef = MyDefinitionManager.Static.GetCubeBlockDefinition(hiddenBlock);
+        if (hiddenDef != null)
+        {
+          hiddenDef.Public = true;
+          hiddenDef.HasPhysics = false; // the block doesn't have physics, but this was still set to true which messes with pathing
+        }
+
         foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
         {
           if (def == null || !def.Public || def.Id.SubtypeName == "ZoneChip")
@@ -808,19 +854,18 @@ namespace AiEnabled
           if (charDef == null)
             continue;
 
-          var subtype = charDef.Id.SubtypeName;
+          var subtype = charDef.Id.SubtypeId;
 
           if (charDef.Id.SubtypeId == PlushieSubtype || charDef.Id.SubtypeId == RoboPlushieSubtype
-            || subtype.IndexOf("SmallSpider", StringComparison.OrdinalIgnoreCase) >= 0)
+            || subtype.String.IndexOf("SmallSpider", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             // Fix for turrets shooting over their heads
             charDef.HeadServerOffset = -1.25f;
           }
 
-          if (IsServer)
-            AnimationControllerDictionary[subtype] = charDef.AnimationController;
-  
-          RobotSubtypes.Add(subtype);
+          AnimationControllerDictionary[subtype] = charDef.AnimationController;
+          SubtypeToSkeletonDictionary[subtype] = charDef.Skeleton;  
+          RobotSubtypes.Add(subtype.String);
         }
 
         if (IsServer)
@@ -1056,8 +1101,7 @@ namespace AiEnabled
               MaxHelpersPerPlayer = MaxHelpers,
               MaxBotProjectileDistance = 150,
               MaxBotHuntingDistanceEnemy = 300,
-              MaxBotHuntingDistanceFriendly = 150,
-              
+              MaxBotHuntingDistanceFriendly = 150,              
             };
           }
 
@@ -1075,6 +1119,43 @@ namespace AiEnabled
 
           if (ModSaveData.FactionPairings == null)
             ModSaveData.FactionPairings = new List<FactionData>();
+
+          if (ModSaveData.AdditionalHelperSubtypes == null)
+            ModSaveData.AdditionalHelperSubtypes = new List<string>();
+          else if (ModSaveData.AdditionalHelperSubtypes.Count > 0)
+          {
+            var nameSB = new StringBuilder(32);
+            for (int i = ModSaveData.AdditionalHelperSubtypes.Count - 1; i >= 0; i--)
+            {
+              var newSubtype = ModSaveData.AdditionalHelperSubtypes[i];
+              if (!RobotSubtypes.Contains(newSubtype))
+                ModSaveData.AdditionalHelperSubtypes.RemoveAtFast(i);
+              else
+              {
+                nameSB.Clear();
+                foreach (var ch in newSubtype)
+                {
+                  if (char.IsLetterOrDigit(ch))
+                    nameSB.Append(ch);
+                }
+
+                var hashId = MyStringId.GetOrCompute(nameSB.ToString());
+                if (!BotModelDict.ContainsKey(hashId))
+                  BotModelDict[hashId] = newSubtype;
+              }
+            }
+
+            nameSB.Clear();
+          }
+
+          BotModelList.Clear();
+          foreach (var kvp in BotModelDict)
+          {
+            BotModelList.Add(kvp.Key);
+          }
+
+          if (ModSaveData.AdditionalHelperSubtypes.Count == 0)
+            ModSaveData.AdditionalHelperSubtypes.Add("Add Character Subtypes Here, one per line");
 
           if (ModSaveData.MaxBotsInWorld >= 0)
             MaxBots = ModSaveData.MaxBotsInWorld;
@@ -1251,6 +1332,7 @@ namespace AiEnabled
             bool isSlopedBlock = _validSlopedBlockDefs.ContainsItem(blockDef) || blockSubtype.EndsWith("HalfSlopeArmorBlock");
             bool isStairBlock = !isSlopedBlock && blockSubtype != "LargeStairs" && blockSubtype.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isGratedModBlock = cubeDef.Context.ModName == "Grated Catwalks Expansion";
+            //bool isDigiLadder = blockSubtype.StartsWith("LargeShipUsableLadder");
             bool scaffoldHalfStair = false;
             if (blockSubtype.StartsWith("ven_scaffold", StringComparison.OrdinalIgnoreCase))
             {
@@ -1323,7 +1405,7 @@ namespace AiEnabled
             {
               RampBlockDefinitions.Add(blockDef);
             }
-            else if (blockDef.TypeId == typeof(MyObjectBuilder_Ladder2))
+            else if (/*isDigiLadder ||*/ blockDef.TypeId == typeof(MyObjectBuilder_Ladder2))
             {
               LadderBlockDefinitions.Add(blockDef);
             }
@@ -2151,7 +2233,7 @@ namespace AiEnabled
 
                 if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
                 {
-                  cpit.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(cpit.Pilot, bot.Character));
+                  cpit.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(cpit.Pilot, bot.Character));
                 }
 
                 if (changeBack)
@@ -2525,10 +2607,10 @@ namespace AiEnabled
       BotBase bot;
       if (Bots.TryGetValue(botId, out bot))
       {
-        var nomad = bot as NeutralBotBase;
-        if (nomad != null && !nomad.Target.HasTarget)
+        var neutralBot = bot as NeutralBotBase;
+        if (neutralBot != null && !neutralBot.Target.HasTarget)
         {
-          nomad.SetHostile(attackerId);
+          neutralBot.SetHostile(attackerId);
         }
       }
     }
@@ -3005,7 +3087,7 @@ namespace AiEnabled
 
           if (num != MaxBots)
           {
-            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic, null);
+            var packet = new AdminPacket(num, MaxHelpers, MaxBotProjectileDistance, AllowMusic, null, null);
             Network.SendToServer(packet);
           }
         }
@@ -3032,12 +3114,21 @@ namespace AiEnabled
             return;
           }
 
-          bool b;
-          if (_cli.ArgumentCount < 3 || !bool.TryParse(_cli.Argument(2), out b))
-            b = !DrawDebug;
+          if (_cli.ArgumentCount < 3)
+          {
+            var b = !DrawDebug;
+            MyAPIGateway.Utilities.ShowNotification($"DrawDebug set to {b}", 5000);
+            DrawDebug = b;
+          }
+          else
+          {
+            var b = !DrawDebug2;
+            MyAPIGateway.Utilities.ShowNotification($"DrawDebug 2 set to {b}", 5000);
+            if (b)
+              DrawDebug = true;
 
-          MyAPIGateway.Utilities.ShowNotification($"DrawDebug set to {b}", 5000);
-          DrawDebug = b;
+            DrawDebug2 = b;
+          }
         }
         else if (cmd.Equals("spawn", StringComparison.OrdinalIgnoreCase))
         {
@@ -4149,12 +4240,33 @@ namespace AiEnabled
   
           robot.MoveToTarget();
         }
+
+        if (DrawDebug && MyAPIGateway.Session.Player != null)
+        {
+          foreach (var key in GridsToDraw)
+          {
+            CubeGridMap gridMap;
+            VoxelGridMap voxelMap;
+            if (GridGraphDict.TryGetValue((long)key, out gridMap))
+            {
+              gridMap.DrawDebug();
+            }
+            else if (VoxelGraphDict.TryGetValue(key, out voxelMap))
+            {
+              voxelMap.DrawDebug();
+            }
+          }
+
+          GridsToDraw.Clear();
+        }
       }
       catch (Exception ex)
       {
         Logger.Log($"Exception in DoTickNow.ServerStuff: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
+
+    public HashSet<ulong> GridsToDraw = new HashSet<ulong>();
 
     void UpdateParticles()
     {

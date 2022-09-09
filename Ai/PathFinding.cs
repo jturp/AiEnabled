@@ -91,9 +91,21 @@ namespace AiEnabled.Ai
           }
 
           if (graph.IsTemporaryBlock(goal))
-            graph.TempBlockedNodes[goal] = new byte();
-          else
-            graph.Obstacles[goal] = new byte();
+          {
+            if (!graph.TempBlockedNodes.ContainsKey(goal))
+            {
+              //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to temp obstacles from Pathfinding");
+              graph.TempBlockedNodes[goal] = new byte();
+            }
+          }
+          else if (!collection.Obstacles.ContainsKey(goal))
+          {
+            //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to permanent obstacles from Pathfinding");
+            collection.Obstacles[goal] = new byte();
+          }
+
+          bot._transitionPoint = null;
+          bot.NeedsTransition = false;
         }
 
         collection.Locked = false;
@@ -127,7 +139,7 @@ namespace AiEnabled.Ai
       var graph = collection.Graph;
       var isGridGraph = graph.IsGridGraph;
       var gridGraph = graph as CubeGridMap;
-      var stackedStairs = gridGraph?.StackedStairsFound;
+      var stackedStairs = collection.StackedStairsFound;
       var botPosition = bot.Target.CurrentBotPosition;
       var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
@@ -320,7 +332,6 @@ namespace AiEnabled.Ai
       var graph = collection.Graph;
       var path = collection.TempPath;
       var cache = collection.Cache;
-      var optimizedCache = collection.Graph.OptimizedCache;
       var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
       cache.Clear();
@@ -372,7 +383,6 @@ namespace AiEnabled.Ai
       var cameFrom = collection.CameFrom;
       var path = collection.TempPath;
       var cache = collection.Cache;
-      var optimizedCache = collection.Graph.OptimizedCache;
       var intermediatePoints = collection.IntermediatePoints;
       var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
@@ -617,7 +627,6 @@ namespace AiEnabled.Ai
           bool halfStairCheck = prevIsHalfStair || thisIsHalfStair || nextIsHalfStair || afterNextIsHalfStair;
           bool halfSlopeCheck = prevIsHalfPanelSlope || thisisHalfPanelSlope || nextIsHalfPanelSlope || afterNextIsHalfPanelSlope;
           bool isCatwalkExpansion = prevIsCatwalkExpansion || thisIsCatwalkExpansion || nextIsCatwalkExpansion;
-          bool skipOptimization = halfStairCheck || halfSlopeCheck || isCatwalkExpansion;
 
           if (addOffsetStart && cache.Count > 1)
           {
@@ -630,17 +639,6 @@ namespace AiEnabled.Ai
             {
               AddOffsetForNextCatwalk(thisBlock, gridGraph, path, ref start, ref localVec, ref gridMatrix, ref gridSize);
             }
-          }
-
-          Node pathNode;
-          if (!skipOptimization && optimizedCache.TryGetValue(localVec, out pathNode) && pathNode != null)
-          {
-            path.Enqueue(pathNode);
-
-            if (nextIsCatwalkExpansion)
-              AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-            continue;
           }
 
           if (!thisIsHalfStair && !thisisHalfPanelSlope && thisBlock != null)
@@ -678,26 +676,15 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -709,26 +696,15 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -740,26 +716,15 @@ namespace AiEnabled.Ai
             {
               offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -811,26 +776,15 @@ namespace AiEnabled.Ai
                 offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.3;
               }
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -849,26 +803,15 @@ namespace AiEnabled.Ai
                 offset = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.25;
               }
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -901,26 +844,15 @@ namespace AiEnabled.Ai
                 {
                   offset = downTravelDir * gridSize * 0.25f;
 
-                  if (skipOptimization)
-                  {
-                    Node node;
-                    gridGraph.TryGetNodeForPosition(localVec, out node);
+                  Node node;
+                  gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                    TempNode tempNode;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                      tempNode = new TempNode();
+                  TempNode tempNode;
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                    tempNode = new TempNode();
 
-                    tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                    path.Enqueue(tempNode);
-                  }
-                  else
-                  {
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                    path.Enqueue(pathNode);
-                    optimizedCache[localVec] = pathNode;
-                  }
+                  tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                  path.Enqueue(tempNode);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -940,26 +872,15 @@ namespace AiEnabled.Ai
                   offset = downTravelDir * gridSize * 0.25 + blockUp * gridSize * 0.5;
                 }
 
-                if (skipOptimization)
-                {
-                  Node node;
-                  gridGraph.TryGetNodeForPosition(localVec, out node);
+                Node node;
+                gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                  TempNode tempNode;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                    tempNode = new TempNode();
+                TempNode tempNode;
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                  tempNode = new TempNode();
 
-                  tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                  path.Enqueue(tempNode);
-                }
-                else
-                {
-                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                  path.Enqueue(pathNode);
-                  optimizedCache[localVec] = pathNode;
-                }
+                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                path.Enqueue(tempNode);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -972,26 +893,15 @@ namespace AiEnabled.Ai
                 {
                   offset = -downTravelDir * gridSize * 0.5 - gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
 
-                  if (skipOptimization)
-                  {
-                    Node node;
-                    gridGraph.TryGetNodeForPosition(localVec, out node);
+                  Node node;
+                  gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                    TempNode tempNode;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                      tempNode = new TempNode();
+                  TempNode tempNode;
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                    tempNode = new TempNode();
 
-                    tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                    path.Enqueue(tempNode);
-                  }
-                  else
-                  {
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                    path.Enqueue(pathNode);
-                    optimizedCache[localVec] = pathNode;
-                  }
+                  tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+                  path.Enqueue(tempNode);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1008,26 +918,15 @@ namespace AiEnabled.Ai
                 offset = -downTravelDir * gridSize * 0.5;
               }
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1056,26 +955,15 @@ namespace AiEnabled.Ai
                 offset = gridMatrix.GetDirectionVector(blockUp) * gridSize * 0.4 - gridMatrix.GetDirectionVector(blockFwd) * gridSize * 0.5;
               }
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1165,26 +1053,15 @@ namespace AiEnabled.Ai
               else
                 offset = blockFwd * gridSize * 0.4;
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1213,26 +1090,15 @@ namespace AiEnabled.Ai
                 }
               }
 
-              if (skipOptimization)
-              {
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
+              Node node;
+              gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+              TempNode tempNode;
+              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                tempNode = new TempNode();
 
-                tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
-                path.Enqueue(tempNode);
-              }
-              else
-              {
-                gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                path.Enqueue(pathNode);
-                optimizedCache[localVec] = pathNode;
-              }
+              tempNode.Update(node.Position, (Vector3)(offset ?? Vector3.Zero), node.NodeType, node.BlockedMask, node.Grid, node.Block);
+              path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1288,26 +1154,15 @@ namespace AiEnabled.Ai
                   {
                     offset = downTravelDir * gridSize * 0.25f;
 
-                    if (skipOptimization)
-                    {
-                      Node node2;
-                      gridGraph.TryGetNodeForPosition(localVec, out node2);
+                    Node node2;
+                    gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                      TempNode tempNode2;
-                      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                        tempNode2 = new TempNode();
+                    TempNode tempNode2;
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                      tempNode2 = new TempNode();
 
-                      tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                      path.Enqueue(tempNode2);
-                    }
-                    else
-                    {
-                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                      path.Enqueue(pathNode);
-                      optimizedCache[localVec] = pathNode;
-                    }
+                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                    path.Enqueue(tempNode2);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1318,29 +1173,16 @@ namespace AiEnabled.Ai
               }
               else if (thisBlock.BlockDefinition.Context.ModName == "PassageIntersections" && thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large"))
               {
-
-                var list = new List<string>();
-                list.Count();
                 // offset already 
-                if (skipOptimization)
-                {
-                  Node node2;
-                  gridGraph.TryGetNodeForPosition(localVec, out node2);
+                Node node2;
+                gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  TempNode tempNode2;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                    tempNode2 = new TempNode();
+                TempNode tempNode2;
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                  tempNode2 = new TempNode();
 
-                  tempNode2.Update(node2.Position, node2.Offset, node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                  path.Enqueue(tempNode2);
-                }
-                else
-                {
-                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-
-                  path.Enqueue(pathNode);
-                  optimizedCache[localVec] = pathNode;
-                }
+                tempNode2.Update(node2.Position, node2.Offset, node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                path.Enqueue(tempNode2);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1439,26 +1281,15 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                if (skipOptimization)
-                {
-                  Node node2;
-                  gridGraph.TryGetNodeForPosition(localVec, out node2);
+                Node node2;
+                gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  TempNode tempNode2;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                    tempNode2 = new TempNode();
+                TempNode tempNode2;
+                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                  tempNode2 = new TempNode();
 
-                  tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                  path.Enqueue(tempNode2);
-                }
-                else
-                {
-                  gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                  pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                  path.Enqueue(pathNode);
-                  optimizedCache[localVec] = pathNode;
-                }
+                tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                path.Enqueue(tempNode2);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1667,26 +1498,15 @@ namespace AiEnabled.Ai
                     }
                   }
 
-                  if (skipOptimization)
-                  {
-                    Node node2;
-                    gridGraph.TryGetNodeForPosition(localVec, out node2);
+                  Node node2;
+                  gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    TempNode tempNode2;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                      tempNode2 = new TempNode();
+                  TempNode tempNode2;
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                    tempNode2 = new TempNode();
 
-                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                    path.Enqueue(tempNode2);
-                  }
-                  else
-                  {
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                    path.Enqueue(pathNode);
-                    optimizedCache[localVec] = pathNode;
-                  }
+                  tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                  path.Enqueue(tempNode2);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1731,26 +1551,15 @@ namespace AiEnabled.Ai
                   var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
                   offset = blockBwd * gridSize * 0.3;
 
-                  if (skipOptimization)
-                  {
-                    Node node2;
-                    gridGraph.TryGetNodeForPosition(localVec, out node2);
+                  Node node2;
+                  gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    TempNode tempNode2;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                      tempNode2 = new TempNode();
+                  TempNode tempNode2;
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                    tempNode2 = new TempNode();
 
-                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                    path.Enqueue(tempNode2);
-                  }
-                  else
-                  {
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                    path.Enqueue(pathNode);
-                    optimizedCache[localVec] = pathNode;
-                  }
+                  tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                  path.Enqueue(tempNode2);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1789,26 +1598,15 @@ namespace AiEnabled.Ai
 
                   if (add)
                   {
-                    if (skipOptimization)
-                    {
-                      Node node2;
-                      gridGraph.TryGetNodeForPosition(localVec, out node2);
+                    Node node2;
+                    gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                      TempNode tempNode2;
-                      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                        tempNode2 = new TempNode();
+                    TempNode tempNode2;
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                      tempNode2 = new TempNode();
 
-                      tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                      path.Enqueue(tempNode2);
-                    }
-                    else
-                    {
-                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                      path.Enqueue(pathNode);
-                      optimizedCache[localVec] = pathNode;
-                    }
+                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                    path.Enqueue(tempNode2);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1838,26 +1636,15 @@ namespace AiEnabled.Ai
 
                   if (add)
                   {
-                    if (skipOptimization)
-                    {
-                      Node node2;
-                      gridGraph.TryGetNodeForPosition(localVec, out node2);
+                    Node node2;
+                    gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                      TempNode tempNode2;
-                      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                        tempNode2 = new TempNode();
+                    TempNode tempNode2;
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                      tempNode2 = new TempNode();
 
-                      tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                      path.Enqueue(tempNode2);
-                    }
-                    else
-                    {
-                      gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                      pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                      path.Enqueue(pathNode);
-                      optimizedCache[localVec] = pathNode;
-                    }
+                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                    path.Enqueue(tempNode2);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1873,26 +1660,15 @@ namespace AiEnabled.Ai
                 {
                   offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
 
-                  if (skipOptimization)
-                  {
-                    Node node2;
-                    gridGraph.TryGetNodeForPosition(localVec, out node2);
+                  Node node2;
+                  gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    TempNode tempNode2;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                      tempNode2 = new TempNode();
+                  TempNode tempNode2;
+                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+                    tempNode2 = new TempNode();
 
-                    tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-                    path.Enqueue(tempNode2);
-                  }
-                  else
-                  {
-                    gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-                    pathNode.Offset = (Vector3)(offset ?? Vector3.Zero);
-
-                    path.Enqueue(pathNode);
-                    optimizedCache[localVec] = pathNode;
-                  }
+                  tempNode2.Update(node2.Position, (Vector3)(offset ?? Vector3.Zero), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+                  path.Enqueue(tempNode2);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -2342,28 +2118,15 @@ namespace AiEnabled.Ai
           }
           else
           {
-            if (skipOptimization)
-            {
-              Node node2;
-              gridGraph.TryGetNodeForPosition(localVec, out node2);
+            Node node2;
+            gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-              TempNode tempNode2;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                tempNode2 = new TempNode();
+            TempNode tempNode2;
+            if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
+              tempNode2 = new TempNode();
 
-              tempNode2.Update(node2.Position, (Vector3)(offset ?? node2.Offset), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
-              path.Enqueue(tempNode2);
-            }
-            else
-            {
-              gridGraph.TryGetNodeForPosition(localVec, out pathNode);
-
-              if (offset.HasValue)
-                pathNode.Offset = (Vector3)offset.Value;
-
-              path.Enqueue(pathNode);
-              optimizedCache[localVec] = pathNode;
-            }
+            tempNode2.Update(node2.Position, (Vector3)(offset ?? node2.Offset), node2.NodeType, node2.BlockedMask, node2.Grid, node2.Block);
+            path.Enqueue(tempNode2);
 
             if (nextIsCatwalkExpansion)
             {

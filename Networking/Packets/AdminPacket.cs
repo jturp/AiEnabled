@@ -14,6 +14,7 @@ using Sandbox.ModAPI;
 
 using VRage;
 using VRage.Game;
+using VRage.Utils;
 
 namespace AiEnabled.Networking
 {
@@ -35,6 +36,7 @@ namespace AiEnabled.Networking
     [ProtoMember(13)] bool? IsBotMultiplier;
     [ProtoMember(14)] float? DamageMultiplier;
     [ProtoMember(15)] List<SerializableBotPrice> BotRequirements;
+    [ProtoMember(16)] List<string> AdditionalHelperSubtypes;
 
 
     public AdminPacket() { }
@@ -46,13 +48,14 @@ namespace AiEnabled.Networking
       AllowNeutralTargets = allowNeutral;
     }
 
-    public AdminPacket(int numBots, int numHelpers, int projectileDistance, bool allowMusic, List<SerializableBotPrice> botPrices)
+    public AdminPacket(int numBots, int numHelpers, int projectileDistance, bool allowMusic, List<SerializableBotPrice> botPrices, List<string> helperSubtypes)
     {
       MaxBots = numBots;
       MaxHelpers = numHelpers;
       MaxProjectileDistance = projectileDistance;
       AllowMusic = allowMusic;
       BotRequirements = botPrices;
+      AdditionalHelperSubtypes = helperSubtypes;
     }
 
     public AdminPacket(long identityId, bool showHealthBars)
@@ -197,6 +200,33 @@ namespace AiEnabled.Networking
             AiSession.Instance.BotComponents[botType] = botReq.Components;
             AiSession.Instance.BotPrices[botType] = botReq.SpaceCredits;
           }
+        }
+
+        if (AdditionalHelperSubtypes?.Count > 0)
+        {
+          var sb = new StringBuilder(32);
+          foreach (var subtype in AdditionalHelperSubtypes)
+          {
+            sb.Clear();
+
+            foreach (var ch in subtype)
+            {
+              if (char.IsLetterOrDigit(ch))
+                sb.Append(ch);
+            }
+
+            var hashId = MyStringId.GetOrCompute(sb.ToString());
+            if (!AiSession.Instance.BotModelDict.ContainsKey(hashId))
+              AiSession.Instance.BotModelDict[hashId] = subtype;
+          }
+
+          sb.Clear();
+        }
+
+        AiSession.Instance.BotModelList.Clear();
+        foreach (var kvp in AiSession.Instance.BotModelDict)
+        {
+          AiSession.Instance.BotModelList.Add(kvp.Key);
         }
 
         var efficiency = MyAPIGateway.Session.AssemblerEfficiencyMultiplier;

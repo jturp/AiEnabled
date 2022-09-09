@@ -667,24 +667,7 @@ namespace AiEnabled.GameLogic
 
         if (_gridMap == null)
         {
-          List<IMyCubeGrid> list;
-          if (!AiSession.Instance.GridGroupListStack.TryPop(out list))
-            list = new List<IMyCubeGrid>();
-          else
-            list.Clear();
-
-          _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(list);
-
-          MyCubeGrid biggest = _block.CubeGrid as MyCubeGrid;
-          foreach (var g in list)
-          {
-            if (g.GridSize > 1 && g.WorldAABB.Volume > biggest.PositionComp.WorldAABB.Volume)
-              biggest = g as MyCubeGrid;
-          }
-
-          list.Clear();
-          AiSession.Instance.GridGroupListStack.Push(list);
-          _gridMap = AiSession.Instance.GetGridGraph(biggest, _block.WorldMatrix);
+          _gridMap = AiSession.Instance.GetGridGraph((MyCubeGrid)_block.CubeGrid, _block.WorldMatrix);
         }
         else if (_gridMap.LastActiveTicks > 100)
         {

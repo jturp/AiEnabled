@@ -31,13 +31,12 @@ using VRage.Game.ObjectBuilders.AI.Bot;
 using Sandbox.Game.Weapons;
 using AiEnabled.Graphics.Support;
 using AiEnabled.API;
+using VRage.Voxels;
 
 namespace AiEnabled.Utilities
 {
   public static class Extensions
   {
-    public static T CastHax<T>(T typeRef, object castObj) => (T)castObj;
-
     public static bool ContainsItem(this Base6Directions.Direction[] array, Base6Directions.Direction item)
     {
       for (int i = 0; i < array.Length; i++)
@@ -297,7 +296,7 @@ namespace AiEnabled.Utilities
       for (int i = 0; i < array.Length; i++)
       {
         Vector3D vector = array[i] - position;
-        var projection = VectorUtils.Project(vector, direction);
+        var projection = AiUtils.Project(vector, direction);
         if (projection.Dot(direction) > 0)
         {
           var lengthSqd = projection.LengthSquared();

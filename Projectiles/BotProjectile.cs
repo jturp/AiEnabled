@@ -306,10 +306,10 @@ namespace AiEnabled.Projectiles
           else if (Vector3D.DistanceSquared(headPosition, hitPosition) < 0.1)
             Damage *= _headShotMultiplier;
 
-          var nomad = bot as NomadBot;
-          if (nomad != null && nomad.Target.Entity == null)
+          var neutralBot = bot as NeutralBotBase;
+          if (neutralBot != null && neutralBot.Target.Entity == null)
           {
-            nomad.SetHostile(Owner);
+            neutralBot.SetHostile(Owner);
           }
           else if (AiSession.Instance.Players.ContainsKey(character.ControllerInfo.ControllingIdentityId) || bot?.Owner != null)
           {

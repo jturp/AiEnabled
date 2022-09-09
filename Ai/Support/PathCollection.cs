@@ -105,18 +105,27 @@ namespace AiEnabled.Ai.Support
     public Dictionary<Vector3I, int> CostSoFar = new Dictionary<Vector3I, int>(Vector3I.Comparer);
 
     /// <summary>
+    /// Used for permanently blocked nodes
+    /// </summary>
+    internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+
+    /// <summary>
     /// The priority queue is used to sort and return the cell with the highest priority (lowest number)
     /// </summary>
     public SimplePriorityQueue<Vector3I> Queue = new SimplePriorityQueue<Vector3I>(Vector3I.Comparer);
 
     /// <summary>
     /// Whenever the algorithm detects that two Half Stair blocks are stacked on top of one another,
-    /// it will find a middle point to place between them to make them traversable
-    /// Item1 = From
-    /// Item2 = To
-    /// Item3 = Point to insert between them
+    /// it will find a middle point to place between them to make them traversable.
+    /// Item1 = From, Item2 = To, Item3 = Point to insert between them
     /// </summary>
     public List<MyTuple<Vector3I, Vector3I, Vector3I>> IntermediatePoints = new List<MyTuple<Vector3I, Vector3I, Vector3I>>();
+
+    /// <summary>
+    /// Used to populate <see cref="IntermediatePoints"/>.
+    /// Item1 = stair coming from, Item2 = stair going to, Item3 = position to insert between them.
+    /// </summary>
+    internal Queue<MyTuple<Vector3I, Vector3I, Vector3I>> StackedStairsFound { get; private set; } = new Queue<MyTuple<Vector3I, Vector3I, Vector3I>>();
 
     /// <summary>
     /// This cache is used to construct the path from goal back to the starting point
@@ -181,6 +190,32 @@ namespace AiEnabled.Ai.Support
       }
 
       return false;
+    }
+
+    public void ClearObstacles(HashSet<Vector3I> positionsToClear)
+    {
+      if (positionsToClear == null)
+      {
+        Obstacles.Clear();
+      }
+      else
+      {
+        foreach (var point in positionsToClear)
+        {
+          byte _;
+          Obstacles.TryRemove(point, out _);
+        }
+      }
+    }
+
+    public void OnGridBaseClosing()
+    {
+      var thisGraph = Graph;
+      if (thisGraph != null)
+      {
+        thisGraph.OnGridBaseClosing -= OnGridBaseClosing;
+        thisGraph.OnPositionsRemoved -= ClearObstacles;
+      }  
     }
 
     /// <summary>
@@ -553,7 +588,7 @@ namespace AiEnabled.Ai.Support
           if (PathToTarget.Count > 1 && Bot.CanUseLadders)
           {
             var afterNext = PathToTarget[1].Position;
-            IMySlimBlock slim = gridGraph.GetBlockAtPosition(afterNext); // gridGraph.MainGrid.GetCubeBlock(afterNext);
+            IMySlimBlock slim = gridGraph.GetBlockAtPosition(afterNext);
             if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
             {
               var worldAfter = gridGraph.LocalToWorld(afterNext);
@@ -569,6 +604,37 @@ namespace AiEnabled.Ai.Support
           _temp.Clear();
           gridGraph.MainGrid.RayCastCells(worldCurrent, worldNext, _temp);
 
+          var cellVector = next.Position - localCurrent;
+          if (cellVector.RectangularLength() > 1)
+          {
+            if (cellVector.X != 0)
+            {
+              var checkPoint = localCurrent + new Vector3I(cellVector.X, 0, 0);
+              if (gridGraph.DoesBlockExist(checkPoint))
+              {
+                break;
+              }
+            }
+
+            if (cellVector.Y != 0)
+            {
+              var checkPoint = localCurrent + new Vector3I(0, cellVector.Y, 0);
+              if (gridGraph.DoesBlockExist(checkPoint))
+              {
+                break;
+              }
+            }
+
+            if (cellVector.Z != 0)
+            {
+              var checkPoint = localCurrent + new Vector3I(0, 0, cellVector.Z);
+              if (gridGraph.DoesBlockExist(checkPoint))
+              {
+                break;
+              }
+            }
+          }
+
           bool goDirect = true;
           for (int j = 0; j < _temp.Count; j++)
           {
@@ -577,7 +643,7 @@ namespace AiEnabled.Ai.Support
               break;
 
             Node n;
-            IMySlimBlock slim = gridGraph.GetBlockAtPosition(point); // gridGraph.MainGrid.GetCubeBlock(point);
+            IMySlimBlock slim = gridGraph.GetBlockAtPosition(point);
             if (slim != null || !gridGraph.IsPositionUsable(Bot, gridGraph.LocalToWorld(point), out n))
             {
               if (slim != null && Bot._botState.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
@@ -673,8 +739,7 @@ namespace AiEnabled.Ai.Support
         bool goDirectToTarget = true;
         foreach (var point in _temp)
         {
-          if (voxelGrid.IsOpenTile(point) && !voxelGrid.Obstacles.ContainsKey(point)
-            && !voxelGrid.TempBlockedNodes.ContainsKey(point) && !voxelGrid.ObstacleNodes.ContainsKey(point))
+          if (!Obstacles.ContainsKey(point) && voxelGrid.IsOpenTile(point) && !voxelGrid.TempBlockedNodes.ContainsKey(point) && !voxelGrid.ObstacleNodes.ContainsKey(point))
             continue;
 
           goDirectToTarget = false;
@@ -767,8 +832,7 @@ namespace AiEnabled.Ai.Support
         bool keepGoing = true;
         foreach (var point in _temp)
         {
-          if (voxelGrid.IsOpenTile(point) && !voxelGrid.Obstacles.ContainsKey(point)
-            && !voxelGrid.TempBlockedNodes.ContainsKey(point) && !voxelGrid.ObstacleNodes.ContainsKey(point))
+          if (!Obstacles.ContainsKey(point) && voxelGrid.IsOpenTile(point) && !voxelGrid.TempBlockedNodes.ContainsKey(point) && !voxelGrid.ObstacleNodes.ContainsKey(point))
             continue;
 
           keepGoing = false;
@@ -960,6 +1024,9 @@ namespace AiEnabled.Ai.Support
     public void Close()
     {
       Locked = false;
+
+      ClearObstacles(null);
+      OnGridBaseClosing();
       CleanUp(true);
       
       _useObjList = null;
@@ -1075,6 +1142,8 @@ namespace AiEnabled.Ai.Support
         if (curGraph == null || !curGraph.Ready || MyAPIGateway.Session?.LocalHumanPlayer == null)
           return;
 
+        AiSession.Instance.GridsToDraw.Add(curGraph.Key);
+
         _tempDebug.Clear();
         var next = NextNode;
         var current = curGraph.WorldToLocal(start);
@@ -1083,69 +1152,62 @@ namespace AiEnabled.Ai.Support
         var transition = Bot?._transitionPoint;
         var rotation = Quaternion.CreateFromRotationMatrix(curGraph.WorldMatrix);
 
-        var owner = Bot?.Owner?.Character;
-        if (owner != null)
-        {
-          var ownerNode = curGraph.WorldToLocal(owner.WorldAABB.Center);
-          MyAPIGateway.Utilities.ShowNotification($"Owner: {ownerNode}", 16);
-          
-          var camPosition = MyAPIGateway.Session.Camera.Position;
-          var localCamera = curGraph.WorldToLocal(camPosition);
-          MyAPIGateway.Utilities.ShowNotification($"Camera: {localCamera}", 16);
-        }
-
         var botTile = curGraph.GetValueOrDefault(current, null);
-        MyAPIGateway.Utilities.ShowNotification($"Start: {current} | Next: {next?.Position.ToString() ?? "[NULL]"} | Transition: {transition?.ToString() ?? "[NULL]"} | Goal: {end}", 16);
-        MyAPIGateway.Utilities.ShowNotification($"Obstacle count: {curGraph.ObstacleNodes.Count}", 16);
 
         MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe;
         MyOrientedBoundingBoxD obb;
         Vector3D vec;
         Vector4 color = Color.Purple;
 
-        foreach (var localVec in curGraph.ObstacleNodes.Keys)
+        if (AiSession.Instance.DrawDebug2)
         {
-          _tempDebug.Add(localVec);
-          obb = new MyOrientedBoundingBoxD(curGraph.LocalToWorld(localVec), Vector3D.One * 0.2, rotation);
-          DrawOBB(obb, Color.Firebrick, raster);
-        }
+          MyAPIGateway.Utilities.ShowNotification($"Start: {current} | Next: {next?.Position.ToString() ?? "[NULL]"} | Transition: {transition?.ToString() ?? "[NULL]"} | Goal: {end}", 16);
 
-        var boxVec = new Vector3I(5, 2, 5);
-        var localBox = new BoundingBoxI(-boxVec, boxVec);
-        localBox = localBox.Translate(current);
-
-        var iter = new Vector3I_RangeIterator(ref localBox.Min, ref localBox.Max);
-        raster = MySimpleObjectRasterizer.Wireframe;
-
-        while (iter.IsValid())
-        {
-          var point = iter.Current;
-          Node tileNode;
-          if (point != current && point != end && !_tempDebug.Contains(point) && !curGraph.Obstacles.ContainsKey(point) && curGraph.TryGetNodeForPosition(point, out tileNode))
+          foreach (var localVec in curGraph.ObstacleNodes.Keys)
           {
-            vec = curGraph.LocalToWorld(point);
-            var nodeColor = tileNode.IsAirNode ? Color.Blue : Color.Brown;
-            obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-
-            DrawOBB(obb, nodeColor, raster);
+            _tempDebug.Add(localVec);
+            obb = new MyOrientedBoundingBoxD(curGraph.LocalToWorld(localVec), Vector3D.One * 0.2, rotation);
+            AiUtils.DrawOBB(obb, Color.Firebrick, raster);
           }
 
-          iter.MoveNext();
+          var boxVec = new Vector3I(5, 2, 5);
+          var localBox = new BoundingBoxI(-boxVec, boxVec);
+          localBox = localBox.Translate(current);
+
+          var iter = new Vector3I_RangeIterator(ref localBox.Min, ref localBox.Max);
+          raster = MySimpleObjectRasterizer.Wireframe;
+
+          while (iter.IsValid())
+          {
+            var point = iter.Current;
+            Node tileNode;
+            if (point != current && point != end && !_tempDebug.Contains(point) && !Obstacles.ContainsKey(point) && curGraph.TryGetNodeForPosition(point, out tileNode))
+            {
+              vec = curGraph.LocalToWorld(point);
+              var nodeColor = tileNode.IsAirNode ? Color.Blue : Color.Brown;
+              obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
+
+              AiUtils.DrawOBB(obb, nodeColor, raster);
+            }
+
+            iter.MoveNext();
+          }
+
+
+          foreach (var point in curGraph.TempBlockedNodes.Keys)
+          {
+            if (curGraph.IsOpenTile(point))
+            {
+              _tempDebug.Add(point);
+              vec = curGraph.LocalToWorld(point);
+              obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
+
+              AiUtils.DrawOBB(obb, Color.Red, MySimpleObjectRasterizer.Solid);
+            }
+          }
         }
 
         raster = MySimpleObjectRasterizer.Solid;
-
-        foreach (var point in curGraph.TempBlockedNodes.Keys)
-        {
-          if (curGraph.IsOpenTile(point))
-          {
-            _tempDebug.Add(point);
-            vec = curGraph.LocalToWorld(point);
-            obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-
-            DrawOBB(obb, Color.Red, MySimpleObjectRasterizer.Solid);
-          }
-        }
 
         if (HasPath)
         {
@@ -1157,7 +1219,7 @@ namespace AiEnabled.Ai.Support
               var worldItem = curGraph.LocalToWorld(item.Position) + item.Offset;
 
               obb = new MyOrientedBoundingBoxD(worldItem, Vector3D.One * 0.1, rotation);
-              DrawOBB(obb, Color.Yellow, raster);
+              AiUtils.DrawOBB(obb, Color.Yellow, raster);
             }
           }
         }
@@ -1165,7 +1227,7 @@ namespace AiEnabled.Ai.Support
         if (Bot._sideNode.HasValue)
         {
           obb = new MyOrientedBoundingBoxD(Bot._sideNode.Value, Vector3D.One * 0.1, rotation);
-          DrawOBB(obb, Color.Bisque, raster);
+          AiUtils.DrawOBB(obb, Color.Bisque, raster);
 
           color = Color.Tan.ToVector4();
           MySimpleObjectDraw.DrawLine(start, Bot._sideNode.Value, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
@@ -1181,23 +1243,17 @@ namespace AiEnabled.Ai.Support
   
         MySimpleObjectDraw.DrawLine(start, vec, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
         obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-        DrawOBB(obb, Color.Red, raster);
+        AiUtils.DrawOBB(obb, Color.Red, raster);
 
         var dir = curGraph.WorldMatrix.GetClosestDirection(vec - curGraph.OBB.Center);
         var normal = curGraph.WorldMatrix.GetDirectionVector(dir);
-        var center = curGraph.OBB.Center;
-
-        color = Color.Green.ToVector4();
-        MySimpleObjectDraw.DrawLine(center, vec, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
-        MySimpleObjectDraw.DrawLine(center, center + normal * 50, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
 
         color = Color.Orange.ToVector4();
         if (next != null)
         {
-          MyAPIGateway.Utilities.ShowNotification($"Next.Position = {next.Position}, Next.Offset = {next.Offset}", 16);
           vec = curGraph.LocalToWorld(next.Position) + next.Offset;
           obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-          DrawOBB(obb, Color.Purple, raster);
+          AiUtils.DrawOBB(obb, Color.Purple, raster);
 
           var line = new LineD(start, vec);
           MySimpleObjectDraw.DrawLine(line.From, line.To, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
@@ -1205,10 +1261,9 @@ namespace AiEnabled.Ai.Support
 
         if (transition != null)
         {
-          MyAPIGateway.Utilities.ShowNotification($"Transition.Position = {transition.Position}, Transition.Offset = {transition.Offset}", 16);
           vec = curGraph.LocalToWorld(transition.Position) + transition.Offset;
           obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-          DrawOBB(obb, Color.HotPink, raster);
+          AiUtils.DrawOBB(obb, Color.HotPink, raster);
 
           var line = new LineD(start, vec);
           MySimpleObjectDraw.DrawLine(line.From, line.To, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
@@ -1220,38 +1275,11 @@ namespace AiEnabled.Ai.Support
           vec = curGraph.LocalToWorld(current);
   
         obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-        DrawOBB(obb, Color.Green, raster);
+        AiUtils.DrawOBB(obb, Color.Green, raster);
 
-        color = Color.LightGreen;
-        var to = center + curGraph.WorldMatrix.Up * 50;
-        MySimpleObjectDraw.DrawLine(center, to, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
-
-        color = Color.LightBlue;
-        to = center + curGraph.WorldMatrix.Forward * 50;
-        MySimpleObjectDraw.DrawLine(center, to, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
-
-        color = Color.PaleVioletRed;
-        to = center + curGraph.WorldMatrix.Right * 50;
-        MySimpleObjectDraw.DrawLine(center, to, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
-
-        DrawOBB(curGraph.OBB, Color.Orange * 0.5f, MySimpleObjectRasterizer.Solid);
-
-        if (Bot?._nextGraph != null)
+        if (AiSession.Instance.DrawDebug2 && Bot?._nextGraph != null)
         {
-          DrawOBB(Bot._nextGraph.OBB, Color.DarkRed * 0.5f, MySimpleObjectRasterizer.Solid);
-
-          color = Color.LightGreen;
-          center = Bot._nextGraph.OBB.Center;
-          to = center + Bot._nextGraph.WorldMatrix.Up * 50;
-          MySimpleObjectDraw.DrawLine(center, to, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
-
-          color = Color.LightBlue;
-          to = center + Bot._nextGraph.WorldMatrix.Forward * 50;
-          MySimpleObjectDraw.DrawLine(center, to, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
-
-          color = Color.PaleVioletRed;
-          to = center + Bot._nextGraph.WorldMatrix.Right * 50;
-          MySimpleObjectDraw.DrawLine(center, to, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
+          AiUtils.DrawOBB(Bot._nextGraph.OBB, Color.DarkRed * 0.5f, MySimpleObjectRasterizer.Solid);
 
           var corners = new Vector3D[8];
           BoundingBoxI box = BoundingBoxI.CreateInvalid();
@@ -1272,7 +1300,7 @@ namespace AiEnabled.Ai.Support
 
           box.IntersectWith(ref otherBox);
           var localExt = box.HalfExtents;
-          center = Bot._currentGraph.LocalToWorld(box.Center);
+          var center = Bot._currentGraph.LocalToWorld(box.Center);
           MatrixD matrix;
           Vector3 halfExt;
 
@@ -1293,35 +1321,18 @@ namespace AiEnabled.Ai.Support
             halfExt = Vector3I.Abs(localExt) * Bot._currentGraph.CellSize;
           }
 
-          MyAPIGateway.Utilities.ShowNotification($"LocalExt = {localExt}, HalfExt = {Vector3.Round(halfExt, 1)}", 16);
+          //MyAPIGateway.Utilities.ShowNotification($"LocalExt = {localExt}, HalfExt = {Vector3.Round(halfExt, 1)}", 16);
 
           var quat = Quaternion.CreateFromRotationMatrix(matrix);
           var newOBB = new MyOrientedBoundingBoxD(center, halfExt, quat);
 
-          DrawOBB(newOBB, Color.AntiqueWhite * 0.5f, MySimpleObjectRasterizer.Solid);
+          AiUtils.DrawOBB(newOBB, Color.AntiqueWhite * 0.5f, MySimpleObjectRasterizer.Solid);
         }
       }
       catch (Exception ex)
       {
         AiSession.Instance.ShowMessage($"Exception in DrawDebug: {ex.Message}");
       }
-    }
-
-    public static void DrawOBB(MyOrientedBoundingBoxD obb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f, BlendTypeEnum blendType = BlendTypeEnum.Standard)
-    {
-      var material = MyStringId.GetOrCompute("Square");
-      var box = new BoundingBoxD(-obb.HalfExtent, obb.HalfExtent);
-      var wm = MatrixD.CreateFromQuaternion(obb.Orientation);
-      wm.Translation = obb.Center;
-      MySimpleObjectDraw.DrawTransparentBox(ref wm, ref box, ref color, raster, 1, thickness, material, material, blendType: blendType);
-    }
-
-    public static void DrawAABB(BoundingBoxD bb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f)
-    {
-      var material = MyStringId.GetOrCompute("Square");
-      var box = new BoundingBoxD(-bb.HalfExtents, bb.HalfExtents);
-      var wm = MatrixD.CreateTranslation(bb.Center);
-      MySimpleObjectDraw.DrawTransparentBox(ref wm, ref box, ref color, raster, 1, thickness, material, material);
     }
 
     #endregion

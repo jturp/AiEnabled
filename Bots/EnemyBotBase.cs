@@ -7,6 +7,7 @@ using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Weapons;
@@ -40,8 +41,9 @@ namespace AiEnabled.Bots
 
     public EnemyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
-      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly);
 
       RequiresJetpack = jetRequired;
       CanUseSpaceNodes = jetAllowed;
@@ -64,6 +66,14 @@ namespace AiEnabled.Bots
         _attackSoundStrings = new List<string>();
       else
         _attackSoundStrings.Clear();
+
+      if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
+      {
+        var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+        MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+        jetpack.TurnOnJetpack(true);
+        MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+      }
     }
 
     internal override bool Update()
@@ -217,9 +227,9 @@ namespace AiEnabled.Bots
         return;
       }
 
-      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
+      var projUp = AiUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
+      var angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
 
       if (!WaitForStuckTimer && angleTwoOrLess)
@@ -307,9 +317,9 @@ namespace AiEnabled.Bots
         {
           var vecToTgt = actualPosition - botPosition;
           var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
-          projUp = VectorUtils.Project(vecToTgt, botMatrix.Up);
+          projUp = AiUtils.Project(vecToTgt, botMatrix.Up);
           reject = vecToTgt - projUp;
-          angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
+          angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
 
           if (relToTarget.Z < 0 && Math.Abs(angle) < _twoDegToRads)
           {
@@ -317,7 +327,7 @@ namespace AiEnabled.Bots
           }
           else
           {
-            if (rifleAttack && Target.Entity is IMyLargeTurretBase && Math.Abs(angle) > VectorUtils.PiOver3)
+            if (rifleAttack && Target.Entity is IMyLargeTurretBase && Math.Abs(angle) > AiUtils.PiOver3)
               rifleAttack = false;
 
             rotation = new Vector2(0, (float)angle * Math.Sign(relToTarget.X) * 75);
@@ -553,7 +563,7 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
-      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, Utilities.Extensions.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
 
       var targetEnt = Target.Entity as IMyEntity;

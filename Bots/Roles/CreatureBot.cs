@@ -83,7 +83,7 @@ namespace AiEnabled.Bots.Roles
 
           var velocity = Character.Physics.LinearVelocity - gridVelocity;
           var matrix = _currentGraph.WorldMatrix;
-          var project = VectorUtils.Project(velocity, matrix.Up);
+          var project = AiUtils.Project(velocity, matrix.Up);
 
           if (project.LengthSquared() > 0.1)
           {

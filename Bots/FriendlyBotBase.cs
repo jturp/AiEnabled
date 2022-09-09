@@ -42,8 +42,9 @@ namespace AiEnabled.Bots
       Owner = AiSession.Instance.Players.GetValueOrDefault(ownerId, null); // AiSession.Instance.Players[ownerId];
 
       bool hasOwner = Owner != null;
-      var jetRequired = bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetpack != null && (jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly);
 
       _followDistanceSqd = 25;
       RequiresJetpack = jetRequired;
@@ -69,16 +70,12 @@ namespace AiEnabled.Bots
       else
         _attackSoundStrings.Clear();
 
-      if (RequiresJetpack)
+      if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
       {
-        var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
-        if (jetpack != null && !jetpack.TurnedOn)
-        {
-          var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
-          MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
-          jetpack.TurnOnJetpack(true);
-          MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
-        }
+        var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+        MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+        jetpack.TurnOnJetpack(true);
+        MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
       }
     }
 
@@ -613,9 +610,9 @@ namespace AiEnabled.Bots
         return;
       }
 
-      var projUp = VectorUtils.Project(vecToWP, botMatrix.Up);
+      var projUp = AiUtils.Project(vecToWP, botMatrix.Up);
       var reject = vecToWP - projUp;
-      var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
+      var angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
 
       if (!WaitForStuckTimer && angleTwoOrLess)
@@ -698,9 +695,9 @@ namespace AiEnabled.Bots
         {
           var vecToTgt = actualPosition - botPosition;
           var relToTarget = Vector3D.TransformNormal(vecToTgt, MatrixD.Transpose(botMatrix));
-          projUp = VectorUtils.Project(vecToTgt, botMatrix.Up);
+          projUp = AiUtils.Project(vecToTgt, botMatrix.Up);
           reject = vecToTgt - projUp;
-          angle = VectorUtils.GetAngleBetween(botMatrix.Forward, reject);
+          angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
 
           if (relToTarget.Z < 0 && Math.Abs(angle) < _twoDegToRads)
           {
@@ -708,7 +705,7 @@ namespace AiEnabled.Bots
           }
           else
           {
-            if (rifleAttack && Target.Entity is IMyLargeTurretBase && Math.Abs(angle) > VectorUtils.PiOver3)
+            if (rifleAttack && Target.Entity is IMyLargeTurretBase && Math.Abs(angle) > AiUtils.PiOver3)
               rifleAttack = false;
 
             rotation = new Vector2(0, (float)angle * Math.Sign(relToTarget.X) * 75);
@@ -799,7 +796,7 @@ namespace AiEnabled.Bots
           else
             _moveFromLadder = false;
 
-          if (!JetpackEnabled && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
+          if (!JetpackEnabled && !IsWolf && Owner?.Character != null && Target.Player?.IdentityId == Owner.IdentityId)
           {
             var ch = Character as Sandbox.Game.Entities.IMyControllableEntity;
             var distanceToTarget = Vector3D.DistanceSquared(gotoPosition, botPosition);
@@ -934,7 +931,7 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
-      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, Utilities.Extensions.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
 
       var targetEnt = Target.Entity as IMyEntity;

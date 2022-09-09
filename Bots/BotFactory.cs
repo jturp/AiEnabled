@@ -590,7 +590,7 @@ namespace AiEnabled.Bots
 
             var mapGrid = GridBase.GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
             bot._currentGraph = AiSession.Instance.GetNewGraph(mapGrid, bot.Target.CurrentBotPosition, bot.WorldMatrix);
-            myCpit.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(myCpit.Pilot, bot.Character));
+            myCpit.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(myCpit.Pilot, bot.Character));
           }
 
           if (changeBack)
@@ -685,7 +685,7 @@ namespace AiEnabled.Bots
       {
         if (seat?.CubeGrid != null && !seat.CubeGrid.MarkedForClose && botChar != null && !botChar.MarkedForClose)
         {
-          seat.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(seat.Pilot, botChar));
+          seat.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(seat.Pilot, botChar));
         }
       }
       catch (Exception ex)
@@ -1553,8 +1553,6 @@ namespace AiEnabled.Bots
           Health = 1000,
           OwningPlayerIdentityId = botPlayerId,
           ColorMaskHSV = hsvOffset,
-          //IsPersistenceCharacter = true,
-          //IsStartingCharacterForLobby = true,
         };
 
         var bot = MyEntities.CreateFromObjectBuilder(ob, true) as IMyCharacter;

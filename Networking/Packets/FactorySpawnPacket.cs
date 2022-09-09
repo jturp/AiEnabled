@@ -32,20 +32,22 @@ namespace AiEnabled.Networking
     [ProtoMember(3)] readonly long Price;
     [ProtoMember(4)] readonly long CreditsInInventory;
     [ProtoMember(5)] readonly int BotType;
-    [ProtoMember(6)] readonly int BotModel;
+    [ProtoMember(6)] readonly string BotModel;
     [ProtoMember(7)] string BotName;
+    [ProtoMember(8)] Color? BotColor;
 
     public FactorySpawnPacket() { }
 
-    public FactorySpawnPacket(AiSession.BotType botType, AiSession.BotModel botModel, string botName, long blockId, long ownerId, long price, long creditsFromInv)
+    public FactorySpawnPacket(AiSession.BotType botType, string botModel, string botName, long blockId, long ownerId, long price, long creditsFromInv, Color? botClr)
     {
       BlockId = blockId;
       OwnerId = ownerId;
       Price = price;
       CreditsInInventory = creditsFromInv;
       BotType = (int)botType;
-      BotModel = (int)botModel;
+      BotModel = botModel;
       BotName = botName;
+      BotColor = botClr;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -74,13 +76,17 @@ namespace AiEnabled.Networking
 
       string subtype;
       var bType = (AiSession.BotType)BotType;
-      var bModel = (AiSession.BotModel)BotModel;
+      var bModel = MyStringId.GetOrCompute(BotModel);
       bool needsName = string.IsNullOrWhiteSpace(BotName);
 
       gameLogic.SelectedRole = bType;
       gameLogic.SelectedModel = bModel;
+      gameLogic.BotColor = BotColor;
 
-      if (bModel == AiSession.BotModel.Default)
+      if (needsName)
+        BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+
+      if (bModel == AiSession.Instance.MODEL_DEFAULT)
       {
         switch (bType)
         {
@@ -118,33 +124,9 @@ namespace AiEnabled.Networking
             return false;
         }
       }
-      else if (bModel == AiSession.BotModel.DroneBot)
+      else
       {
-        if (needsName)
-          BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
-
-        subtype = "Drone_Bot";
-      }
-      else if (bModel == AiSession.BotModel.AstronautMale)
-      {
-        if (needsName)
-          BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
-
-        subtype = "Default_Astronaut";
-      }
-      else if (bModel == AiSession.BotModel.AstronautFemale)
-      {
-        if (needsName)
-          BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
-
-        subtype = "Default_Astronaut_Female";
-      }
-      else // if (botModel == AiSession.BotModel.TargetBot)
-      {
-        if (needsName)
-          BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
-
-        subtype = "Target_Dummy";
+        subtype = AiSession.Instance.BotModelDict[bModel];
       }
 
       if (needsName)
@@ -169,7 +151,7 @@ namespace AiEnabled.Networking
         inv?.RemoveItemsOfType((MyFixedPoint)(float)CreditsInInventory, credit);
       }
 
-      var tuple = BotFactory.CreateBotObject(subtype, BotName, posOr, player.IdentityId);
+      var tuple = BotFactory.CreateBotObject(subtype, BotName, posOr, player.IdentityId, BotColor);
       var helper = tuple.Item1;
       if (helper != null)
       {

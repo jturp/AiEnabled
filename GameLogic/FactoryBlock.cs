@@ -29,17 +29,29 @@ using AiEnabled.ConfigData;
 using Sandbox.Definitions;
 using Sandbox.Game;
 using VRage;
+using VRage.Utils;
 
 namespace AiEnabled.GameLogic
 {
   [MyEntityComponentDescriptor(typeof(MyObjectBuilder_ConveyorSorter), false, "RoboFactory")]
   public class Factory : MyGameLogicComponent
   {    
-    public AiSession.BotType SelectedRole;
-    public AiSession.BotModel SelectedModel;
+    public AiSession.BotType SelectedRole = AiSession.BotType.Repair;
+    public MyStringId SelectedModel = MyStringId.GetOrCompute("Default");
     public HelperInfo SelectedHelper;
     public StringBuilder BotName;
-    public bool ButtonPressed;
+    public Color? BotColor;
+
+    public bool ButtonPressed
+    {
+      get { return _btnPressed; }
+      set
+      {
+        _btnPressed = value;
+        _controlTicks = 0;
+      }
+    }
+
     public bool HasHelper => _helperInfo.Item1 != null;
 
     public struct BotInfo
@@ -57,7 +69,7 @@ namespace AiEnabled.GameLogic
     IMyTerminalBlock _block;
     MyTuple<IMyCharacter, AiSession.ControlInfo> _helperInfo;
     int _controlTicks, _soundTicks;
-    bool _soundPlaying, _playBuildSound;
+    bool _soundPlaying, _playBuildSound, _btnPressed;
     List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
     CubeGridMap _gridGraph;
 
@@ -125,6 +137,10 @@ namespace AiEnabled.GameLogic
 
       if (_soundPlaying && _helperInfo.Item1 != null)
         return;
+
+      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      if (jetpack != null && jetpack.TurnedOn)
+        jetpack.SwitchThrusts();
 
       _helperInfo = botInfo;
       bot.CharacterDied += OnCharacterDied;
@@ -249,6 +265,15 @@ namespace AiEnabled.GameLogic
         if (_block == null || AiSession.Instance?.Registered != true)
           return;
 
+        if (_gridGraph == null)
+        {
+          _gridGraph = AiSession.Instance.GetGridGraph((MyCubeGrid)_block.CubeGrid, _block.WorldMatrix);
+        }
+        else if (_gridGraph.LastActiveTicks > 100)
+        {
+          _gridGraph.LastActiveTicks = 10;
+        }
+
         if (_soundPlaying)
         {
           ++_soundTicks;
@@ -269,29 +294,7 @@ namespace AiEnabled.GameLogic
               var botInfo = AiSession.Instance.FactoryBotInfoDict[_helperInfo.Item1.EntityId];
               var ownerId = botInfo.OwnerId;
 
-              var gridMap = _gridGraph;
-              if (gridMap == null)
-              {
-                _gridList.Clear();
-                _block.CubeGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(_gridList);
-                MyCubeGrid grid = _block.CubeGrid as MyCubeGrid;
-
-                foreach (var g in _gridList)
-                {
-                  if (g.GridSize < 1 || g.WorldAABB.Volume < grid.PositionComp.WorldAABB.Volume)
-                    continue;
-
-                  grid = g as MyCubeGrid;
-                }
-
-                gridMap = AiSession.Instance.GetGridGraph(grid, _helperInfo.Item1.WorldMatrix);
-              }
-              else if (gridMap.LastActiveTicks > 100)
-              { 
-                gridMap.LastActiveTicks = 10;
-              }
-
-              var botChar = CreateBot(_helperInfo, gridMap, ownerId);
+              var botChar = CreateBot(_helperInfo, _gridGraph, ownerId);
               AiSession.Instance.AddBot(botChar, ownerId);
 
               IMyPlayer player;
@@ -319,7 +322,6 @@ namespace AiEnabled.GameLogic
         ++_controlTicks;
         if (_controlTicks > 29)
         {
-          _controlTicks = 0;
           ButtonPressed = false;
           Controls.SetContextMessage(_block, "");
         }

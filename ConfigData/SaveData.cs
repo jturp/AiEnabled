@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
 
 namespace AiEnabled.ConfigData
 {
@@ -23,6 +24,9 @@ namespace AiEnabled.ConfigData
     public bool AllowIdleMapTransitions = true;
     public bool EnforceWalkingOnPatrol;
     public bool EnforceGroundPathingFirst;
+
+    [XmlArrayItem("Subtype", typeof(string))]
+    public List<string> AdditionalHelperSubtypes = new List<string>();
     public List<HelperData> PlayerHelperData = new List<HelperData>();
     public List<FactionData> FactionPairings = new List<FactionData>();
 

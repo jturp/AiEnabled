@@ -115,20 +115,21 @@ namespace AiEnabled.Bots.Roles.Helpers
       {
         _performTimer = 0;
         var rand = MyUtils.GetRandomInt(0, 100);
+        var ableToAnimate = !_botState.IsFlying && !_botState.IsFalling;
 
         if (rand < 40)
         {
           // sit and pant
           Behavior.Speak("RoboDogPant001");
 
-          if (!_sitting && Character.LastMotionIndicator == Vector3.Zero && Character.LastRotationIndicator == Vector3.Zero)
+          if (ableToAnimate && !_sitting && Character.LastMotionIndicator == Vector3.Zero && Character.LastRotationIndicator == Vector3.Zero)
           {
             Behavior.Perform("RoboDog_Sitting");
             _sitting = true;
             _performing = true;
           }
         }
-        else
+        else if (ableToAnimate)
         {
           // dig, sniff and find something
 
@@ -142,7 +143,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           Behavior.Perform("RoboDog_Digging");
 
           rand = MyUtils.GetRandomInt(1, 101);
-          _awaitItem = rand > 65;
+          _awaitItem = rand > 80;
           _performing = true;
         }
       }

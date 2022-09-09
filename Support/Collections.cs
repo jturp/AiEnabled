@@ -29,6 +29,7 @@ using AiEnabled.API;
 using AiEnabled.Parallel;
 using VRage.Input;
 using AiEnabled.ConfigData;
+using VRage.Utils;
 
 namespace AiEnabled
 {
@@ -471,8 +472,25 @@ namespace AiEnabled
       { BotType.Combat, "The latest in combat technology, the Combat Bot is equipped with a rapid fire rifle and a titanium exoskeleton capable of taking on small arms fire with ease. It will follow you and attack any nearby hostiles." },
     };
 
+    public Dictionary<MyStringId, string> BotModelDict = new Dictionary<MyStringId, string>(MyStringId.Comparer)
+    {
+      { MyStringId.GetOrCompute("Default"), "Default" },
+      { MyStringId.GetOrCompute("RoboDog"), "RoboDog" },
+      { MyStringId.GetOrCompute("DroneBot"), "Drone_Bot" },
+      { MyStringId.GetOrCompute("TargetBot"), "Target_Dummy" },
+      { MyStringId.GetOrCompute("AstronautMale"), "Default_Astronaut" },
+      { MyStringId.GetOrCompute("AstronautFemale"), "Default_Astronaut_Female" },
+    };
+
     public enum BotType { Repair, Scavenger, Combat, Crew };
-    public enum BotModel { Default, DroneBot, TargetBot, AstronautMale, AstronautFemale };
+
+    public readonly MyStringId MODEL_DEFAULT = MyStringId.GetOrCompute("Default");
+    public readonly MyStringId MODEL_ASTRO_MALE = MyStringId.GetOrCompute("AstronautMale");
+    public readonly MyStringId MODEL_ASTRO_FEMALE = MyStringId.GetOrCompute("AstronautFemale");
+    public readonly MyStringId MODEL_TARGET_BOT = MyStringId.GetOrCompute("TargetBot");
+    public readonly MyStringId MODEL_ROBO_DOG = MyStringId.GetOrCompute("RoboDog");
+    public readonly MyStringId MODEL_DRONE_BOT = MyStringId.GetOrCompute("DroneBot");
+    public List<MyStringId> BotModelList = new List<MyStringId>();
 
     public HashSet<string> KnownLootContainerIds { get; protected set; } = new HashSet<string>();
     public HashSet<MyDefinitionId> AllCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
@@ -489,7 +507,8 @@ namespace AiEnabled
     public HashSet<MyDefinitionId> ArmorPanelAllDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> ScaffoldBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> GratedCatwalkExpansionBlocks { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
-    public Dictionary<string, string> AnimationControllerDictionary { get; protected set; } = new Dictionary<string, string>(); // character subtype to controller subtype
+    public Dictionary<MyStringHash, string> AnimationControllerDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to controller subtype
+    public Dictionary<MyStringHash, string> SubtypeToSkeletonDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to skeleton type
     public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
 
     public ConcurrentDictionary<MyItemType, MyObjectBuilder_PhysicalObject> ItemOBDict = new ConcurrentDictionary<MyItemType, MyObjectBuilder_PhysicalObject>();

@@ -511,7 +511,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
       {
-        if (isGridGraph && _pathCollection?.TempEntities != null) // path collection is null until first target assignment
+        if (isGridGraph && _pathCollection != null) // path collection is null until first target assignment
         {
           // check for damaged blocks on grid
           var mainGrid = graph.MainGrid as IMyCubeGrid;

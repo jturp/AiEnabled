@@ -89,6 +89,9 @@ namespace AiEnabled.Bots
       FollowMode = 0x200000000,
       PatrolMode = 0x400000000,
       AllowGridDamage = 0x800000000,
+      IsLargeSpider = 0x1000000000,
+      IsSmallSpider = 0x2000000000,
+      IsWolf = 0x4000000000
     }
 
     public IMyPlayer Owner;
@@ -100,6 +103,54 @@ namespace AiEnabled.Bots
     public MyHandItemDefinition ToolDefinition;
     public AiSession.BotType BotType;
     public AiSession.ControlInfo BotControlInfo;
+
+    public bool IsWolf
+    {
+      get { return (_botInfo & BotInfo.IsWolf) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.IsWolf;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.IsWolf;
+        }
+      }
+    }
+
+    public bool IsSmallSpider
+    {
+      get { return (_botInfo & BotInfo.IsSmallSpider) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.IsSmallSpider;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.IsSmallSpider;
+        }
+      }
+    }
+
+    public bool IsLargeSpider
+    {
+      get { return (_botInfo & BotInfo.IsLargeSpider) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfo.IsLargeSpider;
+        }
+        else
+        {
+          _botInfo &= ~BotInfo.IsLargeSpider;
+        }
+      }
+    }
 
     public bool CanDamageGrid
     {
@@ -710,7 +761,7 @@ namespace AiEnabled.Bots
     internal MyObjectBuilder_ConsumableItem _energyOB;
     internal BotBehavior Behavior;
 
-    List<IHitInfo> _hitList;
+    readonly List<IHitInfo> _hitList;
     Task _graphTask;
     BotInfo _botInfo;
     byte _ticksSinceLastIdleTransition;
@@ -782,6 +833,14 @@ namespace AiEnabled.Bots
       _minDamage = minDamage;
       _maxDamage = maxDamage + 1;
       _energyOB = MyObjectBuilderSerializer.CreateNewObject<MyObjectBuilder_ConsumableItem>("Powerkit");
+
+      var subtype = bot.Definition.Id.SubtypeName;
+      bool wolfBot = subtype.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0;
+      bool smallSpider = !wolfBot && subtype.IndexOf("smallspider", StringComparison.OrdinalIgnoreCase) >= 0;
+      bool largeSpider = !wolfBot && !smallSpider && subtype.IndexOf("spider", StringComparison.OrdinalIgnoreCase) >= 0;
+      IsWolf = wolfBot;
+      IsSmallSpider = smallSpider;
+      IsLargeSpider = largeSpider;
 
       if (!AiSession.Instance.HitListStack.TryPop(out _hitList) || _hitList == null)
         _hitList = new List<IHitInfo>();
@@ -858,9 +917,9 @@ namespace AiEnabled.Bots
         {
           var subtype = bot.Definition.Id.SubtypeName;
 
-          if (subtype.IndexOf("spider", StringComparison.OrdinalIgnoreCase) >= 0)
+          if (IsSmallSpider || IsLargeSpider)
             subtype = "SpaceSpider";
-          else if (subtype.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0)
+          else if (IsWolf)
             subtype = "Wolf";
 
           var botDef = new MyDefinitionId(_animalBotType, subtype);
@@ -885,42 +944,69 @@ namespace AiEnabled.Bots
     {
       try
       {
-        if (bot?.Physics != null && !bot.Closed)
+        if (bot != null && !bot.Closed)
         {
-          var physDef = bot.Physics.Definition;
-          var linearVel = bot.Physics.LinearVelocity;
-          var angularVel = bot.Physics.AngularVelocity;
-          var extents = bot.LocalAABB.HalfExtents * 0.9f;
+          Vector3 linearVel = Vector3.Zero;
+          Vector3 angularVel = Vector3.Zero;
+          Vector3 extents = bot.LocalAABB.HalfExtents * 0.9f;
+          float mass = 500;
+          MyStringHash material = MyStringHash.GetOrCompute("Character");
+
+          if (bot.Components.Has<MyCharacterRagdollComponent>())
+          {
+            var ragDollComp = bot.Components.Get<MyCharacterRagdollComponent>();
+            ragDollComp.NeedsUpdateBeforeSimulation = true;
+            ragDollComp.NeedsUpdateBeforeSimulation100 = true;
+            ragDollComp.NeedsUpdateSimulation = false;
+
+            //bot.Components.Remove<MyCharacterRagdollComponent>();
+          }
+
+          if (bot.Physics != null)
+          {
+            linearVel = bot.Physics.LinearVelocity;
+            angularVel = bot.Physics.AngularVelocity;
+            mass = bot.Physics.Mass;
+            material = bot.Physics.MaterialType;
+
+            bot.Physics.Enabled = false;
+            bot.Physics.Close();
+            bot.Physics = null;
+          }
+          else if (_currentGraph?.IsGridGraph == true)
+          {
+            var gridGraph = _currentGraph as CubeGridMap;
+            if (gridGraph?.MainGrid?.Physics?.IsStatic == false)
+              linearVel = gridGraph.MainGrid.Physics.LinearVelocity;
+          }
 
           var settings = new PhysicsSettings()
           {
             Entity = bot,
             CollisionLayer = 10,
             IsPhantom = false,
-            AngularDamping = bot.Physics.AngularDamping,
-            LinearDamping = bot.Physics.LinearDamping,
+            AngularDamping = 2f,
+            LinearDamping = 0.7f,
             RigidBodyFlags = RigidBodyFlag.RBF_DEFAULT,
             LocalCenter = bot.LocalAABB.Center,
             WorldMatrix = bot.WorldMatrix,
-            MaterialType = bot.Physics.MaterialType,
-            Mass = MyAPIGateway.Physics.CreateMassForBox(extents, bot.Physics.Mass)
+            MaterialType = material,
+            Mass = MyAPIGateway.Physics.CreateMassForBox(extents, mass)
           };
 
-          bot.Physics.Enabled = false;
-          bot.Physics.Close();
-          bot.Physics = null;
+          MyAPIGateway.Physics.CreateModelPhysics(settings);
+          if (bot.Physics != null)
+          {
+            bot.Physics.SetSpeeds(linearVel, angularVel);
+            bot.Physics.Friction = 0.5f;
 
-          MyAPIGateway.Physics.CreateBoxPhysics(settings, extents, 0.05f);
-          bot.Physics.Init(physDef);
-          bot.Physics.SetSpeeds(linearVel, angularVel);
-          bot.Physics.Friction = 0.5f;
-
-          float interference;
-          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(bot.WorldAABB.Center, out interference);
-          if (nGrav.LengthSquared() > 0)
-            bot.Physics.Gravity = nGrav;
-          else
-            bot.Physics.Gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(bot.WorldAABB.Center, interference);
+            float interference;
+            var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(bot.WorldAABB.Center, out interference);
+            if (nGrav.LengthSquared() > 0)
+              bot.Physics.Gravity = nGrav;
+            else
+              bot.Physics.Gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(bot.WorldAABB.Center, interference);
+          }
         }
       }
       catch (Exception ex)
@@ -938,8 +1024,14 @@ namespace AiEnabled.Bots
     {
       CleanUp(cleanConfig, removeBot);
 
-      if (removeBot)
-        Character?.Close();
+      if (removeBot && Character != null)
+      {
+        var seat = Character.Parent as IMyCockpit;
+        if (seat != null)
+          seat.RemovePilot();
+
+        Character.Close();
+      }
     }
 
     internal virtual void CleanUp(bool cleanConfig = false, bool removeBot = true)
@@ -1009,7 +1101,11 @@ namespace AiEnabled.Bots
         AiSession.Instance.GraphWorkStack.Push(_graphWorkData);
 
       if (_pathCollection != null)
+      {
+        _pathCollection.OnGridBaseClosing();
+        _pathCollection.ClearObstacles(null);
         AiSession.Instance.ReturnCollection(_pathCollection);
+      }
 
       if (_hitList != null)
       {
@@ -1039,7 +1135,6 @@ namespace AiEnabled.Bots
 
       Target = null;
       Behavior = null;
-      _hitList = null;
       _patrolList = null;
       _attackSounds = null;
       _attackSoundStrings = null;
@@ -1164,9 +1259,9 @@ namespace AiEnabled.Bots
 
         if (subtype == AiSession.Instance.RoboDogSubtype)
           center += Character.WorldMatrix.Up * 0.75;
-        else if (subtype == AiSession.Instance.PlushieSubtype)
+        else if (subtype == AiSession.Instance.PlushieSubtype || IsWolf)
           center += Character.WorldMatrix.Up * 0.5;
-        else if (subtype.String.StartsWith("SpaceSmallSpider"))
+        else if (IsSmallSpider)
           center += Character.WorldMatrix.Up * 0.25;
         else
           center += Character.WorldMatrix.Up * 0.1;
@@ -1472,7 +1567,7 @@ namespace AiEnabled.Bots
           if (_currentGraph != null && _currentGraph.IsValid && Character != null && !IsDead)
           {
             if ((JetpackEnabled || (Target.CurrentGravityAtBot.LengthSquared() < 0.05))
-              && Math.Abs(VectorUtils.GetAngleBetween(Character.WorldMatrix.Up, _currentGraph.WorldMatrix.Up)) > MathHelper.ToRadians(3))
+              && Math.Abs(AiUtils.GetAngleBetween(Character.WorldMatrix.Up, _currentGraph.WorldMatrix.Up)) > MathHelper.ToRadians(3))
             {
               var matrix = _currentGraph.WorldMatrix;
               var charMatrix = Character.WorldMatrix;
@@ -2205,23 +2300,21 @@ namespace AiEnabled.Bots
 
     internal void TrySwitchWalk()
     {
-      if (Character.Definition.Id.SubtypeName.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0)
+      if (!IsWolf)
       {
-        if (!_botState.IsRunning)
-          Character.SwitchWalk();
-      }
-      else if (PatrolMode && Target.Entity == null && AiSession.Instance.ModSaveData.EnforceWalkingOnPatrol)
-      {
-        if (_botState.IsRunning)
-          Character.SwitchWalk();
-      }
-      else if (SwitchWalk)
-      {
-        SwitchWalk = false;
+        if (PatrolMode && Target.Entity == null && AiSession.Instance.ModSaveData.EnforceWalkingOnPatrol)
+        {
+          if (_botState.IsRunning)
+            Character.SwitchWalk();
+        }
+        else if (SwitchWalk)
+        {
+          SwitchWalk = false;
 
-        var rand = MyUtils.GetRandomInt(0, 6);
-        if (rand < 3)
-          Character.SwitchWalk();
+          var rand = MyUtils.GetRandomInt(0, 6);
+          if (rand < 3)
+            Character.SwitchWalk();
+        }
       }
     }
 
@@ -2251,16 +2344,17 @@ namespace AiEnabled.Bots
           if (!_currentGraph.GetEdgeDistanceInDirection(normal, out maxLength))
             maxLength = (VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultCellSize);
 
-          //if (!_currentGraph.GetEdgeDistanceInDirection(graphUp, out lengthToTop))
-          //  lengthToTop = VoxelGridMap.DefaultHalfSize;
+          newGraphPosition = graphCenter + normal * maxLength;
 
-          newGraphPosition = graphCenter + normal * maxLength; // Maybe try botPosition + normal * maxLength
-          var surfacePoint = _currentGraph.GetClosestSurfacePointFast(null, newGraphPosition, _currentGraph.WorldMatrix.Up);
+          if (_currentGraph.RootVoxel is MyPlanet)
+          {
+            var surfacePoint = _currentGraph.GetClosestSurfacePointFast(null, newGraphPosition, _currentGraph.WorldMatrix.Up);
 
-          if (surfacePoint.HasValue)
-            newGraphPosition = surfacePoint.Value;
+            if (surfacePoint.HasValue)
+              newGraphPosition = surfacePoint.Value;
 
-          // TODO: Need to check if in voxel here ???
+            // TODO: Need to check if in voxel here ???
+          }
         }
         else
         {
@@ -2275,7 +2369,7 @@ namespace AiEnabled.Bots
           bool targetAboveBox = false;
           bool targetBelowBox = false;
 
-          Vector3D projUp = VectorUtils.Project(vectorGraphToTarget, graphUp);
+          Vector3D projUp = AiUtils.Project(vectorGraphToTarget, graphUp);
           if (projUp.LengthSquared() > lengthToTop * lengthToTop)
           {
             var projGraphUp = projUp.Dot(ref graphUp);
@@ -2599,7 +2693,7 @@ namespace AiEnabled.Bots
                   var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
                   AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
 
-                  cPit.RequestUse(UseActionEnum.Manipulate, Utilities.Extensions.CastHax(cPit.Pilot, Character));
+                  cPit.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(cPit.Pilot, Character));
                 }
 
                 if (changeBack)
@@ -2678,6 +2772,10 @@ namespace AiEnabled.Bots
         else if (Target.IsFloater)
         {
           checkDistance = 8;
+        }
+        else if (IsLargeSpider)
+        {
+          checkDistance = 5;
         }
         else
         {
@@ -2896,7 +2994,11 @@ namespace AiEnabled.Bots
         if (!_botState.IsJumping && ++_teleportCounter > 3)
         {
           _teleportCounter = 0;
-          _currentGraph.TeleportNearby(this);
+
+          if (_botState.IsFalling && Target.CurrentGravityAtBot.LengthSquared() > 0)
+            _pathCollection?.CleanUp(true);
+          else
+            _currentGraph.TeleportNearby(this);
         }
         else
           _pathCollection?.CleanUp(true);
@@ -2960,15 +3062,15 @@ namespace AiEnabled.Bots
         if (hangar != null)
           tgt += hangar.WorldMatrix.Down * hangar.CubeGrid.GridSize;
 
-        var angle = VectorUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
-        if (Math.Abs(angle) > VectorUtils.PiOver3)
+        var angle = AiUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
+        if (Math.Abs(angle) > AiUtils.PiOver3)
         {
           if (hangar != null)
           {
             // Just in case the bot happens to be standing in front of the tip of the hangar
             tgt += hangar.WorldMatrix.Down * hangar.CubeGrid.GridSize;
-            angle = VectorUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
-            if (Math.Abs(angle) > VectorUtils.PiOver3)
+            angle = AiUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
+            if (Math.Abs(angle) > AiUtils.PiOver3)
             {
               HasLineOfSight = false;
               return;
@@ -3174,6 +3276,7 @@ namespace AiEnabled.Bots
 
           if (switchNow)
           {
+            _pathCollection?.OnGridBaseClosing();
             _previousGraph = _currentGraph;
             _currentGraph = _nextGraph;
             _nextGraph = null;
@@ -3184,6 +3287,8 @@ namespace AiEnabled.Bots
 
             if (_pathCollection != null)
             {
+              _currentGraph.HookEventsForPathCollection(_pathCollection);
+              _pathCollection.ClearObstacles(null);
               _pathCollection.CleanUp(true);
             }
           }
@@ -3193,7 +3298,7 @@ namespace AiEnabled.Bots
       {
         NeedsTransition = !force;
         var botPosition = Target.CurrentBotPosition;
-        var botMatrix = WorldMatrix;
+        var botMatrix = _currentGraph.WorldMatrix;
 
         if (newGrid != null || _currentGraph.IsGridGraph || !_currentGraph.IsPositionValid(newGraphPosition))
         {         
@@ -3211,7 +3316,7 @@ namespace AiEnabled.Bots
             // check to see if we should switch now or find a point in the buffer zone to move to
             var gridGraph = _currentGraph as CubeGridMap;
 
-            if (!botInNewBox && (!gridGraph.IsInBufferZone(botPosition) || _nextGraph?.IsPositionValid(botPosition) == false))
+            if (!botInNewBox && (!gridGraph.IsInBufferZone(botPosition) || _nextGraph?.IsPositionValid(botPosition) != true))
             {
               switchNow = false;
               Node tgtPoint = null;
@@ -3223,24 +3328,41 @@ namespace AiEnabled.Bots
 
                 if (tgtPoint == null)
                 {
-                  switchNow = true;
                   var midPoint = (_currentGraph.OBB.Center + _nextGraph.OBB.Center) * 0.5;
                   _nextGraph = AiSession.Instance.GetVoxelGraph(midPoint, WorldMatrix);
+
+                  if (_nextGraph != null)
+                    tgtPoint = gridGraph.GetBufferZoneTargetPositionFromPrunik(ref _nextGraph.OBB, ref direction, ref targetPosition, this);
                 }
               }
-              else
+
+              if (tgtPoint == null)
               {
                 var bufferZonePosition = gridGraph.GetBufferZoneTargetPosition(targetPosition, center);
 
-                if (bufferZonePosition.HasValue && !_currentGraph.IsPositionUsable(this, bufferZonePosition.Value))
+                if (bufferZonePosition.HasValue)
                 {
-                  bufferZonePosition = gridGraph.GetClosestSurfacePointFast(this, bufferZonePosition.Value, botMatrix.Up);
-                }
+                  if (!_currentGraph.IsPositionUsable(this, bufferZonePosition.Value))
+                  {
+                    if (_currentGraph.RootVoxel is MyPlanet)
+                    {
+                      bufferZonePosition = gridGraph.GetClosestSurfacePointFast(this, bufferZonePosition.Value, botMatrix.Up);
+                    }
+                    else
+                    {
+                      bufferZonePosition = null;
+                    }
+                  }
 
-                var localNode = _currentGraph.WorldToLocal(bufferZonePosition.Value);
-                if (_currentGraph.GetClosestValidNode(this, localNode, out localNode))
-                {
-                  _currentGraph.TryGetNodeForPosition(localNode, out tgtPoint);
+                  var checkPos = bufferZonePosition ?? Vector3D.Zero;
+                  if (bufferZonePosition.HasValue && _currentGraph.OBB.Contains(ref checkPos))
+                  {
+                    var localNode = _currentGraph.WorldToLocal(bufferZonePosition.Value);
+                    if (_currentGraph.GetClosestValidNode(this, localNode, out localNode))
+                    {
+                      _currentGraph.TryGetNodeForPosition(localNode, out tgtPoint);
+                    }
+                  }
                 }
               }
 
@@ -3248,6 +3370,7 @@ namespace AiEnabled.Bots
               {
                 _nextGraph = null;
                 _pathCollection?.CleanUp(true);
+                _transitionPoint = null;
                 NeedsTransition = false;
               }
               else
@@ -3261,29 +3384,79 @@ namespace AiEnabled.Bots
             var voxelGraphNext = _nextGraph as VoxelGridMap;
             var voxelGraphPrev = _previousGraph as VoxelGridMap;
             bool nextIsPrev = voxelGraphNext != null && voxelGraphNext.Key == voxelGraphPrev?.Key;
+            Node tgtPoint = null;
 
             if (!botInNewBox)
             {
+              switchNow = false;
               var direction = _currentGraph.WorldMatrix.GetClosestDirection(_nextGraph.OBB.Center - _currentGraph.OBB.Center);
-              var tgtPoint = _currentGraph.GetBufferZoneTargetPositionFromPrunik(ref _nextGraph.OBB, ref direction, ref targetPosition, this);
+              tgtPoint = _currentGraph.GetBufferZoneTargetPositionFromPrunik(ref _nextGraph.OBB, ref direction, ref targetPosition, this);
 
               if (tgtPoint == null || nextIsPrev)
               {
-                switchNow = true;
                 var midPoint = (_currentGraph.OBB.Center + _nextGraph.OBB.Center) * 0.5;
+
+                if (_nextGraph.RootVoxel != null)
+                {
+                  var nextOBB = _nextGraph.OBB;
+                  var box = new BoundingBoxD(-nextOBB.HalfExtent, nextOBB.HalfExtent);
+                  var tuple = _nextGraph.RootVoxel.GetVoxelContentInBoundingBox_Fast(box, _nextGraph.WorldMatrix);
+
+                  if (tuple.Item2 > 0.6)
+                  {
+                    var vectorToNext = _nextGraph.OBB.Center - _currentGraph.OBB.Center;
+                    var dir = _currentGraph.WorldMatrix.GetClosestDirection(vectorToNext);
+
+                    var checkDirection = (dir >= Base6Directions.Direction.Up) ? _currentGraph.WorldMatrix.Forward : _currentGraph.WorldMatrix.Up;
+                    double distanceToNext;
+                    if (!_currentGraph.GetEdgeDistanceInDirection(checkDirection, out distanceToNext))
+                      distanceToNext = VoxelGridMap.DefaultHalfSize - 3 * VoxelGridMap.DefaultCellSize;
+
+                    midPoint = _currentGraph.OBB.Center + checkDirection * distanceToNext;
+                    midPoint += checkDirection * (VoxelGridMap.DefaultHalfSize - 3 * VoxelGridMap.DefaultCellSize);
+                  }
+                }
+
                 _nextGraph = AiSession.Instance.GetVoxelGraph(midPoint, WorldMatrix, returnFirstFound: !nextIsPrev);
-              }
-              else
-              {
-                _transitionPoint = tgtPoint;
-                switchNow = false;
+
+                if (_nextGraph != null)
+                {
+                  if (_nextGraph.OBB.Contains(ref botPosition))
+                  {
+                    var localBot = _currentGraph.WorldToLocal(botPosition);
+                    if (_currentGraph.GetClosestValidNode(this, localBot, out localBot))
+                      _currentGraph.TryGetNodeForPosition(localBot, out tgtPoint);
+                  }
+                  else
+                  {
+                    tgtPoint = _currentGraph.GetBufferZoneTargetPositionFromPrunik(ref _nextGraph.OBB, ref direction, ref targetPosition, this);
+                  }
+                }
               }
             }
             else if (nextIsPrev)
             {
-              switchNow = true;
+              switchNow = false;
+              var direction = _currentGraph.WorldMatrix.GetClosestDirection(_nextGraph.OBB.Center - _currentGraph.OBB.Center);
               var midPoint = (_currentGraph.OBB.Center + _nextGraph.OBB.Center) * 0.5;
               _nextGraph = AiSession.Instance.GetVoxelGraph(midPoint, WorldMatrix, returnFirstFound: false);
+
+              if (_nextGraph != null && !_nextGraph.OBB.Contains(ref botPosition))
+                tgtPoint = _currentGraph.GetBufferZoneTargetPositionFromPrunik(ref _nextGraph.OBB, ref direction, ref targetPosition, this);
+            }
+
+            if (!switchNow)
+            {
+              if (tgtPoint == null || !NeedsTransition)
+              {
+                _nextGraph = null;
+                _pathCollection?.CleanUp(true);
+                NeedsTransition = false;
+              }
+              else
+              {
+                _transitionPoint = tgtPoint;
+              }
             }
           }
           else if (NeedsTransition)
@@ -3298,6 +3471,7 @@ namespace AiEnabled.Bots
 
         if (switchNow && _nextGraph != null)
         {
+          _pathCollection?.OnGridBaseClosing();
           _previousGraph = _currentGraph;
           _currentGraph = _nextGraph;
           _nextGraph = null;
@@ -3307,6 +3481,8 @@ namespace AiEnabled.Bots
 
           if (_pathCollection != null)
           {
+            _currentGraph.HookEventsForPathCollection(_pathCollection);
+            _pathCollection.ClearObstacles(null);
             _pathCollection.CleanUp(true);
           }
         }
@@ -3351,11 +3527,14 @@ namespace AiEnabled.Bots
             NeedsTransition = false;
 
             _previousGraph = null;
+            _pathCollection?.OnGridBaseClosing();
             _currentGraph = AiSession.Instance.GetVoxelGraph(Target.CurrentBotPosition, WorldMatrix, true);
 
             if (_pathCollection != null)
             {
+              _pathCollection.ClearObstacles(null);
               _pathCollection.CleanUp(true);
+              _currentGraph?.HookEventsForPathCollection(_pathCollection);
             }
           }
 
@@ -3381,6 +3560,7 @@ namespace AiEnabled.Bots
 
         if (_currentGraph.Dirty)
         {
+          _pathCollection.ClearObstacles(null);
           _pathCollection.CleanUp(true);
           return;
         }
@@ -3410,7 +3590,7 @@ namespace AiEnabled.Bots
           if (!returnNow)
           {
             double checkDistance;
-            if (Target.IsCubeBlock)
+            if (Target.IsCubeBlock || IsLargeSpider)
             {
               checkDistance = 5;
             }
@@ -3420,11 +3600,7 @@ namespace AiEnabled.Bots
             }
             else
             {
-              var ch = Target.Entity as IMyCharacter;
-              if (ch != null && ch.Definition.Id.SubtypeName.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase))
-                checkDistance = 3.5;
-              else
-                checkDistance = 2;
+              checkDistance = 2;
             }
 
             MoveToPoint(gotoPosition, Target.Entity != null, checkDistance);
@@ -3556,7 +3732,7 @@ namespace AiEnabled.Bots
           var nextNode = _pathCollection.NextNode;
 
           bool isGridGraph = _currentGraph.IsGridGraph;
-          bool addTo = false;
+          bool addTo = !isGridGraph;
 
           if (isGridGraph)
           {
@@ -3565,19 +3741,45 @@ namespace AiEnabled.Bots
               || _currentGraph.TryGetNodeForPosition(current, out currentNode) && currentNode?.IsGridNodePlanetTile == true;
           }
 
-          if (addTo || !isGridGraph)
+          if (addTo && _pathCollection != null)
           {
+            List<IHitInfo> hitInfoList;
+            if (!AiSession.Instance.HitListStack.TryPop(out hitInfoList) || hitInfoList == null)
+              hitInfoList = new List<IHitInfo>();
+            else
+              hitInfoList.Clear();
+
+            var botPosition = GetPosition();
+            MyAPIGateway.Physics.CastRay(botPosition, botPosition + WorldMatrix.Forward * 2, hitInfoList, CollisionLayers.CharacterCollisionLayer);
+
+            for (int i = 0; i < hitInfoList.Count; i++)
+            {
+              var hitInfo = hitInfoList[i];
+              if (hitInfo?.HitEntity == null || hitInfo.HitEntity.EntityId == Character.EntityId)
+                continue;
+
+              var ch = hitInfo.HitEntity as IMyCharacter;
+              if (ch != null)
+              {
+                addTo = false;
+                break;
+              }
+            }
+
+            hitInfoList.Clear();
+            AiSession.Instance.HitListStack.Push(hitInfoList);
+
             var last = lastNode != null ? lastNode.Position : current;
             var next = nextNode != null ? nextNode.Position : current;
 
-            _currentGraph.AddToObstacles(last, current, next);
-            _pathCollection.CleanUp(true);
+            if (addTo && _currentGraph.AddToObstacles(last, current, next))
+            {
+              _pathCollection.Obstacles[next] = new byte();
+            }
           }
-          else
-            _pathCollection.ClearNode(true);
         }
-        else
-          _pathCollection.CleanUp(true);
+
+        _pathCollection.CleanUp(true);
       }
       else if (AfterNextIsLadder)
       {
@@ -3624,7 +3826,7 @@ namespace AiEnabled.Bots
       _stuckTimer = 0;
       _stuckCounter = 0;
       BotMoved = false;
-      var botPosition = Target.CurrentBotPosition;
+      var botPosition = Character.WorldAABB.Center;
 
       Vector3I start = _currentGraph.WorldToLocal(botPosition);
       if (!_currentGraph.GetClosestValidNode(this, start, out start))
@@ -3632,7 +3834,11 @@ namespace AiEnabled.Bots
         if (!_botState.IsJumping && ++_teleportCounter > 3)
         {
           _teleportCounter = 0;
-          _currentGraph.TeleportNearby(this);
+
+          if (_botState.IsFalling && Target.CurrentGravityAtBot.LengthSquared() > 0)
+            _pathCollection?.CleanUp(true);
+          else
+            _currentGraph.TeleportNearby(this);
         }
         else
           _pathCollection?.CleanUp(true);
@@ -3645,7 +3851,7 @@ namespace AiEnabled.Bots
       var isSlimBlock = isSlimTarget;
 
       Vector3D exit;
-      Vector3I goal;
+      Vector3I goal, adjustedGoal;
       var tgtCharacter = Target.Entity as IMyCharacter;
       var isCharacter = tgtCharacter != null;
       if (NeedsTransition && _transitionPoint != null)
@@ -3673,28 +3879,24 @@ namespace AiEnabled.Bots
           && !cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
       }
 
+      adjustedGoal = goal;
       Node goalNode;
       bool found = false;
       if (isCharacter && tgtCharacter.EntityId == Owner?.Character?.EntityId && _currentGraph.TryGetNodeForPosition(goal, out goalNode) && goalNode.IsAirNode)
       {
-        Vector3I vec3I;
-        if (_currentGraph.GetClosestValidNode(this, goalNode.Position, out vec3I, WorldMatrix.Up, currentIsDenied: true))
-        {
-          goal = vec3I;
-          found = true;
-        }
+        found = _currentGraph.GetClosestValidNode(this, goalNode.Position, out adjustedGoal, WorldMatrix.Up, currentIsDenied: true);
       }
 
       bool isInventory = Target.IsInventory;
       bool isFloater = Target.IsFloater;
 
-      if (!found && !_currentGraph.GetClosestValidNode(this, goal, out goal, isSlimBlock: isSlimBlock))
+      if (!found && !_currentGraph.GetClosestValidNode(this, goal, out adjustedGoal, isSlimBlock: isSlimBlock))
       {
         bool goBack = true;
         if (isCharacter)
         {
           var newGoal = _currentGraph.WorldToLocal(targetPosition);
-          goBack = !_currentGraph.GetClosestValidNode(this, newGoal, out goal);
+          goBack = !_currentGraph.GetClosestValidNode(this, newGoal, out adjustedGoal);
         }
 
         if (goBack)
@@ -3702,14 +3904,16 @@ namespace AiEnabled.Bots
           if (Target.Override.HasValue && exit == Target.Override)
             Target.RemoveOverride(false);
 
+          bool markObstacle = false;
+          if (NeedsTransition)
+          {
+            markObstacle = true;
+            NeedsTransition = false;
+            _transitionPoint = null;
+          }
+
           if (isSlimTarget || isInventory || isFloater)
           {
-            if (NeedsTransition)
-            {
-              NeedsTransition = false;
-              _transitionPoint = null;
-            }
-
             var floater = Target.Entity as MyFloatingObject;
             Target.RemoveTarget();
 
@@ -3737,7 +3941,15 @@ namespace AiEnabled.Bots
               }
             }
 
-            _currentGraph.TempBlockedNodes[_currentGraph.WorldToLocal(exit)] = new byte();
+            markObstacle = true;
+          }
+
+          if (markObstacle)
+          {
+            _currentGraph.TempBlockedNodes[goal] = new byte();
+
+            if (goal != adjustedGoal)
+              _currentGraph.TempBlockedNodes[adjustedGoal] = new byte();
           }
 
           return;
@@ -3747,7 +3959,7 @@ namespace AiEnabled.Bots
       _lastFloater = null;
       _floaterCounter = 0;
 
-      if (start == goal)
+      if (start == adjustedGoal)
       {
         if (isSlimTarget || isInventory || isFloater)
         {
@@ -3796,7 +4008,7 @@ namespace AiEnabled.Bots
       _pathCollection.CleanUp();
 
       _pathWorkData.PathStart = start;
-      _pathWorkData.PathEnd = goal;
+      _pathWorkData.PathEnd = adjustedGoal;
       _pathWorkData.IsIntendedGoal = true;
       _pathCollection.PathTimer.Restart();
       _task = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
@@ -4181,8 +4393,9 @@ namespace AiEnabled.Bots
         }
 
         bool isRotaryAirlock = door.BlockDefinition.SubtypeName.StartsWith("RotaryAirlock");
+        bool isPassageAirlock = !isRotaryAirlock && door.BlockDefinition.SubtypeName.StartsWith("PassageAirlock");
 
-        if (!isRotaryAirlock && door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
+        if (!isRotaryAirlock && !isPassageAirlock && door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
         {
           if (door.IsWorking)
             AiSession.Instance.DoorsToClose[door.EntityId] = MyAPIGateway.Session.ElapsedPlayTime;
@@ -4279,7 +4492,7 @@ namespace AiEnabled.Bots
         }
         else if (door.IsWorking)
         {
-          if (isRotaryAirlock)
+          if (isRotaryAirlock || isPassageAirlock)
           {
             var doorPos = door.Position;
             var doorWorldPos = door.CubeGrid.GridIntegerToWorld(doorPos);
@@ -4376,13 +4589,17 @@ namespace AiEnabled.Bots
               {
                 if (matchDotFwd)
                 {
-                  if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed)
+                  if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed || door.IsFullyClosed)
                     return false;
 
                   if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Closing)
                     door.CloseDoor();
                 }
                 else if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
+                {
+                  return false;
+                }
+                else if (isPassageAirlock && ((MyAdvancedDoor)door).FullyOpen)
                 {
                   return false;
                 }
@@ -4396,10 +4613,13 @@ namespace AiEnabled.Bots
                 if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
                   return false;
 
+                if (isPassageAirlock && ((MyAdvancedDoor)door).FullyOpen)
+                  return false;
+
                 if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Opening)
                   door.OpenDoor();
               }
-              else if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed)
+              else if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed || door.IsFullyClosed)
               {
                 return false;
               }
@@ -4481,7 +4701,7 @@ namespace AiEnabled.Bots
           var lastNode = _pathCollection.LastNode;
           var nextNode = _pathCollection.NextNode;
 
-          bool addTo = false;
+          bool addTo = !isGridGraph;
 
           if (isGridGraph)
           {
@@ -4490,13 +4710,43 @@ namespace AiEnabled.Bots
               || _currentGraph.TryGetNodeForPosition(current, out currentNode) && currentNode?.IsGridNodePlanetTile == true;
           }
 
-          if (addTo || !isGridGraph)
+          if (addTo && _pathCollection != null)
           {
+            List<IHitInfo> hitInfoList;
+            if (!AiSession.Instance.HitListStack.TryPop(out hitInfoList) || hitInfoList == null)
+              hitInfoList = new List<IHitInfo>();
+            else
+              hitInfoList.Clear();
+
+            var botPosition = GetPosition();
+            MyAPIGateway.Physics.CastRay(botPosition, botPosition + WorldMatrix.Forward * 2, hitInfoList, CollisionLayers.CharacterCollisionLayer);
+
+            for (int i = 0; i < hitInfoList.Count; i++)
+            {
+              var hitInfo = hitInfoList[i];
+              if (hitInfo?.HitEntity == null || hitInfo.HitEntity.EntityId == Character.EntityId)
+                continue;
+
+              var ch = hitInfo.HitEntity as IMyCharacter;
+              if (ch != null)
+              {
+                addTo = false;
+                break;
+              }
+            }
+
+            hitInfoList.Clear();
+            AiSession.Instance.HitListStack.Push(hitInfoList);
+
             var last = lastNode != null ? lastNode.Position : current;
             var next = nextNode != null ? nextNode.Position : current;
 
-            _currentGraph.AddToObstacles(last, current, next);
-            _pathCollection.CleanUp(true);
+            if (addTo && _currentGraph.AddToObstacles(last, current, next))
+            {
+              _pathCollection.Obstacles[next] = new byte();
+              _pathCollection.CleanUp(true);
+            }
+
             return;
           }
         }
@@ -4629,6 +4879,7 @@ namespace AiEnabled.Bots
       {
         _pathCollection = AiSession.Instance.GetCollection();
         _pathCollection.Bot = this;
+        _currentGraph.HookEventsForPathCollection(_pathCollection);
       }
 
       //if (AiSession.Instance.DrawDebug && _pathCollection != null)

@@ -182,7 +182,7 @@ namespace AiEnabled.Graphics
         int newAmount = (int)Math.Ceiling(num);
         UpdateMaxBots(newAmount);
 
-        var pkt = new AdminPacket(newAmount, AiSession.Instance.MaxHelpers, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null);
+        var pkt = new AdminPacket(newAmount, AiSession.Instance.MaxHelpers, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null, null);
         AiSession.Instance.Network.SendToServer(pkt);
       }
     }
@@ -201,7 +201,7 @@ namespace AiEnabled.Graphics
         int newAmount = (int)Math.Ceiling(num);
         UpdateMaxHelpers(newAmount);
 
-        var pkt = new AdminPacket(AiSession.Instance.MaxBots, newAmount, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null);
+        var pkt = new AdminPacket(AiSession.Instance.MaxBots, newAmount, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null, null);
         AiSession.Instance.Network.SendToServer(pkt);
       }
     }
@@ -271,7 +271,7 @@ namespace AiEnabled.Graphics
         _playerData.RepairBotIgnoreColorHSV = vec;
         RepairBotIgnoreColorInput.Text = $"RepairBot ignore color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
 
-        var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, vec, _playerData.RepairBotIgnoreColorHSV);
+        var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, vec, _playerData.RepairBotGrindColorHSV);
         AiSession.Instance.Network.SendToServer(pkt);
       }
       else

@@ -34,6 +34,7 @@ using VRage.Game.Components;
 using VRage.Game;
 using AiEnabled.Parallel;
 using ParallelTasks;
+using Sandbox.Game.Entities.Blocks;
 
 namespace AiEnabled.Ai.Support
 {
@@ -132,14 +133,9 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     public ushort TotalSpawnCount = 0;
 
-    /// <summary>
-    /// Item1 = stair coming from, Item2 = stair going to, Item3 = position to insert between them.
-    /// TODO: Need to make this part of the PathCollection to avoid threading issues
-    /// </summary>
-    internal Queue<MyTuple<Vector3I, Vector3I, Vector3I>> StackedStairsFound { get; private set; } = new Queue<MyTuple<Vector3I, Vector3I, Vector3I>>();
 
     internal Dictionary<Vector3I, Node> OpenTileDict = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
-    Dictionary<Vector3I, Node> _planetTileDictionary = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
+    internal Dictionary<Vector3I, Node> PlanetTileDictionary = new Dictionary<Vector3I, Node>(Vector3I.Comparer);
 
     Vector3D _worldPosition;
     MatrixD _lastMatrix;
@@ -160,7 +156,7 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
-        if (grid == null || grid.MarkedForClose)
+        if (grid?.Physics == null || grid.MarkedForClose)
         {
           AiSession.Instance.Logger.Log($"CubeGridMap.ctor: Grid '{grid?.DisplayName ?? "NULL"}' was null or marked for close in constructor!", MessageType.WARNING);
           return;
@@ -189,6 +185,7 @@ namespace AiEnabled.Ai.Support
           return;
         }
 
+        IsGridGraph = true;
         Key = (ulong)grid.EntityId;
         gridGroup.OnGridAdded += GridGroup_OnGridAdded;
         gridGroup.OnGridRemoved += GridGroup_OnGridRemoved;
@@ -682,8 +679,8 @@ namespace AiEnabled.Ai.Support
         OpenTileDict?.Clear();
         OpenTileDict = null;
 
-        _planetTileDictionary?.Clear();
-        _planetTileDictionary = null;
+        PlanetTileDictionary?.Clear();
+        PlanetTileDictionary = null;
 
         _blockBoxList?.Clear();
         _blockBoxList = null;
@@ -1026,6 +1023,7 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        //AiSession.Instance.Logger.Log($"{this}.RemovePlanetTilesAsync: Start");
         var iter = new Vector3I_RangeIterator(ref BoundingBox.Min, ref BoundingBox.Max);
 
         while (iter.IsValid())
@@ -1040,7 +1038,7 @@ namespace AiEnabled.Ai.Support
             continue;
 
           Node pn;
-          if (!_planetTileDictionary.TryGetValue(localPoint, out pn) || pn == null)
+          if (!PlanetTileDictionary.TryGetValue(localPoint, out pn) || pn == null)
           {
             if (!AiSession.Instance.NodeStack.TryPop(out pn) || pn == null)
               pn = new Node();
@@ -1049,10 +1047,12 @@ namespace AiEnabled.Ai.Support
           pn.Update(localPoint, Vector3.Zero, NodeType.GridPlanet, 0, MainGrid);
         }
 
-        foreach (var kvp in _planetTileDictionary)
+        foreach (var kvp in PlanetTileDictionary)
         {
           GetBlockedNodeEdges(kvp.Value);
         }
+
+        //AiSession.Instance.Logger.Log($"{this}.RemovePlanetTilesAsync: Finished");
       }
       catch (Exception ex)
       {
@@ -1111,12 +1111,11 @@ namespace AiEnabled.Ai.Support
       Ready = false;
       Dirty = false;
       ObstacleNodes.Clear();
-      Obstacles.Clear();
       AllDoors.Clear();
       BlockedDoors.Clear();
-      OptimizedCache.Clear();
       ExemptNodesUpper.Clear();
       ExemptNodesSide.Clear();
+      InvokePositionsRemoved(null);
 
       if (AiSession.Instance?.NodeStack != null)
       {
@@ -1125,14 +1124,14 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.NodeStack.Push(kvp.Value);
         }
 
-        foreach (var kvp in _planetTileDictionary)
+        foreach (var kvp in PlanetTileDictionary)
         {
           AiSession.Instance.NodeStack.Push(kvp.Value);
         }
       }
 
       OpenTileDict.Clear();
-      _planetTileDictionary.Clear();
+      PlanetTileDictionary.Clear();
 
       IsGridGraph = MainGrid != null && !MainGrid.MarkedForClose;
       if (IsGridGraph)
@@ -1203,15 +1202,13 @@ namespace AiEnabled.Ai.Support
       Node node;
       TryGetNodeForPosition(testPosition, out node);
 
-      if (node != null && !currentIsDenied
-        && !IsObstacle(testPosition, true)
-        && !TempBlockedNodes.ContainsKey(localPosition))
+      if (node != null && !currentIsDenied && !IsObstacle(testPosition, bot, true) && !TempBlockedNodes.ContainsKey(localPosition))
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
         if ((bot.RequiresJetpack || !preferGroundNode || !isAir) && (allowAirNodes || !isAir)
           && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes)
-          && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)) && (!bot.WaterNodesOnly || !isWater))
+          && (!bot.WaterNodesOnly || isWater) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
         { 
 
           if (isSlimBlock)
@@ -1306,14 +1303,14 @@ namespace AiEnabled.Ai.Support
       Node node;
 
       if (!currentIsDenied
-        && !IsObstacle(localPosition, true)
+        && !IsObstacle(localPosition, bot, true)
         && TryGetNodeForPosition(localPosition, out node))
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
         if ((bot.RequiresJetpack || !preferGroundNode || !isAir) && (allowAirNodes || !isAir)
           && (!isWater || bot.CanUseWaterNodes) && (!isAir || bot.CanUseAirNodes)
-          && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)) && (!bot.WaterNodesOnly || !isWater))
+          && (!bot.WaterNodesOnly || isWater) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this)))
         {
 
           if (isSlimBlock)
@@ -1488,7 +1485,7 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      if (Obstacles.ContainsKey(nextNode) || ObstacleNodes.ContainsKey(nextNode) || TempBlockedNodes.ContainsKey(nextNode))
+      if (ObstacleNodes.ContainsKey(nextNode) || TempBlockedNodes.ContainsKey(nextNode) || bot?._pathCollection?.Obstacles.ContainsKey(nextNode) == true)
       {
         return false;
       }
@@ -1586,7 +1583,7 @@ namespace AiEnabled.Ai.Support
 
         using (RootVoxel.Pin())
         {
-          if (LineIntersectsVoxel(worldCurrent, worldNext, RootVoxel))
+          if (LineIntersectsVoxel(ref worldCurrent, ref worldNext, RootVoxel))
             return false;
         }
       }
@@ -1669,7 +1666,7 @@ namespace AiEnabled.Ai.Support
               return false;
             }
 
-            StackedStairsFound.Enqueue(MyTuple.Create(previousNode, currentNode, insertPosition));
+            bot._pathCollection.StackedStairsFound.Enqueue(MyTuple.Create(previousNode, currentNode, insertPosition));
           }
         }
       }
@@ -1712,7 +1709,7 @@ namespace AiEnabled.Ai.Support
         if (AiSession.Instance == null || !AiSession.Instance.Registered)
           return;
 
-        //AiSession.Instance.Logger.Log($"Grid.InitGridArea starting for {MainGrid.DisplayName}");
+        //AiSession.Instance.Logger.Log($"{this}.InitGridArea: Start");
 
         ApiWorkData data;
         if (!AiSession.Instance.ApiWorkDataStack.TryPop(out data) || data == null)
@@ -1862,7 +1859,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        foreach (var kvp in _planetTileDictionary)
+        foreach (var kvp in PlanetTileDictionary)
         {
           if (Dirty)
             return;
@@ -1874,8 +1871,7 @@ namespace AiEnabled.Ai.Support
         if (!MainGrid.Physics.IsStatic)
           AddAdditionalGridTiles();
 
-        UpdateTempObstacles();
-        //AiSession.Instance.Logger.Log($"Grid.InitGridArea finished");
+        //AiSession.Instance.Logger.Log($"{this}.InitGridArea: Finished");
       }
       catch (Exception ex)
       {
@@ -1890,6 +1886,7 @@ namespace AiEnabled.Ai.Support
 
       var position = block.Position;
       var mainGridPosition = position; // connectedIsMain ? position : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(position));
+      //bool isDigiLadder = block.BlockDefinition.Id.SubtypeName.StartsWith("LargeShipUsableLadder");
 
       var door = block.FatBlock as IMyDoor;
       if (door != null)
@@ -1911,6 +1908,37 @@ namespace AiEnabled.Ai.Support
         door.OnMarkForClose -= Door_OnMarkForClose;
         door.OnMarkForClose += Door_OnMarkForClose;
 
+        //if (isDigiLadder)
+        //{
+        //  // Retractable ladder is a door block
+        //  if (block.Orientation.Up == upDir && !OpenTileDict.ContainsKey(mainGridPosition))
+        //  {
+        //    Node node;
+        //    if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+        //      node = new Node();
+
+        //    node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, MainGrid, block);
+        //    OpenTileDict[mainGridPosition] = node;
+
+        //    var blockUp = Base6Directions.GetIntVector(block.Orientation.Up);
+        //    if (blockUp.Dot(ref upVec) != 0)
+        //    {
+        //      var positionAbove = position + upVec;
+        //      var cubeAbove = GetBlockAtPosition(positionAbove);
+        //      if (cubeAbove == null)
+        //      {
+        //        var newPos = mainGridPosition + upVec;
+
+        //        Node newNode;
+        //        if (!AiSession.Instance.NodeStack.TryPop(out newNode) || newNode == null)
+        //          newNode = new Node();
+
+        //        newNode.Update(newPos, Vector3.Zero, NodeType.Ground, 0, MainGrid);
+        //        OpenTileDict[newPos] = newNode;
+        //      }
+        //    }
+        //  }
+        //}
         if (door is IMyAirtightHangarDoor) // TODO: Possibly - check block groups for this door and open others with it? Maybe check at open time?
         {
           if (block.Orientation.Up == upDir)
@@ -3015,7 +3043,7 @@ namespace AiEnabled.Ai.Support
           OpenTileDict[mainGridPosition] = node;
         }
       }
-      else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
+      else if (/*isDigiLadder ||*/ cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
       {
         Node node;
         if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
@@ -3126,13 +3154,15 @@ namespace AiEnabled.Ai.Support
       }
     }
 
+    HashSet<Vector3I> _positionsToRemove = new HashSet<Vector3I>();
     void ApplyBlockChanges()
     {
       try
       {
-        //AiSession.Instance.Logger.Log($"ApplyBlockChanges: Start");
+        //AiSession.Instance.Logger.Log($"{this}.ApplyBlockChanges: Start");
 
         _blockBoxList.Clear();
+        _positionsToRemove.Clear();
         var dirArray = AiSession.Instance.CardinalDirections;
 
         foreach (var pos in _blockApplyHash)
@@ -3146,6 +3176,15 @@ namespace AiEnabled.Ai.Support
           }
 
           box.Inflate(1);
+
+          var iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+          while (iter.IsValid())
+          {
+            var current = iter.Current;
+            iter.MoveNext();
+
+            _positionsToRemove.Add(current);
+          }
 
           bool found = false;
           for (int i = 0; i < _blockBoxList.Count; i++)
@@ -3166,6 +3205,8 @@ namespace AiEnabled.Ai.Support
             _blockBoxList.Add(box);
           }
         }
+
+        InvokePositionsRemoved(_positionsToRemove);
 
         var newBox = GetMapBoundingBoxLocal();
         newBox.Inflate(_boxExpansion);
@@ -3202,7 +3243,7 @@ namespace AiEnabled.Ai.Support
         {
           gravityNorm = WorldMatrix.Down;
           upVecPlanet = upVec;
-        }  
+        }
 
         for (int i = 0; i < _blockBoxList.Count; i++)
         {
@@ -3218,9 +3259,9 @@ namespace AiEnabled.Ai.Support
             iter.MoveNext();
 
             Node n;
-            if (_planetTileDictionary.TryGetValue(pos, out n))
+            if (PlanetTileDictionary.TryGetValue(pos, out n))
             {
-              _planetTileDictionary.Remove(pos);
+              PlanetTileDictionary.Remove(pos);
               AiSession.Instance.NodeStack.Push(n);
             }
             else if (OpenTileDict.TryGetValue(pos, out n))
@@ -3229,10 +3270,7 @@ namespace AiEnabled.Ai.Support
               AiSession.Instance.NodeStack.Push(n);
             }
 
-            OptimizedCache.TryRemove(pos, out n);
-
-            byte b;
-            Obstacles.TryRemove(pos, out b);
+            _positionsToRemove.Add(pos);
           }
 
           iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
@@ -3274,7 +3312,7 @@ namespace AiEnabled.Ai.Support
             iter.MoveNext();
 
             Node n;
-            if (_planetTileDictionary.TryGetValue(pos, out n))
+            if (PlanetTileDictionary.TryGetValue(pos, out n))
             {
               GetBlockedNodeEdges(n);
             }
@@ -3284,7 +3322,7 @@ namespace AiEnabled.Ai.Support
         _blockApplyHash.Clear();
 
         NeedsInteriorNodesUpdate = true;
-        //AiSession.Instance.Logger.Log($"ApplyBlockChanges: Finish");
+        //AiSession.Instance.Logger.Log($"{this}.ApplyBlockChanges: Finish");
       }
       catch (Exception ex)
       {
@@ -3540,7 +3578,13 @@ namespace AiEnabled.Ai.Support
             return;
 
           var map = addMaps[i];
-          if (map == null || !map.Ready)
+          if (map == null)
+          {
+            addMaps.RemoveAtFast(i);
+            continue;
+          }
+
+          if (!map.Ready)
             continue;
 
           foreach (var kvp in map.OpenTileDict)
@@ -3737,7 +3781,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        if (addNodeBelow && _planetTileDictionary.TryGetValue(localBelow, out node))
+        if (addNodeBelow && PlanetTileDictionary.TryGetValue(localBelow, out node))
         {
           NodeType nType = NodeType.None;
 
@@ -3751,7 +3795,7 @@ namespace AiEnabled.Ai.Support
           addNodeBelow = false;
         }
 
-        if (_planetTileDictionary.TryGetValue(localPoint, out node))
+        if (PlanetTileDictionary.TryGetValue(localPoint, out node))
         {
           NodeType nType = NodeType.None;
 
@@ -3912,7 +3956,7 @@ namespace AiEnabled.Ai.Support
               }
             }
 
-            _planetTileDictionary[localPoint] = newNode;
+            PlanetTileDictionary[localPoint] = newNode;
 
             if (addNodeBelow)
             {
@@ -3924,7 +3968,7 @@ namespace AiEnabled.Ai.Support
                 nodeBelow = new Node();
 
               nodeBelow.Update(localBelow, offset, nType, newNode.BlockedMask, MainGrid);
-              _planetTileDictionary[localBelow] = nodeBelow;
+              PlanetTileDictionary[localBelow] = nodeBelow;
             }
           }
         }
@@ -4042,6 +4086,9 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Start");
+
+        _positionsToRemove.Clear();
         while (_voxelUpdatesQueue.Count > 0)
         {
           var updateItem = _voxelUpdatesQueue.Dequeue();
@@ -4077,21 +4124,20 @@ namespace AiEnabled.Ai.Support
             iter.MoveNext();
 
             Node node;
-            if (_planetTileDictionary.TryGetValue(current, out node))
+            if (PlanetTileDictionary.TryGetValue(current, out node))
             {
               if (node != null)
               {
                 AiSession.Instance.NodeStack.Push(node);
               }
 
-              _planetTileDictionary.Remove(current);
+              PlanetTileDictionary.Remove(current);
             }
 
-            byte b;
-            ObstacleNodes.TryRemove(current, out b);
-            Obstacles.TryRemove(current, out b);
-            OptimizedCache.TryRemove(current, out node);
+            _positionsToRemove.Add(current);
           }
+
+          InvokePositionsRemoved(_positionsToRemove);
 
           float _;
           var gravityNorm = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
@@ -4117,7 +4163,7 @@ namespace AiEnabled.Ai.Support
             iter.MoveNext();
 
             Node node;
-            if (_planetTileDictionary.TryGetValue(current, out node))
+            if (PlanetTileDictionary.TryGetValue(current, out node))
             {
               GetBlockedNodeEdges(node);
             }
@@ -4125,6 +4171,8 @@ namespace AiEnabled.Ai.Support
 
           AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
         }
+
+        //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
       }
       catch (Exception ex)
       {
@@ -4564,7 +4612,8 @@ namespace AiEnabled.Ai.Support
       if (!thisBlockEmpty)
       {
         var def = thisBlock.BlockDefinition.Id;
-        thisIsDoor = thisBlock.FatBlock is IMyDoor;
+        thisIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(def);
+        thisIsDoor = !thisIsLadder && thisBlock.FatBlock is IMyDoor; // to make sure digi's retractable ladder is marked as ladder
         thisIsSolar = thisBlock.FatBlock is IMySolarPanel;
         thisIsDeadBody = def.SubtypeName.StartsWith("DeadBody");
         thisIsFreight = AiSession.Instance.FreightBlockDefinitions.ContainsItem(def);
@@ -4576,7 +4625,6 @@ namespace AiEnabled.Ai.Support
         thisIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
         thisIsCatwalk = AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
         thisIsBtnPanel = AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
-        thisIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(def);
         thisIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
         thisIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
         thisIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
@@ -4648,7 +4696,8 @@ namespace AiEnabled.Ai.Support
         if (!nextBlockEmpty)
         {
           var def = nextBlock.BlockDefinition.Id;
-          nextIsDoor = nextBlock.FatBlock is IMyDoor;
+          nextIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(def);
+          nextIsDoor = !nextIsLadder && nextBlock.FatBlock is IMyDoor; // to make sure digi's retractable ladder is marked as ladder
           nextIsSolar = nextBlock.FatBlock is IMySolarPanel;
           nextIsDeadBody = def.SubtypeName.StartsWith("DeadBody");
           nextIsFreight = AiSession.Instance.FreightBlockDefinitions.ContainsItem(def);
@@ -4660,7 +4709,6 @@ namespace AiEnabled.Ai.Support
           nextIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
           nextIsCatwalk = AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
           nextIsBtnPanel = AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
-          nextIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(def);
           nextIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
           nextIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
           nextIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
@@ -7561,7 +7609,7 @@ namespace AiEnabled.Ai.Support
     public bool GetRandomOpenTile(BotBase bot, out Node node, bool allowAirNodes = true, bool allowPlanetTiles = true, bool interiorFirst = true)
     {
       node = null;
-      if (OpenTileDict.Count == 0 && (!allowPlanetTiles || _planetTileDictionary.Count == 0))
+      if (OpenTileDict.Count == 0 && (!allowPlanetTiles || PlanetTileDictionary.Count == 0))
         return false;
 
       foreach (var tile in OpenTileDict)
@@ -7579,7 +7627,7 @@ namespace AiEnabled.Ai.Support
 
       if (node == null && allowPlanetTiles)
       {
-        foreach (var tile in _planetTileDictionary)
+        foreach (var tile in PlanetTileDictionary)
         {
           if (tile.Value != null && tile.Value.Block == null && CanBotUseTile(bot, tile.Value, allowAirNodes))
           {
@@ -7595,7 +7643,7 @@ namespace AiEnabled.Ai.Support
     public override bool GetRandomOpenNode(BotBase bot, Vector3D requestedPosition, out Node node)
     {
       node = null;
-      if (OpenTileDict.Count == 0 && _planetTileDictionary.Count == 0)
+      if (OpenTileDict.Count == 0 && PlanetTileDictionary.Count == 0)
         return false;
 
       List<Vector3I> nodeList;
@@ -7753,77 +7801,81 @@ namespace AiEnabled.Ai.Support
 
     void UpdateTempObstaclesAsync(WorkData data)
     {
+      //AiSession.Instance.Logger.Log($"{this}.UpdateTempObstaclesAsync: Start");
+
       var obstacleData = data as ObstacleWorkData;
-      if (obstacleData == null || AiSession.Instance?.BlockFaceDictionary == null || !AiSession.Instance.Registered)
-        return;
-
-      ObstacleNodesTemp.Clear();
-      var blocks = obstacleData.Blocks;
-      var tempEntities = obstacleData.Entities;
-
-      for (int i = 0; i < blocks.Count; i++)
+      if (obstacleData != null && AiSession.Instance?.BlockFaceDictionary != null && AiSession.Instance.Registered)
       {
-        var b = blocks[i];
-        if (b?.CubeGrid == null || b.IsDestroyed || b.CubeGrid.MarkedForClose)
-          continue;
+        ObstacleNodesTemp.Clear();
+        var blocks = obstacleData.Blocks;
+        var tempEntities = obstacleData.Entities;
 
-        var cubeDef = b.BlockDefinition as MyCubeBlockDefinition;
-        Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
-        if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(b.BlockDefinition.Id, out faceDict))
+        for (int i = 0; i < blocks.Count; i++)
         {
-          AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {b.CubeGrid.DisplayName}, Position = {b.Position})", MessageType.WARNING);
-          continue;
-        }
-
-        Matrix matrix = new Matrix
-        {
-          Forward = Base6Directions.GetVector(b.Orientation.Forward),
-          Left = Base6Directions.GetVector(b.Orientation.Left),
-          Up = Base6Directions.GetVector(b.Orientation.Up)
-        };
-
-        if (faceDict.Count < 2)
-          matrix.TransposeRotationInPlace();
-
-        Vector3I center = cubeDef.Center;
-        Vector3I.TransformNormal(ref center, ref matrix, out center);
-        var adjustedPosition = b.Position - center;
-
-        foreach (var kvp in faceDict)
-        {
-          var cell = kvp.Key;
-          Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-          var position = adjustedPosition + cell;
-
-          var worldPoint = b.CubeGrid.GridIntegerToWorld(position);
-          if (!OBB.Contains(ref worldPoint))
+          var b = blocks[i];
+          if (b?.CubeGrid == null || b.IsDestroyed || b.CubeGrid.MarkedForClose)
             continue;
 
-          var graphLocal = WorldToLocal(worldPoint);
-          if (IsOpenTile(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal))
+          var cubeDef = b.BlockDefinition as MyCubeBlockDefinition;
+          Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
+          if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(b.BlockDefinition.Id, out faceDict))
           {
-            ObstacleNodesTemp[graphLocal] = new byte();
+            AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {b.CubeGrid.DisplayName}, Position = {b.Position})", MessageType.WARNING);
+            continue;
           }
 
-          var sphere = new BoundingSphereD(worldPoint, b.CubeGrid.GridSize * 0.6f);
-
-          foreach (var dir in AiSession.Instance.CardinalDirections)
+          Matrix matrix = new Matrix
           {
-            var otherLocal = graphLocal + dir;
+            Forward = Base6Directions.GetVector(b.Orientation.Forward),
+            Left = Base6Directions.GetVector(b.Orientation.Left),
+            Up = Base6Directions.GetVector(b.Orientation.Up)
+          };
 
-            if (IsOpenTile(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal))
+          if (faceDict.Count < 2)
+            matrix.TransposeRotationInPlace();
+
+          Vector3I center = cubeDef.Center;
+          Vector3I.TransformNormal(ref center, ref matrix, out center);
+          var adjustedPosition = b.Position - center;
+
+          foreach (var kvp in faceDict)
+          {
+            var cell = kvp.Key;
+            Vector3I.TransformNormal(ref cell, ref matrix, out cell);
+            var position = adjustedPosition + cell;
+
+            var worldPoint = b.CubeGrid.GridIntegerToWorld(position);
+            if (!OBB.Contains(ref worldPoint))
+              continue;
+
+            var graphLocal = WorldToLocal(worldPoint);
+            if (IsOpenTile(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal))
             {
-              var otherWorld = LocalToWorld(otherLocal);
-              var otherSphere = new BoundingSphereD(otherWorld, 1);
+              ObstacleNodesTemp[graphLocal] = new byte();
+            }
 
-              if (sphere.Contains(otherSphere) != ContainmentType.Disjoint)
+            var sphere = new BoundingSphereD(worldPoint, b.CubeGrid.GridSize * 0.6f);
+
+            foreach (var dir in AiSession.Instance.CardinalDirections)
+            {
+              var otherLocal = graphLocal + dir;
+
+              if (IsOpenTile(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal))
               {
-                ObstacleNodesTemp[otherLocal] = new byte();
+                var otherWorld = LocalToWorld(otherLocal);
+                var otherSphere = new BoundingSphereD(otherWorld, 1);
+
+                if (sphere.Contains(otherSphere) != ContainmentType.Disjoint)
+                {
+                  ObstacleNodesTemp[otherLocal] = new byte();
+                }
               }
             }
           }
         }
       }
+
+      //AiSession.Instance.Logger.Log($"{this}.UpdateTempObstaclesAsync: Finished");
     }
 
     void UpdateTempObstaclesCallback(WorkData data)
@@ -7868,7 +7920,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      foreach (var kvp in _planetTileDictionary)
+      foreach (var kvp in PlanetTileDictionary)
       {
         if (IsPositionUsable(bot, kvp.Key))
         {
@@ -7936,20 +7988,15 @@ namespace AiEnabled.Ai.Support
       return result;
     }
 
-    public override bool IsPositionAvailable(Vector3D position)
+    public override bool IsPositionAvailable(Vector3D position, BotBase bot)
     {
-      if (base.IsPositionAvailable(position))
-      {
-        var node = WorldToLocal(position);
-        return !BlockedDoors.ContainsKey(node);
-      }
-
-      return false;
+      var node = WorldToLocal(position);
+      return base.IsPositionAvailable(node, bot) && !BlockedDoors.ContainsKey(node);
     }
 
-    public override bool IsPositionAvailable(Vector3I node)
+    public override bool IsPositionAvailable(Vector3I node, BotBase bot)
     {
-      return base.IsPositionAvailable(node) && !BlockedDoors.ContainsKey(node);
+      return base.IsPositionAvailable(node, bot) && !BlockedDoors.ContainsKey(node);
     }
 
     public void RecalculateOBB()
@@ -8105,7 +8152,7 @@ namespace AiEnabled.Ai.Support
       if (OpenTileDict.TryGetValue(position, out node))
         return node != null;
 
-      if (_planetTileDictionary.TryGetValue(position, out node))
+      if (PlanetTileDictionary.TryGetValue(position, out node))
         return node != null;
 
       return false;
@@ -8113,12 +8160,12 @@ namespace AiEnabled.Ai.Support
 
     public override bool IsOpenTile(Vector3I position)
     {
-      return _planetTileDictionary.ContainsKey(position) || OpenTileDict.ContainsKey(position);
+      return PlanetTileDictionary.ContainsKey(position) || OpenTileDict.ContainsKey(position);
     }
 
-    public override bool IsObstacle(Vector3I position, bool includeTemp)
+    public override bool IsObstacle(Vector3I position, BotBase bot, bool includeTemp)
     {
-      bool result = Obstacles.ContainsKey(position);
+      bool result = bot?._pathCollection != null && bot._pathCollection.Obstacles.ContainsKey(position);
 
       if (!includeTemp)
         return result;
@@ -8129,7 +8176,7 @@ namespace AiEnabled.Ai.Support
     public override Node GetValueOrDefault(Vector3I position, Node defaultValue)
     {
       Node node;
-      if (_planetTileDictionary.TryGetValue(position, out node) && node != null)
+      if (PlanetTileDictionary.TryGetValue(position, out node) && node != null)
         return node;
 
       if (OpenTileDict.TryGetValue(position, out node) && node != null)
@@ -8176,21 +8223,21 @@ namespace AiEnabled.Ai.Support
         return !checkPhysics || ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics;
       }
 
-      var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
+      //var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
 
-      for (int i = 0; i < GridCollection.Count; i++)
-      {
-        var grid = GridCollection[i] as MyCubeGrid;
-        if (grid?.Physics == null || grid.MarkedForClose || grid.IsPreview || grid.EntityId == MainGrid?.EntityId)
-          continue;
+      //for (int i = 0; i < GridCollection.Count; i++)
+      //{
+      //  var grid = GridCollection[i] as MyCubeGrid;
+      //  if (grid?.Physics == null || grid.MarkedForClose || grid.IsPreview || grid.EntityId == MainGrid?.EntityId)
+      //    continue;
 
-        var localPosition = grid.WorldToGridInteger(worldPosition);
-        slim = grid.GetCubeBlock(localPosition);
-        if (slim != null)
-        {
-          return !checkPhysics || ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics;
-        }
-      }
+      //  var localPosition = grid.WorldToGridInteger(worldPosition);
+      //  slim = grid.GetCubeBlock(localPosition);
+      //  if (slim != null)
+      //  {
+      //    return !checkPhysics || ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics;
+      //  }
+      //}
 
       return false;
     }

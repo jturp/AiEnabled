@@ -50,20 +50,15 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     internal ConcurrentDictionary<Vector3I, byte> TempBlockedNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
 
-    /// <summary>
-    /// Used for permanently blocked nodes
-    /// </summary>
-    internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+    ///// <summary>
+    ///// Used for permanently blocked nodes
+    ///// </summary>
+    //internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
 
     /// <summary>
     /// The dictionary key for this map
     /// </summary>
     public ulong Key;
-
-    /// <summary>
-    /// Used to cache the pathnodes for faster retrieval on subsequent pathfinding calls
-    /// </summary>
-    public ConcurrentDictionary<Vector3I, Node> OptimizedCache = new ConcurrentDictionary<Vector3I, Node>(Vector3I.Comparer);
 
     /// <summary>
     /// The matrix to use for alignment purposes
@@ -118,10 +113,31 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     /// <param name="position">The world position to check</param>
     /// <returns></returns>
-    public virtual bool IsPositionAvailable(Vector3D position)
+    public virtual bool IsPositionAvailable(Vector3D position, BotBase bot)
     {
       var node = WorldToLocal(position);
-      return IsPositionValid(position) && IsOpenTile(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node);
+      if (IsOpenTile(node) && !TempBlockedNodes.ContainsKey(node) && !ObstacleNodes.ContainsKey(node))
+      {
+        return bot?._pathCollection == null || !bot._pathCollection.Obstacles.ContainsKey(node);
+      }
+
+      return false;
+    }
+
+    /// <summary>
+    /// Determines whether the given position is an available tile position
+    /// </summary>
+    /// <param name="position">The local position to check</param>
+    /// <param name="bot">The bot to check availability for</param>
+    /// <returns>true if the <paramref name="position"/> is available (is open tile and not blocked in any way)</returns>
+    public virtual bool IsPositionAvailable(Vector3I position, BotBase bot)
+    {
+      if (IsOpenTile(position) && !TempBlockedNodes.ContainsKey(position) && !ObstacleNodes.ContainsKey(position))
+      {
+        return bot?._pathCollection == null || !bot._pathCollection.Obstacles.ContainsKey(position);
+      }
+
+      return false;
     }
 
     /// <summary>
@@ -150,9 +166,10 @@ namespace AiEnabled.Ai.Support
     /// Determines if the supplied position is blocked in some way
     /// </summary>
     /// <param name="position">the <see cref="Node"/> position</param>
+    /// <param name="bot">the <see cref="BotBase"/> requesting the info</param>
     /// <param name="includeTemp">whether temporary blockages should be considered (ie a parked vehicle in the way)</param>
     /// <returns></returns>
-    public abstract bool IsObstacle(Vector3I position, bool includeTemp);
+    public abstract bool IsObstacle(Vector3I position, BotBase bot, bool includeTemp);
 
     /// <summary>
     /// Gets the <see cref="Node"/> associated with a grid position, or the default if there isn't one
@@ -175,17 +192,17 @@ namespace AiEnabled.Ai.Support
 
       Node node;
       var localPosition = WorldToLocal(worldPosition);
-      if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
+      if (!IsObstacle(localPosition, bot, true) && TryGetNodeForPosition(localPosition, out node))
       {
-        if (!PointInsideVoxel(worldPosition, RootVoxel))
+        var worldPoint = LocalToWorld(node.Position) + node.Offset;
+        if (!PointInsideVoxel(worldPoint, RootVoxel))
         {
           bool isWaterNode = node.IsWaterNode;
 
           if (bot.WaterNodesOnly)
             return isWaterNode;
 
-          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!isWaterNode || bot.CanUseWaterNodes);
+          return (!node.IsAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this));
         }
       }
 
@@ -207,8 +224,7 @@ namespace AiEnabled.Ai.Support
         return false;
 
       var localPosition = WorldToLocal(worldPosition);
-      if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-       && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
+      if (!IsObstacle(localPosition, bot, true) && TryGetNodeForPosition(localPosition, out node))
       {
         var worldPoint = LocalToWorld(node.Position) + node.Offset;
         if (!PointInsideVoxel(worldPoint, RootVoxel))
@@ -218,7 +234,7 @@ namespace AiEnabled.Ai.Support
           if (bot.WaterNodesOnly)
             return isWaterNode;
 
-          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!isWaterNode || bot.CanUseWaterNodes);
+          return (!node.IsAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this));
         }
       }
 
@@ -234,8 +250,7 @@ namespace AiEnabled.Ai.Support
     public virtual bool IsPositionUsable(BotBase bot, Vector3I localPosition)
     {
       Node node;
-      if (!TempBlockedNodes.ContainsKey(localPosition) && !Obstacles.ContainsKey(localPosition)
-        && !ObstacleNodes.ContainsKey(localPosition) && TryGetNodeForPosition(localPosition, out node))
+      if (!IsObstacle(localPosition, bot, true) && TryGetNodeForPosition(localPosition, out node))
       {
         var worldPoint = LocalToWorld(node.Position) + node.Offset;
         if (!PointInsideVoxel(worldPoint, RootVoxel))
@@ -245,21 +260,11 @@ namespace AiEnabled.Ai.Support
           if (bot.WaterNodesOnly)
             return isWaterNode;
 
-          return (!node.IsAirNode || bot.CanUseAirNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes) && (!isWaterNode || bot.CanUseWaterNodes);
+          return (!node.IsAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this));
         }
       }
 
       return false;
-    }
-
-    /// <summary>
-    /// Determines whether the given position is an available tile position
-    /// </summary>
-    /// <param name="position">The local position to check</param>
-    /// <returns>true if the <paramref name="position"/> is available (is open tile and not blocked in any way)</returns>
-    public virtual bool IsPositionAvailable(Vector3I position)
-    {
-      return IsOpenTile(position) && !TempBlockedNodes.ContainsKey(position) && !ObstacleNodes.ContainsKey(position) && !Obstacles.ContainsKey(position);
     }
 
     public Node GetBufferZoneTargetPositionFromPrunik(ref MyOrientedBoundingBoxD nextObb, ref Base6Directions.Direction forward, ref Vector3D goal, BotBase bot)
@@ -306,6 +311,7 @@ namespace AiEnabled.Ai.Support
 
       MatrixD matrix;
       BoundingBoxI localBox;
+      var nextGraph = bot._nextGraph;
 
       if (forward == Base6Directions.Direction.Up || forward == Base6Directions.Direction.Down)
       {
@@ -341,7 +347,7 @@ namespace AiEnabled.Ai.Support
           gravity = WorldMatrix.Down;
 
         Vector3D upVector = -gravity;
-        Vector3D? surfacePoint = null;
+        Vector3D? surfacePoint;
 
         var planet = RootVoxel as MyPlanet;
         if (planet != null)
@@ -475,8 +481,8 @@ namespace AiEnabled.Ai.Support
       }
 
       var result = resultNode ?? backupNode;
-      var extents = localBox.Max - localBox.Min + 1;
-      var volume = extents.X * extents.Y * extents.Z;
+      //var extents = localBox.Max - localBox.Min + 1;
+      //var volume = extents.X * extents.Y * extents.Z;
 
       return result;
     }
@@ -487,7 +493,7 @@ namespace AiEnabled.Ai.Support
     /// <param name="prevNode">Previous <see cref="Node"/> position</param>
     /// <param name="curNode">Current <see cref="Node"/> position</param>
     /// <param name="nextNode">Next <see cref="Node"/> position</param>
-    public virtual void AddToObstacles(Vector3I prevNode, Vector3I curNode, Vector3I nextNode)
+    public virtual bool AddToObstacles(Vector3I prevNode, Vector3I curNode, Vector3I nextNode)
     {
       var prev = prevNode; // WorldToLocal(prevNode);
       var curr = curNode; // WorldToLocal(curNode);
@@ -515,10 +521,7 @@ namespace AiEnabled.Ai.Support
           addObstacle = false;
       }
 
-      if (addObstacle)
-      {
-        Obstacles[next] = new byte();
-      }
+      return addObstacle;
     }
 
     public virtual void Refresh()
@@ -598,8 +601,12 @@ namespace AiEnabled.Ai.Support
 
       if (!graph.IsPositionValid(botPostion) && bot.Owner == null)
       {
-        AiSession.Instance.Logger.Log($"GridBase.TeleportNearby: Bot found outside of map bounds", MessageType.WARNING);
-        bot.Character.Kill();
+        if (bot.Target.CurrentGravityAtBot.LengthSquared() == 0)
+        {
+          AiSession.Instance.Logger.Log($"{this}.TeleportNearby: {bot.Character.Name} found outside of map bounds (pos was {graph.WorldToLocal(botPostion)})", MessageType.WARNING);
+          bot.Character.Kill();
+        }
+
         return;
       }
 
@@ -683,13 +690,15 @@ namespace AiEnabled.Ai.Support
         var matrix = WorldMatrix;
         matrix.Translation = worldPoint;
 
+        AiSession.Instance.Logger.Log($"{this}.TeleportNearby: {bot.Character.Name} moved from {graph.WorldToLocal(botPostion)} to {center.Value}");
+
         bot.Character.SetWorldMatrix(matrix);
         bot.Character.Physics.SetSpeeds(velocity, Vector3.Zero);
         bot._pathCollection?.CleanUp(true);
       }
       else
       {
-        AiSession.Instance.Logger.Log($"GridBase.TeleportNearby: Unable to find placement for bot", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"{this}.TeleportNearby: Unable to find placement for {bot.Character.Name} (pos was {graph.WorldToLocal(botPostion)})", MessageType.WARNING);
 
         if (bot.Owner == null)
           bot.Character.Kill();
@@ -1023,7 +1032,7 @@ namespace AiEnabled.Ai.Support
       return num13 + (num14 - num13) * r.Z >= sbyte.MaxValue;
     }
 
-    public bool LineIntersectsVoxel(Vector3D from, Vector3D to, MyVoxelBase voxel)
+    public bool LineIntersectsVoxel(ref Vector3D from, ref Vector3D to, MyVoxelBase voxel)
     {
       if (voxel == null || voxel.MarkedForClose)
         return false;
@@ -1123,12 +1132,13 @@ namespace AiEnabled.Ai.Support
       try
       {
         IsValid = false;
-        Obstacles?.Clear();
+        OnPositionsRemoved?.Invoke(null);
+        OnGridBaseClosing?.Invoke();
+
         ObstacleNodes?.Clear();
         ObstacleNodesTemp?.Clear();
         TempBlockedNodes?.Clear();
 
-        Obstacles = null;
         ObstacleNodes = null;
         ObstacleNodesTemp = null;
         TempBlockedNodes = null;
@@ -1137,6 +1147,73 @@ namespace AiEnabled.Ai.Support
       {
         AiSession.Instance?.Logger?.Log($"Exception during GridBase.Close(): {ex.Message}\n{ex.StackTrace}");
       }
+    }
+
+    public event Action<HashSet<Vector3I>> OnPositionsRemoved;
+    public event Action OnGridBaseClosing;
+
+    internal void InvokePositionsRemoved(HashSet<Vector3I> positions) => OnPositionsRemoved?.Invoke(positions);
+
+    public void HookEventsForPathCollection(PathCollection pc)
+    {
+      if (pc == null)
+        return;
+
+      var pcGraph = pc.Graph;
+      if (pcGraph != null)
+      {
+        pcGraph.OnPositionsRemoved -= pc.ClearObstacles;
+        pcGraph.OnGridBaseClosing -= pc.OnGridBaseClosing;
+      }
+
+      OnPositionsRemoved += pc.ClearObstacles;
+      OnGridBaseClosing += pc.OnGridBaseClosing;
+    }
+
+    readonly HashSet<Vector3I> _tempDebug = new HashSet<Vector3I>(); // for debug only
+    public void DrawDebug()
+    {
+      try
+      {
+        var player = MyAPIGateway.Session.Player?.Character;
+        if (player == null)
+          return;
+
+        _tempDebug.Clear();
+        MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe;
+        MyOrientedBoundingBoxD obb;
+        Vector4 color = Color.Purple;
+        var rotation = Quaternion.CreateFromRotationMatrix(WorldMatrix);
+        var playerLocation = WorldToLocal(player.WorldAABB.Center);
+
+        MyAPIGateway.Utilities.ShowNotification($"{this}: ObstacleNodes = {ObstacleNodes.Count}, TempBlocked = {TempBlockedNodes.Count}, PlayerLoc = {playerLocation}", 16);
+
+        foreach (var localVec in ObstacleNodes.Keys)
+        {
+          if (_tempDebug.Add(localVec))
+          {
+            var vec = LocalToWorld(localVec);
+            obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.25, rotation);
+            AiUtils.DrawOBB(obb, Color.Firebrick, raster);
+          }
+        }
+
+        raster = MySimpleObjectRasterizer.Solid;
+
+        foreach (var point in TempBlockedNodes.Keys)
+        {
+          if (IsOpenTile(point) && _tempDebug.Add(point))
+          {
+            var vec = LocalToWorld(point);
+            obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
+
+            AiUtils.DrawOBB(obb, Color.Red, MySimpleObjectRasterizer.Solid);
+          }
+        }
+
+        AiUtils.DrawOBB(OBB, Color.Orange * 0.5f, MySimpleObjectRasterizer.Solid);
+      }
+      catch { }
     }
 
     public override bool Equals(object obj)
@@ -1164,6 +1241,19 @@ namespace AiEnabled.Ai.Support
     public int GetHashCode(GridBase obj)
     {
       return obj.Key.GetHashCode();
+    }
+
+    public override string ToString()
+    {
+      var gridMap = this as CubeGridMap;
+      if (gridMap != null)
+        return $"{this.GetType().Name} ({gridMap.MainGrid?.DisplayName ?? "NULL GridMap"})";
+
+      var voxelMap = this as VoxelGridMap;
+      if (voxelMap != null)
+        return $"{this.GetType().Name} ({voxelMap.Key})";
+
+      return this.GetType().FullName;
     }
   }
 }

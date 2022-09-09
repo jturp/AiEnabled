@@ -4,14 +4,37 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using VRage.Game;
+using VRage.Utils;
+using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
+
 using VRageMath;
 
 namespace AiEnabled.Utilities
 {
-  public static class VectorUtils
+  public static class AiUtils
   {
     public const double PiOver3 = Math.PI / 3;
     public const double PiOver6 = Math.PI / 6;
+
+    public static T CastHax<T>(T typeRef, object castObj) => (T)castObj;
+
+    public static void DrawOBB(MyOrientedBoundingBoxD obb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f, BlendTypeEnum blendType = BlendTypeEnum.Standard)
+    {
+      var material = MyStringId.GetOrCompute("Square");
+      var box = new BoundingBoxD(-obb.HalfExtent, obb.HalfExtent);
+      var wm = MatrixD.CreateFromQuaternion(obb.Orientation);
+      wm.Translation = obb.Center;
+      MySimpleObjectDraw.DrawTransparentBox(ref wm, ref box, ref color, raster, 1, thickness, material, material, blendType: blendType);
+    }
+
+    public static void DrawAABB(BoundingBoxD bb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f)
+    {
+      var material = MyStringId.GetOrCompute("Square");
+      var box = new BoundingBoxD(-bb.HalfExtents, bb.HalfExtents);
+      var wm = MatrixD.CreateTranslation(bb.Center);
+      MySimpleObjectDraw.DrawTransparentBox(ref wm, ref box, ref color, raster, 1, thickness, material, material);
+    }
 
     public static MatrixD GetRotationBetweenMatrices(ref MatrixD a, ref MatrixD b)
     {

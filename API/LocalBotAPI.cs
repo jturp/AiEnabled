@@ -495,11 +495,17 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.");
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command before mod was ready to spawn bots.");
         return null;
       }
 
-      AiSession.Instance.Logger.Log($"AiEnabled: API received obsolete SpawnBot command. This method can cause lag and should be replaced with SpawnBotQueued.", MessageType.WARNING);
+      if (grid != null && (grid.Physics == null || grid.IsPreview))
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with grid that has null physics.", MessageType.WARNING);
+        return null;
+      }
+
+      AiSession.Instance.Logger.Log($"AiEnabled API received obsolete SpawnBot command. This method can cause lag and should be replaced with SpawnBotQueued.", MessageType.WARNING);
       return BotFactory.SpawnBotFromAPI(subType, displayName, positionAndOrientation, grid, role, owner, color);
     }
 
@@ -517,18 +523,24 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        return null;
+      }
+
+      if (grid != null && (grid.Physics == null || grid.IsPreview))
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with grid that has null physics.", MessageType.WARNING);
         return null;
       }
 
       var data = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(spawnData);
       if (data == null)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
         return null;
       }
 
-      AiSession.Instance.Logger.Log($"AiEnabled: API received obsolete SpawnBot command. This method can cause lag and should be replaced with SpawnBotQueued.", MessageType.WARNING);
+      AiSession.Instance.Logger.Log($"AiEnabled API received obsolete SpawnBot command. This method can cause lag and should be replaced with SpawnBotQueued.", MessageType.WARNING);
       return BotFactory.SpawnBotFromAPI(positionAndOrientation, data, grid, owner);
     }
 
@@ -548,7 +560,13 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        return;
+      }
+
+      if (grid != null && (grid.Physics == null || grid.IsPreview))
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with grid that has null physics.", MessageType.WARNING);
         return;
       }
 
@@ -570,14 +588,20 @@ namespace AiEnabled.API
     {
       if (AiSession.Instance?.CanSpawn != true)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        return;
+      }
+
+      if (grid != null && (grid.Physics == null || grid.IsPreview))
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with grid that has null physics.", MessageType.WARNING);
         return;
       }
 
       var data = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(spawnData);
       if (data == null)
       {
-        AiSession.Instance.Logger.Log($"AiEnabled: API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
         return;
       }
 

@@ -10,6 +10,7 @@ using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.GameLogic;
 using AiEnabled.Networking;
 
+using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
@@ -86,10 +87,10 @@ namespace AiEnabled.Support
       comboRole.Enabled = CombineFunc.Create(comboRole.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       comboRole.Visible = CombineFunc.Create(comboRole.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       comboRole.SupportsMultipleBlocks = false;
-      comboRole.Title = MyStringId.GetOrCompute("Select Type");
+      comboRole.Title = MyStringId.GetOrCompute("Select Role");
       comboRole.ComboBoxContent = GetTypeContent;
-      comboRole.Getter = Block => GetSelectedType(Block);
-      comboRole.Setter = SetSelectedType;
+      comboRole.Getter = Block => GetSelectedRole(Block);
+      comboRole.Setter = SetSelectedRole;
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(comboRole);
       controls.Add(comboRole);
 
@@ -115,6 +116,17 @@ namespace AiEnabled.Support
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(txtBox);
       controls.Add(txtBox);
 
+      var colorInput = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlColor, IMyConveyorSorter>("CtrlColor");
+      colorInput.Enabled = CombineFunc.Create(colorInput.Enabled, Block => block.BlockDefinition.SubtypeId == "RoboFactory");
+      colorInput.Visible = CombineFunc.Create(colorInput.Enabled, Block => block.BlockDefinition.SubtypeId == "RoboFactory");
+      colorInput.SupportsMultipleBlocks = false;
+      colorInput.Title = MyStringId.GetOrCompute("Select Color");
+      colorInput.Tooltip = MyStringId.GetOrCompute("Adjust your helper's color to your liking.");
+      colorInput.Getter = Block => GetBotColor(Block);
+      colorInput.Setter = (Block, clr) => SetBotColor(Block, clr);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(colorInput);
+      controls.Add(colorInput);
+      
       var labelPrice = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblPrice");
       labelPrice.Enabled = CombineFunc.Create(labelPrice.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       labelPrice.Visible = CombineFunc.Create(labelPrice.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
@@ -189,6 +201,38 @@ namespace AiEnabled.Support
       block.RefreshCustomInfo();
     }
 
+    private static void SetBotColor(IMyTerminalBlock block, Color clr)
+    {
+      var funcBlock = block as IMyFunctionalBlock;
+      if (funcBlock == null || !funcBlock.Enabled)
+        return;
+
+      var gameLogic = block.GameLogic.GetAs<Factory>();
+      if (gameLogic == null)
+        return;
+
+      gameLogic.BotColor = clr;
+    }
+
+    private static Color GetBotColor(IMyTerminalBlock block)
+    {
+      Color returnColor = Color.White;
+      var playerChar = MyAPIGateway.Session?.Player?.Character;
+      if (playerChar != null)
+      {
+        var ob = playerChar.GetObjectBuilder() as MyObjectBuilder_Character;
+        var hsv = MyColorPickerConstants.HSVOffsetToHSV(ob.ColorMaskHSV);
+        returnColor = hsv.HSVtoColor();
+      }
+
+      var funcBlock = block as IMyFunctionalBlock;
+      if (funcBlock == null || !funcBlock.Enabled)
+        return returnColor;
+
+      var gameLogic = block.GameLogic.GetAs<Factory>();
+      return gameLogic?.BotColor ?? returnColor;
+    }
+
     private static void SpawnHelper(IMyTerminalBlock block)
     {
       var funcBlock = block as IMyFunctionalBlock;
@@ -233,7 +277,19 @@ namespace AiEnabled.Support
       }
 
       var botRole = gameLogic.SelectedRole;
-      var botModel = (botRole == AiSession.BotType.Scavenger) ? AiSession.BotModel.Default : gameLogic.SelectedModel;
+      var botModel = gameLogic.SelectedModel;
+      var botSubtype = AiSession.Instance.BotModelDict[botModel];
+
+      if (botRole == AiSession.BotType.Scavenger)
+      {
+        var def = new MyDefinitionId(typeof(MyObjectBuilder_Character), botSubtype);
+        var charDef = MyDefinitionManager.Static.GetDefinition(def) as MyCharacterDefinition;
+        if (charDef != null && charDef.Skeleton == "Default_Astronaut")
+        {
+          botModel = AiSession.Instance.MODEL_DEFAULT;
+        }
+      }
+
       var credit = new MyDefinitionId(typeof(MyObjectBuilder_PhysicalObject), "SpaceCredit");
       var inv = player.Character?.GetInventory() as MyInventory;
       var inventoryCredits = 0L;
@@ -299,7 +355,7 @@ namespace AiEnabled.Support
       {
         string subtype;
 
-        if (botModel == AiSession.BotModel.Default)
+        if (botModel == AiSession.Instance.MODEL_DEFAULT)
         {
           switch (botRole)
           {
@@ -331,33 +387,12 @@ namespace AiEnabled.Support
               return;
           }
         }
-        else if (botModel == AiSession.BotModel.DroneBot)
+        else
         {
           if (needsName)
             displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
 
-          subtype = "Drone_Bot";
-        }
-        else if (botModel == AiSession.BotModel.AstronautMale)
-        {
-          if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
-
-          subtype = "Default_Astronaut";
-        }
-        else if (botModel == AiSession.BotModel.AstronautFemale)
-        {
-          if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
-
-          subtype = "Default_Astronaut_Female";
-        }
-        else // if (botModel == AiSession.BotModel.TargetBot)
-        {
-          if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
-
-          subtype = "Target_Dummy";
+          subtype = AiSession.Instance.BotModelDict[botModel];
         }
 
         if (needsName)
@@ -374,8 +409,9 @@ namespace AiEnabled.Support
 
         var position = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
         var posOr = new MyPositionAndOrientation(position, (Vector3)block.WorldMatrix.Backward, (Vector3)block.WorldMatrix.Up);
+        var botColor = gameLogic.BotColor;
 
-        var tuple = BotFactory.CreateBotObject(subtype, displayName, posOr, player.IdentityId);
+        var tuple = BotFactory.CreateBotObject(subtype, displayName, posOr, player.IdentityId, botColor);
         var helper = tuple.Item1;
         if (helper != null)
         {
@@ -399,7 +435,7 @@ namespace AiEnabled.Support
       }
       else
       {
-        var packet = new FactorySpawnPacket(botRole, botModel, displayName, block.EntityId, player.IdentityId, price, inventoryCredits);
+        var packet = new FactorySpawnPacket(botRole, botModel.String, displayName, block.EntityId, player.IdentityId, price, inventoryCredits, gameLogic.BotColor);
         AiSession.Instance.Network.SendToServer(packet);
         SetContextMessage(block, "Build request sent!");
       }
@@ -613,20 +649,54 @@ namespace AiEnabled.Support
       return gameLogic?.BotName ?? new StringBuilder();
     }
 
-    public static void SetSelectedType(IMyTerminalBlock block, long value)
+    public static void SetSelectedRole(IMyTerminalBlock block, long value)
     {
       var gameLogic = block.GameLogic.GetAs<Factory>();
       if (gameLogic == null)
         return;
 
-      var bot = (AiSession.BotType)value;
-      gameLogic.SelectedRole = bot;
+      var botModel = gameLogic.SelectedModel;
+      var botRole = (AiSession.BotType)value;
+      gameLogic.SelectedRole = botRole;
 
-      if (bot == AiSession.BotType.Scavenger)
-        gameLogic.SelectedModel = AiSession.BotModel.Default;
+      if (botModel != AiSession.Instance.MODEL_DEFAULT)
+      {
+        bool invalidModel = false;
 
-      block.RefreshCustomInfo();
-      RefreshTerminalControls(block);
+        if (gameLogic.SelectedRole == AiSession.BotType.Scavenger)
+        {
+          var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
+          var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
+          if (skeleton == "Humanoid")
+          {
+            gameLogic.SelectedModel = AiSession.Instance.MODEL_DEFAULT;
+            invalidModel = true;
+          }
+        }
+        else if (gameLogic.SelectedRole == AiSession.BotType.Repair)
+        {
+          var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
+          var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
+          var animController = AiSession.Instance.AnimationControllerDictionary[botSubtype];
+          if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" && animController != "Plushie_Astronaut"))
+          {
+            gameLogic.SelectedModel = AiSession.Instance.MODEL_DEFAULT;
+            invalidModel = true;
+          }
+        }
+
+        block.RefreshCustomInfo();
+
+        if (invalidModel)
+          SetContextMessage(block, "Invalid model for role");
+        else
+          RefreshTerminalControls(block);
+      }
+      else
+      {
+        block.RefreshCustomInfo();
+        RefreshTerminalControls(block);
+      }
     }
 
     public static void SetSelectedModel(IMyTerminalBlock block, long value)
@@ -635,16 +705,42 @@ namespace AiEnabled.Support
       if (gameLogic == null)
         return;
 
-      AiSession.BotModel model;
+      var index = (int)value;
+      var botModel = (index < 0 || index > AiSession.Instance.BotModelList.Count - 1) ? AiSession.Instance.MODEL_DEFAULT : AiSession.Instance.BotModelList[index];
+      bool invalidModel = false;
 
-      if (gameLogic.SelectedRole == AiSession.BotType.Scavenger)
-        model = AiSession.BotModel.Default;
-      else
-        model = (AiSession.BotModel)value;
-      
-      gameLogic.SelectedModel = model;
+      if (botModel != AiSession.Instance.MODEL_DEFAULT)
+      {
+        if (gameLogic.SelectedRole == AiSession.BotType.Scavenger)
+        {
+          var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
+          var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
+          if (skeleton == "Humanoid")
+          {
+            botModel = AiSession.Instance.MODEL_DEFAULT;
+            invalidModel = true;
+          }
+        }
+        else if (gameLogic.SelectedRole == AiSession.BotType.Repair)
+        {
+          var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
+          var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
+          var animController = AiSession.Instance.AnimationControllerDictionary[botSubtype];
+          if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" && animController != "Plushie_Astronaut"))
+          {
+            botModel = AiSession.Instance.MODEL_DEFAULT;
+            invalidModel = true;
+          }
+        }
+      }
+
+      gameLogic.SelectedModel = botModel;
       block.RefreshCustomInfo();
-      RefreshTerminalControls(block);
+
+      if (invalidModel)
+        SetContextMessage(block, "Invalid model for role");
+      else
+        RefreshTerminalControls(block);
     }
 
     public static void SetSelectedHelper(IMyTerminalBlock block, long value)
@@ -690,7 +786,7 @@ namespace AiEnabled.Support
       RefreshTerminalControls(block);
     }
 
-    public static long GetSelectedType(IMyTerminalBlock block)
+    public static long GetSelectedRole(IMyTerminalBlock block)
     {
       var gameLogic = block.GameLogic.GetAs<Factory>();
       if (gameLogic?.SelectedRole == null)
@@ -705,7 +801,9 @@ namespace AiEnabled.Support
       if (gameLogic?.SelectedModel == null)
         return 0L;
 
-      return (long)gameLogic.SelectedModel;
+      var model = gameLogic.SelectedModel;
+      var index = (long)AiSession.Instance.BotModelList.IndexOf(model);
+      return Math.Max(0L, index);
     }
 
     public static long GetSelectedHelper(IMyTerminalBlock block)
@@ -771,12 +869,13 @@ namespace AiEnabled.Support
     private static void GetModelContent(List<MyTerminalControlComboBoxItem> list)
     {
       var key = 0;
-      foreach (var name in Enum.GetNames(typeof(AiSession.BotModel)))
+     
+      foreach (var name in AiSession.Instance.BotModelList)
       {
         var item = new MyTerminalControlComboBoxItem()
         {
           Key = key,
-          Value = MyStringId.GetOrCompute(name)
+          Value = name
         };
 
         list.Add(item);
