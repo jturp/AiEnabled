@@ -174,6 +174,11 @@ namespace AiEnabled.API
       /// If true, bots will be able to attack doors and weapon systems
       /// </summary>
       [ProtoMember(24)] public bool CanDamageGrids;
+
+      /// <summary>
+      /// If true, the bot will be killed if it's found outside of its starting map area
+      /// </summary>
+      [ProtoMember(25)] public bool ConfineToMap;
     }
 
     /////////////////////////////////////////////
@@ -520,6 +525,12 @@ namespace AiEnabled.API
     /// <param name="callBackAction">this method will be called at some point in the future, after all bots are created and seated. The list will contain all new bot characters.</param>
     public void ReSyncBotCharacters(long gridEntityId, Action<List<IMyCharacter>> callBackAction) => _reSyncBotCharacters?.Invoke(gridEntityId, callBackAction);
 
+    /// <summary>
+    /// Attempts to throw a grenade at the bot's current target. Does nothing if the target is not an IMyEntity or is friendly.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    public void ThrowGrenade(long botEntityId) => _throwGrenade?.Invoke(botEntityId);
+
     /////////////////////////////////////////////
     //API Methods End
     /////////////////////////////////////////////
@@ -565,6 +576,7 @@ namespace AiEnabled.API
     private Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action> _getInteriorNodes;
     private Func<IMyCubeGrid, bool> _isGridValidForPathfinding;
     private Action<long, Action<List<IMyCharacter>>> _reSyncBotCharacters;
+    private Action<long> _throwGrenade;
 
     private void ReceiveModMessage(object payload)
     {
@@ -618,6 +630,7 @@ namespace AiEnabled.API
         _getInteriorNodes = dict["GetInteriorNodes"] as Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action>;
         _isGridValidForPathfinding = dict["IsValidForPathfinding"] as Func<IMyCubeGrid, bool>;
         _reSyncBotCharacters = dict["ReSyncBotCharacters"] as Action<long, Action<List<IMyCharacter>>>;
+        _throwGrenade = dict["ThrowGrenade"] as Action<long>;
 
       }
       catch

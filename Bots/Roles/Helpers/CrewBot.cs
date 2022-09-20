@@ -143,7 +143,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (_tickCount % 100 == 0 && (Target.Entity == null || !(Target.Entity is IMyCharacter) || (Owner != null && Target.Player?.IdentityId == Owner.IdentityId) || Target.IsDestroyed()))
       {
-        if (_botState.IsRunning)
+        if (BotInfo.IsRunning)
           Character.SwitchWalk();
 
         if (HasWeaponOrTool)
@@ -290,7 +290,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     bool FaceCube()
     {
       var worldPosition = AttachedBlock.PositionComp.GetPosition();
-      var botPosition = Target.CurrentBotPosition;
+      var botPosition = BotInfo.CurrentBotPositionActual;
       var targetVector = worldPosition - botPosition;
       var vector = Vector3D.TransformNormal(targetVector, MatrixD.Transpose(WorldMatrix));
 
@@ -324,8 +324,8 @@ namespace AiEnabled.Bots.Roles.Helpers
           return;
         }
 
-        var botPosition = Target.CurrentBotPosition;
-        distanceCheck = (_botState.IsRunning || _botState.IsFlying) ? 1 : 0.5;
+        var botPosition = BotInfo.CurrentBotPositionAdjusted;
+        distanceCheck = (BotInfo.IsRunning || BotInfo.IsFlying) ? 1 : 0.5;
 
         if (_moveTo.HasValue)
         {

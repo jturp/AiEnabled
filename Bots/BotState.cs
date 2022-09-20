@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using VRage.Game;
 using VRage.Game.ModAPI;
 
+using VRageMath;
+
 namespace AiEnabled.Bots
 {
   public class BotState
@@ -29,6 +31,11 @@ namespace AiEnabled.Bots
       IsFlying = 64,
       IsJumping = 128
     }
+
+    public Vector3D CurrentBotPositionAdjusted { get; private set; }
+    public Vector3D CurrentBotPositionActual { get; private set; }
+    public Vector3D CurrentGravityAtBotPosition_Nat { get; private set; }
+    public Vector3D CurrentGravityAtBotPosition_Art { get; private set; }
 
     public bool IsOnLadder => (_state & State.IsOnLadder) > 0;
     public bool WasOnLadder => (_state & State.WasOnLadder) > 0;
@@ -51,6 +58,13 @@ namespace AiEnabled.Bots
     {
       if (Bot?.Character == null || Bot.Character.MarkedForClose)
         return;
+
+      CurrentBotPositionActual = Bot.Character.WorldAABB.Center;
+      CurrentBotPositionAdjusted = Bot.GetPosition();
+
+      float interference;
+      CurrentGravityAtBotPosition_Nat = MyAPIGateway.Physics.CalculateNaturalGravityAt(CurrentBotPositionActual, out interference);
+      CurrentGravityAtBotPosition_Art = MyAPIGateway.Physics.CalculateArtificialGravityAt(CurrentBotPositionActual, interference); 
 
       var state = Bot.Character.CurrentMovementState;
 

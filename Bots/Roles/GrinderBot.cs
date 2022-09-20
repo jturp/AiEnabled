@@ -54,7 +54,8 @@ namespace AiEnabled.Bots.Roles
       _attackSoundStrings.Add("ZombieAttack003");
       _attackSoundStrings.Add("ZombieAttack004");
 
-      MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+      AiSession.Instance.Scheduler.Schedule(AddWeapon);
+      //MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
     }
 
     internal override void Attack()

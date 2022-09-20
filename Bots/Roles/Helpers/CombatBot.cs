@@ -106,7 +106,8 @@ namespace AiEnabled.Bots.Roles.Helpers
               _pathCollection.Dirty = true;
           }
           else if (Target.HasTarget && !(Character.Parent is IMyCockpit))
-            MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
+            AiSession.Instance.Scheduler.Schedule(CheckLineOfSight);
+            //MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
           else
             HasLineOfSight = false;
         }

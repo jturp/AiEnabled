@@ -87,6 +87,7 @@ namespace AiEnabled.API
         { "GetInteriorNodes", new Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action>(GetInteriorNodes) },
         { "IsValidForPathfinding", new Func<IMyCubeGrid, bool>(IsValidForPathfinding) },
         { "ReSyncBotCharacters", new Action<long, Action<List<IMyCharacter>>>(ReSyncBotCharacters) },
+        { "ThrowGrenade", new Action<long>(ThrowGrenade) },
      };
 
       return dict;
@@ -279,6 +280,9 @@ namespace AiEnabled.API
     /// <param name="callBackAction">this method will be called at some point in the future, after all bots are created and seated. The list will contain all new bot characters.</param>
     public void ReSyncBotCharacters(long gridEntityId, Action<List<IMyCharacter>> callBackAction)
     {
+      if (!MyAPIGateway.Multiplayer.MultiplayerActive)
+        return;
+
       var grid = MyEntities.GetEntityById(gridEntityId) as MyCubeGrid;
 
       if (grid == null || grid.MarkedForClose)
@@ -311,7 +315,7 @@ namespace AiEnabled.API
         }
       }
 
-      MyAPIGateway.Utilities.InvokeOnGameThread(() => ExecuteCallBack(newBotList, callBackAction), "AiEnabled_ReSyncBotCharactersCallback", MyAPIGateway.Session.GameplayFrameCounter + 10);
+      AiSession.Instance.Scheduler.Schedule(() => ExecuteCallBack(newBotList, callBackAction), 10);
     }
 
     void ExecuteCallBack(List<IMyCharacter> newBotList, Action<List<IMyCharacter>> callBack)
@@ -1282,6 +1286,7 @@ namespace AiEnabled.API
           newBot.CanUseSpaceNodes = bot.CanUseSpaceNodes;
         }
 
+        newBot.ConfineToMap = bot.ConfineToMap;
         newBot.CanUseWaterNodes = bot.CanUseWaterNodes;
         newBot.WaterNodesOnly = bot.WaterNodesOnly;
         newBot.GroundNodesFirst = bot.GroundNodesFirst;
@@ -1452,6 +1457,7 @@ namespace AiEnabled.API
           newBot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
         }
 
+        newBot.ConfineToMap = spawnData.ConfineToMap;
         newBot.CanDamageGrid = spawnData.CanDamageGrids;
         newBot.CanUseWaterNodes = spawnData.CanUseWaterNodes;
         newBot.WaterNodesOnly = spawnData.WaterNodesOnly;
@@ -1608,7 +1614,7 @@ namespace AiEnabled.API
         return;
 
       if (botDict == null)
-        botDict = new Dictionary<long, IMyCharacter>(AiSession.Instance.MaxBots);
+        botDict = new Dictionary<long, IMyCharacter>(AiSession.Instance.ModSaveData.MaxBotsInWorld);
       else
         botDict.Clear();
 
@@ -1635,6 +1641,23 @@ namespace AiEnabled.API
           botDict[bot.BotIdentityId] = bot.Character;
         }
       }
+    }
+
+    /// <summary>
+    /// Attempts to throw a grenade at the bot's current target. Does nothing if the target is not an IMyEntity or is friendly.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    public void ThrowGrenade(long botEntityId)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+        return;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.Character == null || bot.IsDead)
+        return;
+
+      if (AiSession.Instance.GrenadesEnabled)
+        BotFactory.ThrowGrenade(bot);
     }
   }
 }

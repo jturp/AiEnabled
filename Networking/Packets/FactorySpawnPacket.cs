@@ -67,9 +67,9 @@ namespace AiEnabled.Networking
         return false;
       }
 
-      if (AiSession.Instance.BotNumber >= AiSession.Instance.MaxBots)
+      if (AiSession.Instance.BotNumber >= AiSession.Instance.ModSaveData.MaxBotsInWorld)
       {
-        var pkt = new MessagePacket($"The maximum number of bots has been reached ({AiSession.Instance.MaxBots})");
+        var pkt = new MessagePacket($"The maximum number of bots has been reached ({AiSession.Instance.ModSaveData.MaxBotsInWorld})");
         netHandler.SendToPlayer(pkt, SenderId);
         return false;
       }

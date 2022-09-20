@@ -43,7 +43,8 @@ namespace AiEnabled.Bots.Roles
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolType));
 
       if (ToolDefinition != null)
-        MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+        AiSession.Instance.Scheduler.Schedule(AddWeapon);
+        //MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
     }
 
     internal override bool Update()
@@ -61,7 +62,7 @@ namespace AiEnabled.Bots.Roles
 
         if (Target.Entity == null || Target.IsDestroyed())
         {
-          if (_botState.IsRunning)
+          if (BotInfo.IsRunning)
             Character.SwitchWalk();
         }
 

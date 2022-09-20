@@ -178,7 +178,7 @@ namespace AiEnabled.Networking
             if (cpit != null)
             {
               Vector3D relPosition;
-              var vector = bot.Target.CurrentBotPosition - cube.PositionComp.WorldAABB.Center;
+              var vector = bot.BotInfo.CurrentBotPositionActual - cube.PositionComp.WorldAABB.Center;
               if (vector.LengthSquared() > 1000)
                 relPosition = Vector3D.Forward * 2.5 + Vector3D.Up * 2.5;
               else

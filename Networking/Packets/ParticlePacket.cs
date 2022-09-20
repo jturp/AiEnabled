@@ -60,7 +60,8 @@ namespace AiEnabled.Networking
         ParticleInfoBase pBase;
         if (AiSession.Instance.ParticleInfoDict.TryGetValue(BotEntityId, out pBase))
         {
-          MyAPIGateway.Utilities.InvokeOnGameThread(pBase.Stop, "AiEnabled");
+          AiSession.Instance.Scheduler.Schedule(pBase.Stop);
+          //MyAPIGateway.Utilities.InvokeOnGameThread(pBase.Stop, "AiEnabled");
         }
       }
       else
@@ -74,7 +75,8 @@ namespace AiEnabled.Networking
         ParticleInfoBase pBase;
         if (AiSession.Instance.ParticleInfoDict.TryRemove(BotEntityId, out pBase) && pBase != null)
         {
-          MyAPIGateway.Utilities.InvokeOnGameThread(pBase.Close, "AiEnabled");
+          AiSession.Instance.Scheduler.Schedule(pBase.Close);
+          //MyAPIGateway.Utilities.InvokeOnGameThread(pBase.Close, "AiEnabled");
         }
 
         if (!Remove)

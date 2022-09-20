@@ -76,7 +76,7 @@ namespace AiEnabled.GameLogic
     public override void Init(MyObjectBuilder_EntityBase objectBuilder)
     {
       _block = Entity as Sandbox.ModAPI.IMyTerminalBlock;
-      NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME;
+      NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME | MyEntityUpdateEnum.EACH_100TH_FRAME;
       base.Init(objectBuilder);
     }
 
@@ -91,6 +91,16 @@ namespace AiEnabled.GameLogic
 
       if (_block == null)
         return;
+
+      if (!AiSession.Instance.CanSpawnBot(SelectedRole))
+      {
+        if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Scavenger))
+          SelectedRole = AiSession.BotType.Scavenger;
+        else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Combat))
+          SelectedRole = AiSession.BotType.Combat;
+        else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Crew))
+          SelectedRole = AiSession.BotType.Crew;
+      }
 
       var inv = _block.GetInventory() as MyInventory;
 
@@ -236,15 +246,15 @@ namespace AiEnabled.GameLogic
       {
         case AiSession.BotType.Repair:
           botBase = new RepairBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
-          MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
+          AiSession.Instance.Scheduler.Schedule(botBase.AddWeapon);
           break;
         case AiSession.BotType.Combat:
           botBase = new CombatBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
-          MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
+          AiSession.Instance.Scheduler.Schedule(botBase.AddWeapon);
           break;
         case AiSession.BotType.Crew:
           botBase = new CrewBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
-          MyAPIGateway.Utilities.InvokeOnGameThread(botBase.AddWeapon, "AiEnabled");
+          AiSession.Instance.Scheduler.Schedule(botBase.AddWeapon);
           break;
         case AiSession.BotType.Scavenger:
           botBase = new ScavengerBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
@@ -332,6 +342,34 @@ namespace AiEnabled.GameLogic
 
         if (MyAPIGateway.Session?.Player != null)
           MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim10: {ex.Message}");
+      }
+    }
+
+    public override void UpdateAfterSimulation100()
+    {
+      try
+      {
+        base.UpdateAfterSimulation100();
+        if (_block == null || AiSession.Instance?.Registered != true)
+          return;
+
+        var modData = AiSession.Instance.ModSaveData;
+        if (modData.MaxHelpersPerPlayer == 0)
+        {
+          AiSession.Instance.Logger.Log($"{_block.CustomName} removed from {_block.CubeGrid.DisplayName} per server settings [MaxHelpersPerPlayer = 0]");
+          _block.Close();
+          return;
+        }
+        else if (!modData.AllowCombatBot && !modData.AllowRepairBot && !modData.AllowCrewBot && !modData.AllowScavengerBot)
+        {
+          AiSession.Instance.Logger.Log($"{_block.CustomName} removed from {_block.CubeGrid.DisplayName} per server settings [No helpers allowed]");
+          _block.Close();
+          return;
+        }
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim100: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 

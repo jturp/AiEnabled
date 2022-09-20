@@ -39,12 +39,12 @@ namespace AiEnabled.Bots
 
     public FriendlyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
-      Owner = AiSession.Instance.Players.GetValueOrDefault(ownerId, null); // AiSession.Instance.Players[ownerId];
+      Owner = AiSession.Instance.Players.GetValueOrDefault(ownerId, null);
 
       bool hasOwner = Owner != null;
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
       var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetpack != null && (jetRequired || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly);
+      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowHelpersToFly);
 
       _followDistanceSqd = 25;
       RequiresJetpack = jetRequired;
@@ -120,7 +120,7 @@ namespace AiEnabled.Bots
         return;
       }
 
-      var botPosition = Target.CurrentBotPosition;
+      var botPosition = BotInfo.CurrentBotPositionActual;
       if (Target.IsDestroyed())
       {
         Target.RemoveTarget();
@@ -225,7 +225,7 @@ namespace AiEnabled.Bots
             if (bot == null || bot.IsDead)
               continue;
 
-            if (bot._botState?.IsOnLadder == true)
+            if (bot.BotInfo?.IsOnLadder == true)
               continue;
 
             if (helpers != null)
@@ -551,6 +551,9 @@ namespace AiEnabled.Bots
 
     internal override void MoveToTarget()
     {
+      if (GrenadeThrown)
+        return;
+
       if (!IsInRangeOfTarget())
       {
         if (!UseAPITargets)
@@ -584,7 +587,7 @@ namespace AiEnabled.Bots
     {
       roll = 0;
       rifleAttack = false;
-      var botPosition = Target.CurrentBotPosition;
+      var botPosition = BotInfo.CurrentBotPositionAdjusted;
       var botMatrix = WorldMatrix;
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;
@@ -596,7 +599,7 @@ namespace AiEnabled.Bots
       var isFriendly = isTarget && tgtFriendly;
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
 
-      if (_botState.IsOnLadder)
+      if (BotInfo.IsOnLadder)
       {
         movement = relVectorBot.Y > 0 ? Vector3.Forward : Vector3.Backward;
         rotation = Vector2.Zero;
@@ -744,7 +747,7 @@ namespace AiEnabled.Bots
                 Vector3D? addVec = (_currentGraph.LocalToWorld(testNode.Position) + testNode.Offset) - botPosition;
                 _sideNode += addVec;
               }
-              else
+              else if (_currentGraph.IsPositionValid(_sideNode.Value + dir * 5))
                 _sideNode += new Vector3D?(dir * 5);
             }
 
@@ -810,7 +813,7 @@ namespace AiEnabled.Bots
 
               if (!rifleAttack)
               {
-                var botRunning = _botState.IsRunning;
+                var botRunning = BotInfo.IsRunning;
                 if (distanceToTarget > 100)
                 {
                   if (!botRunning)
@@ -865,7 +868,7 @@ namespace AiEnabled.Bots
 
     internal virtual void CheckFire(bool shouldFire, bool shouldAttack, ref Vector3 movement, ref Vector2 rotation, ref float roll)
     {
-      var isCrouching = _botState.IsCrouching;
+      var isCrouching = BotInfo.IsCrouching;
       IsShooting = false;
 
       if (shouldFire)
@@ -876,7 +879,7 @@ namespace AiEnabled.Bots
           Character.CurrentMovementState = MyCharacterMovementEnum.Standing;
         }
 
-        if (_botState.IsRunning)
+        if (BotInfo.IsRunning)
           Character.SwitchWalk();
 
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())

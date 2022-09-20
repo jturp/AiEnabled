@@ -172,7 +172,7 @@ namespace AiEnabled.Ai.Support
         }
 
         var next = curGraph.LocalToWorld(NextNode.Position) + NextNode.Offset;
-        var dSquared = Vector3D.DistanceSquared(Bot.Target.CurrentBotPosition, next);
+        var dSquared = Vector3D.DistanceSquared(Bot.BotInfo.CurrentBotPositionAdjusted, next);
 
         if (_distanceToWaypointSquared.HasValue)
         {
@@ -434,7 +434,7 @@ namespace AiEnabled.Ai.Support
         // nextIsLadder = false;
         var worldTarget = gridGraph.LocalToWorld(localTarget);
         var transToTgt = Vector3D.Rotate(worldTarget - worldCurrentNode, botMatrixT);
-        var isFlying = Bot._botState.IsFlying;
+        var isFlying = Bot.BotInfo.IsFlying;
 
         // Can we go straight to the target? Only attempted if the target is eye level with the bot and bot isn't flying
         if (!isTransition && Bot.HasLineOfSight && !isFlying && Math.Abs(transToTgt.Y) < allowedDiff)
@@ -646,7 +646,7 @@ namespace AiEnabled.Ai.Support
             IMySlimBlock slim = gridGraph.GetBlockAtPosition(point);
             if (slim != null || !gridGraph.IsPositionUsable(Bot, gridGraph.LocalToWorld(point), out n))
             {
-              if (slim != null && Bot._botState.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
+              if (slim != null && Bot.BotInfo.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
               {
                 Bot.Character.SwitchWalk();
               }

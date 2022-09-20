@@ -1,6 +1,7 @@
 ﻿using AiEnabled.Ai.Support;
 using AiEnabled.Bots.Behaviors;
 using AiEnabled.Bots.Roles;
+using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Networking;
 using AiEnabled.Utilities;
 
@@ -54,7 +55,7 @@ namespace AiEnabled.Bots
 
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
       var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly);
+      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowNeutralsToFly);
 
       RequiresJetpack = jetRequired;
       CanUseSpaceNodes = jetAllowed;
@@ -158,20 +159,23 @@ namespace AiEnabled.Bots
 
     internal override void MoveToTarget()
     {
+      if (GrenadeThrown)
+        return;
+
       if (!IsInRangeOfTarget())
       {
         if (!UseAPITargets)
         {
           if (CheckGraphNeeded && _currentGraph?.Ready == true)
           {
-            var position = Target.CurrentBotPosition;
+            var position = BotInfo.CurrentBotPositionActual;
             StartCheckGraph(ref position);
             return;
           }
 
           SimulateIdleMovement(true);
 
-          if (_botState.IsRunning && Character.Definition.Id.SubtypeName.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) < 0)
+          if (BotInfo.IsRunning && Character.Definition.Id.SubtypeName.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) < 0)
             Character.SwitchWalk();
         }
 
@@ -217,7 +221,7 @@ namespace AiEnabled.Bots
     {
       roll = 0;
       rifleAttack = false;
-      var botPosition = Target.CurrentBotPosition;
+      var botPosition = BotInfo.CurrentBotPositionAdjusted;
       var botMatrix = WorldMatrix;
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;
@@ -230,7 +234,7 @@ namespace AiEnabled.Bots
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
       var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder);
 
-      if (_botState.IsOnLadder)
+      if (BotInfo.IsOnLadder)
       {
         movement = relVectorBot.Y > 0 ? Vector3.Forward : Vector3.Backward;
         rotation = Vector2.Zero;
@@ -386,7 +390,7 @@ namespace AiEnabled.Bots
                 Vector3D? addVec = (_currentGraph.LocalToWorld(testNode.Position) + testNode.Offset) - botPosition;
                 _sideNode += addVec;
               }
-              else
+              else if (_currentGraph.IsPositionValid(_sideNode.Value + dir * 5))
                 _sideNode += new Vector3D?(dir * 5);
             }
 
@@ -452,7 +456,7 @@ namespace AiEnabled.Bots
 
               if (!rifleAttack)
               {
-                var botRunning = _botState.IsRunning;
+                var botRunning = BotInfo.IsRunning;
                 if (distanceToTarget > 100)
                 {
                   if (!botRunning)
@@ -507,7 +511,7 @@ namespace AiEnabled.Bots
 
     void CheckFire(bool shouldFire, bool shouldAttack, ref Vector3 movement)
     {
-      var isCrouching = _botState.IsCrouching;
+      var isCrouching = BotInfo.IsCrouching;
       IsShooting = false;
 
       if (shouldFire)
@@ -518,7 +522,7 @@ namespace AiEnabled.Bots
           Character.CurrentMovementState = MyCharacterMovementEnum.Standing;
         }
 
-        if (_botState.IsRunning)
+        if (BotInfo.IsRunning)
           Character.SwitchWalk();
 
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())
@@ -737,7 +741,8 @@ namespace AiEnabled.Bots
             }
           }
           else if (Target.HasTarget && !(Character.Parent is IMyCockpit))
-            MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
+            AiSession.Instance.Scheduler.Schedule(CheckLineOfSight); 
+            //MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
           else
             HasLineOfSight = false;
         }
@@ -769,10 +774,11 @@ namespace AiEnabled.Bots
         if (!HasWeaponOrTool)
           Behavior.Perform("Whatever");
 
-        if (!_botState.IsRunning)
+        if (!BotInfo.IsRunning)
           Character.SwitchWalk();
 
-        EnlistHelp(attacker);
+        if (!(this is EnforcerBot) && !(this is CrewBot))
+          EnlistHelp(attacker);
 
         if (ToolDefinition != null && Character.EquippedTool == null)
         {
@@ -808,10 +814,11 @@ namespace AiEnabled.Bots
         if (!HasWeaponOrTool)
           Behavior.Perform("Whatever");
   
-        if (!_botState.IsRunning)
+        if (!BotInfo.IsRunning)
           Character.SwitchWalk();
 
-        EnlistHelp(attacker);
+        if (!(this is EnforcerBot) && !(this is CrewBot))
+          EnlistHelp(attacker);
 
         if (ToolDefinition != null && Character.EquippedTool == null)
         {

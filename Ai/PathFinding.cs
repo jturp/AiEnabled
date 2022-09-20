@@ -140,7 +140,7 @@ namespace AiEnabled.Ai
       var isGridGraph = graph.IsGridGraph;
       var gridGraph = graph as CubeGridMap;
       var stackedStairs = collection.StackedStairsFound;
-      var botPosition = bot.Target.CurrentBotPosition;
+      var botPosition = bot.BotInfo.CurrentBotPositionActual;
       var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
 
       cameFrom.Clear();
@@ -269,7 +269,7 @@ namespace AiEnabled.Ai
           }
           else if (node.IsLadder)
           {
-            if (!bot.CanUseLadders && !bot._botState.IsFlying)
+            if (!bot.CanUseLadders && !bot.BotInfo.IsFlying)
               continue;
           }
           else if (node.IsGroundNode)

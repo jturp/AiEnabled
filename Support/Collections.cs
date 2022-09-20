@@ -484,6 +484,16 @@ namespace AiEnabled
 
     public enum BotType { Repair, Scavenger, Combat, Crew };
 
+    [Flags]
+    public enum AllowedTypes : byte
+    {
+      None = 0x0,
+      Repair = 0x1,
+      Scavenger = 0x2,
+      Combat = 0x4,
+      Crew = 0x8,
+    }
+
     public readonly MyStringId MODEL_DEFAULT = MyStringId.GetOrCompute("Default");
     public readonly MyStringId MODEL_ASTRO_MALE = MyStringId.GetOrCompute("AstronautMale");
     public readonly MyStringId MODEL_ASTRO_FEMALE = MyStringId.GetOrCompute("AstronautFemale");
@@ -565,7 +575,9 @@ namespace AiEnabled
     public ConcurrentStack<VoxelUpdateItem> VoxelUpdateItemStack = new ConcurrentStack<VoxelUpdateItem>();
     public ConcurrentStack<List<IMyCharacter>> CharacterListStack = new ConcurrentStack<List<IMyCharacter>>();
     public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
+
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
+    public static List<string> AllowedBotRoles = new List<string>(5);
 
     public static Vector3I[] DirArray = new Vector3I[]
     {

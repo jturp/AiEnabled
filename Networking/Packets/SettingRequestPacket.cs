@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using AiEnabled.ConfigData;
+using AiEnabled.Networking.Packets;
 
 using ProtoBuf;
 
@@ -22,13 +23,13 @@ namespace AiEnabled.Networking
         var reqs = kvp.Value;
         long credits;
         AiSession.Instance.BotPrices.TryGetValue(kvp.Key, out credits);
-        
+
         var serialPrice = new SerializableBotPrice(kvp.Key, credits, reqs);
         prices.Add(serialPrice);
       }
 
       var data = AiSession.Instance.ModSaveData;
-      var pkt = new AdminPacket(AiSession.Instance.MaxBots, AiSession.Instance.MaxHelpers, data.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, prices, data.AdditionalHelperSubtypes);
+      var pkt = new SettingProvidePacket(data, prices, data.AdditionalHelperSubtypes);
       netHandler.SendToPlayer(pkt, SenderId);
 
       return false;

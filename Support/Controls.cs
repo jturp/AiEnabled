@@ -270,13 +270,20 @@ namespace AiEnabled.Support
       }
 
       List<long> helperIds;
-      if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds.Count >= AiSession.Instance.MaxHelpers)
+      if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds.Count >= AiSession.Instance.ModSaveData.MaxHelpersPerPlayer)
       {
         SetContextMessage(block, $"You already have {helperIds.Count} helper(s).");
         return;
       }
 
       var botRole = gameLogic.SelectedRole;
+
+      if (!AiSession.Instance.CanSpawnBot(botRole))
+      {
+        SetContextMessage(block, $"Selected Role not allowed.");
+        return;
+      }
+
       var botModel = gameLogic.SelectedModel;
       var botSubtype = AiSession.Instance.BotModelDict[botModel];
 
@@ -580,7 +587,7 @@ namespace AiEnabled.Support
       }
 
       List<long> helperIds;
-      if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds.Count >= AiSession.Instance.MaxHelpers)
+      if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds.Count >= AiSession.Instance.ModSaveData.MaxHelpersPerPlayer)
       {
         found = false;
         for (int i = 0; i < helperIds.Count; i++)
@@ -656,7 +663,9 @@ namespace AiEnabled.Support
         return;
 
       var botModel = gameLogic.SelectedModel;
-      var botRole = (AiSession.BotType)value;
+      var roleString = AiSession.AllowedBotRoles[(int)value];
+      AiSession.BotType botRole;
+      Enum.TryParse(roleString, out botRole);
       gameLogic.SelectedRole = botRole;
 
       if (botModel != AiSession.Instance.MODEL_DEFAULT)
@@ -789,10 +798,27 @@ namespace AiEnabled.Support
     public static long GetSelectedRole(IMyTerminalBlock block)
     {
       var gameLogic = block.GameLogic.GetAs<Factory>();
-      if (gameLogic?.SelectedRole == null)
-        return 0L;
+      if (gameLogic == null)
+      {
+        var modData = AiSession.Instance.ModSaveData;
+        if (modData.AllowRepairBot)
+          return 0L;
 
-      return (long)gameLogic.SelectedRole;
+        if (modData.AllowScavengerBot)
+          return 1L;
+
+        if (modData.AllowCombatBot)
+          return 2L;
+
+        if (modData.AllowCrewBot)
+          return 3L;
+
+        return 0L;
+      }
+
+      var role = gameLogic.SelectedRole.ToString();
+      var idx = Math.Max(0, AiSession.AllowedBotRoles.IndexOf(role));
+      return (long)idx;
     }
 
     public static long GetSelectedModel(IMyTerminalBlock block)
@@ -852,15 +878,21 @@ namespace AiEnabled.Support
 
     private static void GetTypeContent(List<MyTerminalControlComboBoxItem> list)
     {
+      AiSession.AllowedBotRoles.Clear();
+      var saveData = AiSession.Instance.ModSaveData;
       var key = 0;
       foreach (var name in Enum.GetNames(typeof(AiSession.BotType)))
       {
+        if (!AiSession.Instance.CanSpawnBot(name))
+          continue;
+
         var item = new MyTerminalControlComboBoxItem()
         {
           Key = key,
           Value = MyStringId.GetOrCompute(name)
         };
 
+        AiSession.AllowedBotRoles.Add(name);
         list.Add(item);
         key++;
       }

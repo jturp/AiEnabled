@@ -77,15 +77,44 @@ namespace AiEnabled.Utilities
       return player != null && !player.IsBot && !string.IsNullOrWhiteSpace(player.DisplayName) && MyAPIGateway.Players.TryGetSteamId(player.IdentityId) != 0;
     }
 
-    public static float GetBlockHealth(this IMySlimBlock slim)
+    public static float GetBlockHealth(this IMySlimBlock slim, List<MyEntity> entList = null)
     {
-      if (slim == null || slim.MaxIntegrity == 0)
+      if (slim == null || slim.MaxIntegrity == 0 || slim.IsDestroyed)
         return -1f;
 
       float maxIntegrity = slim.MaxIntegrity;
       float buildIntegrity = slim.BuildIntegrity;
       float currentDamage = slim.CurrentDamage;
       float health = (buildIntegrity - currentDamage) / maxIntegrity;
+
+      if (AiSession.Instance.ModSaveData.ObeyProjectionIntegrityForRepairs && entList != null)
+      {
+        var realGrid = slim.CubeGrid as MyCubeGrid;
+        if (realGrid?.Projector == null)
+        {
+          entList.Clear();
+          var worldPosition = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+          var sphere = new BoundingSphereD(worldPosition, slim.CubeGrid.GridSize * 0.5);
+          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+          for (int i = 0; i < entList.Count; i++)
+          {
+            var projGrid = entList[i] as MyCubeGrid;
+            if (projGrid?.Projector != null)
+            {
+              var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
+              var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
+
+              if (projectedBlock?.BlockDefinition.Id == slim.BlockDefinition.Id && slim.BuildIntegrity >= projectedBlock.BuildIntegrity)
+              {
+                health = 1;
+                break;
+              }
+            }
+          }
+        }
+      }
+
       return health;
     }
 

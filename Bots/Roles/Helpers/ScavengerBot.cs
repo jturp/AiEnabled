@@ -111,11 +111,11 @@ namespace AiEnabled.Bots.Roles.Helpers
           Behavior?.Speak();
         }
       }
-      else if (Owner?.Character != null && Vector3D.DistanceSquared(Owner.Character.WorldAABB.Center, Target.CurrentBotPosition) < 2500)
+      else if (Owner?.Character != null && Vector3D.DistanceSquared(Owner.Character.WorldAABB.Center, BotInfo.CurrentBotPositionActual) < 2500)
       {
         _performTimer = 0;
         var rand = MyUtils.GetRandomInt(0, 100);
-        var ableToAnimate = !_botState.IsFlying && !_botState.IsFalling;
+        var ableToAnimate = !BotInfo.IsFlying && !BotInfo.IsFalling;
 
         if (rand < 40)
         {

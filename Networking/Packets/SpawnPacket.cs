@@ -62,14 +62,6 @@ namespace AiEnabled.Networking
           netHandler.SendToPlayer(pkt, SenderId);
           return false;
         }
-
-        IMyFaction botFaction;
-        if (!AiSession.Instance.BotFactions.TryGetValue(ownerFaction.FactionId, out botFaction))
-        {
-          var pkt = new MessagePacket($"Unable to spawn bot. There was no bot faction paired with owner's faction!");
-          netHandler.SendToPlayer(pkt, SenderId);
-          return false;
-        }
       }
 
       Vector3D pos = Position;

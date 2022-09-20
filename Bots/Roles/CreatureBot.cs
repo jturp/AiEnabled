@@ -69,10 +69,9 @@ namespace AiEnabled.Bots.Roles
       if (!base.Update())
         return false;
 
-      if (_stuckCounter > 0 || (_botState.IsFalling && !IsDead && _currentGraph?.Ready == true))
+      if (_stuckCounter > 0 || (BotInfo.IsFalling && !IsDead && _currentGraph?.Ready == true))
       {
-        var position = Target.CurrentBotPosition;
-        var gravity = Target.CurrentGravityAtBot;
+        var gravity = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
 
         if (gravity.LengthSquared() < 0.05)
         {

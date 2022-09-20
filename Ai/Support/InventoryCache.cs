@@ -34,6 +34,39 @@ namespace AiEnabled.Ai.Support
 {
   public class InventoryCache
   {
+    internal class InventoryAddRemove
+    {
+      public IMyInventory Inventory;
+      public MyObjectBuilder_PhysicalObject Item;
+      public uint ItemId;
+      public MyFixedPoint Amount;
+      public bool Add;
+
+      public void Set(IMyInventory inv, MyObjectBuilder_PhysicalObject obj, MyFixedPoint amount, bool add)
+      {
+        Inventory = inv;
+        Item = obj;
+        Amount = amount;
+        Add = add;
+      }
+
+      public void Set(IMyInventory inv, uint itemId, MyFixedPoint amount, bool add)
+      {
+        Inventory = inv;
+        ItemId = itemId;
+        Amount = amount;
+        Add = add;
+      }
+
+      public void Clear()
+      {
+        Inventory = null;
+        Item = null;
+        ItemId = 0;
+        Amount = -1;
+      }
+    }
+
     public ConcurrentDictionary<string, float> ItemCounts = new ConcurrentDictionary<string, float>(); // component subtype to count
     public ConcurrentDictionary<IMyInventory, List<MyInventoryItem>> Inventories = new ConcurrentDictionary<IMyInventory, List<MyInventoryItem>>();
     public MyCubeGrid Grid;
@@ -53,6 +86,8 @@ namespace AiEnabled.Ai.Support
     ParallelTasks.Task _repairTask;
     Action<WorkData> _workAction, _workCallBack;
     RepairWorkData _workData;
+    List<InventoryAddRemove> _inventoryItemsToAddRemove = new List<InventoryAddRemove>();
+    Stack<InventoryAddRemove> _invItemPool = new Stack<InventoryAddRemove>();
 
     public InventoryCache(MyCubeGrid grid)
     {
@@ -115,8 +150,14 @@ namespace AiEnabled.Ai.Support
         _invItemListStack = null;
       }
 
+      _inventoryItemsToAddRemove?.Clear();
+      _inventoryItemsToAddRemove = null;
+
       _inventoryPositions?.Clear();
       _inventoryPositions = null;
+
+      _invItemPool?.Clear();
+      _invItemPool = null;
 
       _terminals?.Clear();
       _terminals = null;
@@ -308,6 +349,7 @@ namespace AiEnabled.Ai.Support
       botInv.GetItems(invItems);
       var tool = data.Bot.ToolDefinition?.PhysicalItemId.SubtypeName;
       var grindMode = rBot?.CurrentBuildMode == RepairBot.BuildMode.Grind;
+      _inventoryItemsToAddRemove.Clear();
 
       for (int i = invItems.Count - 1; i >= 0; i--)
       {
@@ -364,7 +406,11 @@ namespace AiEnabled.Ai.Support
               }
 
               botInv.RemoveItemsAt(i, amount);
-              inv.AddItems(amount, ob);
+
+              var invAR = _invItemPool.Count > 0 ? _invItemPool.Pop() : new InventoryAddRemove();
+              invAR.Set(inv, ob, amount, true);
+              _inventoryItemsToAddRemove.Add(invAR);
+              //inv.AddItems(amount, ob);
 
               if (amount >= itemAmount)
               {
@@ -485,7 +531,11 @@ namespace AiEnabled.Ai.Support
 
             if (amount > 0)
             {
-              inv.RemoveItems(invItem.ItemId, fixedPoint);
+              //inv.RemoveItems(invItem.ItemId, fixedPoint);
+              var invAR = _invItemPool.Count > 0 ? _invItemPool.Pop() : new InventoryAddRemove();
+              invAR.Set(inv, invItem.ItemId, fixedPoint, false);
+              _inventoryItemsToAddRemove.Add(invAR);
+
               myBotInv.AddItems(fixedPoint, comp);
               needed -= amount;
             }
@@ -502,7 +552,34 @@ namespace AiEnabled.Ai.Support
 
     void RemoveItemsComplete(WorkData workData)
     {
-      _needsUpdate = true;
+      try
+      {
+        for (int i = 0; i < _inventoryItemsToAddRemove.Count; i++)
+        {
+          var invAR = _inventoryItemsToAddRemove[i];
+          var inv = invAR.Inventory;
+          var amount = invAR.Amount;
+
+          if (invAR.Add)
+          {
+            if (invAR.Item != null)
+              inv?.AddItems(amount, invAR.Item);
+          }
+          else
+          {
+            inv?.RemoveItems(invAR.ItemId, amount);
+          }
+
+          invAR.Clear();
+          _invItemPool.Push(invAR);
+        }
+
+        _needsUpdate = true;
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in InventoryCache.RemoveItemsComplete: {ex.ToString()}", MessageType.ERROR);
+      }
     }
 
     public void RemoveItemsFor(IMySlimBlock block, BotBase bot)

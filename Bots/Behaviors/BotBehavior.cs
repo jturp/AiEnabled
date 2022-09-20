@@ -65,7 +65,7 @@ namespace AiEnabled.Bots.Behaviors
 
             if (rand > Phrases.Count - 1)
             {
-              if (AiSession.Instance.AllowMusic)
+              if (AiSession.Instance.ModSaveData.AllowBotMusic)
                 Sing();
 
               return;

@@ -66,7 +66,7 @@ namespace AiEnabled.GameLogic
     List<string> _neutralTypes = new List<string>(5);
     List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
     string _soldierColor, _zombieColor, _grinderColor, _nomadColor, _enforcerColor;
-    bool _useRandomColor = true, _spidersOnly, _wolvesOnly;
+    bool _useRandomColor = true, _spidersOnly, _wolvesOnly, _customOnly;
 
     int _minSecondsBetweenSpawns = 60;
     int _maxSecondsBetweenSpawns = 180;
@@ -85,6 +85,8 @@ namespace AiEnabled.GameLogic
     {
       try
       {
+        //_block.CustomDataChanged -= Block_CustomDataChanged;
+
         _ini?.Clear();
         _iniKeys?.Clear();
         _iniLines?.Clear();
@@ -161,6 +163,8 @@ namespace AiEnabled.GameLogic
         }
 
         SetupIni();
+
+        //_block.CustomDataChanged += Block_CustomDataChanged;
         NeedsUpdate = MyEntityUpdateEnum.EACH_100TH_FRAME;
       }
       catch (Exception e)
@@ -169,6 +173,21 @@ namespace AiEnabled.GameLogic
       }
 
       base.UpdateOnceBeforeFrame();
+    }
+
+    private void Block_CustomDataChanged(string data)
+    {
+      try
+      {
+        if (string.IsNullOrWhiteSpace(data) || !_ini.TryParse(data))
+          SetupIni(false);
+        else
+          ParseConfig(_ini);
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log($"Exception in SpawnBlock.OnCustomDataChanged: {ex}");
+      }
     }
 
     void SetupIni(bool parseNew = true)
@@ -231,6 +250,7 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
       _ini.Set("AiEnabled", "Wolf Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "Spider Loot Container Id", string.Empty);
+      _ini.Set("AiEnabled", "Custom NPCs Only", _customOnly);
 
       _ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n Loot Container Ids are taken from mod / game files, leave blank\n to use the value from the character definition.\n ");
       _ini.SetComment("AiEnabled", "Known Loot Container Ids", " \n These are the loot container ids found by the mod. This may not be\n all of them. NOTE: you only need to assign them if you want to\n override the defaults.\n ");
@@ -245,6 +265,7 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch. Not colorable.\n ");
       _ini.SetComment("AiEnabled", "Neutral Bots Only", " \n Neutral Bots are neutral encounters that will only attack if / when\n provoked. Enabling this will disable all others.\n ");
       _ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including Neutral Bots.\n ");
+      _ini.SetComment("AiEnabled", "Custom NPCs Only", " \n If you only want the block to spawn your custom NPCs, set this to true.\n Requires valid entries in the Additional Subtypes section below.\n ");
 
       _ini.Set("SoldierBot Weapon Subtypes", "AddWeaponSubtypeHere", 100);
       _ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
@@ -272,10 +293,11 @@ namespace AiEnabled.GameLogic
 
       var defaultColor = Color.Red;
       var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
+      _customOnly = ini.Get("AiEnabled", "Custom NPCs Only").ToBoolean(false);
 
       var allowSoldier = ini.Get("AiEnabled", "Allow SoldierBot").ToBoolean(true);
       _soldierColor = ini.Get("AiEnabled", "SoldierBot Color").ToString(hexColor);
-      if (!allowSoldier)
+      if (!allowSoldier || _customOnly)
       {
         _allSubtypes.Remove("Police_Bot");
       }
@@ -286,7 +308,7 @@ namespace AiEnabled.GameLogic
 
       var allowGrinder = ini.Get("AiEnabled", "Allow GrinderBot").ToBoolean(true);
       _grinderColor = ini.Get("AiEnabled", "GrinderBot Color").ToString(hexColor);
-      if (!allowGrinder)
+      if (!allowGrinder || _customOnly)
       {
         _allSubtypes.Remove("Space_Skeleton");
       }
@@ -297,7 +319,7 @@ namespace AiEnabled.GameLogic
 
       var allowZombie = ini.Get("AiEnabled", "Allow ZombieBot").ToBoolean(true);
       _zombieColor = ini.Get("AiEnabled", "ZombieBot Color").ToString(hexColor);
-      if (!allowZombie)
+      if (!allowZombie || _customOnly)
       {
         _allSubtypes.Remove("Space_Zombie");
       }
@@ -307,7 +329,7 @@ namespace AiEnabled.GameLogic
       }
 
       var allowGhost = ini.Get("AiEnabled", "Allow GhostBot").ToBoolean(true);
-      if (!allowGhost)
+      if (!allowGhost || _customOnly)
       {
         _allSubtypes.Remove("Ghost_Bot");
       }
@@ -429,12 +451,12 @@ namespace AiEnabled.GameLogic
         var role = kvp[0].ToUpperInvariant();
         var color = (kvp.Length > 1) ? kvp[1] : "";
 
-        if (!string.IsNullOrWhiteSpace(subtype) && !string.IsNullOrWhiteSpace(role)
-          && !subtype.Equals("Police_Bot", StringComparison.OrdinalIgnoreCase)
+        if (!string.IsNullOrWhiteSpace(subtype) && !string.IsNullOrWhiteSpace(role) && (_customOnly
+          || (!subtype.Equals("Police_Bot", StringComparison.OrdinalIgnoreCase)
           && !subtype.Equals("Space_Skeleton", StringComparison.OrdinalIgnoreCase)
           && !subtype.Equals("Space_Zombie", StringComparison.OrdinalIgnoreCase)
           && !subtype.Equals("Ghost_Bot", StringComparison.OrdinalIgnoreCase)
-          && !subtype.Equals("Boss_Bot", StringComparison.OrdinalIgnoreCase))
+          && !subtype.Equals("Boss_Bot", StringComparison.OrdinalIgnoreCase))))
         {
           switch (role)
           {
@@ -589,6 +611,7 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
       ini.Set("AiEnabled", "Wolf Loot Container Id", wolfLoot);
       ini.Set("AiEnabled", "Spider Loot Container Id", spiderLoot);
+      ini.Set("AiEnabled", "Custom NPCs Only", _customOnly);
 
       ini.SetSectionComment("AiEnabled", " \n Enable or Disable the spawning of certain types by switching\n their values to TRUE or FALSE. Colors must be hex values (ie #FF0000).\n Loot Container Ids are taken from mod / game files, leave blank\n to use the value from the character definition.\n ");
       ini.SetComment("AiEnabled", "Known Loot Container Ids", " \n These are the loot container ids found by the mod. This may not be\n all of them. NOTE: you only need to assign them if you want to\n override the defaults.\n ");
@@ -603,6 +626,7 @@ namespace AiEnabled.GameLogic
       ini.SetComment("AiEnabled", "Allow BruiserBot", " \n The BruiserBot is a boss encounter; it is harder to kill than\n the others and packs a heavy punch. Not colorable.\n ");
       ini.SetComment("AiEnabled", "Neutral Bots Only", " \n Neutral Bots are neutral encounters that will only attack if / when\n provoked. Enabling this will disable all others.\n ");
       ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including Neutral Bots.\n ");
+      ini.SetComment("AiEnabled", "Custom NPCs Only", " \n If you only want the block to spawn your custom NPCs, set this to true.\n Requires valid entries in the Additional Subtypes section below.\n ");
 
       if (_weaponSubtypes.Count > 0)
       {
@@ -617,6 +641,7 @@ namespace AiEnabled.GameLogic
         ini.Set("SoldierBot Weapon Subtypes", "AddWeaponSubtypeHere", 100);
       }
 
+      bool clearIni = false;
       if (_subtypeToRole.Count > 0)
       {
         foreach (var kvp in _subtypeToRole)
@@ -627,11 +652,22 @@ namespace AiEnabled.GameLogic
       else
       {
         ini.Set("Additional Subtypes", "Subtype", "BotRole;#112233");
+        ini.Set("AiEnabled", "Custom NPCs Only", false);
+
+        if (_customOnly)
+        {
+          clearIni = true;
+          _customOnly = false;
+          ini.Clear();
+        }
       }
 
-      ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
+      if (!clearIni)
+      {
+        ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
 
-      ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
+        ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
+      }
 
       _lastConfig = ini.ToString();
       _block.CustomData = _lastConfig;
@@ -648,15 +684,13 @@ namespace AiEnabled.GameLogic
           return;
 
         var data = _block.CustomData;
-        if (string.IsNullOrWhiteSpace(data) || !_ini.TryParse(data))
-          SetupIni(false);
-        else if (_ini.ToString() != _lastConfig)
-          ParseConfig(_ini);
+        if (data != _lastConfig)
+          Block_CustomDataChanged(data);
 
         if (!_block.Enabled || !_block.IsFunctional || !_block.IsWorking || _fakeBlock.GridResourceDistributor.ResourceState == MyResourceStateEnum.NoPower)
           return;
 
-        if (AiSession.Instance.BotNumber >= AiSession.Instance.MaxBots || AiSession.Instance.Players.Count == 0 || !AiSession.Instance.CanSpawn)
+        if (AiSession.Instance.Players.Count == 0 || !AiSession.Instance.CanSpawn)
           return;
 
         if (AiSession.Instance.FutureBotQueue.Count > 0) // make sure we spawn all saved helpers first
@@ -697,10 +731,24 @@ namespace AiEnabled.GameLogic
           var playerPosition = player.PositionComp.WorldAABB.Center;
           if (Vector3D.DistanceSquared(playerPosition, _block.WorldAABB.Center) < maxPlayerDistance)
           {
-            string botType, lootType = null, role = null;
+            string botType = null, lootType = null, role = null;
             bool assignRole = true;
 
-            if (_creatureBotOnly && _creatureTypes?.Count > 0)
+            if (_customOnly)
+            {
+              if (_subtypeToRole.Count > 0 && _allSubtypes.Count > 0)
+              {
+                var rand = MyUtils.GetRandomInt(_allSubtypes.Count);
+                botType = _allSubtypes[rand];
+
+                if (!_subtypeToRole.ContainsKey(botType))
+                  botType = null;
+              }
+
+              if (botType == null)
+                break;
+            }
+            else if (_creatureBotOnly && _creatureTypes?.Count > 0)
             {
               assignRole = false;
               role = "CREATURE";

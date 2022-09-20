@@ -102,15 +102,17 @@ namespace AiEnabled.ConfigData
   public class HelperData
   {
     public long OwnerIdentityId;
+    public string OwnerDisplayName;
     public Vector3? RepairBotIgnoreColorMask;
     public Vector3? RepairBotGrindColorMask;
     public List<HelperInfo> Helpers;
 
     public HelperData() { }
 
-    public HelperData(long ident, Vector3? hsvRepair, Vector3? hsvGrind)
+    public HelperData(IMyPlayer owner, Vector3? hsvRepair, Vector3? hsvGrind)
     {
-      OwnerIdentityId = ident;
+      OwnerIdentityId = owner.IdentityId;
+      OwnerDisplayName = owner.DisplayName;
       RepairBotIgnoreColorMask = hsvRepair;
       RepairBotGrindColorMask = hsvGrind;
       Helpers = new List<HelperInfo>();

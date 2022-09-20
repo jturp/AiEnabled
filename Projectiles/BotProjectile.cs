@@ -116,7 +116,7 @@ namespace AiEnabled.Projectiles
       }
       else
       {
-        var maxDistance = AiSession.Instance.MaxBotProjectileDistance;
+        var maxDistance = AiSession.Instance.ModSaveData.MaxBotProjectileDistance;
 
         if (Vector3D.DistanceSquared(Start, Position) > maxDistance * maxDistance)
           return true;

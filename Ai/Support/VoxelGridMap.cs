@@ -387,7 +387,7 @@ namespace AiEnabled.Ai.Support
       else
         localNodes.Clear();
 
-      var botPosition = bot.Target.CurrentBotPosition;
+      var botPosition = bot.BotInfo.CurrentBotPositionActual;
       var botWorldMatrix = bot.WorldMatrix;
 
       localPos = WorldToLocal(botPosition);
@@ -506,7 +506,7 @@ namespace AiEnabled.Ai.Support
       return Vector3I.Round(Vector3D.Transform(worldVector, MatrixNormalizedInv) * _gridSizeR);
     }
 
-    public override IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null)
+    public override IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null, bool checkRepairInfo = false)
     {
       Vector3I upVec = Vector3I.Zero;
 
@@ -562,7 +562,7 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    public override bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false)
+    public override bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, bool checkRepairInfo = false)
     {
       if (ObstacleNodes.ContainsKey(nextNode))
       {
@@ -849,7 +849,7 @@ namespace AiEnabled.Ai.Support
 
       if (RootVoxel != null && !RootVoxel.MarkedForClose)
       {
-        checkForWater = planet != null && WaterAPI.Registered && WaterAPI.HasWater(RootVoxel.EntityId);
+        checkForWater = planet != null && WaterAPI.Registered && WaterAPI.HasWater(planet);
         checkForVoxel = true;
 
         if (planet != null)
@@ -1031,7 +1031,7 @@ namespace AiEnabled.Ai.Support
       if (OpenTileDict.Count == 0 || (!bot.CanUseAirNodes && RootVoxel == null))
         return false;
 
-      var localBot = WorldToLocal(bot.Target.CurrentBotPosition);
+      var localBot = WorldToLocal(bot.BotInfo.CurrentBotPositionActual);
       var botPosition = LocalToWorld(localBot);
 
       var localReq = WorldToLocal(requestedPosition);

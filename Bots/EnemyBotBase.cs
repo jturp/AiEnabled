@@ -127,7 +127,8 @@ namespace AiEnabled.Bots
             }
           }
           else if (Target.HasTarget && !(Character.Parent is IMyCockpit))
-            MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
+            AiSession.Instance.Scheduler.Schedule(CheckLineOfSight);
+            //MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
           else
             HasLineOfSight = false;
         }
@@ -170,6 +171,9 @@ namespace AiEnabled.Bots
 
     internal override void MoveToTarget()
     {
+      if (GrenadeThrown)
+        return;
+
       if (!IsInRangeOfTarget())
       {
         if (!UseAPITargets)
@@ -203,7 +207,7 @@ namespace AiEnabled.Bots
     {
       roll = 0;
       rifleAttack = false;
-      var botPosition = Target.CurrentBotPosition;
+      var botPosition = BotInfo.CurrentBotPositionAdjusted;
       var botMatrix = WorldMatrix;
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;
@@ -213,7 +217,7 @@ namespace AiEnabled.Bots
       var vecToWP = waypoint - botPosition;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
 
-      if (_botState.IsOnLadder)
+      if (BotInfo.IsOnLadder)
       {
         movement = relVectorBot.Y > 0 ? Vector3.Forward : Vector3.Backward;
         rotation = Vector2.Zero;
@@ -382,7 +386,7 @@ namespace AiEnabled.Bots
                   Vector3D? addVec = (_currentGraph.LocalToWorld(testNode.Position) + testNode.Offset) - botPosition;
                   _sideNode += addVec;
                 }
-                else
+                else if (_currentGraph.IsPositionValid(_sideNode.Value + dir * 5))
                   _sideNode += new Vector3D?(dir * 5);
               }
 
@@ -440,7 +444,7 @@ namespace AiEnabled.Bots
             var ch = Character as Sandbox.Game.Entities.IMyControllableEntity;
             var distanceToTarget = Vector3D.DistanceSquared(Target.CurrentGoToPosition, botPosition);
 
-            var botRunning = _botState.IsRunning;
+            var botRunning = BotInfo.IsRunning;
             if (distanceToTarget > 100)
             {
               if (!botRunning)
@@ -493,7 +497,7 @@ namespace AiEnabled.Bots
 
     void CheckFire(bool shouldFire, bool shouldAttack, ref Vector3 movement)
     {
-      var isCrouching = _botState.IsCrouching;
+      var isCrouching = BotInfo.IsCrouching;
       IsShooting = false;
 
       if (shouldFire)
@@ -504,7 +508,7 @@ namespace AiEnabled.Bots
           Character.CurrentMovementState = MyCharacterMovementEnum.Standing;
         }
 
-        if (_botState.IsRunning)
+        if (BotInfo.IsRunning)
           Character.SwitchWalk();
 
         if (HasLineOfSight && ((byte)MySessionComponentSafeZones.AllowedActions & 2) != 0 && FireWeapon())

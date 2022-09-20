@@ -35,6 +35,7 @@ using VRage.Game;
 using AiEnabled.Parallel;
 using ParallelTasks;
 using Sandbox.Game.Entities.Blocks;
+using AiEnabled.Bots.Roles.Helpers;
 
 namespace AiEnabled.Ai.Support
 {
@@ -1332,13 +1333,21 @@ namespace AiEnabled.Ai.Support
         }
       }
 
+      var rBot = bot as RepairBot;
+      var slimTgt = rBot?.Target.Entity as IMySlimBlock;
+      bool checkRepairInfo = slimTgt?.Position == testPosition;
+
+      List<MyEntity> entList;
+      if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
+        entList = new List<MyEntity>();
+
       var center = localPosition;
       double localDistance = double.MaxValue;
       double groundDistance = double.MaxValue;
       var worldPosition = MainGrid.GridIntegerToWorld(localPosition);
       Vector3I? closestGround = null;
 
-      foreach (var point in Neighbors(bot, center, center, worldPosition, true, true, isSlimBlock, up))
+      foreach (var point in Neighbors(bot, center, center, worldPosition, true, true, isSlimBlock, up, checkRepairInfo: checkRepairInfo))
       {
         TryGetNodeForPosition(point, out node);
         var isAirNode = node.IsAirNode;
@@ -1347,7 +1356,36 @@ namespace AiEnabled.Ai.Support
         if (!allowAirNodes && isAirNode && !bot.RequiresJetpack)
           continue;
 
-        if (BlockedDoors.ContainsKey(point) || ObstacleNodes.ContainsKey(point) || TempBlockedNodes.ContainsKey(point))
+        if (ObstacleNodes.ContainsKey(point))
+        {
+          if (!checkRepairInfo)
+            continue;
+
+          entList.Clear();
+          var worldPoint = LocalToWorld(point);
+          var sphere = new BoundingSphereD(worldPoint, 0.2);
+          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+          bool allowed = true;
+          for (int i = 0; i < entList.Count; i++)
+          {
+            var grid = entList[i] as MyCubeGrid;
+            if (grid != null)
+            {
+              var gridLocal = grid.WorldToGridInteger(worldPoint);
+              var cube = grid.GetCubeBlock(gridLocal) as IMySlimBlock;
+              if (cube != null && ((MyCubeBlockDefinition)cube.BlockDefinition).HasPhysics)
+              {
+                allowed = false;
+                break;
+              }
+            }
+          }
+
+          if (!allowed)
+            continue;
+        }
+        else if (BlockedDoors.ContainsKey(point) || TempBlockedNodes.ContainsKey(point))
           continue;
 
         if (bot != null && !isWaterNode && bot.WaterNodesOnly)
@@ -1363,7 +1401,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (!node.IsSpaceNode(this) || bot.CanUseSpaceNodes)))
+        if (bot == null || ((!isAirNode || bot.CanUseAirNodes) && (!isWaterNode || bot.CanUseWaterNodes) && (bot.CanUseSpaceNodes || !node.IsSpaceNode(this))))
         {
           var testPositionWorld = MainGrid.GridIntegerToWorld(point);
           var dist = Vector3D.DistanceSquared(testPositionWorld, worldPosition);
@@ -1382,15 +1420,20 @@ namespace AiEnabled.Ai.Support
         }
       }
 
+      entList.Clear();
+      AiSession.Instance.EntListStack.Push(entList);
+
       if (preferGroundNode && closestGround.HasValue)
         localPosition = closestGround.Value;
 
       return localDistance < double.MaxValue;
     }
 
-    public override IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null)
+    public override IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null, bool checkRepairInfo = false)
     {
       Vector3I upVec = Vector3I.Zero;
+      var rBot = bot as RepairBot;
+      var checkAdditionalTile = checkRepairInfo && (rBot.Target.Entity as IMySlimBlock)?.CubeGrid.GridSizeEnum == MyCubeSize.Small;
 
       if (up.HasValue)
       {
@@ -1406,9 +1449,18 @@ namespace AiEnabled.Ai.Support
         }
 
         var next = currentNode + dir;
-        if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, isSlimBlock))
+        if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, isSlimBlock, checkRepairInfo))
         {
           yield return next;
+        }
+
+        if (checkAdditionalTile)
+        {
+          next = currentNode + dir * 2;
+          if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, isSlimBlock, checkRepairInfo))
+          {
+            yield return next;
+          }
         }
       }
 
@@ -1431,7 +1483,7 @@ namespace AiEnabled.Ai.Support
             }
 
             var next = currentNode + dir;
-            if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, isSlimBlock))
+            if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, isSlimBlock, checkRepairInfo))
             {
               yield return next;
             }
@@ -1451,7 +1503,7 @@ namespace AiEnabled.Ai.Support
           }
 
           var next = currentNode + dir;
-          if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle))
+          if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, checkRepairInfo: checkRepairInfo))
           {
             yield return next;
           }
@@ -1471,21 +1523,26 @@ namespace AiEnabled.Ai.Support
         }
 
         var next = currentNode + dir;
-        if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors))
+        if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, checkRepairInfo: checkRepairInfo))
         {
           yield return next;
         }
       }
     }
 
-    public override bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false)
+    public override bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, bool checkRepairInfo = false)
     {
       if (checkDoors && BlockedDoors.ContainsKey(nextNode))
       {
         return false;
       }
 
-      if (ObstacleNodes.ContainsKey(nextNode) || TempBlockedNodes.ContainsKey(nextNode) || bot?._pathCollection?.Obstacles.ContainsKey(nextNode) == true)
+      if (TempBlockedNodes.ContainsKey(nextNode) || bot?._pathCollection?.Obstacles.ContainsKey(nextNode) == true)
+      {
+        return false;
+      }
+
+      if (!checkRepairInfo && ObstacleNodes.ContainsKey(nextNode))
       {
         return false;
       }
@@ -3637,7 +3694,7 @@ namespace AiEnabled.Ai.Support
       bool checkForVoxel = false;
       if (RootVoxel != null && !RootVoxel.MarkedForClose)
       {
-        checkForWater = planet != null && WaterAPI.Registered && WaterAPI.HasWater(RootVoxel.EntityId);
+        checkForWater = planet != null && WaterAPI.Registered && WaterAPI.HasWater(planet);
         checkForVoxel = true;
 
         RootVoxel.RangeChanged -= Planet_RangeChanged;
@@ -3833,6 +3890,17 @@ namespace AiEnabled.Ai.Support
                 if (turretBasePosition == localBelowOther || slimBelow.Position == localBelowOther)
                   addNodeBelow = false;
               }
+              else if (slimBelow.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+              {
+                var turbineBasePosition = slimBelow.Position;
+                var turbineUpVec = Base6Directions.GetIntVector(slimBelow.Orientation.Up);
+                var midPoint = turbineBasePosition + turbineUpVec;
+                var topPoint = midPoint + turbineUpVec;
+                if (localBelowOther == turbineBasePosition || localBelowOther == midPoint || localBelowOther == topPoint)
+                {
+                  addNodeBelow = false;
+                }
+              }
               else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slimBelow.BlockDefinition.Id))
                 addNodeBelow = false;
             }
@@ -3846,6 +3914,18 @@ namespace AiEnabled.Ai.Support
             {
               var turretBasePosition = slim.Position - Base6Directions.GetIntVector(slim.Orientation.Up);
               if (turretBasePosition == localPointOther || slim.Position == localPointOther)
+              {
+                add = false;
+                break;
+              }
+            }
+            else if (slim.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+            {
+              var turbineBasePosition = slim.Position;
+              var turbineUpVec = Base6Directions.GetIntVector(slim.Orientation.Up);
+              var midPoint = turbineBasePosition + turbineUpVec;
+              var topPoint = midPoint + turbineUpVec;
+              if (localPointOther == turbineBasePosition || localPointOther == midPoint || localPointOther == topPoint)
               {
                 add = false;
                 break;
@@ -3872,6 +3952,17 @@ namespace AiEnabled.Ai.Support
                 if (turretBasePosition == localBelow || blockBelow.Position == localBelow)
                   addNodeBelow = false;
               }
+              else if (blockBelow.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+              {
+                var turbineBasePosition = blockBelow.Position;
+                var turbineUpVec = Base6Directions.GetIntVector(blockBelow.Orientation.Up);
+                var midPoint = turbineBasePosition + turbineUpVec;
+                var topPoint = midPoint + turbineUpVec;
+                if (localBelow == turbineBasePosition || localBelow == midPoint || localBelow == topPoint)
+                {
+                  addNodeBelow = false;
+                }
+              }
               else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(blockBelow.BlockDefinition.Id))
                 addNodeBelow = false;
             }
@@ -3891,6 +3982,17 @@ namespace AiEnabled.Ai.Support
               if (turretBasePosition == localPoint || localPoint == block.Position)
                 add = false;
             }
+            else if (block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+            {
+              var turbineBasePosition = block.Position;
+              var turbineUpVec = Base6Directions.GetIntVector(block.Orientation.Up);
+              var midPoint = turbineBasePosition + turbineUpVec;
+              var topPoint = midPoint + turbineUpVec;
+              if (localPoint == turbineBasePosition || localPoint == midPoint || localPoint == topPoint)
+              {
+                add = false;
+              }
+            }
             else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id))
               add = false;
           }
@@ -3906,6 +4008,17 @@ namespace AiEnabled.Ai.Support
                 var turretBasePosition = slim.Position - Base6Directions.GetIntVector(slim.Orientation.Up);
                 if (turretBasePosition == localAbove || localAbove == slim.Position)
                   add = false;
+              }
+              else if (slim.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+              {
+                var turbineBasePosition = slim.Position;
+                var turbineUpVec = Base6Directions.GetIntVector(slim.Orientation.Up);
+                var midPoint = turbineBasePosition + turbineUpVec;
+                var topPoint = midPoint + turbineUpVec;
+                if (localAbove == turbineBasePosition || localAbove == midPoint || localAbove == topPoint)
+                {
+                  add = false;
+                }
               }
               else if ((!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slim.BlockDefinition.Id)
                 && !AiSession.Instance.CatwalkBlockDefinitions.Contains(slim.BlockDefinition.Id)) || Base6Directions.GetIntVector(slim.Orientation.Up) != -upVec)
@@ -4358,6 +4471,22 @@ namespace AiEnabled.Ai.Support
 
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
             OpenTileDict[mainGridPosition] = node;
+          }
+          else if (cubeAbove.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+          {
+            var blockPos = cubeAbove.Position;
+            if (needsPositionAdjusted)
+              blockPos = MainGrid.WorldToGridInteger(cubeAbove.CubeGrid.GridIntegerToWorld(blockPos));
+
+            if (blockPos != mainGridPosition)
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
+              OpenTileDict[mainGridPosition] = node;
+            }
           }
           else if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0)
           {
@@ -7562,7 +7691,7 @@ namespace AiEnabled.Ai.Support
       else
         localNodes.Clear();
 
-      var botPosition = bot.Target.CurrentBotPosition;
+      var botPosition = bot.BotInfo.CurrentBotPositionActual;
       var collection = bot._pathCollection;
       var botWorldMatrix = bot.WorldMatrix;
 
@@ -7658,7 +7787,7 @@ namespace AiEnabled.Ai.Support
       else
         testList.Clear();
 
-      MainGrid.RayCastCells(bot.Target.CurrentBotPosition, requestedPosition, nodeList, new Vector3I(11));
+      MainGrid.RayCastCells(bot.BotInfo.CurrentBotPositionActual, requestedPosition, nodeList, new Vector3I(11));
 
       bool getGroundFirst = !bot.CanUseAirNodes;
 

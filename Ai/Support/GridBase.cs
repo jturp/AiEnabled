@@ -387,7 +387,7 @@ namespace AiEnabled.Ai.Support
         }
         else
         {
-          var botPosition = bot.Target.CurrentBotPosition;
+          var botPosition = bot.BotInfo.CurrentBotPositionActual;
           if (planet != null)
             surfacePoint = planet.GetClosestSurfacePointGlobal(ref botPosition) + upVector;
           else
@@ -572,9 +572,9 @@ namespace AiEnabled.Ai.Support
     /// <param name="isSlimBlock">whether the <paramref name="currentNode"/> is known to be a slim block (ie repair target) </param>
     /// <param name="up">if supplied, only lateral positions will be considered valid</param>
     /// <returns></returns>
-    public abstract IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null);
+    public abstract IEnumerable<Vector3I> Neighbors(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, Vector3D? up = null, bool checkRepairInfo = false);
 
-    public abstract bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false);
+    public abstract bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, bool checkRepairInfo = false);
 
     public abstract bool GetClosestValidNode(BotBase bot, Vector3I testNode, out Vector3I node, Vector3D? up = null, bool isSlimBlock = false, bool currentIsDenied = false, bool allowAirNodes = true, bool preferGroundNode = true);
 
@@ -596,15 +596,40 @@ namespace AiEnabled.Ai.Support
 
     public virtual void TeleportNearby(BotBase bot)
     {
-      var botPostion = bot.Target.CurrentBotPosition;
+      var botPostion = bot.BotInfo.CurrentBotPositionActual;
       var graph = bot._currentGraph;
 
       if (!graph.IsPositionValid(botPostion) && bot.Owner == null)
       {
-        if (bot.Target.CurrentGravityAtBot.LengthSquared() == 0)
+        if (bot.ConfineToMap && bot.BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() == 0 && bot.BotInfo.CurrentGravityAtBotPosition_Art.LengthSquared() == 0)
         {
           AiSession.Instance.Logger.Log($"{this}.TeleportNearby: {bot.Character.Name} found outside of map bounds (pos was {graph.WorldToLocal(botPostion)})", MessageType.WARNING);
           bot.Character.Kill();
+        }
+        else
+        {
+          var directionCenterToBot = graph.WorldMatrix.GetClosestDirection(bot.BotInfo.CurrentBotPositionActual - graph.OBB.Center);
+          var normal = graph.WorldMatrix.GetDirectionVector(directionCenterToBot);
+
+          double distanceToEdge;
+          if (!graph.GetEdgeDistanceInDirection(normal, out distanceToEdge))
+            distanceToEdge = VoxelGridMap.DefaultHalfSize * 0.75;
+
+          var newGraphPosition = graph.OBB.Center + (normal * distanceToEdge) + (normal * VoxelGridMap.DefaultHalfSize) - (normal * VoxelGridMap.DefaultCellSize * 3);
+          
+          if (Vector3D.DistanceSquared(newGraphPosition, botPostion) > VoxelGridMap.DefaultHalfSize * VoxelGridMap.DefaultHalfSize * 0.9)
+            newGraphPosition = botPostion;
+
+          var map = AiSession.Instance.GetVoxelGraph(newGraphPosition, graph.WorldMatrix);
+          if (map != null)
+          {
+            bot._previousGraph = bot._currentGraph;
+            bot._currentGraph = map;
+            bot._nextGraph = null;
+            bot._transitionPoint = null;
+            bot._pathCollection?.CleanUp(true);
+            bot.NeedsTransition = false;
+          }
         }
 
         return;
@@ -722,6 +747,19 @@ namespace AiEnabled.Ai.Support
 
       var ray = new RayD(OBB.Center, normal);
       var result = OBB.GetDistanceToEdgeInDirection(ray, corners, out distance);
+
+      AiSession.Instance.CornerArrayStack.Push(corners);
+      return result;
+    }
+
+    internal bool GetEdgeDistanceInDirection(Vector3D normal, MyOrientedBoundingBoxD box, out double distance)
+    {
+      Vector3D[] corners;
+      if (!AiSession.Instance.CornerArrayStack.TryPop(out corners))
+        corners = new Vector3D[8];
+
+      var ray = new RayD(box.Center, normal);
+      var result = box.GetDistanceToEdgeInDirection(ray, corners, out distance);
 
       AiSession.Instance.CornerArrayStack.Push(corners);
       return result;

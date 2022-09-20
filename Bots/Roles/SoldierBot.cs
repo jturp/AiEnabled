@@ -46,7 +46,8 @@ namespace AiEnabled.Bots.Roles
       _attackSounds.Add(new MySoundPair("Enemy"));
       _attackSoundStrings.Add("Enemy");
 
-      MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+      AiSession.Instance.Scheduler.Schedule(AddWeapon);
+      //MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
     }
 
     internal override bool Update()

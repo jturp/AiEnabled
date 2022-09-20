@@ -24,9 +24,9 @@ namespace AiEnabled.Bots
       public IMySlimBlock Inventory { get; private set; }
       public Vector3D CurrentGoToPosition { get; private set; }
       public Vector3D CurrentActualPosition { get; private set; }
-      public Vector3D CurrentBotPosition { get; private set; }
-      public Vector3D CurrentGravityAtTarget { get; private set; }
-      public Vector3D CurrentGravityAtBot { get; private set; }
+      public Vector3D CurrentGravityAtTarget_Nat { get; private set; }
+      public Vector3D CurrentGravityAtTarget_Art { get; private set; }
+
       public bool PositionsValid { get; private set; }
 
       readonly BotBase _base;
@@ -347,20 +347,11 @@ namespace AiEnabled.Bots
         if (!PositionsValid)
           return double.MaxValue;
 
-        return Vector3D.DistanceSquared(CurrentActualPosition, CurrentBotPosition);
+        return Vector3D.DistanceSquared(CurrentActualPosition, _base.BotInfo.CurrentBotPositionActual);
       }
 
       public void Update()
       {
-        CurrentBotPosition = _base?.GetPosition() ?? Vector3D.Zero;
-
-        float interference;
-        CurrentGravityAtBot = MyAPIGateway.Physics.CalculateNaturalGravityAt(CurrentBotPosition, out interference);
-        if (CurrentGravityAtBot.LengthSquared() == 0)
-        {
-          CurrentGravityAtBot = MyAPIGateway.Physics.CalculateArtificialGravityAt(CurrentBotPosition, interference);
-        }
-
         Vector3D gotoPos, actualPos;
         PositionsValid = GetTargetPosition(out gotoPos, out actualPos);
 
@@ -371,16 +362,13 @@ namespace AiEnabled.Bots
       void AssignGravityAtTarget(ref Vector3D targetPosition)
       {
         float interference;
-        CurrentGravityAtTarget = MyAPIGateway.Physics.CalculateNaturalGravityAt(targetPosition, out interference);
-        if (CurrentGravityAtTarget.LengthSquared() == 0)
-        {
-          CurrentGravityAtTarget = MyAPIGateway.Physics.CalculateArtificialGravityAt(targetPosition, interference);
-        }
+        CurrentGravityAtTarget_Nat = MyAPIGateway.Physics.CalculateNaturalGravityAt(targetPosition, out interference);
+        CurrentGravityAtTarget_Art = MyAPIGateway.Physics.CalculateArtificialGravityAt(targetPosition, interference);
       }
 
       bool GetTargetPosition(out Vector3D gotoPosition, out Vector3D actualPosition)
       {
-        gotoPosition = CurrentBotPosition;
+        gotoPosition = _base.BotInfo.CurrentBotPositionActual;
         actualPosition = gotoPosition;
 
         if (_base._pathCollection == null)
@@ -411,9 +399,11 @@ namespace AiEnabled.Bots
           actualPosition = floater.GetPosition();
           AssignGravityAtTarget(ref actualPosition);
 
-          if (CurrentGravityAtTarget.LengthSquared() > 0)
+          var grav = CurrentGravityAtTarget_Nat.LengthSquared() > 0 ? CurrentGravityAtTarget_Nat : CurrentGravityAtTarget_Art;
+
+          if (grav.LengthSquared() > 0)
           {
-            gotoPosition = actualPosition - Vector3D.Normalize(CurrentGravityAtTarget);
+            gotoPosition = actualPosition - Vector3D.Normalize(grav);
           }
           else if (_base._currentGraph?.Ready == true)
           {
@@ -617,8 +607,10 @@ namespace AiEnabled.Bots
 
           if (_base is RepairBot && cube.CubeGrid.GridSizeEnum == MyCubeSize.Small)
           {
-            if (CurrentGravityAtTarget.LengthSquared() > 0)
-              gotoPosition -= Vector3D.Normalize(CurrentGravityAtTarget);
+            var grav = CurrentGravityAtTarget_Nat.LengthSquared() > 0 ? CurrentGravityAtTarget_Nat : CurrentGravityAtTarget_Art;
+
+            if (grav.LengthSquared() > 0)
+              gotoPosition -= Vector3D.Normalize(grav);
             else
               gotoPosition += _base._currentGraph?.WorldMatrix.Up ?? _base.WorldMatrix.Up;
           }
@@ -635,8 +627,10 @@ namespace AiEnabled.Bots
 
           if (_base is RepairBot && slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
           {
-            if (CurrentGravityAtTarget.LengthSquared() > 0)
-              gotoPosition -= Vector3D.Normalize(CurrentGravityAtTarget);
+            var grav = CurrentGravityAtTarget_Nat.LengthSquared() > 0 ? CurrentGravityAtTarget_Nat : CurrentGravityAtTarget_Art;
+
+            if (grav.LengthSquared() > 0)
+              gotoPosition -= Vector3D.Normalize(grav);
             else
               gotoPosition += _base._currentGraph?.WorldMatrix.Up ?? _base.WorldMatrix.Up;
           }

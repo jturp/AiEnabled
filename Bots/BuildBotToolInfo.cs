@@ -34,7 +34,13 @@ namespace AiEnabled.Bots
       var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(def);
       var toolBaseDef = handItemDef as MyEngineerToolBaseDefinition;
 
-      buildMode = (handItemDef != null && handItemDef.Id.TypeId == typeof(MyObjectBuilder_AngleGrinder)) ? RepairBot.BuildMode.Grind : RepairBot.BuildMode.Weld;
+      if (handItemDef == null)
+        buildMode = RepairBot.BuildMode.None;
+      else if (handItemDef.Id.TypeId == typeof(MyObjectBuilder_AngleGrinder))
+        buildMode = RepairBot.BuildMode.Grind; 
+      else
+        buildMode = RepairBot.BuildMode.Weld;
+
       _toolSpeedMultiplier = toolBaseDef?.SpeedMultiplier ?? 1f;
     }
   }

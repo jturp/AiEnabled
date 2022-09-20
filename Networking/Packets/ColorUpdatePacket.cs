@@ -9,6 +9,7 @@ using AiEnabled.ConfigData;
 using ProtoBuf;
 
 using VRage;
+using VRage.Game.ModAPI;
 
 using VRageMath;
 
@@ -49,8 +50,12 @@ namespace AiEnabled.Networking
 
       if (!found)
       {
-        var playerData = new HelperData(_playerIdentityId, _repairColor, _grindColor);
-        data.PlayerHelperData.Add(playerData);
+        IMyPlayer player;
+        if (AiSession.Instance.Players.TryGetValue(_playerIdentityId, out player))
+        {
+          var playerData = new HelperData(player, _repairColor, _grindColor);
+          data.PlayerHelperData.Add(playerData);
+        }
       }
 
       AiSession.Instance.SaveModData(true);

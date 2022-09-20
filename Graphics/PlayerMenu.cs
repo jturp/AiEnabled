@@ -45,10 +45,15 @@ namespace AiEnabled.Graphics
   public class PlayerMenu
   {
     internal MenuRootCategory Menu, AdminMenu;
-    internal MenuItem ShowHealthBars;
     internal MenuSliderInput MouseSensitivity;
     internal MenuKeybindInput RecallBotsKeyBind;
+    internal MenuItem ShowHealthBars, ObeyProjectionIntegrity, DisableCollisionOnDeath;
+    internal MenuItem AllowRepairBot, AllowCombatBot, AllowScavengerBot, AllowCrewBot, AllowBotMusic;
+    internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
+    internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
+    internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
+    internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
     PlayerData _playerData;
 
     public PlayerMenu(PlayerData playerData)
@@ -63,15 +68,15 @@ namespace AiEnabled.Graphics
 
       Menu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.PlayerMenu, "Settings");
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);
-      MouseSensitivity = new MenuSliderInput($"Mouse Sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
+      MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
 
-      var colorMenu = new MenuSubCategory("Color Settings               <color=teal>==>", Menu, "Color Settings");
+      var colorMenu = new MenuSubCategory("Color Settings               <color=cyan>==>", Menu, "Color Settings");
       Vector3? vec = _playerData.RepairBotIgnoreColorHSV;
       var x = vec?.X.ToString() ?? "N";
       var y = vec?.Y.ToString() ?? "N";
       var z = vec?.Z.ToString() ?? "N";
 
-      var color = (vec == null) ? "<color=yellow>" : "<color=green>";
+      var color = (vec == null) ? "<color=yellow>" : "<color=orange>";
       RepairBotIgnoreColorInput = new MenuTextInput($"RepairBot ignore color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the ignore color for Repair Bots, in format H,S,V", TextInputIgnore_Submitted);
 
       vec = _playerData.RepairBotGrindColorHSV;
@@ -79,15 +84,74 @@ namespace AiEnabled.Graphics
       y = vec?.Y.ToString() ?? "N";
       z = vec?.Z.ToString() ?? "N";
 
-      color = (vec == null) ? "<color=yellow>" : "<color=green>";
+      color = (vec == null) ? "<color=yellow>" : "<color=orange>";
       RepairBotGrindColorInput = new MenuTextInput($"RepairBot grind color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the grind color for Repair Bots, in format H,S,V", TextInputGrind_Submitted);
 
-      var keyBindMenu = new MenuSubCategory("Key Bindings                <color=teal>==>", Menu, "Key Bindings");
-      RecallBotsKeyBind = new MenuKeybindInput($"Recall Bots: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
+      var keyBindMenu = new MenuSubCategory("Key Bindings                <color=cyan>==>", Menu, "Key Bindings");
+      RecallBotsKeyBind = new MenuKeybindInput($"Recall bots: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
 
+      var data = AiSession.Instance.ModSaveData;
       AdminMenu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.AdminMenu, "Admin Settings");
-      MaxBots = new MenuTextInput($"Max Bots allowed in world: {AiSession.Instance.MaxBots}", AdminMenu, "Set the maximum number of bots allowed in the world", MaxBots_Submitted);
-      MaxHelpers = new MenuTextInput($"Max active Helpers allowed per player: {AiSession.Instance.MaxHelpers}", AdminMenu, "Set the maximum number of active helpers allowed per player", MaxHelpers_Submitted);
+      MaxBots = new MenuTextInput($"Max bots allowed in world: <color=orange>{data.MaxBotsInWorld}", AdminMenu, "Set the maximum number of bots allowed in the world", MaxBots_Submitted);
+      
+      MaxHelpers = new MenuTextInput($"Max active helpers allowed per player: <color=orange>{data.MaxHelpersPerPlayer}", AdminMenu, "Set the maximum number of active helpers allowed per player", MaxHelpers_Submitted);
+
+      PlayerDamageModifier = new MenuTextInput($"Player weapon damage modifier: <color=orange>{data.PlayerWeaponDamageModifier}", AdminMenu, "Set Player weapon damage modifier (1 = normal damage)", PlayerDamageMod_Submitted);
+      
+      BotDamageModifier = new MenuTextInput($"Bot weapon damage modifier: <color=orange>{data.BotWeaponDamageModifier}", AdminMenu, "Set Bot weapon damage modifier (1 = normal damage)", BotDamageMod_Submitted);
+      
+      MaxPathfindingTimeInSeconds = new MenuTextInput($"Max pathfinding time in seconds: <color=orange>{data.MaxPathfindingTimeInSeconds}", AdminMenu, "Set max number of seconds pathfinding system should look for a valid path (default = 30)", MaxPathTime_Submitted);
+      
+      MaxEnemyHuntRadius = new MenuTextInput($"Max enemy hunting radius: <color=orange>{data.MaxBotHuntingDistanceEnemy}", AdminMenu, "Set max hunting radius for enemy bots, between 50-1000 meters (default = 300)", MaxEnemyHuntRange_Submitted);
+      
+      MaxFriendlyHuntRadius = new MenuTextInput($"Max friendly hunting radius: <color=orange>{data.MaxBotHuntingDistanceFriendly}", AdminMenu, "Set max hunting radius for helper bots, between 50-1000 meters (default = 150)", MaxFriendlyHuntRange_Submitted);
+      
+      MaxBotProjectileDistance = new MenuTextInput($"Max projectile distance: <color=orange>{data.MaxBotProjectileDistance}", AdminMenu, "Set max bot projectile distance in meters (default = 150)", MaxProjectileRange_Submitted);
+
+      color = data.AllowRepairBot ? "<color=orange>" : "<color=yellow>";
+      AllowRepairBot = new MenuItem($"Allow RepairBot helpers: {color}{data.AllowRepairBot}", AdminMenu, AllowRepairBot_Clicked);
+
+      color = data.AllowCombatBot ? "<color=orange>" : "<color=yellow>";
+      AllowCombatBot = new MenuItem($"Allow CombatBot helpers: {color}{data.AllowCombatBot}", AdminMenu, AlloCombatBot_Clicked);
+
+      color = data.AllowScavengerBot ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerBot = new MenuItem($"Allow ScavengerBot helpers: {color}{data.AllowScavengerBot}", AdminMenu, AllowScavengerBot_Clicked);
+
+      color = data.AllowCrewBot ? "<color=orange>" : "<color=yellow>";
+      AllowCrewBot = new MenuItem($"Allow CrewBot helpers: {color}{data.AllowCrewBot}", AdminMenu, AllowCrewBot_Clicked);
+
+      color = data.AllowBotMusic ? "<color=orange>" : "<color=yellow>";
+      AllowBotMusic = new MenuItem($"Allow bot music: {color}{data.AllowBotMusic}", AdminMenu, AllowBotMusic_Clicked);
+
+      color = data.AllowEnemiesToFly ? "<color=orange>" : "<color=yellow>";
+      AllowEnemyFlight = new MenuItem($"Allow enemy bots to fly: {color}{data.AllowEnemiesToFly}", AdminMenu, AllowEnemyFlight_Clicked);
+
+      color = data.AllowNeutralsToFly ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralFlight = new MenuItem($"Allow neutral bots to fly: {color}{data.AllowNeutralsToFly}", AdminMenu, AllowNeutralFlight_Clicked);
+
+      color = data.AllowHelpersToFly ? "<color=orange>" : "<color=yellow>";
+      AllowFriendlyFlight = new MenuItem($"Allow helper bots to fly: {color}{data.AllowHelpersToFly}", AdminMenu, AllowFriendlyFlight_Clicked);
+
+      color = data.AllowNeutralTargets ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralTargets = new MenuItem($"Allow enemy bots to target neutrals: {color}{data.AllowNeutralTargets}", AdminMenu, AllowNeutralTargets_Clicked);
+
+      color = data.AllowIdleMovement ? "<color=orange>" : "<color=yellow>";
+      AllowIdleMovement = new MenuItem($"Allow idle bot movement: {color}{data.AllowIdleMovement}", AdminMenu, AllowIdleMovement_Clicked);
+
+      color = data.AllowIdleMapTransitions ? "<color=orange>" : "<color=yellow>";
+      AllowIdleTransitions = new MenuItem($"Allow idle map transitions: {color}{data.AllowIdleMapTransitions}", AdminMenu, AllowIdleTransitions_Clicked);
+
+      color = data.EnforceGroundPathingFirst ? "<color=orange>" : "<color=yellow>";
+      EnforceGroundPathingFirst = new MenuItem($"Enforce ground pathing first: {color}{data.EnforceGroundPathingFirst}", AdminMenu, EnforceGroundPathing_Clicked);
+
+      color = data.EnforceWalkingOnPatrol ? "<color=orange>" : "<color=yellow>";
+      EnforceWalkingOnPatrol = new MenuItem($"Enforce walking on patrol: {color}{data.EnforceWalkingOnPatrol}", AdminMenu, EnforcePatrolWalking_Clicked);
+
+      color = data.ObeyProjectionIntegrityForRepairs ? "<color=orange>" : "<color=yellow>";
+      ObeyProjectionIntegrity = new MenuItem($"Obey projection integrity for repairs: {color}{data.ObeyProjectionIntegrityForRepairs}", AdminMenu, ObeyProjectionIntegrity_Clicked);
+
+      color = data.DisableCharacterCollisionOnBotDeath ? "<color=orange>" : "<color=yellow>";
+      DisableCollisionOnDeath = new MenuItem($"Disable character collision on bot death: {color}{data.DisableCharacterCollisionOnBotDeath}", AdminMenu, DisableCollisions_Clicked);
     }
 
     public void Close()
@@ -156,14 +220,180 @@ namespace AiEnabled.Graphics
           MaxHelpers = null;
         }
 
+        if (ObeyProjectionIntegrity != null)
+        {
+          ObeyProjectionIntegrity.Text = null;
+          ObeyProjectionIntegrity.OnClick = null;
+          ObeyProjectionIntegrity.BackingObject = null;
+          ObeyProjectionIntegrity = null;
+        }
+
+        if (DisableCollisionOnDeath != null)
+        {
+          DisableCollisionOnDeath.Text = null;
+          DisableCollisionOnDeath.OnClick = null;
+          DisableCollisionOnDeath.BackingObject = null;
+          DisableCollisionOnDeath = null;
+        }
+
+        if (AllowRepairBot != null)
+        {
+          AllowRepairBot.Text = null;
+          AllowRepairBot.OnClick = null;
+          AllowRepairBot.BackingObject = null;
+          AllowRepairBot = null;
+        }
+
+        if (AllowCombatBot != null)
+        {
+          AllowCombatBot.Text = null;
+          AllowCombatBot.OnClick = null;
+          AllowCombatBot.BackingObject = null;
+          AllowCombatBot = null;
+        }
+
+        if (AllowScavengerBot != null)
+        {
+          AllowScavengerBot.Text = null;
+          AllowScavengerBot.OnClick = null;
+          AllowScavengerBot.BackingObject = null;
+          AllowScavengerBot = null;
+        }
+
+        if (AllowCrewBot != null)
+        {
+          AllowCrewBot.Text = null;
+          AllowCrewBot.OnClick = null;
+          AllowCrewBot.BackingObject = null;
+          AllowCrewBot = null;
+        }
+
+        if (AllowBotMusic != null)
+        {
+          AllowBotMusic.Text = null;
+          AllowBotMusic.OnClick = null;
+          AllowBotMusic.BackingObject = null;
+          AllowBotMusic = null;
+        }
+
+        if (AllowEnemyFlight != null)
+        {
+          AllowEnemyFlight.Text = null;
+          AllowEnemyFlight.OnClick = null;
+          AllowEnemyFlight.BackingObject = null;
+          AllowEnemyFlight = null;
+        }
+
+        if (AllowNeutralFlight != null)
+        {
+          AllowNeutralFlight.Text = null;
+          AllowNeutralFlight.OnClick = null;
+          AllowNeutralFlight.BackingObject = null;
+          AllowNeutralFlight = null;
+        }
+
+        if (AllowNeutralTargets != null)
+        {
+          AllowNeutralTargets.Text = null;
+          AllowNeutralTargets.OnClick = null;
+          AllowNeutralTargets.BackingObject = null;
+          AllowNeutralTargets = null;
+        }
+
+        if (AllowIdleMovement != null)
+        {
+          AllowIdleMovement.Text = null;
+          AllowIdleMovement.OnClick = null;
+          AllowIdleMovement.BackingObject = null;
+          AllowIdleMovement = null;
+        }
+
+        if (AllowIdleTransitions != null)
+        {
+          AllowIdleTransitions.Text = null;
+          AllowIdleTransitions.OnClick = null;
+          AllowIdleTransitions.BackingObject = null;
+          AllowIdleTransitions = null;
+        }
+
+        if (EnforceGroundPathingFirst != null)
+        {
+          EnforceGroundPathingFirst.Text = null;
+          EnforceGroundPathingFirst.OnClick = null;
+          EnforceGroundPathingFirst.BackingObject = null;
+          EnforceGroundPathingFirst = null;
+        }
+
+        if (EnforceWalkingOnPatrol != null)
+        {
+          EnforceWalkingOnPatrol.Text = null;
+          EnforceWalkingOnPatrol.OnClick = null;
+          EnforceWalkingOnPatrol.BackingObject = null;
+          EnforceWalkingOnPatrol = null;
+        }
+
+        if (PlayerDamageModifier != null)
+        {
+          PlayerDamageModifier.Text = null;
+          PlayerDamageModifier.OnSubmitAction = null;
+          PlayerDamageModifier.BackingObject = null;
+          PlayerDamageModifier = null;
+        }
+
+        if (BotDamageModifier != null)
+        {
+          BotDamageModifier.Text = null;
+          BotDamageModifier.OnSubmitAction = null;
+          BotDamageModifier.BackingObject = null;
+          BotDamageModifier = null;
+        }
+
+        if (MaxPathfindingTimeInSeconds != null)
+        {
+          MaxPathfindingTimeInSeconds.Text = null;
+          MaxPathfindingTimeInSeconds.OnSubmitAction = null;
+          MaxPathfindingTimeInSeconds.BackingObject = null;
+          MaxPathfindingTimeInSeconds = null;
+        }
+
+        if (MaxEnemyHuntRadius != null)
+        {
+          MaxEnemyHuntRadius.Text = null;
+          MaxEnemyHuntRadius.OnSubmitAction = null;
+          MaxEnemyHuntRadius.BackingObject = null;
+          MaxEnemyHuntRadius = null;
+        }
+
+        if (MaxFriendlyHuntRadius != null)
+        {
+          MaxFriendlyHuntRadius.Text = null;
+          MaxFriendlyHuntRadius.OnSubmitAction = null;
+          MaxFriendlyHuntRadius.BackingObject = null;
+          MaxFriendlyHuntRadius = null;
+        }
+
+        if (MaxBotProjectileDistance != null)
+        {
+          MaxBotProjectileDistance.Text = null;
+          MaxBotProjectileDistance.OnSubmitAction = null;
+          MaxBotProjectileDistance.BackingObject = null;
+          MaxBotProjectileDistance = null;
+        }
+
         _playerData = null;
       }
-      catch { }
+      catch (Exception ex)
+      {
+        if (AiSession.Instance?.Logger != null)
+          AiSession.Instance.Logger.Log($"Exception in PlayerMenu.Close: {ex.ToString()}");
+        else
+          MyLog.Default.Error($"Exception in PlayerMenu.Close: {ex.ToString()}");
+      }
     }
 
     MenuItem CreateMenuItemToggle(MenuCategoryBase category, bool toggleItem, string title, Action onClick, bool interactable = true)
     {
-      var color = toggleItem ? "<color=green>" : "<color=yellow>";
+      var color = toggleItem ? "<color=orange>" : "<color=yellow>";
       var text = $"{title}: {color}{toggleItem.ToString()}";
 
       return new MenuItem(text, category, onClick, interactable);
@@ -174,48 +404,11 @@ namespace AiEnabled.Graphics
       return (float)MathHelper.Clamp(Math.Round(input * 2, 2), 0.1, 2);
     }
 
-    internal void MaxBots_Submitted(string input)
-    {
-      double num;
-      if (double.TryParse(input, out num) && num > 0)
-      {
-        int newAmount = (int)Math.Ceiling(num);
-        UpdateMaxBots(newAmount);
-
-        var pkt = new AdminPacket(newAmount, AiSession.Instance.MaxHelpers, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null, null);
-        AiSession.Instance.Network.SendToServer(pkt);
-      }
-    }
-
-    internal void UpdateMaxBots(int num)
-    {
-      AiSession.Instance.MaxBots = num;
-      MaxBots.Text = $"Max Bots allowed in world: {num}";
-    }
-
-    internal void MaxHelpers_Submitted(string input)
-    {
-      double num;
-      if (double.TryParse(input, out num) && num > 0)
-      {
-        int newAmount = (int)Math.Ceiling(num);
-        UpdateMaxHelpers(newAmount);
-
-        var pkt = new AdminPacket(AiSession.Instance.MaxBots, newAmount, AiSession.Instance.MaxBotProjectileDistance, AiSession.Instance.AllowMusic, null, null);
-        AiSession.Instance.Network.SendToServer(pkt);
-      }
-    }
-
-    internal void UpdateMaxHelpers(int num)
-    {
-      AiSession.Instance.MaxHelpers = num;
-      MaxHelpers.Text = $"Max active Helpers allowed per player: {num}";
-    }
-
+    #region PlayerOnly
     internal void ShowHealthBars_Clicked()
     {
       var enabled = !AiSession.Instance.PlayerData.ShowHealthBars;
-      var color = enabled ? "<color=green>" : "<color=yellow>";
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
       ShowHealthBars.Text = $"Show health bars: {color}{enabled.ToString()}";
       _playerData.ShowHealthBars = enabled;
       AiSession.Instance.StartUpdateCounter();
@@ -232,7 +425,7 @@ namespace AiEnabled.Graphics
     {
       num = (float)MathHelper.Clamp(Math.Round(num * 2, 2), 0.1, 2);
       _playerData.MouseSensitivityModifier = num;
-      MouseSensitivity.Text = $"Mouse Sensitivity: {num}";
+      MouseSensitivity.Text = $"Mouse sensitivity: {num}";
       MouseSensitivity.InitialPercent = num;
       AiSession.Instance.StartUpdateCounter();
     }
@@ -242,7 +435,7 @@ namespace AiEnabled.Graphics
       try
       {
         var tuple = MyTuple.Create(key, shift, ctrl, alt);
-        var text = $"Recall Bots: <color=green>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
+        var text = $"Recall bots: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
         AiSession.Instance.Input.AddKeybind(tuple, RecallBots_Used);
         RecallBotsKeyBind.Text = text;
       }
@@ -266,7 +459,7 @@ namespace AiEnabled.Graphics
         v = (float)Math.Round(MathHelper.Clamp(v, 0, 100), 1);
 
         var vec = new Vector3(h, s, v);
-        var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=green>";
+        var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=orange>";
 
         _playerData.RepairBotIgnoreColorHSV = vec;
         RepairBotIgnoreColorInput.Text = $"RepairBot ignore color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
@@ -294,7 +487,7 @@ namespace AiEnabled.Graphics
         v = (float)Math.Round(MathHelper.Clamp(v, 0, 100), 1);
 
         var vec = new Vector3(h, s, v);
-        var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=green>";
+        var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=orange>";
 
         _playerData.RepairBotGrindColorHSV = vec;
         RepairBotGrindColorInput.Text = $"RepairBot grind color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
@@ -317,5 +510,400 @@ namespace AiEnabled.Graphics
       var pkt = new BotRecallPacket(player.IdentityId);
       AiSession.Instance.Network.SendToServer(pkt);
     }
+    #endregion
+
+    #region AdminOnly
+    internal void AllowIdleTransitions_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowIdleMapTransitions;
+      data.AllowIdleMapTransitions = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowIdleTransitions.Text = $"Allow idle map transitions: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowIdleMovement_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowIdleMovement;
+      data.AllowIdleMovement = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowIdleMovement.Text = $"Allow idle bot movement: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowNeutralTargets_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowNeutralTargets;
+      data.AllowNeutralTargets = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralTargets.Text = $"Allow enemy bots to target neutrals: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowNeutralFlight_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowNeutralsToFly;
+      data.AllowNeutralsToFly = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralFlight.Text = $"Allow neutral bots to fly: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowEnemyFlight_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowEnemiesToFly;
+      data.AllowEnemiesToFly = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowEnemyFlight.Text = $"Allow enemy bots to fly: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    private void AllowFriendlyFlight_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowHelpersToFly;
+      data.AllowHelpersToFly = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowFriendlyFlight.Text = $"Allow helper bots to fly: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void DisableCollisions_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.DisableCharacterCollisionOnBotDeath;
+      data.DisableCharacterCollisionOnBotDeath = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableCollisionOnDeath.Text = $"Disable character collision on bot death: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void ObeyProjectionIntegrity_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.ObeyProjectionIntegrityForRepairs;
+      data.ObeyProjectionIntegrityForRepairs = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      ObeyProjectionIntegrity.Text = $"Obey projection integrity for repairs: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void EnforcePatrolWalking_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.EnforceWalkingOnPatrol;
+      data.EnforceWalkingOnPatrol = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      EnforceWalkingOnPatrol.Text = $"Enforce walking on patrol: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void EnforceGroundPathing_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.EnforceGroundPathingFirst;
+      data.EnforceGroundPathingFirst = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      EnforceGroundPathingFirst.Text = $"Enforce ground pathing first: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowBotMusic_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowBotMusic;
+      AiSession.Instance.ModSaveData.AllowBotMusic = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowBotMusic.Text = $"Allow bot music: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowCrewBot_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowCrewBot;
+      AiSession.Instance.ModSaveData.AllowCrewBot = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowCrewBot.Text = $"Allow CrewBot helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowScavengerBot_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowScavengerBot;
+      AiSession.Instance.ModSaveData.AllowScavengerBot = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerBot.Text = $"Allow ScavengerBot helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AlloCombatBot_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowCombatBot;
+      AiSession.Instance.ModSaveData.AllowCombatBot = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowCombatBot.Text = $"Allow CombatBot helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowRepairBot_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowRepairBot;
+      AiSession.Instance.ModSaveData.AllowRepairBot = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowRepairBot.Text = $"Allow RepairBot helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void MaxProjectileRange_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = (int)Math.Max(0, Math.Ceiling(num));
+        var data = AiSession.Instance.ModSaveData;
+        if (data.MaxBotProjectileDistance != newValue)
+        {
+          MaxBotProjectileDistance.Text = $"Max projectile distance: <color=orange>{newValue}";
+          data.MaxBotProjectileDistance = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
+    internal void MaxFriendlyHuntRange_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = (int)MathHelper.Clamp(num, 50, 1000);
+        var data = AiSession.Instance.ModSaveData;
+        if (data.MaxBotHuntingDistanceFriendly != newValue)
+        {
+          MaxFriendlyHuntRadius.Text = $"Max friendly hunting radius: <color=orange>{newValue}";
+          data.MaxBotHuntingDistanceFriendly = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
+    internal void MaxEnemyHuntRange_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = (int)MathHelper.Clamp(num, 50, 1000);
+        var data = AiSession.Instance.ModSaveData;
+        if (data.MaxBotHuntingDistanceEnemy != newValue)
+        {
+          MaxEnemyHuntRadius.Text = $"Max enemy hunting radius: <color=orange>{newValue}";
+          data.MaxBotHuntingDistanceEnemy = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
+    internal void MaxPathTime_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = (long)Math.Max(0, Math.Ceiling(num));
+        var data = AiSession.Instance.ModSaveData;
+        if (data.MaxPathfindingTimeInSeconds != newValue)
+        {
+          MaxPathfindingTimeInSeconds.Text = $"Max pathfinding time in seconds: <color=orange>{newValue}";
+          data.MaxPathfindingTimeInSeconds = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
+    internal void BotDamageMod_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = Math.Max(0, num);
+        var data = AiSession.Instance.ModSaveData;
+        if (data.BotWeaponDamageModifier != newValue)
+        {
+          BotDamageModifier.Text = $"Bot weapon damage modifier: <color=orange>{newValue}";
+          data.BotWeaponDamageModifier = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
+    internal void PlayerDamageMod_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = Math.Max(0, num);
+        var data = AiSession.Instance.ModSaveData;
+        if (data.PlayerWeaponDamageModifier != newValue)
+        {
+          PlayerDamageModifier.Text = $"Player weapon damage modifier: <color=orange>{newValue}";
+          data.PlayerWeaponDamageModifier = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
+    internal void MaxBots_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num) && num > 0)
+      {
+        int newAmount = (int)Math.Ceiling(num);
+        if (newAmount != AiSession.Instance.ModSaveData.MaxBotsInWorld)
+        {
+          MaxBots.Text = $"Max bots allowed in world: <color=orange>{newAmount}";
+          AiSession.Instance.ModSaveData.MaxBotsInWorld = newAmount;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.UpdateAdminSettingSync(true);
+        }
+      }
+    }
+
+    internal void MaxHelpers_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num) && num >= 0)
+      {
+        int newAmount = (int)Math.Ceiling(num);
+        if (newAmount != AiSession.Instance.ModSaveData.MaxHelpersPerPlayer)
+        {
+          MaxHelpers.Text = $"Max active helpers allowed per player: <color=orange>{newAmount}";
+          AiSession.Instance.ModSaveData.MaxHelpersPerPlayer = newAmount;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.UpdateAdminSettingSync(true);
+        }
+      }
+    }
+
+    internal void UpdateAdminSettings(SaveData data)
+    {
+      var newValue = data.AllowIdleMapTransitions;
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowIdleTransitions.Text = $"Allow idle map transitions: {color}{newValue}";
+
+      newValue = data.AllowIdleMovement;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowIdleMovement.Text = $"Allow idle bot movement: {color}{newValue}";
+
+      newValue = data.AllowNeutralTargets;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralTargets.Text = $"Allow enemy bots to target neutrals: {color}{newValue}";
+
+      newValue = data.AllowNeutralsToFly;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralFlight.Text = $"Allow neutral bots to fly: {color}{newValue}";
+
+      newValue = data.AllowEnemiesToFly;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowEnemyFlight.Text = $"Allow enemy bots to fly: {color}{newValue}";
+
+      newValue = data.DisableCharacterCollisionOnBotDeath;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableCollisionOnDeath.Text = $"Disable character collision on bot death: {color}{newValue}";
+
+      newValue = data.ObeyProjectionIntegrityForRepairs;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      ObeyProjectionIntegrity.Text = $"Obey projection integrity for repairs: {color}{newValue}";
+
+      newValue = data.EnforceWalkingOnPatrol;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      EnforceWalkingOnPatrol.Text = $"Enforce walking on patrol: {color}{newValue}";
+
+      newValue = data.EnforceGroundPathingFirst;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      EnforceGroundPathingFirst.Text = $"Enforce ground pathing first: {color}{newValue}";
+
+      newValue = data.AllowBotMusic;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowBotMusic.Text = $"Allow bot music: {color}{newValue}";
+
+      newValue = data.AllowCrewBot;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowCrewBot.Text = $"Allow CrewBot helpers: {color}{newValue}";
+
+      newValue = data.AllowScavengerBot;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerBot.Text = $"Allow ScavengerBot helpers: {color}{newValue}";
+
+      newValue = data.AllowCombatBot;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowCombatBot.Text = $"Allow CombatBot helpers: {color}{newValue}";
+
+      newValue = data.AllowRepairBot;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowRepairBot.Text = $"Allow RepairBot helpers: {color}{newValue}";
+
+      MaxBotProjectileDistance.Text = $"Max projectile distance: <color=orange>{data.MaxBotProjectileDistance}";
+      MaxFriendlyHuntRadius.Text = $"Max friendly hunting radius: <color=orange>{data.MaxBotHuntingDistanceFriendly}";
+      MaxEnemyHuntRadius.Text = $"Max enemy hunting radius: <color=orange>{data.MaxBotHuntingDistanceEnemy}";
+      MaxPathfindingTimeInSeconds.Text = $"Max pathfinding time in seconds: <color=orange>{data.MaxPathfindingTimeInSeconds}";
+      BotDamageModifier.Text = $"Bot weapon damage modifier: <color=orange>{data.BotWeaponDamageModifier}";
+      PlayerDamageModifier.Text = $"Player weapon damage modifier: <color=orange>{data.PlayerWeaponDamageModifier}";
+      MaxBots.Text = $"Max bots allowed in world: <color=orange>{data.MaxBotsInWorld}";
+      MaxHelpers.Text = $"Max active helpers allowed per player: <color=orange>{data.MaxHelpersPerPlayer}";
+    }
+    #endregion
   }
 }
