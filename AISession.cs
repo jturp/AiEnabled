@@ -1111,6 +1111,19 @@ namespace AiEnabled
             };
           }
 
+          if (ModSaveData.AllowedHelperSubtypes == null || ModSaveData.AllowedHelperSubtypes.Count == 0)
+          {
+            ModSaveData.AllowedHelperSubtypes = new List<string>()
+            {
+              "Police_Bot",
+              "Drone_Bot",
+              "Target_Dummy",
+              "RoboDog",
+              "Default_Astronaut",
+              "Default_Astronaut_Female"
+            };
+          }
+
           var factoryDef = new MyDefinitionId(typeof(MyObjectBuilder_ConveyorSorter), "RoboFactory");
           var factoryBlockDef = MyDefinitionManager.Static.GetCubeBlockDefinition(factoryDef);
           if (factoryBlockDef != null)
@@ -1118,7 +1131,41 @@ namespace AiEnabled
             factoryBlockDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && (ModSaveData.AllowCombatBot || ModSaveData.AllowRepairBot || ModSaveData.AllowCrewBot || ModSaveData.AllowScavengerBot);
           }
 
-          // TODO: make build tokens public / hidden depending on allowed setting
+          var component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial");
+          var compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+          if (compDef != null)
+            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCombatBot;
+
+          var compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+          if (compBP != null)
+            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCombatBot;
+
+          component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial");
+          compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+          if (compDef != null)
+            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowRepairBot;
+
+          compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+          if (compBP != null)
+            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowRepairBot;
+
+          component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial");
+          compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+          if (compDef != null)
+            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowScavengerBot;
+
+          compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+          if (compBP != null)
+            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowScavengerBot;
+
+          component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial");
+          compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+          if (compDef != null)
+            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCrewBot;
+
+          compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+          if (compBP != null)
+            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCrewBot;
 
           if (ModSaveData.EnforceGroundPathingFirst)
             Logger.Log($"EnforceGroundNodesFirst is enabled. This is a use-at-your-own-risk option that may result in lag.", MessageType.WARNING);
@@ -1130,26 +1177,37 @@ namespace AiEnabled
           if (ModSaveData.PlayerHelperData == null)
             ModSaveData.PlayerHelperData = new List<HelperData>();
 
-          if (ModSaveData.AdditionalHelperSubtypes == null)
-            ModSaveData.AdditionalHelperSubtypes = new List<string>();
-          else if (ModSaveData.AdditionalHelperSubtypes.Count > 0)
+          if (ModSaveData.AllowedHelperSubtypes.Count > 0)
           {
             var nameSB = new StringBuilder(32);
-            for (int i = ModSaveData.AdditionalHelperSubtypes.Count - 1; i >= 0; i--)
+            for (int i = ModSaveData.AllowedHelperSubtypes.Count - 1; i >= 0; i--)
             {
-              var newSubtype = ModSaveData.AdditionalHelperSubtypes[i];
+              var newSubtype = ModSaveData.AllowedHelperSubtypes[i];
               if (!RobotSubtypes.Contains(newSubtype))
-                ModSaveData.AdditionalHelperSubtypes.RemoveAtFast(i);
+                ModSaveData.AllowedHelperSubtypes.RemoveAtFast(i);
               else
               {
-                nameSB.Clear();
-                foreach (var ch in newSubtype)
+                string nameToUse;
+
+                if (newSubtype == "Default_Astronaut")
+                  nameToUse = "Male Engineer";
+                else if (newSubtype == "Default_Astronaut_Female")
+                  nameToUse = "Female Engineer";
+                else
                 {
-                  if (char.IsLetterOrDigit(ch))
-                    nameSB.Append(ch);
+                  nameSB.Clear();
+                  foreach (var ch in newSubtype)
+                  {
+                    if (char.IsLetterOrDigit(ch))
+                      nameSB.Append(ch);
+                    else if (ch == '_')
+                      nameSB.Append(' ');
+                  }
+
+                  nameToUse = nameSB.ToString();
                 }
 
-                var hashId = MyStringId.GetOrCompute(nameSB.ToString());
+                var hashId = MyStringId.GetOrCompute(nameToUse);
                 if (!BotModelDict.ContainsKey(hashId))
                   BotModelDict[hashId] = newSubtype;
               }
@@ -1164,8 +1222,6 @@ namespace AiEnabled
             BotModelList.Add(kvp.Key);
           }
 
-          if (ModSaveData.AdditionalHelperSubtypes.Count == 0)
-            ModSaveData.AdditionalHelperSubtypes.Add("Add Character Subtypes Here, one per line");
           if (!MyAPIGateway.Multiplayer.MultiplayerActive)
           {
             foreach (var data in ModSaveData.PlayerHelperData)
@@ -3163,6 +3219,7 @@ namespace AiEnabled
 
           string role = null;
           string subtype = null;
+          string name = "";
           long? owner = null;
 
           if (_cli.ArgumentCount > 2)
@@ -3172,6 +3229,9 @@ namespace AiEnabled
 
           if (_cli.ArgumentCount > 3)
             subtype = _cli.Argument(3);
+
+          if (_cli.ArgumentCount > 4)
+            name = _cli.Argument(4);
 
           float num;
           var grav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
@@ -3215,7 +3275,7 @@ namespace AiEnabled
           }
 
           ShowMessage("Sending spawn message to server", "White");
-          var packet = new SpawnPacket(position, forward, up, subtype, role, owner);
+          var packet = new SpawnPacket(position, forward, up, subtype, role, owner, name);
           Network.SendToServer(packet);
         }
       }
@@ -3321,11 +3381,12 @@ namespace AiEnabled
             {
               var secondaryControl = CommandMenu.SecondaryActionControl.GetGameControlEnum();
               var newRMBPress = MyAPIGateway.Input.IsNewGameControlPressed(secondaryControl);
+              var ctrlPressed = MyAPIGateway.Input.IsAnyCtrlKeyPressed();
 
               if (newLMBPress)
-                CommandMenu.Activate(null);
+                CommandMenu.Activate(null, ctrlPressed);
               else if (CommandMenu.PatrolTo && newRMBPress)
-                CommandMenu.Activate(null, true);
+                CommandMenu.Activate(null, ctrlPressed, patrolFinished: true);
             }
             else
             {
@@ -3635,7 +3696,7 @@ namespace AiEnabled
           if (bot.PatrolMode && bot._patrolList?.Count > 0)
           {
             if (helperData.PatrolRoute == null)
-              helperData.PatrolRoute = new List<SerializableVector3D>();
+              helperData.PatrolRoute = new List<SerializableVector3I>();
             else
               helperData.PatrolRoute.Clear();
 
@@ -3735,6 +3796,10 @@ namespace AiEnabled
 
         return;
       }
+
+      if (CommandMenu != null && CommandMenu.Registered && (_drawMenu || CommandMenu.ShowInventory || CommandMenu.ShowPatrol 
+        || CommandMenu.SendTo || CommandMenu.PatrolTo || CommandMenu.AwaitingName || CommandMenu.AwaitingRename))
+        return;
 
       var matrix = character.GetHeadMatrix(true);
       MyAPIGateway.Physics.CastRay(matrix.Translation + matrix.Forward * 0.25, matrix.Translation + matrix.Forward * 5, out hit, CollisionLayers.CharacterCollisionLayer);
@@ -4468,13 +4533,12 @@ namespace AiEnabled
                 crewType = (CrewBot.CrewType)info.CrewFunction.Value;
 
               var botRole = (BotType)info.Role;
-              if (!CanSpawnBot(botRole))
+              if (!info.AdminSpawned && !CanSpawnBot(botRole))
               {
                 IMyPlayer player;
                 if (Players.TryGetValue(future.OwnerId, out player) && player != null)
                 {
                   MyVisualScriptLogicProvider.SendChatMessageColored($"Server settings prevented {botRole}Bot from being spawned.", Color.Orange, "AiEnabled", future.OwnerId);
-                  //MyVisualScriptLogicProvider.SendChatMessage($"Server settings prevented {botRole} from being spawned.", "AiEnabled", future.OwnerId, "Red");
 
                   var saveData = ModSaveData.PlayerHelperData;
                   for (int i = 0; i < saveData.Count; i++)
@@ -4508,7 +4572,7 @@ namespace AiEnabled
                 continue;
               }
 
-              var bot = BotFactory.SpawnHelper(info.CharacterSubtype, info.DisplayName ?? "", future.OwnerId, posOr, grid, ((BotType)info.Role).ToString(), info.ToolPhysicalItem?.SubtypeName, info.BotColor, crewType);
+              var bot = BotFactory.SpawnHelper(info.CharacterSubtype, info.DisplayName ?? "", future.OwnerId, posOr, grid, ((BotType)info.Role).ToString(), info.ToolPhysicalItem?.SubtypeName, info.BotColor, crewType, info.AdminSpawned);
               if (bot == null)
               {
                 Logger.Log($"{GetType().FullName}: FutureBot returned null from spawn event", MessageType.WARNING);
@@ -4535,8 +4599,6 @@ namespace AiEnabled
 
                     if (botBase.ToolDefinition != null && !(botBase is CrewBot))
                       Scheduler.Schedule(botBase.EquipWeapon);
-                      //MyAPIGateway.Utilities.InvokeOnGameThread(botBase.EquipWeapon, "AiEnabled");
-
                   }
                 }
                 catch (Exception ex)
@@ -4700,7 +4762,6 @@ namespace AiEnabled
       if (_controllerInfo.Count == 0)
         return null;
 
-      //var info = _controllerInfo[_controllerInfo.Count - 1];
       var info = _controllerInfo[0];
 
       if (!MyAPIGateway.Utilities.IsDedicated)
@@ -4734,7 +4795,6 @@ namespace AiEnabled
           _pendingControllerInfo.Add(new ControlInfo(player, entityId));
           _pendingControllerInfo.ApplyChanges();
 
-          //_pendingControllerInfo[entityId] = new ControlInfo(player, entityId);
           _botsToClose.Add(entityId);
           _botCharsToClose.Add(player.Character);
           _controlSpawnTimer = 0;
@@ -4772,7 +4832,6 @@ namespace AiEnabled
           _controllerInfo.Add(new ControlInfo(player, entityId));
           _controllerInfo.ApplyChanges();
 
-          //_controllerInfo[entityId] = new ControlInfo(player, entityId);
           break;
         }
       }
@@ -4897,6 +4956,7 @@ namespace AiEnabled
 
     void UpdateGPSLocal(IMyPlayer player)
     {
+      bool showGPS = PlayerData.ShowHelperGPS;
       var character = player?.Character;
       var gpsList = MyAPIGateway.Session.GPS.GetGpsList(player.IdentityId);
 
@@ -4917,7 +4977,7 @@ namespace AiEnabled
         var contains = gpsList.Contains(gps);
 
         var bot = MyEntities.GetEntityById(kvp.Key) as IMyCharacter;
-        if (bot == null || bot.IsDead || character == null || character.IsDead)
+        if (!showGPS || bot == null || bot.IsDead || character == null || character.IsDead)
         {
           if (contains)
             MyAPIGateway.Session.GPS.RemoveLocalGps(gps);
@@ -4935,23 +4995,29 @@ namespace AiEnabled
 
         var distanceSq = Vector3D.DistanceSquared(character.WorldAABB.Center, botPosition);
 
-        if (distanceSq > 250 * 250)
+        if (!showGPS || distanceSq > 250 * 250)
         {
-          gps.ShowOnHud = false;
-          MyAPIGateway.Session.GPS.SetShowOnHud(player.IdentityId, gps.Hash, false);
+          if (gps.ShowOnHud)
+          {
+            gps.ShowOnHud = false;
+            MyAPIGateway.Session.GPS.SetShowOnHud(player.IdentityId, gps.Hash, false);
+          }
+
           continue;
         }
 
         gps.Coords = botPosition;
-        gps.ShowOnHud = true;
 
         if (!contains)
         {
           gps.UpdateHash();
           MyAPIGateway.Session.GPS.AddLocalGps(gps);
         }
-        else
+        else if (!gps.ShowOnHud)
+        {
+          gps.ShowOnHud = true;
           MyAPIGateway.Session.GPS.SetShowOnHud(player.IdentityId, gps.Hash, true);
+        }
       }
     }
 
@@ -5080,7 +5146,7 @@ namespace AiEnabled
       }
     }
 
-    public void AddBot(BotBase bot, long ownerId = 0L)
+    public void AddBot(BotBase bot, long ownerId = 0L, bool adminSpawn = false)
     {
       var botId = bot.Character.EntityId;
       Bots[botId] = bot;
@@ -5170,7 +5236,7 @@ namespace AiEnabled
               var crewBot = bot as CrewBot;
               var crewType = crewBot?.CrewFunction;
 
-              helperData.AddHelper(bot.Character, bot.BotType, grid, bot._patrolList, crewType);
+              helperData.AddHelper(bot.Character, bot.BotType, grid, bot._patrolList, crewType, adminSpawn);
             }
 
             var pkt = new ClientHelperPacket(helperData.Helpers);
@@ -5189,7 +5255,7 @@ namespace AiEnabled
           var crewBot = bot as CrewBot;
           var crewType = crewBot?.CrewFunction;
 
-          data.AddHelper(bot.Character, botType, grid, bot._patrolList, crewType);
+          data.AddHelper(bot.Character, botType, grid, bot._patrolList, crewType, adminSpawn);
           ModSaveData.PlayerHelperData.Add(data);
 
           var pkt = new ClientHelperPacket(data.Helpers);

@@ -88,38 +88,44 @@ namespace AiEnabled.Networking
 
       if (bModel == AiSession.Instance.MODEL_DEFAULT)
       {
+        var modelDict = AiSession.Instance.BotModelDict;
+        MyStringId hash;
+
         switch (bType)
         {
           case AiSession.BotType.Repair:
             if (needsName)
               BotName = "RepairBot";
 
-            subtype = "Drone_Bot";
+            hash = MyStringId.GetOrCompute("DroneBot");
+            if (!modelDict.TryGetValue(hash, out subtype))
+              subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+
             break;
           case AiSession.BotType.Combat:
             if (needsName)
               BotName = "CombatBot";
 
-            subtype = "Target_Dummy";
+            hash = MyStringId.GetOrCompute("TargetDummy");
+            if (!modelDict.TryGetValue(hash, out subtype))
+              subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+
             break;
           case AiSession.BotType.Scavenger:
             if (needsName)
               BotName = "ScavengerBot";
 
-            subtype = "RoboDog";
+            hash = MyStringId.GetOrCompute("RoboDog");
+            if (!modelDict.TryGetValue(hash, out subtype))
+              subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+
             break;
           case AiSession.BotType.Crew:
             if (needsName)
               BotName = "CrewBot";
 
-            subtype = MyUtils.GetRandomInt(0, 10) > 4 ? "Default_Astronaut" : "Default_Astronaut_Female";
+            subtype = MyUtils.GetRandomInt(0, 10) >= 5 ? "Default_Astronaut" : "Default_Astronaut_Female";
             break;
-          //case AiSession.BotType.Medic:
-          // if (needsName)
-          //   displayName = "MedicBot";
-          //
-          // subtype = "Police_Bot";
-          // break;
           default:
             return false;
         }

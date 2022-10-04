@@ -1208,6 +1208,51 @@ namespace AiEnabled.Ai.Support
       OnGridBaseClosing += pc.OnGridBaseClosing;
     }
 
+    public bool IsPositionAirtight(Vector3D position)
+    {
+      var oxygenAtPosition = MyAPIGateway.Session.OxygenProviderSystem.GetOxygenInPoint(position);
+      if (oxygenAtPosition > 0.5f)
+        return true;
+
+      if (IsGridGraph && IsValid)
+      {
+        var gridGraph = this as CubeGridMap;
+        if (gridGraph?.MainGrid != null)
+        {
+          var localPoint = gridGraph.MainGrid.WorldToGridInteger(position);
+          if (gridGraph.MainGrid.IsRoomAtPositionAirtight(localPoint))
+            return true;
+
+          List<IMyCubeGrid> gridList;
+          if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
+            gridList = new List<IMyCubeGrid>();
+          else
+            gridList.Clear();
+
+          gridGraph.MainGrid.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
+          bool airtight = false;
+
+          for (int i = 0; i < gridList.Count; i++)
+          {
+            var grid = gridList[i];
+            localPoint = grid.WorldToGridInteger(position);
+            if (grid.IsRoomAtPositionAirtight(localPoint))
+            {
+              airtight = true;
+              break;
+            }
+          }
+
+          gridList.Clear();
+          AiSession.Instance.GridGroupListStack.Push(gridList);
+
+          return airtight;
+        }
+      }
+
+      return false;
+    }
+
     readonly HashSet<Vector3I> _tempDebug = new HashSet<Vector3I>(); // for debug only
     public void DrawDebug()
     {

@@ -27,7 +27,6 @@ namespace AiEnabled.Networking
     [ProtoMember(3)] long? OwnerId;
     [ProtoMember(4)] bool? ShowHealthBars;
 
-
     public AdminPacket() { }
 
     public AdminPacket(long identityId, bool showHealthBars)

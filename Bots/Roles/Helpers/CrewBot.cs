@@ -61,10 +61,15 @@ namespace AiEnabled.Bots.Roles.Helpers
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 
       bool hasOwner = Owner != null;
-      var jetAllowed = RequiresJetpack || hasOwner || AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+      var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      var jetNull = jetpack == null;
+      var jetRequired = jetNull && bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetNull && (jetRequired || AiSession.Instance.ModSaveData.AllowHelpersToFly);
 
+      RequiresJetpack = jetRequired;
       CanUseSpaceNodes = jetAllowed;
       CanUseAirNodes = jetAllowed;
+      GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = !hasOwner;
 
       var toolSubtype = toolType ?? "SemiAutoPistolItem";
@@ -272,12 +277,17 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (Target.Override.HasValue)
             return;
 
-          var patrolPoint = GetNextPatrolPoint();
+          _patrolWaitTime--;
 
-          if (patrolPoint.HasValue)
+          if (_patrolWaitTime <= 0)
           {
-            _pathCollection?.CleanUp(true);
-            Target.SetOverride(patrolPoint.Value);
+            var patrolPoint = GetNextPatrolPoint();
+
+            if (patrolPoint.HasValue)
+            {
+              var patrolPointWorld = _currentGraph.LocalToWorld(patrolPoint.Value);
+              Target.SetOverride(patrolPointWorld);
+            }
           }
 
           return;

@@ -85,8 +85,11 @@ namespace AiEnabled.Graphics
     Vector2 _cursorPosition = new Vector2(0, 50);
     Vector4 _billboardColor, _highlightColor, _radialColor;
     Vector2D _minCursorPosition, _maxCursorPosition;
-    List<Vector3D> _patrolList = new List<Vector3D>(10);
+    List<Vector3D> _patrolListWorld = new List<Vector3D>(10);
+    List<Vector3I> _patrolListLocal = new List<Vector3I>(10);
     List<MyMouseButtonsEnum> _mouseButtonList;
+    MyCubeGrid _patrolGrid;
+    bool _currentIsGridNode;
     string _lastControlString, _lastPrimaryString, _lastSecondaryString;
 
     public CommandMenu()
@@ -110,11 +113,45 @@ namespace AiEnabled.Graphics
       if (!Registered)
         return;
 
-      var pkt = new CommandPacket(ActiveBot.EntityId, patrol: true, patrolList: _patrolList);
-      AiSession.Instance.Network.SendToServer(pkt);
-      AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
+      int count;
+      CommandPacket pkt;
+      if (_patrolListLocal.Count > 0)
+      {
+        pkt = new CommandPacket(ActiveBot.EntityId, _patrolListLocal, _patrolGrid.EntityId);
 
-      _patrolMenu.RouteBox.AddRoute(_patrolList, name);
+        Vector3I? last = null;
+        count = 0;
+        for (int i = 0; i < _patrolListLocal.Count; i++)
+        {
+          var next = _patrolListLocal[i];
+          if (next != last)
+          {
+            count++;
+            last = next;
+          }
+        }
+      }
+      else
+      {
+        pkt = new CommandPacket(ActiveBot.EntityId, _patrolListWorld);
+
+        Vector3D? last = null;
+        count = 0;
+        for (int i = 0; i < _patrolListWorld.Count; i++)
+        {
+          var next = _patrolListLocal[i];
+          if (next != last)
+          {
+            count++;
+            last = next;
+          }
+        }
+      }
+
+      AiSession.Instance.Network.SendToServer(pkt);
+      AiSession.Instance.ShowMessage($"Patrol starting with {count} waypoints", MyFontEnum.Debug);
+
+      _patrolMenu.RouteBox.AddRoute(_patrolListWorld, _patrolListLocal, name, _patrolGrid);
       AiSession.Instance.UpdateConfig(true);
     }
 
@@ -142,7 +179,11 @@ namespace AiEnabled.Graphics
           else
             OnRouteRename_Submitted(name);
 
-          _patrolList.Clear();
+          _patrolListWorld.Clear();
+          _patrolListLocal.Clear();
+          _patrolGrid = null;
+          _currentIsGridNode = false;
+
           PlaySound(_hudClickSoundPair);
           SetNameInputVisibility(false);
 
@@ -363,7 +404,8 @@ namespace AiEnabled.Graphics
         if (_interactMsg != null)
           _interactMsg.Visible = false;
 
-        _patrolList?.Clear();
+        _patrolListWorld?.Clear();
+        _patrolListLocal?.Clear();
         _emitter?.Cleanup();
         _mouseButtonList?.Clear();
         _invItems?.Clear();
@@ -396,7 +438,8 @@ namespace AiEnabled.Graphics
         _patrolNameInput?.Close();
         _patrolNameAcceptBtn?.Close();
 
-        _patrolList = null;
+        _patrolListWorld = null;
+        _patrolListLocal = null;
         _hudClickSoundPair = null;
         _mouseOverSoundPair = null;
         _errorSoundPair = null;
@@ -408,6 +451,7 @@ namespace AiEnabled.Graphics
         _patrolNameInput = null;
         _patrolNameLabel = null;
         _patrolNameAcceptBtn = null;
+        _patrolGrid = null;
 
         AiSession.Instance.HudAPI.OnScreenDimensionsChanged = null;
         MyAPIGateway.Gui.GuiControlRemoved -= GuiControlRemoved;
@@ -479,10 +523,15 @@ namespace AiEnabled.Graphics
         return;
       }
 
-      _patrolList.Clear();
+      _patrolListWorld.Clear();
+      _patrolListLocal.Clear();
+      _patrolGrid = null;
+      _currentIsGridNode = false;
+
       var ratio = AspectRatio;
+      long gridEntityId;
       bool newPatrol, closeMenu, renamePatrol;
-      _patrolMenu.TryActivate(ref ratio, _patrolList, out newPatrol, out closeMenu, out renamePatrol);
+      _patrolMenu.TryActivate(ref ratio, _patrolListWorld, _patrolListLocal, out gridEntityId, out newPatrol, out closeMenu, out renamePatrol);
 
       if (closeMenu || newPatrol)
       {
@@ -494,14 +543,48 @@ namespace AiEnabled.Graphics
       {
         AwaitingRename = true;
       }
-      else if (_patrolList.Count > 0)
+      else if (_patrolListWorld.Count > 0 || _patrolListLocal.Count > 0)
       {
-        var pkt = new CommandPacket(ActiveBot.EntityId, patrol: true, patrolList: _patrolList);
+        int count;
+        CommandPacket pkt;
+        if (_patrolListLocal.Count > 0)
+        {
+          pkt = new CommandPacket(ActiveBot.EntityId, _patrolListLocal, gridEntityId);
+
+          Vector3I? last = null;
+          count = 0;
+          for (int i = 0; i < _patrolListLocal.Count; i++)
+          {
+            var next = _patrolListLocal[i];
+            if (next != last)
+            {
+              count++;
+              last = next;
+            }
+          }
+        }
+        else
+        {
+          pkt = new CommandPacket(ActiveBot.EntityId, _patrolListWorld);
+
+          Vector3D? last = null;
+          count = 0;
+          for (int i = 0; i < _patrolListWorld.Count; i++)
+          {
+            var next = _patrolListLocal[i];
+            if (next != last)
+            {
+              count++;
+              last = next;
+            }
+          }
+        }
+
         AiSession.Instance.Network.SendToServer(pkt);
 
         PatrolTo = false;
         SetPatrolMenuVisibility(false);
-        AiSession.Instance.ShowMessage($"Patrol starting with {_patrolList.Count} waypoints", MyFontEnum.Debug);
+        AiSession.Instance.ShowMessage($"Patrol starting with {count} waypoints", MyFontEnum.Debug);
       }
     }
 
@@ -847,7 +930,7 @@ namespace AiEnabled.Graphics
       UpdateBlacklist(true);
     }
 
-    public void Activate(IMyCharacter bot, bool patrolFinished = false)
+    public void Activate(IMyCharacter bot, bool ctrlPressed = false, bool patrolFinished = false)
     {
       CommandPacket pkt;
 
@@ -876,7 +959,18 @@ namespace AiEnabled.Graphics
       {
         if (patrolFinished)
         {
-          if (_patrolList.Count > 0 && ActiveBot != null)
+          _currentIsGridNode = false;
+          if (_patrolListLocal.Count == _patrolListWorld.Count)
+          {
+            _patrolListWorld.Clear();
+          }
+          else
+          {
+            _patrolGrid = null;
+            _patrolListLocal.Clear();
+          }
+
+          if (ActiveBot != null && (_patrolListWorld.Count > 0 || _patrolListLocal.Count > 0))
           {
             PlaySound(_hudClickSoundPair);
             var patrolName = $"Route for {ActiveBot.Name}";
@@ -899,9 +993,38 @@ namespace AiEnabled.Graphics
         }
         else if (_worldPosition.HasValue && ActiveBot != null)
         {
-          _patrolList.Add(_worldPosition.Value);
+          int num = ctrlPressed ? 8 : 1;
+
+          if (_currentIsGridNode && _patrolGrid != null)
+          {
+            var pt = _patrolGrid.WorldToGridInteger(_worldPosition.Value);
+
+            for (int i = 0; i < num; i++)
+              _patrolListLocal.Add(pt);
+          }
+          else
+            _patrolListLocal.Clear();
+
+          _patrolGrid = null;
+
+          for (int i = 0; i < num; i++)
+            _patrolListWorld.Add(_worldPosition.Value);
+
+          int count = 0;
+          Vector3D? last = null;
+          for (int i = 0; i < _patrolListWorld.Count; i++)
+          {
+            var next = _patrolListWorld[i];
+
+            if (next != last)
+            {
+              last = next;
+              count++;
+            }
+          }
+
+          AiSession.Instance.ShowMessage($"Waypoint {count} added to patrol queue", MyFontEnum.Debug);
           PlaySound(_hudClickSoundPair);
-          AiSession.Instance.ShowMessage($"Waypoint {_patrolList.Count} added to patrol queue", MyFontEnum.Debug);
         }
         else
         {
@@ -966,9 +1089,12 @@ namespace AiEnabled.Graphics
           ShowPatrol = true;
           PatrolTo = false;
           SendTo = false;
-          _invRetrieved = false;
           PatrolVisible = false;
-          _patrolList.Clear();
+          _currentIsGridNode = false;
+          _invRetrieved = false;
+          _patrolListWorld.Clear();
+          _patrolListLocal.Clear();
+          _patrolGrid = null;
           break;
         case Quadrant.Bottom:
           ActiveBot = null;
@@ -1349,7 +1475,10 @@ namespace AiEnabled.Graphics
       }
 
       if (PatrolTo)
+      {
         MyAPIGateway.Utilities.ShowNotification($"Press [{_lastPrimaryString}] to add waypoints, [{_lastSecondaryString}] to finish and name.", 16);
+        MyAPIGateway.Utilities.ShowNotification($"Hold [Ctrl] to designate waypoint as significant; bot will wait longer before moving to next waypoint.", 16);
+      }
 
       var headMatrix = ch.GetHeadMatrix(true);
       var from = headMatrix.Translation + ch.WorldMatrix.Forward * 0.25 + ch.WorldMatrix.Down * 0.25;
@@ -1381,6 +1510,7 @@ namespace AiEnabled.Graphics
 
           var matrix = MatrixD.CreateWorld(surfacePosition, fwdVec, upVec);
           _worldPosition = surfacePosition;
+          _currentIsGridNode = false;
 
           color = _validColor;
           MySimpleObjectDraw.DrawTransparentCylinder(ref matrix, 1, 0.75f, 0.25f, ref color, true, 25, 0.01f, _material_square);
@@ -1409,6 +1539,8 @@ namespace AiEnabled.Graphics
               var fwdVec = Vector3D.CalculatePerpendicularVector(upVector);
               var matrix = MatrixD.CreateWorld(to, fwdVec, upVector);
 
+              _currentIsGridNode = true;
+              _patrolGrid = (MyCubeGrid)cube.CubeGrid;
               _worldPosition = grid.GridIntegerToWorld(localPos);
               to = _worldPosition.Value + matrix.Down * grid.GridSize * 0.36;
               matrix.Translation = to;
@@ -1439,6 +1571,9 @@ namespace AiEnabled.Graphics
 
               if (cube != null || (voxel != null && GridBase.PointInsideVoxel(grid.GridIntegerToWorld(posBelow), voxel)))
               {
+                _patrolGrid = (MyCubeGrid)cube.CubeGrid;
+                _currentIsGridNode = true;
+
                 MatrixD matrix;
                 Vector3D upVector;
                 if (cube != null)
@@ -1468,11 +1603,15 @@ namespace AiEnabled.Graphics
                 DrawAxis(ref matrix, 0.75f, color, color, _material_square);
               }
               else
+              {
                 _worldPosition = null;
+              }
             }
           }
           else
+          {
             _worldPosition = null;
+          }
         }
       }
       else

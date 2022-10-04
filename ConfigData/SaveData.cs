@@ -33,11 +33,12 @@ namespace AiEnabled.ConfigData
     [ProtoMember(19)] public bool AllowNeutralTargets = false;
     [ProtoMember(20)] public bool AllowIdleMovement = true;
     [ProtoMember(21)] public bool AllowIdleMapTransitions = true;
-    [ProtoMember(22)] public bool EnforceWalkingOnPatrol = false;
-    [ProtoMember(23)] public bool EnforceGroundPathingFirst = false;
-    
+    [ProtoMember(22)] public bool AllowHelmetVisorChanges = true;
+    [ProtoMember(23)] public bool EnforceWalkingOnPatrol = false;
+    [ProtoMember(24)] public bool EnforceGroundPathingFirst = false;
+
     [XmlArrayItem("Subtype", typeof(string))]
-    [ProtoIgnore] public List<string> AdditionalHelperSubtypes = new List<string>();
+    [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;
     [ProtoIgnore] public List<HelperData> PlayerHelperData = new List<HelperData>();
 
     public SaveData() { }

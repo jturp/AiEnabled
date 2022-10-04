@@ -31,10 +31,11 @@ namespace AiEnabled.Networking
     [ProtoMember(4)] readonly string Subtype;
     [ProtoMember(5)] readonly string Role;
     [ProtoMember(6)] readonly long? OwnerId;
+    [ProtoMember(7)] readonly string Name;
 
     public SpawnPacket() { }
 
-    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "CombatBot", long? ownerId = null)
+    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "Combat", long? ownerId = null, string name = null)
     {
       Position = pos;
       Forward = forward;
@@ -42,6 +43,7 @@ namespace AiEnabled.Networking
       Subtype = subtype;
       Role = role;
       OwnerId = ownerId;
+      Name = name;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -55,12 +57,16 @@ namespace AiEnabled.Networking
           return false;
         }
 
-        var ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(OwnerId.Value);
-        if (ownerFaction == null)
+        if (Role.StartsWith("Combat", StringComparison.OrdinalIgnoreCase) || Role.StartsWith("Repair", StringComparison.OrdinalIgnoreCase)
+          || Role.StartsWith("Crew", StringComparison.OrdinalIgnoreCase) || Role.StartsWith("Scavenger", StringComparison.OrdinalIgnoreCase))
         {
-          var pkt = new MessagePacket($"Unable to spawn bot. Owner is not in a faction!");
-          netHandler.SendToPlayer(pkt, SenderId);
-          return false;
+          var ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(OwnerId.Value);
+          if (ownerFaction == null)
+          {
+            var pkt = new MessagePacket($"Unable to spawn bot. Owner is not in a faction!");
+            netHandler.SendToPlayer(pkt, SenderId);
+            return false;
+          }
         }
       }
 
@@ -69,7 +75,7 @@ namespace AiEnabled.Networking
       Vector3D up = Up;
 
       var posOr = new MyPositionAndOrientation((Vector3)pos, (Vector3)fwd, (Vector3)up);
-      var bot = BotFactory.SpawnBotFromAPI(Subtype, "", posOr, null, Role, OwnerId);
+      var bot = BotFactory.SpawnBotFromAPI(Subtype, Name, posOr, null, Role, OwnerId, adminSpawn: true);
       if (bot == null)
       {
         var pkt = new MessagePacket($"Bot was null after creation!");

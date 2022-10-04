@@ -51,11 +51,12 @@ namespace AiEnabled.ConfigData
     [ProtoMember(109)] public int? CrewFunction;
     [ProtoMember(110)] public Color BotColor;
     [ProtoMember(111)] public List<InventoryItem> InventoryItems;
-    [ProtoMember(112)] public List<SerializableVector3D> PatrolRoute;
+    [ProtoMember(112)] public List<SerializableVector3I> PatrolRoute;
+    [ProtoMember(113)] public bool AdminSpawned;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null, List<Vector3D> route = null, CrewBot.CrewType? crewRole = null)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
@@ -66,6 +67,7 @@ namespace AiEnabled.ConfigData
       Orientation = Quaternion.CreateFromRotationMatrix(bot.WorldMatrix);
       IsActiveHelper = true;
       Role = (int)botType;
+      AdminSpawned = adminSpawn;
 
       if (crewRole.HasValue)
         CrewFunction = (int)crewRole.Value;
@@ -78,7 +80,7 @@ namespace AiEnabled.ConfigData
 
       if (route?.Count > 0)
       {
-        PatrolRoute = new List<SerializableVector3D>(route.Count);
+        PatrolRoute = new List<SerializableVector3I>(route.Count);
 
         for (int i = 0; i < route.Count; i++)
           PatrolRoute.Add(route[i]);
@@ -118,12 +120,12 @@ namespace AiEnabled.ConfigData
       Helpers = new List<HelperInfo>();
     }
 
-    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid, List<Vector3D> patrolRoute, CrewBot.CrewType? crewRole = null)
+    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
     {
       if (Helpers == null)
         Helpers = new List<HelperInfo>();
 
-      Helpers.Add(new HelperInfo(helper, botType, grid, patrolRoute, crewRole));
+      Helpers.Add(new HelperInfo(helper, botType, grid, patrolRoute, crewRole, adminSpawn));
     }
 
     public bool RemoveHelper(long id)

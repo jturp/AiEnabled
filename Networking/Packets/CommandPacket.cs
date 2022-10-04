@@ -28,19 +28,39 @@ namespace AiEnabled.Networking
     [ProtoMember(4)] bool Patrol;
     [ProtoMember(5)] Vector3D? GoTo;
     [ProtoMember(6)] long BotEntityId;
-    [ProtoMember(7)] List<Vector3D> PatrolNodes;
+    [ProtoMember(7)] long GridEntityId;
+    [ProtoMember(8)] List<Vector3I> PatrolNodesLocal;
+    [ProtoMember(9)] List<Vector3D> PatrolNodesWorld;
 
     public CommandPacket() { }
 
-    public CommandPacket(long botId, bool stay = false, bool follow = false, bool resume = false, bool patrol = false, Vector3D? goTo = null, List<Vector3D> patrolList = null)
+    public CommandPacket(long botId, bool stay = false, bool follow = false, bool resume = false)
     {
       BotEntityId = botId;
       Stay = stay;
       Resume = resume;
-      Patrol = patrol;
       Follow = follow;
+    }
+
+    public CommandPacket(long botId, Vector3D? goTo = null)
+    {
+      BotEntityId = botId;
       GoTo = goTo;
-      PatrolNodes = patrolList;
+    }
+
+    public CommandPacket(long botId, List<Vector3I> patrolList, long gridId)
+    {
+      BotEntityId = botId;
+      GridEntityId = gridId;
+      PatrolNodesLocal = patrolList;
+      Patrol = true;
+    }
+
+    public CommandPacket(long botId, List<Vector3D> patrolList)
+    {
+      BotEntityId = botId;
+      PatrolNodesWorld = patrolList;
+      Patrol = true;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -110,9 +130,10 @@ namespace AiEnabled.Networking
           }
           else
           {
-            Patrol = true;
-            PatrolNodes = new List<Vector3D>() { GoTo.Value };
+            PatrolNodesWorld = new List<Vector3D>() { GoTo.Value };
+  
             GoTo = null;
+            Patrol = true;
           }
         }
         else if (isCrew)
@@ -256,7 +277,7 @@ namespace AiEnabled.Networking
           }
         }
       }
-      else if (Patrol && PatrolNodes?.Count > 0)
+      else if (Patrol && (PatrolNodesLocal?.Count > 0 || PatrolNodesWorld?.Count > 0))
       {
         bot.UseAPITargets = false;
         bot.PatrolMode = true;
@@ -270,7 +291,26 @@ namespace AiEnabled.Networking
           bot.Target.RemoveTarget();
         }
 
-        bot.UpdatePatrolPoints(PatrolNodes);
+        if (PatrolNodesLocal?.Count > 0)
+        {
+          if (PatrolNodesWorld == null)
+            PatrolNodesWorld = new List<Vector3D>(PatrolNodesLocal.Count);
+          else
+            PatrolNodesWorld.Clear();
+  
+          var grid = MyEntities.GetEntityById(GridEntityId) as MyCubeGrid;
+          if (grid != null)
+          {
+            for (int i = 0; i < PatrolNodesLocal.Count; i++)
+            {
+              var localPt = PatrolNodesLocal[i];
+              PatrolNodesWorld.Add(grid.GridIntegerToWorld(localPt));
+            }
+          }
+        }
+
+        if (PatrolNodesWorld.Count > 0)
+          bot.UpdatePatrolPoints(PatrolNodesWorld);
 
         var seat = bot.Character.Parent as IMyCockpit;
         if (seat != null)

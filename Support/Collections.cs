@@ -94,12 +94,12 @@ namespace AiEnabled
 
     public Vector3I[] CardinalDirections = new Vector3I[]
     {
-      Vector3I.Up,
-      Vector3I.Down,
       Vector3I.Right,
       Vector3I.Left,
       Vector3I.Backward,
       Vector3I.Forward,
+      Vector3I.Up,
+      Vector3I.Down,
     };
 
     public Vector3I[] BlockedVoxelEdges = new Vector3I[]
@@ -475,11 +475,11 @@ namespace AiEnabled
     public Dictionary<MyStringId, string> BotModelDict = new Dictionary<MyStringId, string>(MyStringId.Comparer)
     {
       { MyStringId.GetOrCompute("Default"), "Default" },
-      { MyStringId.GetOrCompute("RoboDog"), "RoboDog" },
-      { MyStringId.GetOrCompute("DroneBot"), "Drone_Bot" },
-      { MyStringId.GetOrCompute("TargetBot"), "Target_Dummy" },
-      { MyStringId.GetOrCompute("AstronautMale"), "Default_Astronaut" },
-      { MyStringId.GetOrCompute("AstronautFemale"), "Default_Astronaut_Female" },
+      //{ MyStringId.GetOrCompute("RoboDog"), "RoboDog" },
+      //{ MyStringId.GetOrCompute("DroneBot"), "Drone_Bot" },
+      //{ MyStringId.GetOrCompute("TargetBot"), "Target_Dummy" },
+      //{ MyStringId.GetOrCompute("AstronautMale"), "Default_Astronaut" },
+      //{ MyStringId.GetOrCompute("AstronautFemale"), "Default_Astronaut_Female" },
     };
 
     public enum BotType { Repair, Scavenger, Combat, Crew };
@@ -495,11 +495,6 @@ namespace AiEnabled
     }
 
     public readonly MyStringId MODEL_DEFAULT = MyStringId.GetOrCompute("Default");
-    public readonly MyStringId MODEL_ASTRO_MALE = MyStringId.GetOrCompute("AstronautMale");
-    public readonly MyStringId MODEL_ASTRO_FEMALE = MyStringId.GetOrCompute("AstronautFemale");
-    public readonly MyStringId MODEL_TARGET_BOT = MyStringId.GetOrCompute("TargetBot");
-    public readonly MyStringId MODEL_ROBO_DOG = MyStringId.GetOrCompute("RoboDog");
-    public readonly MyStringId MODEL_DRONE_BOT = MyStringId.GetOrCompute("DroneBot");
     public List<MyStringId> BotModelList = new List<MyStringId>();
 
     public HashSet<string> KnownLootContainerIds { get; protected set; } = new HashSet<string>();

@@ -270,14 +270,29 @@ namespace AiEnabled.Graphics.Support
     public double DistanceSqdToRouteCenter(Route rte)
     {
       var player = MyAPIGateway.Session?.Player?.Character;
-      if (player != null && rte?.Waypoints?.Count > 0)
+      if (player != null && rte != null)
       {
-        var vector = Vector3D.Zero;
-        foreach (var pt in rte.Waypoints)
-          vector += pt;
+        if (rte.WaypointsWorld?.Count > 0)
+        {
+          var vector = Vector3D.Zero;
+          foreach (var pt in rte.WaypointsWorld)
+            vector += pt;
 
-        vector /= rte.Waypoints.Count;
-        return Vector3D.DistanceSquared(vector, player.WorldAABB.Center);
+          vector /= rte.WaypointsWorld.Count;
+          return Vector3D.DistanceSquared(vector, player.WorldAABB.Center);
+        }
+        else if (rte.WaypointsLocal?.Count > 0 && rte.Grid != null)
+        {
+          var vector = Vector3D.Zero;
+          foreach (var pt in rte.WaypointsLocal)
+          {
+            var worldPt = rte.Grid.GridIntegerToWorld(pt);
+            vector += worldPt;
+          }
+
+          vector /= rte.WaypointsLocal.Count;
+          return Vector3D.DistanceSquared(vector, player.WorldAABB.Center);
+        }
       }
 
       return double.MaxValue;
@@ -301,9 +316,12 @@ namespace AiEnabled.Graphics.Support
           Route route;
           if (_patrolRoutes.TryGetValue(kvp.Key, out route))
           {
-            if (route?.Waypoints != null)
+            if (route != null)
+            {
+              route.Clear();
               _routeStack.Push(route);
-  
+            }
+
             _patrolRoutes.Remove(kvp.Key);
           }
 
@@ -327,12 +345,24 @@ namespace AiEnabled.Graphics.Support
         _routeList[i].Value?.Reset();
     }
 
-    public void AddRoute(List<Vector3D> route, string routeName)
+    public void AddRoute(List<Vector3D> routeWorld, List<Vector3I> routeLocal, string routeName, MyCubeGrid grid = null)
     {
-      if (route?.Count > 0)
+      if (routeLocal?.Count > 0 && grid != null)
       {
+        int count = 0;
+        Vector3I? last = null;
+        for (int i = 0; i < routeLocal.Count; i++)
+        {
+          var next = routeLocal[i];
+          if (next != last)
+          {
+            count++;
+            last = next;
+          }
+        }
+
         Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
-        var name = $"{routeName} [{route.Count} Waypoints]";
+        var name = $"{routeName} [{count} Waypoints]";
         var stringId = MyStringId.GetOrCompute(name);
 
         int num = 0;
@@ -342,14 +372,44 @@ namespace AiEnabled.Graphics.Support
           stringId = MyStringId.GetOrCompute($"{name} ({num})");
         }
 
-        rte.Set(route);
+        rte.Set(routeLocal, grid);
+        _patrolRoutes[stringId] = rte;
+      }
+      else if (routeWorld?.Count > 0)
+      {
+        int count = 0;
+        Vector3D? last = null;
+        for (int i = 0; i < routeWorld.Count; i++)
+        {
+          var next = routeWorld[i];
+          if (next != last)
+          {
+            count++;
+            last = next;
+          }
+        }
+
+        Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
+        var name = $"{routeName} [{count} Waypoints]";
+        var stringId = MyStringId.GetOrCompute(name);
+
+        int num = 0;
+        while (_patrolRoutes.ContainsKey(stringId))
+        {
+          num++;
+          stringId = MyStringId.GetOrCompute($"{name} ({num})");
+        }
+
+        rte.Set(routeWorld);
         _patrolRoutes[stringId] = rte;
       }
     }
 
-    public void GetPatrolList(List<Vector3D> routeList)
+    public void GetPatrolList(List<Vector3D> routeListWorld, List<Vector3I> routeListLocal, out long gridId)
     {
-      routeList.Clear();
+      gridId = -1;
+      routeListWorld.Clear();
+      routeListLocal.Clear();
 
       if (SelectedItem != null)
       {
@@ -360,9 +420,17 @@ namespace AiEnabled.Graphics.Support
           var kvp = _routeList[idx];
 
           Route rte;
-          if (_patrolRoutes.TryGetValue(kvp.Key, out rte) && rte?.Waypoints?.Count > 0)
+          if (_patrolRoutes.TryGetValue(kvp.Key, out rte) && rte != null)
           {
-            routeList.AddList(rte.Waypoints);
+            if (rte.WaypointsWorld?.Count > 0)
+            {
+              routeListWorld.AddList(rte.WaypointsWorld);
+            }
+            else if (rte.WaypointsLocal?.Count > 0)
+            {
+              routeListLocal.AddList(rte.WaypointsLocal);
+              gridId = rte.Grid.EntityId;
+            }
           }
         }
       }
@@ -375,7 +443,7 @@ namespace AiEnabled.Graphics.Support
         for (int i = 0; i < routeList.Count; i++)
         {
           var newRoute = routeList[i];
-          if (newRoute?.Waypoints?.Count > 0)
+          if (newRoute?.WaypointsWorld?.Count > 0)
           {
             Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
 
@@ -389,8 +457,29 @@ namespace AiEnabled.Graphics.Support
               stringId = MyStringId.GetOrCompute($"{routeName} ({num})");
             }
 
-            rte.Set(newRoute.Waypoints, newRoute.World);
+            rte.Set(newRoute.WaypointsWorld, newRoute.World);
             _patrolRoutes[stringId] = rte;
+          }
+          else if (newRoute?.WaypointsLocal?.Count > 0 && newRoute.GridEntityId.HasValue)
+          {
+            var grid = MyEntities.GetEntityById(newRoute.GridEntityId.Value) as MyCubeGrid;
+            if (grid != null)
+            {
+              Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
+
+              var routeName = newRoute.Name;
+              var stringId = MyStringId.GetOrCompute(routeName);
+
+              int num = 0;
+              while (_patrolRoutes.ContainsKey(stringId))
+              {
+                num++;
+                stringId = MyStringId.GetOrCompute($"{routeName} ({num})");
+              }
+
+              rte.Set(newRoute.WaypointsLocal, newRoute.World, grid);
+              _patrolRoutes[stringId] = rte;
+            }
           }
         }
       }
@@ -405,7 +494,7 @@ namespace AiEnabled.Graphics.Support
 
       foreach (var kvp in _patrolRoutes)
       {
-        var route = new SerializableRoute(kvp.Key.String, kvp.Value.Waypoints);
+        var route = new SerializableRoute(kvp.Key.String, kvp.Value.WaypointsWorld, kvp.Value.WaypointsLocal, kvp.Value.Grid?.EntityId);
         routeList.Add(route);
       }
     }
@@ -434,7 +523,36 @@ namespace AiEnabled.Graphics.Support
         Route rte;
         if (_patrolRoutes.TryGetValue(kvp.Key, out rte))
         {
-          var pts = $"[{rte.Waypoints.Count} Waypoints]";
+          int count = 0;
+
+          if (rte.WaypointsLocal.Count > 0)
+          {
+            Vector3I? last = null;
+            for (int i = 0; i < rte.WaypointsLocal.Count; i++)
+            {
+              var next = rte.WaypointsLocal[i];
+              if (next != last)
+              {
+                count++;
+                last = next;
+              }
+            }
+          }
+          else
+          {
+            Vector3D? last = null;
+            for (int i = 0; i < rte.WaypointsWorld.Count; i++)
+            {
+              var next = rte.WaypointsWorld[i];
+              if (next != last)
+              {
+                count++;
+                last = next;
+              }
+            }
+          }
+
+          var pts = $"[{count} Waypoints]";
 
           if (name.IndexOf(pts, StringComparison.OrdinalIgnoreCase) < 0)
             name = $"{name.Trim()} {pts}";

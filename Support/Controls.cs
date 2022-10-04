@@ -364,25 +364,37 @@ namespace AiEnabled.Support
 
         if (botModel == AiSession.Instance.MODEL_DEFAULT)
         {
+          var modelDict = AiSession.Instance.BotModelDict;
+          MyStringId hash;
+
           switch (botRole)
           {
             case AiSession.BotType.Repair:
               if (needsName)
                 displayName = "RepairBot";
 
-              subtype = "Drone_Bot";
+              hash = MyStringId.GetOrCompute("DroneBot");
+              if (!modelDict.TryGetValue(hash, out subtype))
+                subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+
               break;
             case AiSession.BotType.Combat:
               if (needsName)
                 displayName = "CombatBot";
 
-              subtype = "Target_Dummy";
+              hash = MyStringId.GetOrCompute("TargetDummy");
+              if (!modelDict.TryGetValue(hash, out subtype))
+                subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+
               break;
             case AiSession.BotType.Scavenger:
               if (needsName)
                 displayName = "ScavengerBot";
 
-              subtype = "RoboDog";
+              hash = MyStringId.GetOrCompute("RoboDog");
+              if (!modelDict.TryGetValue(hash, out subtype))
+                subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+
               break;
             case AiSession.BotType.Crew:
               if (needsName)
@@ -397,7 +409,7 @@ namespace AiEnabled.Support
         else
         {
           if (needsName)
-            displayName = botRole == AiSession.BotType.Combat ? "CombatBot" : botRole == AiSession.BotType.Repair ? "RepairBot" : botRole == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
+            displayName = $"{botRole}Bot";
 
           subtype = AiSession.Instance.BotModelDict[botModel];
         }

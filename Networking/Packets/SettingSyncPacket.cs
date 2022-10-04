@@ -36,7 +36,7 @@ namespace AiEnabled.Networking.Packets
       else
       {
         var data = AiSession.Instance.ModSaveData;
-        _saveData.AdditionalHelperSubtypes = data.AdditionalHelperSubtypes;
+        _saveData.AllowedHelperSubtypes = data.AllowedHelperSubtypes;
         _saveData.PlayerHelperData = data.PlayerHelperData;
         AiSession.Instance.ModSaveData = _saveData;
       }
@@ -46,11 +46,11 @@ namespace AiEnabled.Networking.Packets
 
       if (MyAPIGateway.Session.Player != null)
       {
+        var maxHelpers = _saveData.MaxHelpersPerPlayer;
         var factoryDef = new MyDefinitionId(typeof(MyObjectBuilder_ConveyorSorter), "RoboFactory");
         var factoryBlockDef = MyDefinitionManager.Static.GetCubeBlockDefinition(factoryDef);
         if (factoryBlockDef != null)
         {
-          var maxHelpers = _saveData.MaxHelpersPerPlayer;
           var wasEnabled = factoryBlockDef.Public;
 
           if (wasEnabled)
@@ -72,6 +72,42 @@ namespace AiEnabled.Networking.Packets
             MyAPIGateway.Utilities.ShowMessage($"AiEnabled", $"Max helpers set to {maxHelpers} and at least one helper type enabled, RoboFactory enabled.");
           }
         }
+
+        var component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial");
+        var compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+        if (compDef != null)
+          compDef.Public = maxHelpers > 0 && _saveData.AllowCombatBot;
+
+        var bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+        if (bp != null)
+          bp.Public = maxHelpers > 0 && _saveData.AllowCombatBot;
+
+        component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial");
+        compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+        if (compDef != null)
+          compDef.Public = maxHelpers > 0 && _saveData.AllowRepairBot;
+
+        bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+        if (bp != null)
+          bp.Public = maxHelpers > 0 && _saveData.AllowRepairBot;
+
+        component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial");
+        compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+        if (compDef != null)
+          compDef.Public = maxHelpers > 0 && _saveData.AllowScavengerBot;
+
+        bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+        if (bp != null)
+          bp.Public = maxHelpers > 0 && _saveData.AllowScavengerBot;
+
+        component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial");
+        compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+        if (compDef != null)
+          compDef.Public = maxHelpers > 0 && _saveData.AllowCrewBot;
+
+        bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+        if (bp != null)
+          bp.Public = maxHelpers > 0 && _saveData.AllowCrewBot;
       }
 
       return MyAPIGateway.Multiplayer.MultiplayerActive && MyAPIGateway.Multiplayer.IsServer;

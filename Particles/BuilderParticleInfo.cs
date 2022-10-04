@@ -80,7 +80,7 @@ namespace AiEnabled.Particles
       Stop();
       Block = block;
 
-      MyLog.Default.WriteLine($"Playing sound: {SoundPair.SoundId}");
+      //MyLog.Default.WriteLine($"Playing sound: {SoundPair.SoundId}");
       SoundEmitter?.PlaySound(SoundPair);
     }
 

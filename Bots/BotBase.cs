@@ -92,7 +92,8 @@ namespace AiEnabled.Bots
       IsLargeSpider = 0x1000000000,
       IsSmallSpider = 0x2000000000,
       IsWolf = 0x4000000000,
-      ConfineToMap = 0x8000000000
+      ConfineToMap = 0x8000000000,
+      HelmetEnabled = 0x10000000000,
     }
 
     public IMyPlayer Owner;
@@ -105,6 +106,31 @@ namespace AiEnabled.Bots
     public AiSession.BotType BotType;
     public AiSession.ControlInfo BotControlInfo;
     public bool GrenadeThrown;
+
+    public bool HelmetEnabled
+    {
+      get { return (_botInfo & BotInfoEnum.HelmetEnabled) > 0; }
+      set
+      {
+        if (value)
+        {
+          var charDef = Character?.Definition as MyCharacterDefinition;
+          if (AiSession.Instance?.ModSaveData != null && AiSession.Instance.ModSaveData.AllowHelmetVisorChanges && charDef?.AnimationNameToSubtypeName != null
+            && charDef.AnimationNameToSubtypeName.TryGetValue("HelmetOpen", out _animation_helmetOpen) && charDef.AnimationNameToSubtypeName.TryGetValue("HelmetClose", out _animation_helmetClose))
+          {
+            _botInfo |= BotInfoEnum.HelmetEnabled;
+          }
+          else
+          {
+            _botInfo &= ~BotInfoEnum.HelmetEnabled;
+          }
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.HelmetEnabled;
+        }
+      }
+    }
 
     public bool ConfineToMap
     {
@@ -760,7 +786,7 @@ namespace AiEnabled.Bots
     internal Task _task;
     internal Vector3D _lastEnd;
     internal Vector3I _lastCurrent, _lastPrevious, _lastEndLocal;
-    internal short _patrolIndex = -1;
+    internal short _patrolIndex = -1, _patrolWaitTime = 1;
     internal int _stuckCounter, _stuckTimer, _stuckTimerReset, _teleportCounter, _floaterCounter;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter, _grenadeCounter, _grenadeChanceOffset = 25;
     internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
@@ -770,12 +796,14 @@ namespace AiEnabled.Bots
     internal uint _ticksSinceLastAttack = 1000;
     internal uint _ticksSinceLastDismount = 1000;
     internal float _twoDegToRads = MathHelper.ToRadians(2);
-    internal List<Vector3D> _patrolList;
+    internal List<Vector3I> _patrolList;
     internal List<MySoundPair> _attackSounds;
     internal List<string> _attackSoundStrings;
     internal MySoundPair _deathSound;
     internal string _deathSoundString;
     internal string _lootContainerSubtype;
+    internal string _animation_helmetOpen;
+    internal string _animation_helmetClose;
     internal MyObjectBuilder_ConsumableItem _energyOB;
     internal BotBehavior Behavior;
 
@@ -859,6 +887,7 @@ namespace AiEnabled.Bots
       IsWolf = wolfBot;
       IsSmallSpider = smallSpider;
       IsLargeSpider = largeSpider;
+      HelmetEnabled = AiSession.Instance.ModSaveData.AllowHelmetVisorChanges;
 
       if (!AiSession.Instance.HitListStack.TryPop(out _hitList) || _hitList == null)
         _hitList = new List<IHitInfo>();
@@ -880,8 +909,8 @@ namespace AiEnabled.Bots
       if (!AiSession.Instance.PathWorkStack.TryPop(out _pathWorkData) || _pathWorkData == null)
         _pathWorkData = new PathWorkData();
 
-      if (!AiSession.Instance.PatrolListStack.TryPop(out _patrolList) || _patrolList == null)
-        _patrolList = new List<Vector3D>();
+      if (!AiSession.Instance.LineListStack.TryPop(out _patrolList) || _patrolList == null)
+        _patrolList = new List<Vector3I>();
       else
         _patrolList.Clear();
     }
@@ -1134,7 +1163,8 @@ namespace AiEnabled.Bots
 
       if (_patrolList != null)
       {
-        AiSession.Instance.PatrolListStack.Push(_patrolList);
+        _patrolList.Clear();
+        AiSession.Instance.LineListStack.Push(_patrolList);
       }
 
       if (_attackSounds != null)
@@ -1299,17 +1329,24 @@ namespace AiEnabled.Bots
     {
       _patrolList.Clear();
       _patrolIndex = -1;
+      _patrolWaitTime = 1;
 
-      if (waypoints != null)
+      if (waypoints?.Count > 0)
       {
-        _patrolList.AddRange(waypoints);
+        for (int i = 0; i < waypoints.Count; i++)
+        {
+          var waypoint = waypoints[i] + WorldMatrix.Down;
+          var wp = _currentGraph.WorldToLocal(waypoint);
+          _patrolList.Add(wp);
+        }
       }
     }
 
-    internal void UpdatePatrolPoints(List<SerializableVector3D> waypoints)
+    internal void UpdatePatrolPoints(List<SerializableVector3I> waypoints)
     {
       _patrolList.Clear();
       _patrolIndex = -1;
+      _patrolWaitTime = 1;
 
       if (waypoints?.Count > 0)
       {
@@ -1320,15 +1357,29 @@ namespace AiEnabled.Bots
       }
     }
 
-    internal Vector3D? GetNextPatrolPoint()
+    internal Vector3I? GetNextPatrolPoint()
     {
       if (_patrolList == null || _patrolList.Count == 0)
       {
         return null;
       }
 
+      _patrolWaitTime = 1;
       var num = ++_patrolIndex % _patrolList.Count;
-      return _patrolList[num];
+      var waypoint = _patrolList[num];
+
+      for (int i = num + 1; i < _patrolList.Count; i++)
+      {
+        if (_patrolList[i] == waypoint)
+        {
+          _patrolIndex++;
+          _patrolWaitTime++;
+        }
+        else
+          break;
+      }
+
+      return waypoint;
     }
 
     internal virtual void Reset()
@@ -1554,6 +1605,24 @@ namespace AiEnabled.Bots
       }
 
       bool isTick100 = _tickCount % 100 == 0;
+
+      if (isTick100 && HelmetEnabled)
+      {
+        var oxyComp = Character.Components.Get<MyCharacterOxygenComponent>();
+        if (oxyComp != null)
+        {
+          var oxygenOK = _currentGraph?.IsPositionAirtight(Character.WorldAABB.Center) ?? false;
+          if (oxygenOK && Character.EnabledHelmet)
+          {
+            oxyComp.SwitchHelmet();
+          }
+          else if (!oxygenOK && !Character.EnabledHelmet)
+          {
+            oxyComp.SwitchHelmet();
+          }
+        }
+      }
+
       bool checkAll100 = isTick100 && (!inSeat || Owner == null);
       bool tgtDead = Target.IsDestroyed();
       if (checkAll100 || tgtDead)
@@ -2270,11 +2339,17 @@ namespace AiEnabled.Bots
           if (Target.Override.HasValue)
             return;
 
-          var patrolPoint = GetNextPatrolPoint();
+          _patrolWaitTime--;
 
-          if (patrolPoint.HasValue)
+          if (_patrolWaitTime <= 0)
           {
-            Target.SetOverride(patrolPoint.Value);
+            var patrolPoint = GetNextPatrolPoint();
+
+            if (patrolPoint.HasValue)
+            {
+              var patrolPointWorld = _currentGraph.LocalToWorld(patrolPoint.Value);
+              Target.SetOverride(patrolPointWorld);
+            }
           }
         }
         else
@@ -2702,21 +2777,36 @@ namespace AiEnabled.Bots
                 var seatCube = seat as MyCubeBlock;
                 var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
                 bool changeBack = false;
+                bool ignoreShareMode = false;
 
                 if (shareMode != MyOwnershipShareModeEnum.All)
                 {
-                  var owner = Owner?.IdentityId ?? BotIdentityId;
-                  var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
-
-                  var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
-                  if (relation != MyRelationsBetweenPlayers.Enemies)
+                  var seatRelation = seatCube.IDModule.GetUserRelationToOwner(BotIdentityId);
+                  if (seatRelation == MyRelationsBetweenPlayerAndBlock.FactionShare)
                   {
-                    changeBack = true;
-                    seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+                    ignoreShareMode = true;
+
+                    if (seatCube.IDModule.ShareMode != MyOwnershipShareModeEnum.Faction)
+                    {
+                      seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.Faction;
+                      changeBack = true;
+                    }
+                  }
+                  else
+                  {
+                    var owner = Owner?.IdentityId ?? BotIdentityId;
+                    var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+                    var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+                    if (relation != MyRelationsBetweenPlayers.Enemies)
+                    {
+                      changeBack = true;
+                      seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+                    }
                   }
                 }
 
-                if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+                if (ignoreShareMode || seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
                 {
                   var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
                   AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
@@ -3576,7 +3666,7 @@ namespace AiEnabled.Bots
         }
 
         #region debugOnly
-        if (AiSession.Instance.DrawDebug) // && Owner != null)
+        if (AiSession.Instance.DrawDebug && _currentGraph.IsValid) // && Owner != null)
           _pathCollection.DrawFreeSpace(BotInfo.CurrentBotPositionActual, gotoPosition);
         #endregion
 
@@ -3894,7 +3984,7 @@ namespace AiEnabled.Bots
         goal = _currentGraph.WorldToLocal(exit);
       }
 
-      if (!isSlimBlock && _currentGraph.IsGridGraph)
+      if (!isSlimBlock && _currentGraph.IsGridGraph && !_currentGraph.IsOpenTile(goal))
       {
         var gridGraph = _currentGraph as CubeGridMap;
         var cube = gridGraph?.GetBlockAtPosition(goal);
@@ -3904,6 +3994,9 @@ namespace AiEnabled.Bots
           && !AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
           && !AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
           && !AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)
+          && cube.BlockDefinition.Id.SubtypeName != "LargeBlockKitchen"
+          && !cube.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockBarCounter")
+          && !cube.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockLocker")
           && !cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
       }
 
@@ -4902,7 +4995,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      var graphReady = _currentGraph?.Ready == true;
+      var graphReady = _currentGraph?.Ready == true && _currentGraph.IsValid;
       if (graphReady && _pathCollection == null)
       {
         _pathCollection = AiSession.Instance.GetCollection();

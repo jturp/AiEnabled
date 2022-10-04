@@ -47,10 +47,11 @@ namespace AiEnabled.Graphics
     internal MenuRootCategory Menu, AdminMenu;
     internal MenuSliderInput MouseSensitivity;
     internal MenuKeybindInput RecallBotsKeyBind;
-    internal MenuItem ShowHealthBars, ObeyProjectionIntegrity, DisableCollisionOnDeath;
+    internal MenuItem ShowHealthBars, ShowHelperGPS, ObeyProjectionIntegrity, DisableCollisionOnDeath;
     internal MenuItem AllowRepairBot, AllowCombatBot, AllowScavengerBot, AllowCrewBot, AllowBotMusic;
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
+    internal MenuItem AllowHelmetVisorChanges;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
@@ -64,10 +65,12 @@ namespace AiEnabled.Graphics
     public void Register()
     {
       bool showHealthBars = _playerData.ShowHealthBars;
+      bool showGPS = _playerData.ShowHelperGPS;
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
 
       Menu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.PlayerMenu, "Settings");
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);
+      ShowHelperGPS = CreateMenuItemToggle(Menu, showGPS, "Show helper GPS", ShowHelperGPS_Clicked);
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
 
       var colorMenu = new MenuSubCategory("Color Settings               <color=cyan>==>", Menu, "Color Settings");
@@ -140,6 +143,9 @@ namespace AiEnabled.Graphics
 
       color = data.AllowIdleMapTransitions ? "<color=orange>" : "<color=yellow>";
       AllowIdleTransitions = new MenuItem($"Allow idle map transitions: {color}{data.AllowIdleMapTransitions}", AdminMenu, AllowIdleTransitions_Clicked);
+
+      color = data.AllowHelmetVisorChanges ? "<color=orange>" : "<color=yellow>";
+      AllowHelmetVisorChanges = new MenuItem($"Allow helmet visor changes: {color}{data.AllowHelmetVisorChanges}", AdminMenu, AllowVisorChanges_Clicked);
 
       color = data.EnforceGroundPathingFirst ? "<color=orange>" : "<color=yellow>";
       EnforceGroundPathingFirst = new MenuItem($"Enforce ground pathing first: {color}{data.EnforceGroundPathingFirst}", AdminMenu, EnforceGroundPathing_Clicked);
@@ -407,7 +413,7 @@ namespace AiEnabled.Graphics
     #region PlayerOnly
     internal void ShowHealthBars_Clicked()
     {
-      var enabled = !AiSession.Instance.PlayerData.ShowHealthBars;
+      var enabled = !_playerData.ShowHealthBars;
       var color = enabled ? "<color=orange>" : "<color=yellow>";
       ShowHealthBars.Text = $"Show health bars: {color}{enabled.ToString()}";
       _playerData.ShowHealthBars = enabled;
@@ -419,6 +425,15 @@ namespace AiEnabled.Graphics
         var pkt = new AdminPacket(player.IdentityId, enabled);
         AiSession.Instance.Network.SendToServer(pkt);
       }
+    }
+
+    private void ShowHelperGPS_Clicked()
+    {
+      var enabled = !_playerData.ShowHelperGPS;
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
+      ShowHelperGPS.Text = $"Show helper GPS: {color}{enabled.ToString()}";
+      _playerData.ShowHelperGPS = enabled;
+      AiSession.Instance.StartUpdateCounter();
     }
 
     internal void MouseSensitivity_Submitted(float num)
@@ -586,6 +601,19 @@ namespace AiEnabled.Graphics
 
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowFriendlyFlight.Text = $"Allow helper bots to fly: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowVisorChanges_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowHelmetVisorChanges;
+      data.AllowHelmetVisorChanges = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowHelmetVisorChanges.Text = $"Allow helmet visor changes: {color}{newValue}";
 
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();

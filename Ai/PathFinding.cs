@@ -746,16 +746,16 @@ namespace AiEnabled.Ai
               }
               else if (subtype.EndsWith("Planter") || subtype.EndsWith("Kitchen") || subtype.EndsWith("Counter"))
               {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.1;
               }
               else if (subtype.EndsWith("CounterCorner"))
               {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3
-                  + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.3;
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.1
+                  + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.1;
               }
               else if (subtype.StartsWith("LargeBlockCouch"))
               {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.1;
 
                 if (subtype.EndsWith("Corner"))
                 {
@@ -773,7 +773,7 @@ namespace AiEnabled.Ai
               }
               else if (subtype == "Jukebox" || subtype == "AtmBlock" || subtype == "FoodDispenser" || subtype == "VendingMachine")
               {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.3;
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.1;
               }
 
               Node node;

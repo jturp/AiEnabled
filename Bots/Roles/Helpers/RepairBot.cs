@@ -380,11 +380,17 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (Target.Override.HasValue)
             return;
 
-          var patrolPoint = GetNextPatrolPoint();
+          _patrolWaitTime--;
 
-          if (patrolPoint.HasValue)
+          if (_patrolWaitTime <= 0)
           {
-            Target.SetOverride(patrolPoint.Value);
+            var patrolPoint = GetNextPatrolPoint();
+
+            if (patrolPoint.HasValue)
+            {
+              var patrolPointWorld = _currentGraph.LocalToWorld(patrolPoint.Value);
+              Target.SetOverride(patrolPointWorld);
+            }
           }
 
           return;

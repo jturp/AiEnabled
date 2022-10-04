@@ -29,7 +29,7 @@ namespace AiEnabled.Networking
       }
 
       var data = AiSession.Instance.ModSaveData;
-      var pkt = new SettingProvidePacket(data, prices, data.AdditionalHelperSubtypes);
+      var pkt = new SettingProvidePacket(data, prices, data.AllowedHelperSubtypes);
       netHandler.SendToPlayer(pkt, SenderId);
 
       return false;

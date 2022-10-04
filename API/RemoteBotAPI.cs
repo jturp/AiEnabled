@@ -179,6 +179,11 @@ namespace AiEnabled.API
       /// If true, the bot will be killed if it's found outside of its starting map area
       /// </summary>
       [ProtoMember(25)] public bool ConfineToMap;
+
+      /// <summary>
+      /// If true, the bot's helmet visor will open / close automatically depending on oxygen level
+      /// </summary>
+      [ProtoMember(26)] public bool AllowHelmetVisorChanges = true;
     }
 
     /////////////////////////////////////////////

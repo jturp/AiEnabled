@@ -54,17 +54,32 @@ namespace AiEnabled.Networking.Packets
       if (AdditionalHelperSubtypes?.Count > 0)
       {
         var sb = new StringBuilder(32);
-        foreach (var subtype in AdditionalHelperSubtypes)
+        for (int i = 0; i < AdditionalHelperSubtypes.Count; i++)
         {
+          var subtype = AdditionalHelperSubtypes[i];
           sb.Clear();
 
-          foreach (var ch in subtype)
+          string nameToUse;
+
+          if (subtype == "Default_Astronaut")
+            nameToUse = "Male Engineer";
+          else if (subtype == "Default_Astronaut_Female")
+            nameToUse = "Female Engineer";
+          else
           {
-            if (char.IsLetterOrDigit(ch))
-              sb.Append(ch);
+            sb.Clear();
+            foreach (var ch in subtype)
+            {
+              if (char.IsLetterOrDigit(ch))
+                sb.Append(ch);
+              else if (ch == '_')
+                sb.Append(' ');
+            }
+
+            nameToUse = sb.ToString();
           }
 
-          var hashId = MyStringId.GetOrCompute(sb.ToString());
+          var hashId = MyStringId.GetOrCompute(nameToUse);
           if (!AiSession.Instance.BotModelDict.ContainsKey(hashId))
             AiSession.Instance.BotModelDict[hashId] = subtype;
         }
@@ -157,7 +172,7 @@ namespace AiEnabled.Networking.Packets
       else
       {
         var data = AiSession.Instance.ModSaveData;
-        Settings.AdditionalHelperSubtypes = data.AdditionalHelperSubtypes;
+        Settings.AllowedHelperSubtypes = data.AllowedHelperSubtypes;
         Settings.PlayerHelperData = data.PlayerHelperData;
         AiSession.Instance.ModSaveData = Settings;
       }
@@ -165,11 +180,11 @@ namespace AiEnabled.Networking.Packets
       AiSession.Instance.PlayerMenu?.UpdateAdminSettings(Settings);
       AiSession.Instance.StartAdminUpdateCounter();
 
+      var maxHelpers = Settings.MaxHelpersPerPlayer;
       var factoryDef = new MyDefinitionId(typeof(MyObjectBuilder_ConveyorSorter), "RoboFactory");
       var factoryBlockDef = MyDefinitionManager.Static.GetCubeBlockDefinition(factoryDef);
       if (factoryBlockDef != null)
       {
-        var maxHelpers = Settings.MaxHelpersPerPlayer;
         var wasEnabled = factoryBlockDef.Public;
 
         if (wasEnabled)
@@ -191,6 +206,42 @@ namespace AiEnabled.Networking.Packets
           MyAPIGateway.Utilities.ShowMessage($"AiEnabled", $"Max helpers set to {maxHelpers} and at least one helper type enabled, RoboFactory enabled.");
         }
       }
+
+      var component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial");
+      var compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+      if (compDef != null)
+        compDef.Public = maxHelpers > 0 && Settings.AllowCombatBot;
+
+      var bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+      if (bp != null)
+        bp.Public = maxHelpers > 0 && Settings.AllowCombatBot;
+
+      component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial");
+      compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+      if (compDef != null)
+        compDef.Public = maxHelpers > 0 && Settings.AllowRepairBot;
+
+      bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+      if (bp != null)
+        bp.Public = maxHelpers > 0 && Settings.AllowRepairBot;
+
+      component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial");
+      compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+      if (compDef != null)
+        compDef.Public = maxHelpers > 0 && Settings.AllowScavengerBot;
+
+      bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+      if (bp != null)
+        bp.Public = maxHelpers > 0 && Settings.AllowScavengerBot;
+
+      component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial");
+      compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
+      if (compDef != null)
+        compDef.Public = maxHelpers > 0 && Settings.AllowCrewBot;
+
+      bp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+      if (bp != null)
+        bp.Public = maxHelpers > 0 && Settings.AllowCrewBot;
 
       return false;
     }

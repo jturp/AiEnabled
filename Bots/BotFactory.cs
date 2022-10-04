@@ -549,6 +549,21 @@ namespace AiEnabled.Bots
         newChar.Synchronized = true;
         newChar.Flags &= ~VRage.ModAPI.EntityFlags.NeedsUpdate100;
 
+        var charDef = newChar.Definition as MyCharacterDefinition;
+        string open, close;
+        if (AiSession.Instance.ModSaveData.AllowHelmetVisorChanges
+          && charDef.AnimationNameToSubtypeName.TryGetValue("HelmetOpen", out open)
+          && charDef.AnimationNameToSubtypeName.TryGetValue("HelmetClose", out close))
+        {
+          var oxyComp = newChar.Components.Get<MyCharacterOxygenComponent>();
+          if (oxyComp == null)
+          {
+            oxyComp = new MyCharacterOxygenComponent();
+            oxyComp.Init(ob);
+            newChar.Components.Add(oxyComp);
+          }
+        }
+
         if (newChar.PositionComp.GetPosition() == Vector3D.Zero)
           newChar.SetPosition(positionAndOrientation.Position);
 
@@ -616,13 +631,14 @@ namespace AiEnabled.Bots
 
           if (shareMode != MyOwnershipShareModeEnum.All)
           {
-            if (seatCube.IDModule?.GetUserRelationToOwner(bot.BotIdentityId) == MyRelationsBetweenPlayerAndBlock.FactionShare)
+            if (seatCube.IDModule.GetUserRelationToOwner(bot.BotIdentityId) == MyRelationsBetweenPlayerAndBlock.FactionShare)
             {
+              ignoreShareMode = true;
+
               if (seatCube.IDModule.ShareMode != MyOwnershipShareModeEnum.Faction)
               {
                 seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.Faction;
                 changeBack = true;
-                ignoreShareMode = true;
               }
             }
             else
@@ -691,13 +707,14 @@ namespace AiEnabled.Bots
 
           if (shareMode != MyOwnershipShareModeEnum.All)
           {
-            if (seatCube.IDModule?.GetUserRelationToOwner(bot.BotIdentityId) == MyRelationsBetweenPlayerAndBlock.FactionShare)
+            if (seatCube.IDModule.GetUserRelationToOwner(bot.BotIdentityId) == MyRelationsBetweenPlayerAndBlock.FactionShare)
             {
+              ignoreShareMode = true;
+
               if (seatCube.IDModule.ShareMode != MyOwnershipShareModeEnum.Faction)
               {
                 seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.Faction;
                 changeBack = true;
-                ignoreShareMode = true;
               }
             }
             else
@@ -1089,7 +1106,7 @@ namespace AiEnabled.Bots
       }
     }
 
-    public static IMyCharacter SpawnBotFromAPI(string subtype, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null)
+    public static IMyCharacter SpawnBotFromAPI(string subtype, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, bool adminSpawn = false)
     {
       try
       {
@@ -1147,7 +1164,7 @@ namespace AiEnabled.Bots
         AiSession.Instance.VoxelMapListStack.Push(vList);
 
         if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
-          return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color);
+          return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color, adminSpawned: adminSpawn);
 
         return SpawnNPC(subtype, displayName, positionAndOrientation, grid, role, null, color, owner);
       }
@@ -1158,7 +1175,7 @@ namespace AiEnabled.Bots
       }
     }
 
-    public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null)
+    public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null, bool adminSpawned = false)
     {
       var tuple = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color);
       var bot = tuple.Item1;
@@ -1269,7 +1286,7 @@ namespace AiEnabled.Bots
             break;
         }
 
-        AiSession.Instance.AddBot(robot, ownerId);
+        AiSession.Instance.AddBot(robot, ownerId, adminSpawned);
       }
 
       return bot;
@@ -1665,6 +1682,21 @@ namespace AiEnabled.Bots
           bot.Save = false;
           bot.Synchronized = true;
           bot.Flags &= ~VRage.ModAPI.EntityFlags.NeedsUpdate100;
+
+          var charDef = bot.Definition as MyCharacterDefinition;
+          string open, close;
+          if (AiSession.Instance.ModSaveData.AllowHelmetVisorChanges 
+            && charDef.AnimationNameToSubtypeName.TryGetValue("HelmetOpen", out open)
+            && charDef.AnimationNameToSubtypeName.TryGetValue("HelmetClose", out close))
+          {
+            var oxyComp = bot.Components.Get<MyCharacterOxygenComponent>();
+            if (oxyComp == null)
+            {
+              oxyComp = new MyCharacterOxygenComponent();
+              oxyComp.Init(ob);
+              bot.Components.Add(oxyComp);
+            }
+          }
 
           if (bot.PositionComp.GetPosition() == Vector3D.Zero)
             bot.SetPosition(positionAndOrientation.Position);

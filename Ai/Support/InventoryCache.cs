@@ -329,6 +329,52 @@ namespace AiEnabled.Ai.Support
       return valid;
     }
 
+    bool ShouldKeepTool(MyInventoryItem item, List<MyInventoryItem> botItems)
+    {
+      var subtype = item.Type.SubtypeId;
+
+      if (subtype.IndexOf("Grinder") < 0 && subtype.IndexOf("Welder") < 0)
+        return false;
+
+      var tier = GetToolTier(subtype);
+
+      int num = 0;
+      for (int i = 0; i < botItems.Count; i++)
+      {
+        var botItem = botItems[i];
+        var itemSubtype = botItem.Type.SubtypeId;
+        if (itemSubtype == subtype)
+          num++;
+
+        if (num > 1)
+          return false;
+
+        if (botItem.Type.TypeId == item.Type.TypeId)
+        {
+          var toolTier = GetToolTier(itemSubtype);
+          if (toolTier > tier)
+            return false;
+        }
+      }
+
+      return true;
+    }
+
+    int GetToolTier(string subtype)
+    {
+      int priority;
+      if (subtype.IndexOf("2") >= 0)
+        priority = 2;
+      else if (subtype.IndexOf("3") >= 0)
+        priority = 3;
+      else if (subtype.IndexOf("4") >= 0)
+        priority = 4;
+      else
+        priority = 1;
+
+      return priority;
+    }
+
     void RemoveItemsInternal(WorkData workData)
     {
       var data = workData as RepairWorkData;
@@ -362,7 +408,7 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
         }
 
-        if (itemInfo.IsTool && item.Type.SubtypeId == tool)
+        if (itemInfo.IsTool && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
           continue;
 
         if (grindMode || itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent)

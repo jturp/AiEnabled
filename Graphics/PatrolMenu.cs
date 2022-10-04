@@ -26,31 +26,68 @@ namespace AiEnabled.Graphics
   public class Route
   {
     public string WorldName;
-    public List<Vector3D> Waypoints;
+    public MyCubeGrid Grid;
+    public List<Vector3D> WaypointsWorld;
+    public List<Vector3I> WaypointsLocal;
+
+    public void Clear()
+    {
+      Grid = null;
+      WorldName = null;
+      WaypointsLocal?.Clear();
+      WaypointsWorld?.Clear();
+    }
 
     public void Set(List<Vector3D> points)
     {
       WorldName = MyAPIGateway.Session.Name;
 
-      if (Waypoints == null)
-        Waypoints = new List<Vector3D>();
+      if (WaypointsWorld == null)
+        WaypointsWorld = new List<Vector3D>();
       else
-        Waypoints.Clear();
+        WaypointsWorld.Clear();
 
-      Waypoints.AddList(points);
+      WaypointsWorld.AddList(points);
     }
 
     public void Set(List<SerializableVector3D> points, string world)
     {
       WorldName = string.IsNullOrWhiteSpace(world) ? MyAPIGateway.Session.Name : world;
 
-      if (Waypoints == null)
-        Waypoints = new List<Vector3D>();
+      if (WaypointsWorld == null)
+        WaypointsWorld = new List<Vector3D>();
       else
-        Waypoints.Clear();
+        WaypointsWorld.Clear();
 
       for (int i = 0; i < points.Count; i++)
-        Waypoints.Add(points[i]);
+        WaypointsWorld.Add(points[i]);
+    }
+
+    public void Set(List<Vector3I> points, MyCubeGrid grid)
+    {
+      Grid = grid;
+      WorldName = MyAPIGateway.Session.Name;
+
+      if (WaypointsLocal == null)
+        WaypointsLocal = new List<Vector3I>();
+      else
+        WaypointsLocal.Clear();
+
+      WaypointsLocal.AddList(points);
+    }
+
+    public void Set(List<SerializableVector3I> points, string world, MyCubeGrid grid)
+    {
+      WorldName = string.IsNullOrWhiteSpace(world) ? MyAPIGateway.Session.Name : world;
+      Grid = grid;
+
+      if (WaypointsLocal == null)
+        WaypointsLocal = new List<Vector3I>();
+      else
+        WaypointsLocal.Clear();
+
+      for (int i = 0; i < points.Count; i++)
+        WaypointsLocal.Add(points[i]);
     }
   }
 
@@ -276,8 +313,9 @@ namespace AiEnabled.Graphics
       RouteBox = new ListBox(bg, bdr, buttonColor, emitter, mouseOver, aspectRatio);
     }
 
-    public void TryActivate(ref double aspectRatio, List<Vector3D> patrolList, out bool newPatrol, out bool closeMenu, out bool renamePatrol)
+    public void TryActivate(ref double aspectRatio, List<Vector3D> patrolListWorld, List<Vector3I> patrolListLocal, out long gridId, out bool newPatrol, out bool closeMenu, out bool renamePatrol)
     {
+      gridId = -1;
       newPatrol = BtnCreate.IsMouseOver;
       closeMenu = BtnClose.IsMouseOver;
       renamePatrol = false;
@@ -297,7 +335,7 @@ namespace AiEnabled.Graphics
         if (RouteBox.SelectedItem != null)
         {
           PlaySound(_hudClickSoundPair);
-          RouteBox.GetPatrolList(patrolList);
+          RouteBox.GetPatrolList(patrolListWorld, patrolListLocal, out gridId);
         }
         else
         {

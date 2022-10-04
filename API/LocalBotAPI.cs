@@ -665,7 +665,7 @@ namespace AiEnabled.API
         return false;
 
       BotBase bot;
-      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.IsDead != false)
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?._currentGraph == null || bot.IsDead)
         return false;
 
       bot.UseAPITargets = false;
@@ -1293,6 +1293,7 @@ namespace AiEnabled.API
         newBot.CanUseLadders = bot.CanUseLadders;
         newBot.CanUseSeats = bot.CanUseSeats;
         newBot.ShouldLeadTargets = bot.ShouldLeadTargets;
+        newBot.HelmetEnabled = bot.HelmetEnabled;
         newBot._lootContainerSubtype = bot._lootContainerSubtype;
         newBot._shotAngleDeviationTan = bot._shotAngleDeviationTan;
         newBot._despawnTicks = bot._despawnTicks;
@@ -1465,6 +1466,7 @@ namespace AiEnabled.API
         newBot.CanUseLadders = spawnData.CanUseLadders;
         newBot.CanUseSeats = spawnData.CanUseSeats;
         newBot.ShouldLeadTargets = spawnData.LeadTargets;
+        newBot.HelmetEnabled = spawnData.AllowHelmetVisorChanges;
         newBot._lootContainerSubtype = spawnData.LootContainerSubtypeId;
         newBot._shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(spawnData.ShotDeviationAngle));
 
