@@ -443,6 +443,7 @@ namespace AiEnabled.Ai.Support
           gridGraph.MainGrid.RayCastCells(worldCurrent, worldTarget, _temp);
 
           bool goDirect = true;
+          bool currentIsAir = result.IsAirNode;
           for (int i = 0; i < _temp.Count; i++)
           {
             var point = _temp[i];
@@ -456,7 +457,7 @@ namespace AiEnabled.Ai.Support
             }
 
             var worldPoint = gridGraph.LocalToWorld(point);
-            if (gridGraph.MainGrid.CubeExists(point) || !gridGraph.IsPositionUsable(Bot, worldPoint, out n))
+            if (gridGraph.MainGrid.CubeExists(point) || !gridGraph.IsPositionUsable(Bot, worldPoint, out n) || (!currentIsAir && n.IsAirNode))
             {
               goDirect = false;
               break;
@@ -518,7 +519,7 @@ namespace AiEnabled.Ai.Support
             break;
 
           var next = PathToTarget.Peek();
-          if (gridGraph.ObstacleNodes.ContainsKey(next.Position))
+          if (gridGraph.ObstacleNodes.ContainsKey(next.Position) || (!result.IsAirNode && next.IsAirNode))
             break;
 
           var worldNext = gridGraph.LocalToWorld(next.Position) + next.Offset;
@@ -601,9 +602,6 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          _temp.Clear();
-          gridGraph.MainGrid.RayCastCells(worldCurrent, worldNext, _temp);
-
           var cellVector = next.Position - localCurrent;
           if (cellVector.RectangularLength() > 1)
           {
@@ -635,16 +633,22 @@ namespace AiEnabled.Ai.Support
             }
           }
 
+          _temp.Clear();
+          gridGraph.MainGrid.RayCastCells(worldCurrent, worldNext, _temp);
+
           bool goDirect = true;
           for (int j = 0; j < _temp.Count; j++)
           {
             var point = _temp[j];
             if (gridGraph.ObstacleNodes.ContainsKey(point))
+            {
+              goDirect = false;
               break;
+            }
 
             Node n;
             IMySlimBlock slim = gridGraph.GetBlockAtPosition(point);
-            if (slim != null || !gridGraph.IsPositionUsable(Bot, gridGraph.LocalToWorld(point), out n))
+            if (slim != null || !gridGraph.IsPositionUsable(Bot, gridGraph.LocalToWorld(point), out n) || (!result.IsAirNode && n.IsAirNode))
             {
               if (slim != null && Bot.BotInfo.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
               {

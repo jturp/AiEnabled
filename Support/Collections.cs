@@ -522,6 +522,7 @@ namespace AiEnabled
     public ConcurrentDictionary<long, IMyGps> BotGPSDictionary = new ConcurrentDictionary<long, IMyGps>(); // Bot EntityId to GPS
     public ConcurrentDictionary<long, IMyPlayer> Players = new ConcurrentDictionary<long, IMyPlayer>();
     public ConcurrentDictionary<long, HealthInfoStat> PlayerToHealthBars = new ConcurrentDictionary<long, HealthInfoStat>(); // player ident to health info stat
+    public ConcurrentDictionary<long, float> PlayerToRepairRadius = new ConcurrentDictionary<long, float>(); // player ident to repair bot search radius in meters
     public ConcurrentDictionary<long, BotBase> Bots = new ConcurrentDictionary<long, BotBase>(); // bot char entity id to botbase
     public ConcurrentDictionary<long, List<BotBase>> PlayerToHelperDict = new ConcurrentDictionary<long, List<BotBase>>();
     public ConcurrentDictionary<long, ParticleInfoClient> ParticleDictionary = new ConcurrentDictionary<long, ParticleInfoClient>(); // bot id to particle info

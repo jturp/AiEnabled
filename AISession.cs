@@ -554,6 +554,7 @@ namespace AiEnabled
       BotModelList?.Clear();
       AnimationControllerDictionary?.Clear();
       SubtypeToSkeletonDictionary?.Clear();
+      PlayerToRepairRadius?.Clear();
 
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
@@ -691,6 +692,7 @@ namespace AiEnabled
       BotModelList = null;
       AnimationControllerDictionary = null;
       SubtypeToSkeletonDictionary = null;
+      PlayerToRepairRadius = null;
 
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
@@ -877,11 +879,6 @@ namespace AiEnabled
         if (IsServer)
         {
           _localBotAPI = new LocalBotAPI();
-
-          foreach (var def in AllGameDefinitions)
-          {
-            ScavengerItemList.Add(def.Key);
-          }
 
           if (sessionOK)
           {
@@ -1134,38 +1131,63 @@ namespace AiEnabled
           var component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CombatBotMaterial");
           var compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
           if (compDef != null)
-            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCombatBot;
+          {
+            compDef.Public = ModSaveData.AllowHelperTokenBuilding && ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCombatBot;
 
-          var compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
-          if (compBP != null)
-            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCombatBot;
+            var compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+            if (compBP != null)
+              compBP.Public = compDef.Public;
+
+            if (!compDef.Public)
+              AllGameDefinitions.Remove(component);
+          }
 
           component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial");
           compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
           if (compDef != null)
-            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowRepairBot;
+          {
+            compDef.Public = ModSaveData.AllowHelperTokenBuilding && ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowRepairBot;
 
-          compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
-          if (compBP != null)
-            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowRepairBot;
+            var compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+            if (compBP != null)
+              compBP.Public = compDef.Public;
+
+            if (!compDef.Public)
+              AllGameDefinitions.Remove(component);
+          }
 
           component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial");
           compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
           if (compDef != null)
-            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowScavengerBot;
+          {
+            compDef.Public = ModSaveData.AllowHelperTokenBuilding && ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowScavengerBot;
 
-          compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
-          if (compBP != null)
-            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowScavengerBot;
+            var compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+            if (compBP != null)
+              compBP.Public = compDef.Public;
+
+            if (!compDef.Public)
+              AllGameDefinitions.Remove(component);
+          }
 
           component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial");
           compDef = MyDefinitionManager.Static.GetComponentDefinition(component);
           if (compDef != null)
-            compDef.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCrewBot;
+          {
+            compDef.Public = ModSaveData.AllowHelperTokenBuilding && ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCrewBot;
 
-          compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
-          if (compBP != null)
-            compBP.Public = ModSaveData.MaxHelpersPerPlayer > 0 && ModSaveData.AllowCrewBot;
+            var compBP = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(component);
+            if (compBP != null)
+              compBP.Public = compDef.Public;
+
+            if (!compDef.Public)
+              AllGameDefinitions.Remove(component);
+          }
+
+          foreach (var def in AllGameDefinitions)
+          {
+            ScavengerItemList.Add(def.Key);
+          }
 
           if (ModSaveData.EnforceGroundPathingFirst)
             Logger.Log($"EnforceGroundNodesFirst is enabled. This is a use-at-your-own-risk option that may result in lag.", MessageType.WARNING);
@@ -1568,7 +1590,7 @@ namespace AiEnabled
 
             if (playerId > 0)
             {
-              var pkt = new AdminPacket(playerId, PlayerData.ShowHealthBars);
+              var pkt = new AdminPacket(playerId, PlayerData.ShowHealthBars, PlayerData.RepairBotSearchRadius);
               Network.SendToServer(pkt);
             }
             else
@@ -3843,18 +3865,29 @@ namespace AiEnabled
       {
         if (PlayerData.ShowHealthBars)
         {
-          HealthInfo healthInfo;
-          if (_healthBars.TryGetValue(bot.EntityId, out healthInfo))
+          bool show = true;
+          if (!PlayerData.ShowHealthWhenFull)
           {
-            healthInfo.Renew();
+            var statComp = bot.Components.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
+            if (statComp == null || statComp.HealthRatio >= 1)
+              show = false;
           }
-          else
-          {
-            healthInfo = GetHealthInfo();
-            healthInfo.Set(bot);
 
-            if (!_healthBars.TryAdd(bot.EntityId, healthInfo))
-              ReturnHealthInfo(healthInfo);
+          if (show)
+          {
+            HealthInfo healthInfo;
+            if (_healthBars.TryGetValue(bot.EntityId, out healthInfo))
+            {
+              healthInfo.Renew();
+            }
+            else
+            {
+              healthInfo = GetHealthInfo();
+              healthInfo.Set(bot);
+
+              if (!_healthBars.TryAdd(bot.EntityId, healthInfo))
+                ReturnHealthInfo(healthInfo);
+            }
           }
         }
 
@@ -4910,47 +4943,53 @@ namespace AiEnabled
 
     void SendGPSEntriesToPlayers()
     {
-      if (!IsServer || MyAPIGateway.Players.Count == 0)
+      if (!IsServer || Players.Count == 0)
         return;
-
-      _gpsAddIDs.Clear();
-      _gpsOwnerIDs.Clear();
-      _gpsRemovals.Clear();
-
-      foreach (var kvp in BotGPSDictionary)
-      {
-        BotBase bb;
-        if (!Bots.TryGetValue(kvp.Key, out bb) || bb?.Owner == null)
-        {
-          _gpsRemovals.Add(kvp.Key);
-          continue;
-        }
-
-        var bot = bb?.Character;
-        if (bot == null || bot.IsDead || bot.MarkedForClose)
-        {
-          _gpsRemovals.Add(kvp.Key);
-          continue;
-        }
-
-        _gpsAddIDs.Add(kvp.Key);
-        _gpsOwnerIDs.Add(bb.Owner.IdentityId);
-      }
 
       var idDedicated = MyAPIGateway.Utilities.IsDedicated;
       var gpsCollectionValid = MyAPIGateway.Session?.GPS != null;
 
-      foreach (var botId in _gpsRemovals)
+      foreach (var player in Players)
       {
-        IMyGps gps;
-        if (BotGPSDictionary.TryRemove(botId, out gps) && !idDedicated && gpsCollectionValid)
-          MyAPIGateway.Session.GPS.RemoveLocalGps(gps);
-      }
+        _gpsAddIDs.Clear();
+        _gpsOwnerIDs.Clear();
+        _gpsRemovals.Clear();
 
-      if (_gpsAddIDs.Count > 0)
-      {
-        var packet = new GpsUpdatePacket(_gpsAddIDs, _gpsOwnerIDs);
-        Network.RelayToClients(packet);
+        foreach (var kvp in BotGPSDictionary)
+        {
+          BotBase bb;
+          if (!Bots.TryGetValue(kvp.Key, out bb) || bb?.Owner == null)
+          {
+            _gpsRemovals.Add(kvp.Key);
+            continue;
+          }
+
+          var bot = bb?.Character;
+          if (bot == null || bot.IsDead || bot.MarkedForClose)
+          {
+            _gpsRemovals.Add(kvp.Key);
+            continue;
+          }
+
+          if (bb.Owner.IdentityId == player.Value.IdentityId)
+          {
+            _gpsAddIDs.Add(kvp.Key);
+            _gpsOwnerIDs.Add(bb.Owner.IdentityId);
+          }
+        }
+
+        foreach (var botId in _gpsRemovals)
+        {
+          IMyGps gps;
+          if (BotGPSDictionary.TryRemove(botId, out gps) && !idDedicated && gpsCollectionValid)
+            MyAPIGateway.Session.GPS.RemoveLocalGps(gps);
+        }
+
+        if (_gpsAddIDs.Count > 0)
+        {
+          var packet = new GpsUpdatePacket(_gpsAddIDs, _gpsOwnerIDs);
+          Network.SendToPlayer(packet, player.Value.SteamUserId);
+        }
       }
     }
 
@@ -5394,9 +5433,64 @@ namespace AiEnabled
       }
 
       if (helperFaction == null || !BotFactions.TryAdd(playerFaction.FactionId, helperFaction))
+      {
         Logger.Log($"Aisession.BeforeStart: Failed to add faction pair - ID: {playerFaction.FactionId}, BotFactionTag: {helperFaction?.Tag ?? "NULL"}", MessageType.WARNING);
+      }
       else
+      {
         Logger.Log($" -> Paired {playerFaction.Name} with {helperFaction.Name}");
+
+        try
+        {
+          foreach (var zone in MySessionComponentSafeZones.SafeZones)
+          {
+            var blockId = zone.SafeZoneBlockId;
+            if (blockId == 0)
+              continue;
+
+            var block = MyEntities.GetEntityById(blockId) as IMySafeZoneBlock;
+            if (block == null)
+              continue;
+
+            var zoneFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(block.OwnerId);
+            if (zoneFaction == null || zoneFaction.FactionId != playerFaction.FactionId)
+              continue;
+
+            if (zone.AccessTypeFactions == MySafeZoneAccess.Whitelist)
+            {
+              var ob = zone.GetObjectBuilder() as MyObjectBuilder_SafeZone;
+              if (ob.Factions == null)
+              {
+                ob.Factions = new long[0];
+              }
+
+              var factionArray = new long[ob.Factions.Length + 1];
+              int idx = 0;
+              foreach (var id in ob.Factions)
+              {
+                if (id != playerFaction.FactionId && BotFactions.ContainsKey(id))
+                  continue;
+
+                var faction = MyAPIGateway.Session.Factions.TryGetFactionById(id);
+                if (faction == null || BotFactionTags.Contains(faction.Tag))
+                  continue;
+
+                factionArray[idx] = id;
+                idx++;
+              }
+
+              factionArray[idx] = helperFaction.FactionId;
+              ob.Factions = factionArray;
+
+              MySessionComponentSafeZones.UpdateSafeZone(ob, true);
+            }
+          }
+        }
+        catch (Exception ex)
+        {
+          Logger.Log($"Error trying to update faction safezones: {ex.ToString()}", MessageType.ERROR);
+        }
+      }
 
       return helperFaction;
     }

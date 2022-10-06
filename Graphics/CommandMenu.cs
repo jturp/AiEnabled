@@ -139,7 +139,7 @@ namespace AiEnabled.Graphics
         count = 0;
         for (int i = 0; i < _patrolListWorld.Count; i++)
         {
-          var next = _patrolListLocal[i];
+          var next = _patrolListWorld[i];
           if (next != last)
           {
             count++;
@@ -571,7 +571,7 @@ namespace AiEnabled.Graphics
           count = 0;
           for (int i = 0; i < _patrolListWorld.Count; i++)
           {
-            var next = _patrolListLocal[i];
+            var next = _patrolListWorld[i];
             if (next != last)
             {
               count++;
@@ -1880,7 +1880,7 @@ namespace AiEnabled.Graphics
           _factionMsgBody.Message.Clear().Append(info);
           var length = _factionMsgBody.GetTextLength();
           var height = length.Y * -2;
-          _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 2) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
+          _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 3) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
         }
         else
         {
@@ -2298,13 +2298,13 @@ namespace AiEnabled.Graphics
 
         _factionMsgHeader = new HudAPIv2.HUDMessage(new StringBuilder("~ Faction Info ~"), _invBackground.Origin + _invBackground.Offset, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
         length = _factionMsgHeader.GetTextLength();
-        _factionMsgHeader.Offset = new Vector2D(0, height * -1.75 * 2) - length * 0.5;
+        _factionMsgHeader.Offset = new Vector2D(0, height * -1.75 * 3) - length * 0.5;
         _factionMsgHeader.Options |= options;
         _factionMsgHeader.Visible = false;
 
         _factionMsgBody = new HudAPIv2.HUDMessage(new StringBuilder("[PREN] Perceptive Encoding"), _invBackground.Origin + _invBackground.Offset, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
         length = _factionMsgBody.GetTextLength();
-        _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 2) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
+        _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 3) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
         _factionMsgBody.Options |= options;
         _factionMsgBody.Visible = false;
 

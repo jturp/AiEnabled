@@ -43,6 +43,7 @@ namespace AiEnabled.Networking
   [ProtoInclude(1028, typeof(SerializableBotPrice))]
   [ProtoInclude(1029, typeof(SettingSyncPacket))]
   [ProtoInclude(1030, typeof(SettingProvidePacket))]
+  [ProtoInclude(1031, typeof(HelmetChangePacket))]
   [ProtoContract]
   public abstract class PacketBase
   {

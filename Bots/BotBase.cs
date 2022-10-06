@@ -44,6 +44,7 @@ using VRage;
 using AiEnabled.API;
 using AiEnabled.Projectiles;
 using SpaceEngineers.Game.ModAPI;
+using AiEnabled.Networking.Packets;
 
 namespace AiEnabled.Bots
 {
@@ -1340,6 +1341,12 @@ namespace AiEnabled.Bots
           _patrolList.Add(wp);
         }
       }
+
+      if (_patrolList.Count > 1)
+      {
+        var rBot = this as RepairBot;
+        rBot?.UpdatePatrolOBBCache();
+      }
     }
 
     internal void UpdatePatrolPoints(List<SerializableVector3I> waypoints)
@@ -1354,6 +1361,12 @@ namespace AiEnabled.Bots
           _patrolList.Add(waypoints[i]);
 
         PatrolMode = true;
+      }
+
+      if (_patrolList.Count > 1)
+      {
+        var rBot = this as RepairBot;
+        rBot?.UpdatePatrolOBBCache();
       }
     }
 
@@ -1615,10 +1628,22 @@ namespace AiEnabled.Bots
           if (oxygenOK && Character.EnabledHelmet)
           {
             oxyComp.SwitchHelmet();
+
+            if (MyAPIGateway.Multiplayer.MultiplayerActive)
+            {
+              var pkt = new HelmetChangePacket(Character.EntityId);
+              AiSession.Instance.Network.RelayToClients(pkt);
+            }
           }
           else if (!oxygenOK && !Character.EnabledHelmet)
           {
             oxyComp.SwitchHelmet();
+
+            if (MyAPIGateway.Multiplayer.MultiplayerActive)
+            {
+              var pkt = new HelmetChangePacket(Character.EntityId);
+              AiSession.Instance.Network.RelayToClients(pkt);
+            }
           }
         }
       }
@@ -2759,8 +2784,11 @@ namespace AiEnabled.Bots
             if (gridGraph.TryGetNodeForPosition(localTarget, out node))
             {
               var checkPosition = _currentGraph.LocalToWorld(node.Position) + node.Offset;
-              var distanceSqd = Vector3D.DistanceSquared(checkPosition, botPos);
-              shouldReturn = distanceSqd < 1.75;
+              var relVector = Vector3D.TransformNormal(checkPosition - botPos, MatrixD.Transpose(WorldMatrix));
+              var flattenedVector = new Vector3D(relVector.X, 0, relVector.Z);
+              var flattenedLengthSquared = flattenedVector.LengthSquared();
+
+              shouldReturn = flattenedLengthSquared < 0.25 && Math.Abs(relVector.Y) < 0.5;
               return shouldReturn;
             }
           }
@@ -3785,7 +3813,11 @@ namespace AiEnabled.Bots
         if (!_pathCollection.HasNode && !UseLadder && BotInfo.IsOnLadder)
           PathFinderActive = false;
 
-        if (BotMoved || targetMoved || (!_pathCollection.HasNode && !_pathCollection.HasPath))
+        bool hasPath = _pathCollection.HasPath;
+        bool hasNode = _pathCollection.HasNode;
+        bool hasNeither = !hasPath && !hasNode;
+
+        if (BotMoved || targetMoved || hasNeither)
         {
           if (ShouldFind(ref gotoPosition))
           {
@@ -3796,16 +3828,20 @@ namespace AiEnabled.Bots
           }
           else if (!BotMoved)
           {
-            if (_pathCollection.HasNode || (NeedsTransition && _transitionPoint != null))
+            if (hasNode || (NeedsTransition && _transitionPoint != null))
             {
               UpdatePathAndMove(ref distanceToCheck);
             }
-            else if (_pathCollection.HasPath && !UseLadder)
+            else if (hasPath && !UseLadder)
             {
               GetNextNodeAndMove(ref distanceToCheck);
             }
-            else if (!_pathCollection.HasPath && !_pathCollection.Locked && !Target.IsSlimBlock
-              && (!NeedsTransition || _transitionPoint == null))
+            else if (hasNeither && PatrolMode && Target.Override.HasValue)
+            {
+              if (Vector3D.Distance(Target.Override.Value, BotInfo.CurrentBotPositionAdjusted) < 2.5)
+                UpdatePathAndMove(ref distanceToCheck, true);
+            }
+            else if (!hasPath && !_pathCollection.Locked && !Target.IsSlimBlock && (!NeedsTransition || _transitionPoint == null))
             {
               SimulateIdleMovement(false, Owner?.Character?.IsDead == false);
             }
@@ -4321,13 +4357,23 @@ namespace AiEnabled.Bots
       }
     }
 
-    void UpdatePathAndMove(ref float distanceToCheck)
+    void UpdatePathAndMove(ref float distanceToCheck, bool patrol = false)
     {
       PathFinderActive = true;
-      var botPosition = BotInfo.CurrentBotPositionAdjusted;
-      Node pNode = _pathCollection.NextNode ?? _transitionPoint;
-      var worldNode = _currentGraph.LocalToWorld(pNode.Position) + pNode.Offset;
+      Vector3D worldNode;
 
+      if (patrol)
+      {
+        worldNode = Target.Override.Value;
+        distanceToCheck = 0.25f;
+      }
+      else
+      {
+        Node pNode = _pathCollection.NextNode ?? _transitionPoint;
+        worldNode = _currentGraph.LocalToWorld(pNode.Position) + pNode.Offset;
+      }
+
+      var botPosition = BotInfo.CurrentBotPositionAdjusted;
       if (!NextIsLadder && BotInfo.IsOnLadder && BotInfo.GoingDownLadder)
       {
         DismountLadder(worldNode, botPosition);

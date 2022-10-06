@@ -97,11 +97,33 @@ namespace AiEnabled.Ai.Support
 
       if (!AiSession.Instance.RepairWorkStack.TryPop(out _workData))
         _workData = new RepairWorkData();
+
+      if (Grid != null)
+      {
+        Grid.OnFatBlockAdded -= Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockRemoved -= Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockAdded += Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockRemoved += Grid_OnFatBlockAddRemove;
+      }
     }
 
     public void SetGrid(MyCubeGrid grid)
     {
+      if (Grid != null)
+      {
+        Grid.OnFatBlockAdded -= Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockRemoved -= Grid_OnFatBlockAddRemove;
+      }
+
       Grid = grid;
+
+      if (Grid != null)
+      {
+        Grid.OnFatBlockAdded -= Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockRemoved -= Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockAdded += Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockRemoved += Grid_OnFatBlockAddRemove;
+      }
 
       ItemCounts.Clear();
       Inventories.Clear();
@@ -113,8 +135,23 @@ namespace AiEnabled.Ai.Support
       _terminals.Clear();
     }
 
+    private void Grid_OnFatBlockAddRemove(MyCubeBlock cube)
+    {
+      if (cube.InventoryCount > 0)
+      {
+        _needsUpdate = true;
+        _inventoryRefresh = true;
+      }
+    }
+
     public void Close()
     {
+      if (Grid != null)
+      {
+        Grid.OnFatBlockAdded -= Grid_OnFatBlockAddRemove;
+        Grid.OnFatBlockRemoved -= Grid_OnFatBlockAddRemove;
+      }
+
       _closed = true;
 
       if (_workData != null)
@@ -333,7 +370,10 @@ namespace AiEnabled.Ai.Support
     {
       var subtype = item.Type.SubtypeId;
 
-      if (subtype.IndexOf("Grinder") < 0 && subtype.IndexOf("Welder") < 0)
+      bool isWelder = subtype.IndexOf("Welder") >= 0;
+      bool isGrinder = !isWelder && subtype.IndexOf("Grinder") >= 0;
+
+      if (!isWelder && !isGrinder)
         return false;
 
       var tier = GetToolTier(subtype);
@@ -349,7 +389,8 @@ namespace AiEnabled.Ai.Support
         if (num > 1)
           return false;
 
-        if (botItem.Type.TypeId == item.Type.TypeId)
+        if ((isWelder && botItem.Type.SubtypeId.IndexOf("Welder") >= 0)
+          || (isGrinder && botItem.Type.SubtypeId.IndexOf("Grinder") >= 0))
         {
           var toolTier = GetToolTier(itemSubtype);
           if (toolTier > tier)

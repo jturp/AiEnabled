@@ -1559,7 +1559,6 @@ namespace AiEnabled.Bots
 
           botFaction = AiSession.Instance.GetBotFactionAssignment(ownerFaction);
           if (botFaction == null)
-          //if (!AiSession.Instance.BotFactions.TryGetValue(ownerFaction.FactionId, out botFaction))
           {
             AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: There was no bot faction associated with the owner!", MessageType.WARNING);
             return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);

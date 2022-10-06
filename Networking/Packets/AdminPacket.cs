@@ -26,13 +26,15 @@ namespace AiEnabled.Networking
     [ProtoMember(2)] long? BotEntityId;
     [ProtoMember(3)] long? OwnerId;
     [ProtoMember(4)] bool? ShowHealthBars;
+    [ProtoMember(5)] float? RepairSearchRadius;
 
     public AdminPacket() { }
 
-    public AdminPacket(long identityId, bool showHealthBars)
+    public AdminPacket(long identityId, bool showHealthBars, float searchRadius)
     {
       PlayerId = identityId;
       ShowHealthBars = showHealthBars;
+      RepairSearchRadius = searchRadius;
     }
 
     public AdminPacket(long identityId, long? botEntity, long? ownerId)
@@ -46,23 +48,32 @@ namespace AiEnabled.Networking
     {
       if (AiSession.Instance.IsServer)
       {
-        if (ShowHealthBars.HasValue && PlayerId > 0)
+        if (PlayerId > 0)
         {
-          bool show = ShowHealthBars.Value;
           var playerId = PlayerId.Value;
-
-          HealthInfoStat infoStat;
-          if (!AiSession.Instance.PlayerToHealthBars.TryGetValue(playerId, out infoStat))
+          if (RepairSearchRadius.HasValue)
           {
-            infoStat = new HealthInfoStat();
-            AiSession.Instance.PlayerToHealthBars[playerId] = infoStat;
+            AiSession.Instance.Logger.Log($"Setting repair radius to {RepairSearchRadius.Value} for playerId {PlayerId}");
+            AiSession.Instance.PlayerToRepairRadius[playerId] = RepairSearchRadius.Value;
           }
 
-          infoStat.ShowHealthBars = show;
-
-          if (!show)
+          if (ShowHealthBars.HasValue)
           {
-            infoStat.BotEntityIds.Clear();
+            bool show = ShowHealthBars.Value;
+
+            HealthInfoStat infoStat;
+            if (!AiSession.Instance.PlayerToHealthBars.TryGetValue(playerId, out infoStat))
+            {
+              infoStat = new HealthInfoStat();
+              AiSession.Instance.PlayerToHealthBars[playerId] = infoStat;
+            }
+
+            infoStat.ShowHealthBars = show;
+
+            if (!show)
+            {
+              infoStat.BotEntityIds.Clear();
+            }
           }
         }
       }

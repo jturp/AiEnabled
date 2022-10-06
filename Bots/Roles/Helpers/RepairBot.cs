@@ -139,6 +139,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _cubes?.Clear();
         _builtBlocks?.Clear();
         _repairedBlocks?.Clear();
+        _patrolOBBs?.Clear();
 
         _projectedGrids = null;
         _missingComps = null;
@@ -148,6 +149,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _builtBlocks = null;
         _targetAction = null;
         _repairedBlocks = null;
+        _patrolOBBs = null;
       }
       catch(Exception ex)
       {
@@ -189,6 +191,73 @@ namespace AiEnabled.Bots.Roles.Helpers
       _toolInfo.CheckMultiplier(ToolDefinition, out CurrentBuildMode);
     }
 
+    List<MyOrientedBoundingBoxD> _patrolOBBs = new List<MyOrientedBoundingBoxD>();
+    float _lastRadius = -1;
+
+    internal void UpdatePatrolOBBCache()
+    {
+      _patrolOBBs.Clear();
+      var radius = AiSession.Instance.PlayerToRepairRadius[Owner.IdentityId];
+      _lastRadius = radius;
+
+      for (int i = 0; i < _patrolList.Count; i++)
+      {
+        var curIdx = i;
+        var nexIdx = curIdx + 1;
+        if (nexIdx >= _patrolList.Count)
+          break;
+
+        var currPoint = _currentGraph.LocalToWorld(_patrolList[curIdx]);
+        var nextPoint = _currentGraph.LocalToWorld(_patrolList[nexIdx]);
+
+        var center = (currPoint + nextPoint) * 0.5;
+        var vector = nextPoint - currPoint;
+        var length = vector.Normalize() + radius;
+        var up = Vector3D.CalculatePerpendicularVector(vector);
+        var matrix = MatrixD.CreateWorld(center, vector, up);
+
+        var halfExt = new Vector3D(radius, radius, length) * 0.5;
+        var obb = new MyOrientedBoundingBoxD(center, halfExt, Quaternion.CreateFromRotationMatrix(matrix));
+
+        _patrolOBBs.Add(obb);
+      }
+    }
+
+    bool IsWithinSearchRadius(Vector3D worldPosition)
+    {
+      var radius = AiSession.Instance.PlayerToRepairRadius[Owner.IdentityId];
+
+      if (PatrolMode && _patrolList.Count > 0)
+      {
+        if (_patrolList.Count == 1)
+        {
+          var worldPoint = _currentGraph.LocalToWorld(_patrolList[0]);
+          var sphere = new BoundingSphereD(worldPoint, radius);
+          return sphere.Contains(worldPosition) == ContainmentType.Contains;
+        }
+        else
+        {
+          if (radius != _lastRadius)
+          {
+            UpdatePatrolOBBCache();
+          }
+
+          for (int i = 0; i < _patrolOBBs.Count; i++)
+          {
+            if (_patrolOBBs[i].Contains(ref worldPosition))
+              return true;
+          }
+
+          return false;
+        }
+      }
+      else
+      {
+        var sphere = new BoundingSphereD(BotInfo.CurrentBotPositionActual, radius);
+        return sphere.Contains(worldPosition) == ContainmentType.Contains;
+      }
+    }
+
     void SetTargetInternal()
     {
       if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || !WantsTarget)
@@ -224,7 +293,8 @@ namespace AiEnabled.Bots.Roles.Helpers
         {
           if (CurrentBuildMode == BuildMode.Weld)
           {
-            if (!slim.IsDestroyed && (slim.HasDeformation || slim.GetBlockHealth(_threadOnlyEntList) < 1) && CheckBotInventoryForItems(slim))
+            if (!slim.IsDestroyed && ((slim.HasDeformation && !AiSession.Instance.ModSaveData.IgnoreArmorDeformation)
+              || slim.GetBlockHealth(_threadOnlyEntList) < 1) && CheckBotInventoryForItems(slim))
             {
               if (!AiSession.Instance.BlockRepairDelays.Contains(slim.CubeGrid.EntityId, slim.Position))
                 return;
@@ -297,8 +367,10 @@ namespace AiEnabled.Bots.Roles.Helpers
               return;
             }
 
+            var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
             _threadOnlyEntList.Clear();
-            MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _threadOnlyEntList, MyEntityQueryType.Dynamic);
+            MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList);
+
             _threadOnlyEntList.ShellSort(botPosition, true);
 
             var gravity = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
@@ -319,6 +391,11 @@ namespace AiEnabled.Bots.Roles.Helpers
               var floater = ent as MyFloatingObject;
               if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null)
                 continue;
+
+              if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center))
+              {
+                continue;
+              }
 
               if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
               {
@@ -477,9 +554,11 @@ namespace AiEnabled.Bots.Roles.Helpers
 
         var colorVec = new Vector3(360, 100, 100);
         var botId = Character.EntityId;
+        var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
 
         _threadOnlyEntList.Clear();
-        MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList, MyEntityQueryType.Both);
+        MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList);
+
         var gravityNormalized = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
         if (gravityNormalized.LengthSquared() > 0)
           gravityNormalized.Normalize();
@@ -513,11 +592,20 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (!Vector3.IsZero(grindColor.Value - color, 1E-2f))
             continue;
 
+          var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+
+          if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+          {
+            continue;
+          }
+          else if (!graph.OBB.Contains(ref slimWorld))
+          {
+            continue;
+          }
+
           var slimPosition = slim.Position;
           if (slim.CubeGrid.EntityId != gridGraph?.MainGrid?.EntityId)
           {
-            var slimWorld = slim.CubeGrid.GridIntegerToWorld(slimPosition);
-
             if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
             {
               if (gravityNormalized.LengthSquared() > 0)
@@ -561,6 +649,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         {
           // check for damaged blocks on grid
           var mainGrid = graph.MainGrid as IMyCubeGrid;
+          var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
 
           _threadOnlyEntList.Clear();
           MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList);
@@ -620,12 +709,24 @@ namespace AiEnabled.Bots.Roles.Helpers
             gravityNormalized.Normalize();
 
           _cubes.ShellSort(botPosition);
+          bool ignoreDeformation = AiSession.Instance.ModSaveData.IgnoreArmorDeformation;
 
           for (int j = 0; j < _cubes.Count; j++)
           {
             var slim = _cubes[j];
             if (slim?.CubeGrid == null || slim.IsDestroyed)
               continue;
+
+            var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+
+            if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+            {
+              continue;
+            }
+            else if (!graph.OBB.Contains(ref slimWorld))
+            {
+              continue;
+            }
 
             var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
             if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
@@ -634,14 +735,12 @@ namespace AiEnabled.Bots.Roles.Helpers
               continue;
 
             var health = slim.GetBlockHealth(_threadOnlyEntList);
-            if (!slim.HasDeformation && (health < 0 || health >= 1))
+            if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1))
               continue;
 
             var node = slim.Position;
             if (slim.CubeGrid.EntityId != graph.MainGrid.EntityId)
             {
-              var slimWorld = slim.CubeGrid.GridIntegerToWorld(node);
-
               if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
               {
                 if (gravityNormalized.LengthSquared() > 0)
@@ -727,12 +826,23 @@ namespace AiEnabled.Bots.Roles.Helpers
                   if (slim == null || slim.IsDestroyed)
                     continue;
 
+                  var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+
+                  if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+                  {
+                    continue;
+                  }
+                  else if (!graph.OBB.Contains(ref slimWorld))
+                  {
+                    continue;
+                  }
+
                   var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
                   if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
                     continue;
 
                   var health = slim.GetBlockHealth(_threadOnlyEntList);
-                  if (!slim.HasDeformation && (health < 0 || health >= 1)) // this may be wrong!
+                  if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1)) // this may be wrong!
                     continue;
 
                   var projectedLocal = slim.Position;
@@ -795,6 +905,17 @@ namespace AiEnabled.Bots.Roles.Helpers
                   var buildResult = projector.CanBuild(slim, true);
                   if (buildResult != BuildCheckResult.OK)
                     continue;
+
+                  var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+
+                  if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+                  {
+                    continue;
+                  }
+                  else if (!graph.OBB.Contains(ref slimWorld))
+                  {
+                    continue;
+                  }
 
                   var projectedLocal = slim.Position;
                   var slimGridId = slim.CubeGrid.EntityId;

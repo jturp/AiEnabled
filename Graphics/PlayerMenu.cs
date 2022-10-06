@@ -51,10 +51,11 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowRepairBot, AllowCombatBot, AllowScavengerBot, AllowCrewBot, AllowBotMusic;
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
-    internal MenuItem AllowHelmetVisorChanges;
+    internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
+    internal MenuTextInput RepairBotSearchRadius;
     PlayerData _playerData;
 
     public PlayerMenu(PlayerData playerData)
@@ -67,11 +68,16 @@ namespace AiEnabled.Graphics
       bool showHealthBars = _playerData.ShowHealthBars;
       bool showGPS = _playerData.ShowHelperGPS;
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
+      float searchRadius = _playerData.RepairBotSearchRadius;
 
       Menu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.PlayerMenu, "Settings");
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);
+      ShowHealthWhenFull = CreateMenuItemToggle(Menu, _playerData.ShowHealthWhenFull, "Show health bar when full", ShowHealthWhenFull_Clicked);
       ShowHelperGPS = CreateMenuItemToggle(Menu, showGPS, "Show helper GPS", ShowHelperGPS_Clicked);
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
+
+      var color = (searchRadius == 0) ? "<color=yellow>" : "<color=orange>";
+      RepairBotSearchRadius = new MenuTextInput($"Repair bot search radius: {color}{searchRadius}", Menu, "Enter new radius value (meters), 0 to disable", RepairBotSearchRadius_Submitted);
 
       var colorMenu = new MenuSubCategory("Color Settings               <color=cyan>==>", Menu, "Color Settings");
       Vector3? vec = _playerData.RepairBotIgnoreColorHSV;
@@ -79,7 +85,7 @@ namespace AiEnabled.Graphics
       var y = vec?.Y.ToString() ?? "N";
       var z = vec?.Z.ToString() ?? "N";
 
-      var color = (vec == null) ? "<color=yellow>" : "<color=orange>";
+      color = (vec == null) ? "<color=yellow>" : "<color=orange>";
       RepairBotIgnoreColorInput = new MenuTextInput($"RepairBot ignore color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the ignore color for Repair Bots, in format H,S,V", TextInputIgnore_Submitted);
 
       vec = _playerData.RepairBotGrindColorHSV;
@@ -123,6 +129,9 @@ namespace AiEnabled.Graphics
       color = data.AllowCrewBot ? "<color=orange>" : "<color=yellow>";
       AllowCrewBot = new MenuItem($"Allow CrewBot helpers: {color}{data.AllowCrewBot}", AdminMenu, AllowCrewBot_Clicked);
 
+      color = data.AllowHelperTokenBuilding ? "<color=orange>" : "<color=yellow>";
+      AllowTokenProduction = new MenuItem($"Allow build token production (requires restart): {color}{data.AllowHelperTokenBuilding}", AdminMenu, AllowTokenBuilding_Clicked);
+
       color = data.AllowBotMusic ? "<color=orange>" : "<color=yellow>";
       AllowBotMusic = new MenuItem($"Allow bot music: {color}{data.AllowBotMusic}", AdminMenu, AllowBotMusic_Clicked);
 
@@ -155,6 +164,9 @@ namespace AiEnabled.Graphics
 
       color = data.ObeyProjectionIntegrityForRepairs ? "<color=orange>" : "<color=yellow>";
       ObeyProjectionIntegrity = new MenuItem($"Obey projection integrity for repairs: {color}{data.ObeyProjectionIntegrityForRepairs}", AdminMenu, ObeyProjectionIntegrity_Clicked);
+
+      color = data.IgnoreArmorDeformation ? "<color=orange>" : "<color=yellow>";
+      IgnoreArmorDeformation = new MenuItem($"Ignore armor deformation for repairs: {color}{data.IgnoreArmorDeformation}", AdminMenu, IgnoreArmorDeformation_Clicked);
 
       color = data.DisableCharacterCollisionOnBotDeath ? "<color=orange>" : "<color=yellow>";
       DisableCollisionOnDeath = new MenuItem($"Disable character collision on bot death: {color}{data.DisableCharacterCollisionOnBotDeath}", AdminMenu, DisableCollisions_Clicked);
@@ -386,6 +398,62 @@ namespace AiEnabled.Graphics
           MaxBotProjectileDistance = null;
         }
 
+        if (ShowHealthWhenFull != null)
+        {
+          ShowHealthWhenFull.Text = null;
+          ShowHealthWhenFull.OnClick = null;
+          ShowHealthWhenFull.BackingObject = null;
+          ShowHealthWhenFull = null;
+        }
+
+        if (ShowHelperGPS != null)
+        {
+          ShowHelperGPS.Text = null;
+          ShowHelperGPS.OnClick = null;
+          ShowHelperGPS.BackingObject = null;
+          ShowHelperGPS = null;
+        }
+
+        if (IgnoreArmorDeformation != null)
+        {
+          IgnoreArmorDeformation.Text = null;
+          IgnoreArmorDeformation.OnClick = null;
+          IgnoreArmorDeformation.BackingObject = null;
+          IgnoreArmorDeformation = null;
+        }
+
+        if (AllowFriendlyFlight != null)
+        {
+          AllowFriendlyFlight.Text = null;
+          AllowFriendlyFlight.OnClick = null;
+          AllowFriendlyFlight.BackingObject = null;
+          AllowFriendlyFlight = null;
+        }
+
+        if (AllowHelmetVisorChanges != null)
+        {
+          AllowHelmetVisorChanges.Text = null;
+          AllowHelmetVisorChanges.OnClick = null;
+          AllowHelmetVisorChanges.BackingObject = null;
+          AllowHelmetVisorChanges = null;
+        }
+
+        if (RepairBotSearchRadius != null)
+        {
+          RepairBotSearchRadius.Text = null;
+          RepairBotSearchRadius.OnSubmitAction = null;
+          RepairBotSearchRadius.BackingObject = null;
+          RepairBotSearchRadius = null;
+        }
+
+        if (AllowTokenProduction != null)
+        {
+          AllowTokenProduction.Text = null;
+          AllowTokenProduction.OnClick = null;
+          AllowTokenProduction.BackingObject = null;
+          AllowTokenProduction = null;
+        }
+
         _playerData = null;
       }
       catch (Exception ex)
@@ -422,9 +490,18 @@ namespace AiEnabled.Graphics
       var player = MyAPIGateway.Session?.Player;
       if (player != null)
       {
-        var pkt = new AdminPacket(player.IdentityId, enabled);
+        var pkt = new AdminPacket(player.IdentityId, enabled, _playerData.RepairBotSearchRadius);
         AiSession.Instance.Network.SendToServer(pkt);
       }
+    }
+
+    private void ShowHealthWhenFull_Clicked()
+    {
+      var enabled = !_playerData.ShowHealthWhenFull;
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
+      ShowHealthWhenFull.Text = $"Show health bar when full: {color}{enabled.ToString()}";
+      _playerData.ShowHealthWhenFull = enabled;
+      AiSession.Instance.StartUpdateCounter();
     }
 
     private void ShowHelperGPS_Clicked()
@@ -457,6 +534,26 @@ namespace AiEnabled.Graphics
       catch (Exception e)
       {
         AiSession.Instance.Logger.Log($"Exception in MapKeyBind_Submitted:\n{e.Message}\n\n{e.StackTrace}", MessageType.ERROR);
+      }
+    }
+
+    internal void RepairBotSearchRadius_Submitted(string text)
+    {
+      float radius;
+      if (float.TryParse(text, out radius))
+      {
+        var color = (radius == 0) ? "<color=yellow>" : "<color=orange>";
+        RepairBotSearchRadius.Text = $"Repair bot search radius: {color}{radius}";
+
+        _playerData.RepairBotSearchRadius = radius;
+        AiSession.Instance.StartUpdateCounter();
+
+        var player = MyAPIGateway.Session?.Player;
+        if (player != null)
+        {
+          var pkt = new AdminPacket(player.IdentityId, _playerData.ShowHealthBars, radius);
+          AiSession.Instance.Network.SendToServer(pkt);
+        }
       }
     }
 
@@ -536,6 +633,19 @@ namespace AiEnabled.Graphics
 
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowIdleTransitions.Text = $"Allow idle map transitions: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    private void IgnoreArmorDeformation_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.IgnoreArmorDeformation;
+      data.IgnoreArmorDeformation = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      IgnoreArmorDeformation.Text = $"Ignore armor deformation for repairs: {color}{newValue}";
 
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
@@ -690,6 +800,18 @@ namespace AiEnabled.Graphics
 
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowCrewBot.Text = $"Allow CrewBot helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void AllowTokenBuilding_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowHelperTokenBuilding;
+      AiSession.Instance.ModSaveData.AllowHelperTokenBuilding = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowTokenProduction.Text = $"Allow build token production (requires reload): {color}{newValue}";
 
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
@@ -879,6 +1001,10 @@ namespace AiEnabled.Graphics
       color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowNeutralTargets.Text = $"Allow enemy bots to target neutrals: {color}{newValue}";
 
+      newValue = data.AllowHelpersToFly;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowFriendlyFlight.Text = $"Allow helper bots to fly: {color}{newValue}";
+
       newValue = data.AllowNeutralsToFly;
       color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowNeutralFlight.Text = $"Allow neutral bots to fly: {color}{newValue}";
@@ -922,6 +1048,18 @@ namespace AiEnabled.Graphics
       newValue = data.AllowRepairBot;
       color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowRepairBot.Text = $"Allow RepairBot helpers: {color}{newValue}";
+
+      newValue = data.AllowHelperTokenBuilding;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowTokenProduction.Text = $"Allow build token production (requires reload): {color}{newValue}";
+
+      newValue = data.AllowHelmetVisorChanges;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowHelmetVisorChanges.Text = $"Allow helmet visor changes: {color}{newValue}";
+
+      newValue = data.IgnoreArmorDeformation;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      IgnoreArmorDeformation.Text = $"Ignore armor deformation for repairs: {color}{newValue}";
 
       MaxBotProjectileDistance.Text = $"Max projectile distance: <color=orange>{data.MaxBotProjectileDistance}";
       MaxFriendlyHuntRadius.Text = $"Max friendly hunting radius: <color=orange>{data.MaxBotHuntingDistanceFriendly}";

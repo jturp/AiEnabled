@@ -36,6 +36,8 @@ namespace AiEnabled.ConfigData
     [ProtoMember(22)] public bool AllowHelmetVisorChanges = true;
     [ProtoMember(23)] public bool EnforceWalkingOnPatrol = false;
     [ProtoMember(24)] public bool EnforceGroundPathingFirst = false;
+    [ProtoMember(25)] public bool IgnoreArmorDeformation = false;
+    [ProtoMember(26)] public bool AllowHelperTokenBuilding = true;
 
     [XmlArrayItem("Subtype", typeof(string))]
     [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;
