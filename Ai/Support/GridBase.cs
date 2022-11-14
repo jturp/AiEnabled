@@ -38,12 +38,12 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// Holds all nodes that are currently occupied by unconnected grids. Used to determine if a blocked path is temporarily or permanently blocked
     /// </summary>
-    internal ConcurrentDictionary<Vector3I, byte> ObstacleNodes = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+    internal ConcurrentDictionary<Vector3I, KeyValuePair<IMyCubeGrid, bool>> ObstacleNodes = new ConcurrentDictionary<Vector3I, KeyValuePair<IMyCubeGrid, bool>>(Vector3I.Comparer);
 
     /// <summary>
     /// Only used in the method to update <see cref="ObstacleNodes"/>
     /// </summary>
-    internal ConcurrentDictionary<Vector3I, byte> ObstacleNodesTemp = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+    internal ConcurrentDictionary<Vector3I, KeyValuePair<IMyCubeGrid, bool>> ObstacleNodesTemp = new ConcurrentDictionary<Vector3I, KeyValuePair<IMyCubeGrid, bool>>(Vector3I.Comparer);
 
     /// <summary>
     /// Used for temporarily blocked nodes

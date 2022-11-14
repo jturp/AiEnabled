@@ -62,13 +62,13 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       bool hasOwner = Owner != null;
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
-      var jetNull = jetpack == null;
-      var jetRequired = jetNull && bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetNull && (jetRequired || AiSession.Instance.ModSaveData.AllowHelpersToFly);
+      var jetpackWorldSetting = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+      var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
+      var jetAllowed = jetpack != null && jetpackWorldSetting && (jetRequired || AiSession.Instance.ModSaveData.AllowHelpersToFly);
 
       RequiresJetpack = jetRequired;
-      CanUseSpaceNodes = jetAllowed;
-      CanUseAirNodes = jetAllowed;
+      CanUseSpaceNodes = jetRequired || jetAllowed;
+      CanUseAirNodes = jetRequired || jetAllowed;
       GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = !hasOwner;
 
@@ -323,7 +323,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       try
       {
-        if (FollowMode || PatrolMode || !_shouldMove || !AiSession.Instance.ModSaveData.AllowIdleMovement)
+        if (FollowMode || PatrolMode || !_shouldMove || !AllowIdleMovement)
           return;
 
         var gridGraph = _currentGraph as CubeGridMap;

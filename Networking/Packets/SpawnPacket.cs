@@ -32,10 +32,11 @@ namespace AiEnabled.Networking
     [ProtoMember(5)] readonly string Role;
     [ProtoMember(6)] readonly long? OwnerId;
     [ProtoMember(7)] readonly string Name;
+    [ProtoMember(8)] readonly long? FactionId;
 
     public SpawnPacket() { }
 
-    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "Combat", long? ownerId = null, string name = null)
+    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "Combat", long? ownerId = null, string name = null, long? faction = null)
     {
       Position = pos;
       Forward = forward;
@@ -43,6 +44,7 @@ namespace AiEnabled.Networking
       Subtype = subtype;
       Role = role;
       OwnerId = ownerId;
+      FactionId = faction;
       Name = name;
     }
 
@@ -75,7 +77,7 @@ namespace AiEnabled.Networking
       Vector3D up = Up;
 
       var posOr = new MyPositionAndOrientation((Vector3)pos, (Vector3)fwd, (Vector3)up);
-      var bot = BotFactory.SpawnBotFromAPI(Subtype, Name, posOr, null, Role, OwnerId, adminSpawn: true);
+      var bot = BotFactory.SpawnBotFromAPI(Subtype, Name, posOr, null, Role, OwnerId, adminSpawn: true, factionId: FactionId);
       if (bot == null)
       {
         var pkt = new MessagePacket($"Bot was null after creation!");

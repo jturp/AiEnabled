@@ -776,8 +776,8 @@ namespace AiEnabled.Ai.Support
               OpenTileDict.Remove(current);
             }
 
-            byte b;
-            ObstacleNodes.TryRemove(current, out b);
+            KeyValuePair<IMyCubeGrid, bool> kvp;
+            ObstacleNodes.TryRemove(current, out kvp);
             _positionsRemoved.Add(current);
           }
 
@@ -1133,6 +1133,8 @@ namespace AiEnabled.Ai.Support
       _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
     }
 
+    List<KeyValuePair<IMySlimBlock, Vector3I>> _tempKVPList = new List<KeyValuePair<IMySlimBlock, Vector3I>>();
+
     void UpdateTempObstaclesAsync(WorkData data)
     {
       //AiSession.Instance.Logger.Log($"{this}.UpdateTempObstaclesAsync: Start");
@@ -1142,6 +1144,7 @@ namespace AiEnabled.Ai.Support
       {
         ObstacleNodesTemp.Clear();
         var blocks = obstacleData.Blocks;
+        _tempKVPList.Clear();
 
         for (int i = 0; i < blocks.Count; i++)
         {
@@ -1167,6 +1170,7 @@ namespace AiEnabled.Ai.Support
           Vector3I center = cubeDef.Center;
           Vector3I.TransformNormal(ref center, ref matrix, out center);
           var adjustedPosition = b.Position - center;
+          var grid = b.CubeGrid;
 
           foreach (var kvp in faceDict)
           {
@@ -1181,7 +1185,7 @@ namespace AiEnabled.Ai.Support
             var graphLocal = WorldToLocal(worldPoint);
             if (OpenTileDict.ContainsKey(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal))
             {
-              ObstacleNodesTemp[graphLocal] = new byte();
+              ObstacleNodesTemp[graphLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, false);
             }
 
             foreach (var dir in AiSession.Instance.CardinalDirections)
@@ -1189,9 +1193,17 @@ namespace AiEnabled.Ai.Support
               var otherLocal = graphLocal + dir;
 
               if (OpenTileDict.ContainsKey(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal))
-                ObstacleNodesTemp[otherLocal] = new byte();
+                //ObstacleNodesTemp[otherLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, true);
+                _tempKVPList.Add(new KeyValuePair<IMySlimBlock, Vector3I>(b, otherLocal));
             }
           }
+        }
+
+        foreach (var kvp in _tempKVPList)
+        {
+          var node = kvp.Value;
+          if (!ObstacleNodesTemp.ContainsKey(node))
+            ObstacleNodesTemp[node] = new KeyValuePair<IMyCubeGrid, bool>(kvp.Key.CubeGrid, true);
         }
       }
 
@@ -1222,6 +1234,12 @@ namespace AiEnabled.Ai.Support
 
         OpenTileDict?.Clear();
         OpenTileDict = null;
+
+        _positionsRemoved?.Clear();
+        _positionsRemoved = null;
+
+        _tempKVPList?.Clear();
+        _tempKVPList = null;
 
         _pendingLockObject = null;
 

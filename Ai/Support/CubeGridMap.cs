@@ -686,6 +686,12 @@ namespace AiEnabled.Ai.Support
         _blockBoxList?.Clear();
         _blockBoxList = null;
 
+        _positionsToRemove?.Clear();
+        _positionsToRemove = null;
+
+        _tempKVPList?.Clear();
+        _tempKVPList = null;
+
         _pendingLockObject = null;
       }
       catch (Exception ex)
@@ -1203,7 +1209,7 @@ namespace AiEnabled.Ai.Support
       Node node;
       TryGetNodeForPosition(testPosition, out node);
 
-      if (node != null && !currentIsDenied && !IsObstacle(testPosition, bot, true) && !TempBlockedNodes.ContainsKey(localPosition))
+      if (bot != null && node != null && !currentIsDenied && !IsObstacle(testPosition, bot, true) && !TempBlockedNodes.ContainsKey(localPosition))
       {
         var isAir = node.IsAirNode;
         var isWater = node.IsWaterNode;
@@ -1233,7 +1239,7 @@ namespace AiEnabled.Ai.Support
 
       if (isSlimBlock)
       {
-        var block = GetBlockAtPosition(localPosition);
+        var block = node?.Block ?? GetBlockAtPosition(localPosition);
 
         if (node?.IsGridNodeUnderGround == true)
         {
@@ -1356,34 +1362,35 @@ namespace AiEnabled.Ai.Support
         if (!allowAirNodes && isAirNode && !bot.RequiresJetpack)
           continue;
 
-        if (ObstacleNodes.ContainsKey(point))
+        KeyValuePair<IMyCubeGrid, bool> kvp;
+        if (ObstacleNodes.TryGetValue(point, out kvp))
         {
-          if (!checkRepairInfo)
+          if (!checkRepairInfo || (kvp.Key?.EntityId == slimTgt.CubeGrid.EntityId && !kvp.Value))
             continue;
 
-          entList.Clear();
-          var worldPoint = LocalToWorld(point);
-          var sphere = new BoundingSphereD(worldPoint, 0.2);
-          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+          //entList.Clear();
+          //var worldPoint = LocalToWorld(point);
+          //var sphere = new BoundingSphereD(worldPoint, 0.2);
+          //MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
 
-          bool allowed = true;
-          for (int i = 0; i < entList.Count; i++)
-          {
-            var grid = entList[i] as MyCubeGrid;
-            if (grid != null)
-            {
-              var gridLocal = grid.WorldToGridInteger(worldPoint);
-              var cube = grid.GetCubeBlock(gridLocal) as IMySlimBlock;
-              if (cube != null && ((MyCubeBlockDefinition)cube.BlockDefinition).HasPhysics)
-              {
-                allowed = false;
-                break;
-              }
-            }
-          }
+          //bool allowed = true;
+          //for (int i = 0; i < entList.Count; i++)
+          //{
+          //  var grid = entList[i] as MyCubeGrid;
+          //  if (grid != null)
+          //  {
+          //    var gridLocal = grid.WorldToGridInteger(worldPoint);
+          //    var cube = grid.GetCubeBlock(gridLocal) as IMySlimBlock;
+          //    if (cube != null && ((MyCubeBlockDefinition)cube.BlockDefinition).HasPhysics)
+          //    {
+          //      allowed = false;
+          //      break;
+          //    }
+          //  }
+          //}
 
-          if (!allowed)
-            continue;
+          //if (!allowed)
+          //  continue;
         }
         else if (BlockedDoors.ContainsKey(point) || TempBlockedNodes.ContainsKey(point))
           continue;
@@ -1542,7 +1549,14 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
-      if (!checkRepairInfo && ObstacleNodes.ContainsKey(nextNode))
+      KeyValuePair<IMyCubeGrid, bool> kvp;
+      bool obstacle = ObstacleNodes.TryGetValue(nextNode, out kvp);
+      if (!checkRepairInfo)
+      {
+        if (obstacle)
+          return false;
+      }
+      else if (obstacle && !kvp.Value)
       {
         return false;
       }
@@ -1942,7 +1956,7 @@ namespace AiEnabled.Ai.Support
       CheckFaces(block, upVec, cubeDef);
 
       var position = block.Position;
-      var mainGridPosition = position; // connectedIsMain ? position : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(position));
+      var mainGridPosition = position;
       //bool isDigiLadder = block.BlockDefinition.Id.SubtypeName.StartsWith("LargeShipUsableLadder");
 
       var door = block.FatBlock as IMyDoor;
@@ -3908,7 +3922,7 @@ namespace AiEnabled.Ai.Support
 
           var localPointOther = otherGrid.WorldToGridInteger(worldPoint);
           var slim = otherGrid.GetCubeBlock(localPointOther) as IMySlimBlock;
-          if (slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics)
+          if (slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics && !(slim.FatBlock is IMyLightingBlock))
           {
             if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slim.BlockDefinition.Id))
             {
@@ -3944,7 +3958,7 @@ namespace AiEnabled.Ai.Support
           if (addNodeBelow)
           {
             var blockBelow = GetBlockAtPosition(localBelow);
-            if (blockBelow != null && blockBelow.CubeGrid.EntityId == MainGrid.EntityId)
+            if (blockBelow != null && blockBelow.CubeGrid.EntityId == MainGrid.EntityId && !(blockBelow.FatBlock is IMyLightingBlock))
             {
               if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(blockBelow.BlockDefinition.Id))
               {
@@ -3974,7 +3988,7 @@ namespace AiEnabled.Ai.Support
           }
 
           var block = GetBlockAtPosition(localPoint);
-          if (block != null && block.CubeGrid.EntityId == MainGrid.EntityId)
+          if (block != null && block.CubeGrid.EntityId == MainGrid.EntityId && !(block.FatBlock is IMyLightingBlock))
           {
             if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
             {
@@ -4001,7 +4015,7 @@ namespace AiEnabled.Ai.Support
           {
             var localAbove = localPoint + upVec;
             var slim = GetBlockAtPosition(localAbove);
-            if (slim != null && slim.CubeGrid.EntityId == MainGrid.EntityId)
+            if (slim != null && slim.CubeGrid.EntityId == MainGrid.EntityId && !(slim.FatBlock is IMyLightingBlock))
             {
               if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slim.BlockDefinition.Id))
               {
@@ -4324,8 +4338,8 @@ namespace AiEnabled.Ai.Support
 
       bool airTight = cubeDef.IsAirTight ?? false;
       bool allowSolar = !airTight && block.FatBlock is IMySolarPanel && Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0;
-      bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
-      bool isFlatWindow = !allowConn && AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id);
+      //bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
+      bool isFlatWindow = !allowSolar && AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id);
       bool isCylinder = !isFlatWindow && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
       bool isSlopeBlock = !isCylinder && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id)
         && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef.Id)
@@ -4396,7 +4410,7 @@ namespace AiEnabled.Ai.Support
         bool cubeAboveEmpty = cubeAbove == null || !cubeAboveDef.HasPhysics;
         bool aboveisScaffold = cubeAboveDef != null && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeAboveDef.Id);
         bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
-        bool checkAbove = !exclude && (airTight || allowConn || allowSolar || isCylinder || aboveisScaffold || (kvp.Value?.Contains(side) ?? false));
+        bool checkAbove = !exclude && (airTight /*|| allowConn*/ || allowSolar || isCylinder || aboveisScaffold || (kvp.Value?.Contains(side) ?? false));
 
         if (cubeAboveEmpty)
         {
@@ -4479,6 +4493,19 @@ namespace AiEnabled.Ai.Support
               blockPos = MainGrid.WorldToGridInteger(cubeAbove.CubeGrid.GridIntegerToWorld(blockPos));
 
             if (blockPos != mainGridPosition)
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
+          else if (cubeAbove.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MedicalRoom) && cubeAbove.BlockDefinition.Id.SubtypeName == "LargeMedicalRoom")
+          {
+            var relPosition = positionAbove - cubeAbove.Position;
+            if (relPosition.RectangularLength() > 1)
             {
               Node node;
               if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
@@ -4641,6 +4668,18 @@ namespace AiEnabled.Ai.Support
             node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
             OpenTileDict[mainGridPosition] = node;
           }
+          else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(cubeAboveDef.Id))
+          {
+            if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, NodeType.Ground, 0, grid, cubeAbove);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
           else if (cubeAbove.FatBlock != null)
           {
             var door = cubeAbove.FatBlock as IMyDoor;
@@ -4757,7 +4796,8 @@ namespace AiEnabled.Ai.Support
         thisIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
         thisIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
         thisIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
-        thisIsHalfBlock = def.SubtypeName.EndsWith("HalfArmorBlock") || def.SubtypeName.EndsWith("Concrete_Half_Block") || def.SubtypeName.StartsWith("WindowWall");
+        thisIsHalfBlock = def.SubtypeName.EndsWith("HalfArmorBlock") || def.SubtypeName.EndsWith("Concrete_Half_Block")
+          || def.SubtypeName.StartsWith("WindowWall") || def.SubtypeName.StartsWith("StorageShelf");
         thisIsRailing = AiSession.Instance.RailingBlockDefinitions.ContainsItem(def);
         thisIsLocker = AiSession.Instance.LockerDefinitions.ContainsItem(def);
         thisIsBeam = AiSession.Instance.BeamBlockDefinitions.ContainsItem(def);
@@ -4841,7 +4881,8 @@ namespace AiEnabled.Ai.Support
           nextIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
           nextIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
           nextIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
-          nextIsHalfBlock = def.SubtypeName.EndsWith("HalfArmorBlock") || def.SubtypeName.EndsWith("Concrete_Half_Block") || def.SubtypeName.StartsWith("WindowWall");
+          nextIsHalfBlock = def.SubtypeName.EndsWith("HalfArmorBlock") || def.SubtypeName.EndsWith("Concrete_Half_Block")
+            || def.SubtypeName.StartsWith("WindowWall") || def.SubtypeName.StartsWith("StorageShelf");
           nextIsRailing = AiSession.Instance.RailingBlockDefinitions.ContainsItem(def);
           nextIsLocker = AiSession.Instance.LockerDefinitions.ContainsItem(def);
           nextIsBeam = AiSession.Instance.BeamBlockDefinitions.ContainsItem(def);
@@ -7928,6 +7969,8 @@ namespace AiEnabled.Ai.Support
       _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
     }
 
+    List<KeyValuePair<IMySlimBlock, Vector3I>> _tempKVPList = new List<KeyValuePair<IMySlimBlock, Vector3I>>();
+
     void UpdateTempObstaclesAsync(WorkData data)
     {
       //AiSession.Instance.Logger.Log($"{this}.UpdateTempObstaclesAsync: Start");
@@ -7938,6 +7981,7 @@ namespace AiEnabled.Ai.Support
         ObstacleNodesTemp.Clear();
         var blocks = obstacleData.Blocks;
         var tempEntities = obstacleData.Entities;
+        _tempKVPList.Clear();
 
         for (int i = 0; i < blocks.Count; i++)
         {
@@ -7966,6 +8010,7 @@ namespace AiEnabled.Ai.Support
           Vector3I center = cubeDef.Center;
           Vector3I.TransformNormal(ref center, ref matrix, out center);
           var adjustedPosition = b.Position - center;
+          var grid = b.CubeGrid;
 
           foreach (var kvp in faceDict)
           {
@@ -7980,7 +8025,7 @@ namespace AiEnabled.Ai.Support
             var graphLocal = WorldToLocal(worldPoint);
             if (IsOpenTile(graphLocal) && !ObstacleNodesTemp.ContainsKey(graphLocal))
             {
-              ObstacleNodesTemp[graphLocal] = new byte();
+              ObstacleNodesTemp[graphLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, false);
             }
 
             var sphere = new BoundingSphereD(worldPoint, b.CubeGrid.GridSize * 0.6f);
@@ -7996,11 +8041,19 @@ namespace AiEnabled.Ai.Support
 
                 if (sphere.Contains(otherSphere) != ContainmentType.Disjoint)
                 {
-                  ObstacleNodesTemp[otherLocal] = new byte();
+                  //ObstacleNodesTemp[otherLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, true);
+                  _tempKVPList.Add(new KeyValuePair<IMySlimBlock, Vector3I>(b, otherLocal));
                 }
               }
             }
           }
+        }
+
+        foreach (var kvp in _tempKVPList)
+        {
+          var node = kvp.Value;
+          if (!ObstacleNodesTemp.ContainsKey(node))
+            ObstacleNodesTemp[node] = new KeyValuePair<IMyCubeGrid, bool>(kvp.Key.CubeGrid, true);
         }
       }
 

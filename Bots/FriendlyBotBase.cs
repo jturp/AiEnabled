@@ -43,13 +43,14 @@ namespace AiEnabled.Bots
 
       bool hasOwner = Owner != null;
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      var jetpackWorldSetting = MyAPIGateway.Session.SessionSettings.EnableJetpack;
       var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowHelpersToFly);
+      var jetAllowed = jetpack != null && jetpackWorldSetting && (jetRequired || AiSession.Instance.ModSaveData.AllowHelpersToFly);
 
       _followDistanceSqd = 25;
       RequiresJetpack = jetRequired;
-      CanUseSpaceNodes = jetAllowed;
-      CanUseAirNodes = jetAllowed;
+      CanUseSpaceNodes = jetRequired || jetAllowed;
+      CanUseAirNodes = jetRequired || jetAllowed;
       GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = !hasOwner;
       CanUseWaterNodes = true;
@@ -613,7 +614,7 @@ namespace AiEnabled.Bots
 
         if (movement == Vector3.Backward && !NextIsLadder)
         {
-          DismountLadder(botPosition, waypoint);
+          DismountLadder(waypoint, botPosition);
         }
 
         return;

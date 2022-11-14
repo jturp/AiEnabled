@@ -30,6 +30,7 @@ using AiEnabled.Parallel;
 using VRage.Input;
 using AiEnabled.ConfigData;
 using VRage.Utils;
+using VRage;
 
 namespace AiEnabled
 {
@@ -54,7 +55,7 @@ namespace AiEnabled
       "LookingAround", "Stretching", "Whatever", "FingerGuns", "Yelling",
       "GotHit", "PointAggressive", "PointBack", "PointDown", "PointForward",
       "PointLeft", "PointRight", "Cold", "CheckWrist", "FYou", "Drunk",
-      "AssistCome", "Bed_Laying_Pose"
+      "AssistCome"
     };
 
     public List<string> CrewAnimations = new List<string>()
@@ -218,6 +219,9 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block_Slope"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block_Slope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "StorageShelf1"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "StorageShelf2"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "StorageShelf3"),
     };
 
     public MyDefinitionId[] ArmorPanelFullDefinitions = new MyDefinitionId[]
@@ -497,6 +501,7 @@ namespace AiEnabled
     public readonly MyStringId MODEL_DEFAULT = MyStringId.GetOrCompute("Default");
     public List<MyStringId> BotModelList = new List<MyStringId>();
 
+    public HashSet<long> EconomyGrids { get; protected set; } = new HashSet<long>();
     public HashSet<string> KnownLootContainerIds { get; protected set; } = new HashSet<string>();
     public HashSet<MyDefinitionId> AllCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> CatwalkBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
@@ -629,6 +634,7 @@ namespace AiEnabled
     HashSet<long> _hBarRemovals = new HashSet<long>();
     HashSet<long> _controlBotIds = new HashSet<long>();
     HashSet<long> _botsToClose = new HashSet<long>();
+    MyQueue<MyTuple<long, string, int>> _prefabsToCheck = new MyQueue<MyTuple<long, string, int>>();
 
     MyObjectBuilderType[] _ignoreTypes = new MyObjectBuilderType[]
     {

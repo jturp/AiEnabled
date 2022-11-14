@@ -54,12 +54,13 @@ namespace AiEnabled.Bots
       _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(3.5f));
 
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      var jetpackWorldSetting = MyAPIGateway.Session.SessionSettings.EnableJetpack;
       var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowNeutralsToFly);
+      var jetAllowed = jetpack != null && jetpackWorldSetting && (jetRequired || AiSession.Instance.ModSaveData.AllowNeutralsToFly);
 
       RequiresJetpack = jetRequired;
-      CanUseSpaceNodes = jetAllowed;
-      CanUseAirNodes = jetAllowed;
+      CanUseSpaceNodes = jetRequired || jetAllowed;
+      CanUseAirNodes = jetRequired || jetAllowed;
       GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = true;
       CanUseWaterNodes = true;
@@ -242,7 +243,7 @@ namespace AiEnabled.Bots
 
         if (movement == Vector3.Backward && !NextIsLadder)
         {
-          DismountLadder(botPosition, waypoint);
+          DismountLadder(waypoint, botPosition);
         }
 
         return;

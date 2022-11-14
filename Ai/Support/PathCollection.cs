@@ -938,7 +938,10 @@ namespace AiEnabled.Ai.Support
         var voxel = ent as MyVoxelBase;
         if (voxel != null)
         {
-          box.GetCorners(_corners, 0);
+          var voxBox = box;
+          voxBox.HalfExtent *= 0.8;
+          voxBox.GetCorners(_corners, 0);
+
           for (int j = 0; j < _corners.Length; j++)
           {
             if (GridBase.PointInsideVoxel(_corners[j], voxel))

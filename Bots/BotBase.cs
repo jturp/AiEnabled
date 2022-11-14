@@ -95,6 +95,8 @@ namespace AiEnabled.Bots
       IsWolf = 0x4000000000,
       ConfineToMap = 0x8000000000,
       HelmetEnabled = 0x10000000000,
+      CanTransitionMaps = 0x20000000000,
+      AllowIdleMovement = 0x40000000000,
     }
 
     public IMyPlayer Owner;
@@ -107,6 +109,41 @@ namespace AiEnabled.Bots
     public AiSession.BotType BotType;
     public AiSession.ControlInfo BotControlInfo;
     public bool GrenadeThrown;
+
+    public bool AllowIdleMovement
+    {
+      get { return (_botInfo & BotInfoEnum.AllowIdleMovement) > 0; }
+      set
+      {
+        if (value)
+        {
+          if (AiSession.Instance.ModSaveData.AllowIdleMovement)
+            _botInfo |= BotInfoEnum.AllowIdleMovement;
+          else
+            _botInfo &= ~BotInfoEnum.AllowIdleMovement;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.AllowIdleMovement;
+        }
+      }
+    }
+
+    public bool CanTransitionMaps
+    {
+      get { return (_botInfo & BotInfoEnum.CanTransitionMaps) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfoEnum.CanTransitionMaps;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.CanTransitionMaps;
+        }
+      }
+    }
 
     public bool HelmetEnabled
     {
@@ -812,7 +849,7 @@ namespace AiEnabled.Bots
     Task _graphTask;
     BotInfoEnum _botInfo;
     byte _ticksSinceLastIdleTransition;
-    bool _transitionIdle;
+    bool _transitionIdle, _walkSwitched;
     MyFloatingObject _lastFloater;
 
     Action<WorkData> _graphWorkAction, _graphWorkCallBack;
@@ -1370,6 +1407,8 @@ namespace AiEnabled.Bots
       }
     }
 
+    Vector3I? _lastPatrolPoint;
+
     internal Vector3I? GetNextPatrolPoint()
     {
       if (_patrolList == null || _patrolList.Count == 0)
@@ -1392,6 +1431,14 @@ namespace AiEnabled.Bots
           break;
       }
 
+      if (_lastPatrolPoint.HasValue && waypoint == _lastPatrolPoint.Value)
+      {
+        var worldPoint = _currentGraph.LocalToWorld(waypoint);
+        if (Vector3D.DistanceSquared(worldPoint, BotInfo.CurrentBotPositionActual) < 1)
+          waypoint = _currentGraph.WorldToLocal(BotInfo.CurrentBotPositionActual);
+      }
+
+      _lastPatrolPoint = waypoint;
       return waypoint;
     }
 
@@ -1485,6 +1532,8 @@ namespace AiEnabled.Bots
       ++_ticksSinceLastDismount;
       ++_lowHealthTimer;
       ++_idlePathTimer;
+
+      _walkSwitched = false;
 
       if (GrenadeThrown && ++_grenadeCounter > 150)
         GrenadeThrown = false;
@@ -1589,9 +1638,10 @@ namespace AiEnabled.Bots
       }
 
       var jetComp = Character.Components?.Get<MyCharacterJetpackComponent>();
-      JetpackEnabled = jetComp?.TurnedOn ?? false;
+      var jetEnabled = jetComp?.TurnedOn ?? false;
+      JetpackEnabled = jetEnabled;
 
-      if (JetpackEnabled)
+      if (jetEnabled)
         SetVelocity();
 
       bool inSeat = Character?.Parent is IMyCockpit;
@@ -1618,36 +1668,6 @@ namespace AiEnabled.Bots
       }
 
       bool isTick100 = _tickCount % 100 == 0;
-
-      if (isTick100 && HelmetEnabled)
-      {
-        var oxyComp = Character.Components.Get<MyCharacterOxygenComponent>();
-        if (oxyComp != null)
-        {
-          var oxygenOK = _currentGraph?.IsPositionAirtight(Character.WorldAABB.Center) ?? false;
-          if (oxygenOK && Character.EnabledHelmet)
-          {
-            oxyComp.SwitchHelmet();
-
-            if (MyAPIGateway.Multiplayer.MultiplayerActive)
-            {
-              var pkt = new HelmetChangePacket(Character.EntityId);
-              AiSession.Instance.Network.RelayToClients(pkt);
-            }
-          }
-          else if (!oxygenOK && !Character.EnabledHelmet)
-          {
-            oxyComp.SwitchHelmet();
-
-            if (MyAPIGateway.Multiplayer.MultiplayerActive)
-            {
-              var pkt = new HelmetChangePacket(Character.EntityId);
-              AiSession.Instance.Network.RelayToClients(pkt);
-            }
-          }
-        }
-      }
-
       bool checkAll100 = isTick100 && (!inSeat || Owner == null);
       bool tgtDead = Target.IsDestroyed();
       if (checkAll100 || tgtDead)
@@ -1711,6 +1731,38 @@ namespace AiEnabled.Bots
 
       if (_tickCount % 150 == 0)
       {
+        if (!jetEnabled && BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() == 0 && BotInfo.CurrentGravityAtBotPosition_Art.LengthSquared() == 0)
+          TrySwitchJetpack(true);
+
+        if (HelmetEnabled)
+        {
+          var oxyComp = Character.Components.Get<MyCharacterOxygenComponent>();
+          if (oxyComp != null)
+          {
+            var oxygenOK = _currentGraph?.IsPositionAirtight(Character.WorldAABB.Center) ?? false;
+            if (oxygenOK && Character.EnabledHelmet)
+            {
+              oxyComp.SwitchHelmet();
+
+              if (MyAPIGateway.Multiplayer.MultiplayerActive)
+              {
+                var pkt = new HelmetChangePacket(Character.EntityId);
+                AiSession.Instance.Network.RelayToClients(pkt);
+              }
+            }
+            else if (!oxygenOK && !Character.EnabledHelmet)
+            {
+              oxyComp.SwitchHelmet();
+
+              if (MyAPIGateway.Multiplayer.MultiplayerActive)
+              {
+                var pkt = new HelmetChangePacket(Character.EntityId);
+                AiSession.Instance.Network.RelayToClients(pkt);
+              }
+            }
+          }
+        }
+
         SwitchWalk = !inSeat;
 
         bool lowHealth = false;
@@ -1957,10 +2009,10 @@ namespace AiEnabled.Bots
           infoStat.BotEntityIds.Add(character.EntityId);
         }
 
-        var nomad = botTarget as NomadBot;
-        if (nomad != null && nomad.Target.Entity == null)
+        var neutralBot = botTarget as NeutralBotBase;
+        if (neutralBot != null && neutralBot.Target.Entity == null)
         {
-          nomad.SetHostile(Character);
+          neutralBot.SetHostile(Character);
         }
       }
 
@@ -2428,6 +2480,11 @@ namespace AiEnabled.Bots
 
     internal void TrySwitchWalk()
     {
+      if (_walkSwitched)
+        return;
+
+      _walkSwitched = true;
+
       if (!IsWolf)
       {
         if (PatrolMode && Target.Entity == null && AiSession.Instance.ModSaveData.EnforceWalkingOnPatrol)
@@ -2789,6 +2846,10 @@ namespace AiEnabled.Bots
               var flattenedLengthSquared = flattenedVector.LengthSquared();
 
               shouldReturn = flattenedLengthSquared < 0.25 && Math.Abs(relVector.Y) < 0.5;
+
+              if (shouldReturn && JetpackEnabled && Character.Physics.LinearVelocity.LengthSquared() > 0.1f)
+                Character.Physics.SetSpeeds(Character.Physics.LinearVelocity * 0.2f, Vector3.Zero);
+
               return shouldReturn;
             }
           }
@@ -3638,8 +3699,17 @@ namespace AiEnabled.Bots
     internal bool TrySwitchJetpack(bool enable)
     {
       var jetComp = Character?.Components?.Get<MyCharacterJetpackComponent>();
-      if (jetComp != null && MyAPIGateway.Session.SessionSettings.EnableJetpack)
+      if (jetComp != null)
       {
+        enable &= MyAPIGateway.Session.SessionSettings.EnableJetpack;
+
+        if (Owner != null)
+          enable &= AiSession.Instance.ModSaveData.AllowHelpersToFly;
+        else if (this is NeutralBotBase)
+          enable &= AiSession.Instance.ModSaveData.AllowNeutralsToFly;
+        else
+          enable &= AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+
         enable |= RequiresJetpack;
 
         if (jetComp.TurnedOn)
@@ -3650,9 +3720,12 @@ namespace AiEnabled.Bots
         else if (enable)
           jetComp.TurnOnJetpack(true);
 
+        JetpackEnabled = jetComp.TurnedOn;
+
         return true;
       }
 
+      JetpackEnabled = false;
       CanUseAirNodes = false;
       return false;
     }
@@ -4271,8 +4344,11 @@ namespace AiEnabled.Bots
               return true;
             }
 
-            needToWait = true;
-            return false;
+            if (!force)
+            {
+              needToWait = true;
+              return false;
+            }
           }
         }
 
@@ -4352,7 +4428,7 @@ namespace AiEnabled.Bots
 
         if (direction != Base6Directions.Direction.Down)
         {
-          Character.SetPosition(worldNode);
+          Character.SetPosition(worldNode + WorldMatrix.Down);
         }
       }
     }
@@ -4570,22 +4646,26 @@ namespace AiEnabled.Bots
           return true;
         }
 
-        bool hasAccess;
-        var doorOwner = door.CubeGrid.BigOwners.Count > 0 ? door.CubeGrid.BigOwners[0] : door.CubeGrid.SmallOwners.Count > 0 ? door.CubeGrid.SmallOwners[0] : door.OwnerId;
+        bool hasAccess = AiSession.Instance.EconomyGrids.Contains(door.CubeGrid.EntityId);
 
-        if (Owner != null)
+        if (!hasAccess)
         {
-          var botOwner = Owner.IdentityId;
-          var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, doorOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          var doorOwner = door.CubeGrid.BigOwners.Count > 0 ? door.CubeGrid.BigOwners[0] : door.CubeGrid.SmallOwners.Count > 0 ? door.CubeGrid.SmallOwners[0] : door.OwnerId;
 
-          hasAccess = ((MyDoorBase)door).AnyoneCanUse || relation != MyRelationsBetweenPlayers.Enemies || (doorOwner == 0L && door.HasPlayerAccess(BotIdentityId));
-        }
-        else
-        {
-          var botOwner = BotIdentityId;
-          var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, doorOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          if (Owner != null)
+          {
+            var botOwner = Owner.IdentityId;
+            var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, doorOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
 
-          hasAccess = relation != MyRelationsBetweenPlayers.Enemies || (doorOwner == 0L && door.HasPlayerAccess(BotIdentityId));
+            hasAccess = ((MyDoorBase)door).AnyoneCanUse || relation != MyRelationsBetweenPlayers.Enemies || (doorOwner == 0L && door.HasPlayerAccess(BotIdentityId));
+          }
+          else
+          {
+            var botOwner = BotIdentityId;
+            var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, doorOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+
+            hasAccess = relation != MyRelationsBetweenPlayers.Enemies || (doorOwner == 0L && door.HasPlayerAccess(BotIdentityId));
+          }
         }
 
         if (!hasAccess || this is CreatureBot)
@@ -4989,7 +5069,7 @@ namespace AiEnabled.Bots
 
     internal virtual void SimulateIdleMovement(bool getMoving, bool towardOwner = false, double distanceCheck = 3)
     {
-      if (PatrolMode || FollowMode || !AiSession.Instance.ModSaveData.AllowIdleMovement)
+      if (PatrolMode || FollowMode || !AllowIdleMovement)
         return;
 
       _sideNode = null;
@@ -5132,7 +5212,7 @@ namespace AiEnabled.Bots
 
                   StartCheckGraph(ref pos);
                 }
-                else if (Owner == null && !_transitionIdle && AiSession.Instance.ModSaveData.AllowIdleMapTransitions)
+                else if (Owner == null && !_transitionIdle && CanTransitionMaps && AiSession.Instance.ModSaveData.AllowIdleMapTransitions)
                 {
                   _ticksSinceLastIdleTransition++;
                   if (_ticksSinceLastIdleTransition > 20)

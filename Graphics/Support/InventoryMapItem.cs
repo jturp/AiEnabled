@@ -48,9 +48,9 @@ namespace AiEnabled.Graphics.Support
           IconName = "AiEnabled_ScavengerBotMaterial";
         }
       }
-      else if (itemDef.Id.SubtypeName == "JT_HandGrenade")
+      else if (itemDef.Id.SubtypeName == "JT_HandGrenade" || itemDef.Id.SubtypeName == "JT_StickyGrenade")
       {
-        IconName = "AiEnabled_MyObjectBuilder_ConsumableItem/JT_HandGrenade";
+        IconName = $"AiEnabled_MyObjectBuilder_ConsumableItem/{itemDef.Id.SubtypeName}";
       }
       else if (itemDef.Context.IsBaseGame || (itemDef.Context.ModItem.PublishedFileId == 2344068716 && !itemDef.IsOre && !itemDef.IsIngot))
         IconName = $"AiEnabled_{defId.ToString()}";

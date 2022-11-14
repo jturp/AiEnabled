@@ -339,6 +339,7 @@ namespace AiEnabled
       MyVisualScriptLogicProvider.PlayerLeftCockpit -= PlayerLeftCockpit;
       MyVisualScriptLogicProvider.PlayerSpawned -= PlayerSpawned;
       MyVisualScriptLogicProvider.PlayerDied -= PlayerDied;
+      MyVisualScriptLogicProvider.PrefabSpawnedDetailed -= OnPrefabSpawned;
 
       if (MyAPIGateway.Session?.Factions != null)
       {
@@ -479,6 +480,7 @@ namespace AiEnabled
       HudAPI?.Close();
       Projectiles?.Close();
       Network?.Unregister();
+      ProjectileConstants.Close();
 
       AllCoreWeaponDefinitions?.Clear();
       RepairWorkStack?.Clear();
@@ -555,7 +557,9 @@ namespace AiEnabled
       AnimationControllerDictionary?.Clear();
       SubtypeToSkeletonDictionary?.Clear();
       PlayerToRepairRadius?.Clear();
+      EconomyGrids?.Clear();
 
+      _nameSB?.Clear();
       _gpsAddIDs?.Clear();
       _gpsOwnerIDs?.Clear();
       _gpsRemovals?.Clear();
@@ -584,7 +588,8 @@ namespace AiEnabled
       _botSpeakers?.Clear();
       _botAnalyzers?.Clear();
       _healthBars?.Clear();
-
+      _prefabsToCheck?.Clear();
+      
       Scheduler = null;
       AllCoreWeaponDefinitions = null;
       RepairWorkStack = null;
@@ -693,7 +698,10 @@ namespace AiEnabled
       AnimationControllerDictionary = null;
       SubtypeToSkeletonDictionary = null;
       PlayerToRepairRadius = null;
+      EconomyGrids = null;
 
+      _nameArray = null;
+      _nameSB = null;
       _gpsAddIDs = null;
       _gpsOwnerIDs = null;
       _gpsRemovals = null;
@@ -729,8 +737,7 @@ namespace AiEnabled
       _healthBars = null;
       _voxelMapResourceLock = null;
       _gridMapResourceLock = null;
-
-      ProjectileConstants.Close();
+      _prefabsToCheck = null;
 
       if (Logger != null)
       {
@@ -844,13 +851,19 @@ namespace AiEnabled
           {
             foreach (MyBlueprintClassDefinition bpClass in prodDef.BlueprintClasses)
             {
-              foreach (MyBlueprintDefinitionBase bp in bpClass)
+              if (bpClass != null)
               {
-                foreach (MyBlueprintDefinitionBase.Item result in bp.Results)
+                foreach (MyBlueprintDefinitionBase bp in bpClass)
                 {
-                  var compDef = MyDefinitionManager.Static.GetDefinition(result.Id) as MyComponentDefinition;
-                  if (compDef != null && compDef.Public && compDef.Id.SubtypeName != "ZoneChip" && !AllGameDefinitions.ContainsKey(compDef.Id))
-                    AllGameDefinitions[compDef.Id] = compDef;
+                  if (bp != null)
+                  {
+                    foreach (MyBlueprintDefinitionBase.Item result in bp.Results)
+                    {
+                      var compDef = MyDefinitionManager.Static.GetDefinition(result.Id) as MyComponentDefinition;
+                      if (compDef != null && compDef.Public && compDef.Id.SubtypeName != "ZoneChip" && !AllGameDefinitions.ContainsKey(compDef.Id))
+                        AllGameDefinitions[compDef.Id] = compDef;
+                    }
+                  }
                 }
               }
             }
@@ -1536,8 +1549,6 @@ namespace AiEnabled
                     }
                   }
                 }
-
-                continue;
               }
 
               if (!planetFound)
@@ -1603,11 +1614,13 @@ namespace AiEnabled
         }
 
         MyEntities.OnEntityAdd += MyEntities_OnEntityAdd;
+        MyVisualScriptLogicProvider.PrefabSpawnedDetailed += OnPrefabSpawned;
         MyVisualScriptLogicProvider.PlayerConnected += PlayerConnected;
         MyVisualScriptLogicProvider.PlayerDisconnected += PlayerDisconnected;
         MyVisualScriptLogicProvider.PlayerEnteredCockpit += PlayerEnteredCockpit;
         MyVisualScriptLogicProvider.PlayerLeftCockpit += PlayerLeftCockpit;
         MyVisualScriptLogicProvider.PlayerSpawned += PlayerSpawned;
+        MyVisualScriptLogicProvider.PlayerRespawnRequest += PlayerRespawned;
         MyVisualScriptLogicProvider.PlayerDied += PlayerDied;
         MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(int.MaxValue, BeforeDamageHandler);
 
@@ -1950,8 +1963,15 @@ namespace AiEnabled
       //}
     }
 
+    private void PlayerRespawned(long playerId)
+    {
+      //Logger.Log($"PlayerRespawned: Id = {playerId}");
+    }
+
     private void PlayerSpawned(long playerId)
     {
+      //Logger.Log($"PlayerSpawned: Id = {playerId}");
+
       if (!MyAPIGateway.Multiplayer.MultiplayerActive || IsClient)
         return;
 
@@ -2727,6 +2747,7 @@ namespace AiEnabled
 
     private void PlayerConnected(long playerId)
     {
+      //Logger.Log($"PlayerConnected: Id = {playerId}");
       _newPlayerIds[playerId] = 0L;
     }
 
@@ -2734,6 +2755,7 @@ namespace AiEnabled
     {
       try
       {
+        //Logger.Log($"PlayerDisconnected: Id = {playerId}");
         if (!MyAPIGateway.Multiplayer.MultiplayerActive)
           return;
 
@@ -3003,6 +3025,10 @@ namespace AiEnabled
         if (obj == null)
           return;
 
+        var grid = obj as MyCubeGrid;
+        if (grid != null)
+          Logger.Log($"Grid being removed: Name = {grid.DisplayName}, {grid.DebugName}, Id = {grid.EntityId}");
+
         obj.OnClose -= MyEntities_OnEntityRemove;
 
         if (_botsToClose.Remove(obj.EntityId))
@@ -3050,10 +3076,63 @@ namespace AiEnabled
       }
     }
 
+    StringBuilder _nameSB = new StringBuilder(128);
+    string[] _nameArray = new string[3];
+
+    bool SplitGridName(string name)
+    {
+      _nameSB.Clear();
+      name = name.Trim();
+
+      int idx = -1;
+
+      for (int i = 0; i < name.Length; i++)
+      {
+        var ch = name[i];
+
+        bool isSpace = char.IsWhiteSpace(ch);
+
+        if (!isSpace)
+          _nameSB.Append(ch);
+
+        if (isSpace || i == name.Length - 1)
+        {
+          idx++;
+          if (idx > 2)
+            return false;
+
+          _nameArray[idx] = _nameSB.ToString();
+          _nameSB.Clear();
+        }
+      }
+
+      return idx == 2;
+    }
+
     private void MyEntities_OnEntityAdd(MyEntity obj)
     {
       try
       {
+        var grid = obj?.GetTopMostParent() as MyCubeGrid;
+        if (grid != null)
+        {
+          if (SplitGridName(grid.DisplayName))
+          {
+            var tag = _nameArray[0];
+            var idStr = _nameArray[2];
+
+            long id;
+            if (long.TryParse(idStr, out id))
+            {
+              var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag(tag);
+              if (faction != null && !faction.AcceptHumans)
+                OnPrefabSpawned(id, grid.DisplayName);
+            }
+          }
+
+          return;
+        }
+
         var character = obj as IMyCharacter;
         if (character?.Definition == null || !string.IsNullOrWhiteSpace(character.DisplayName) || !RobotSubtypes.Contains(character.Definition.Id.SubtypeName))
           return;
@@ -3241,8 +3320,11 @@ namespace AiEnabled
 
           string role = null;
           string subtype = null;
+          string factionTag = null;
           string name = "";
+          float distance = 25;
           long? owner = null;
+          IMyFaction faction = null;
 
           if (_cli.ArgumentCount > 2)
             role = _cli.Argument(2);
@@ -3255,15 +3337,27 @@ namespace AiEnabled
           if (_cli.ArgumentCount > 4)
             name = _cli.Argument(4);
 
+          if (_cli.ArgumentCount > 5)
+          {
+            factionTag = _cli.Argument(5);
+            faction = MyAPIGateway.Session.Factions.TryGetFactionByTag(factionTag);
+          }
+
+          if (_cli.ArgumentCount > 6)
+          {
+            if (!float.TryParse(_cli.Argument(6), out distance))
+              distance = 25;
+          }  
+
           float num;
-          var grav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
+          var natGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
           var artGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(character.WorldAABB.Center, num);
-          grav += artGrav;
+          var tGrav = natGrav + artGrav;
 
           Vector3D forward, up;
-          if (grav.LengthSquared() > 0)
+          if (tGrav.LengthSquared() > 0)
           {
-            up = Vector3D.Normalize(-grav);
+            up = Vector3D.Normalize(-tGrav);
             forward = Vector3D.CalculatePerpendicularVector(up);
           }
           else
@@ -3272,9 +3366,9 @@ namespace AiEnabled
             forward = character.WorldMatrix.Forward;
           }
 
-          var position = character.WorldAABB.Center + character.WorldMatrix.Forward * 50;
+          var position = character.WorldAABB.Center + character.WorldMatrix.Forward * distance;
           var planet = MyGamePruningStructure.GetClosestPlanet(position);
-          if (planet != null)
+          if (planet != null && natGrav.LengthSquared() > 0 && GridBase.PointInsideVoxel(position, planet))
           {
             var surfacePoint = planet.GetClosestSurfacePointGlobal(position);
             var lineTo = surfacePoint - planet.PositionComp.GetPosition();
@@ -3297,7 +3391,7 @@ namespace AiEnabled
           }
 
           ShowMessage("Sending spawn message to server", "White");
-          var packet = new SpawnPacket(position, forward, up, subtype, role, owner, name);
+          var packet = new SpawnPacket(position, forward, up, subtype, role, owner, name, faction?.FactionId);
           Network.SendToServer(packet);
         }
       }
@@ -3577,6 +3671,42 @@ namespace AiEnabled
       {
         base.Draw();
       }
+    }
+
+    private void OnPrefabSpawned(long entityId, string prefabName)
+    {
+      _prefabsToCheck.Enqueue(MyTuple.Create(entityId, prefabName, MyAPIGateway.Session.GameplayFrameCounter));
+    }
+
+    bool IsEconGrid(MyCubeGrid grid)
+    {
+      var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
+
+      if (owner > 0)
+      {
+        var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(owner);
+        if (faction == null || faction.AcceptHumans)
+        {
+          return false;
+        }
+      }
+
+      return IsInAnySafeZone(grid);
+    }
+
+    bool IsInAnySafeZone(MyEntity entity)
+    {
+      if (entity == null)
+        return false;
+
+      var impossibleAction = 1 << 31;
+      foreach (var zone in MySessionComponentSafeZones.SafeZones)
+      {
+        if (!zone.IsActionAllowed(entity, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, impossibleAction), 0L))
+          return true;
+      }
+
+      return false;
     }
 
     public bool IsBotAllowedToUse(BotBase bot, string toolSubtype, out string reason)
@@ -4506,6 +4636,34 @@ namespace AiEnabled
 
         _graphRemovals.Clear();
       }
+
+      var count = _prefabsToCheck.Count;
+      if (count > 0)
+      {
+        var curFrame = MyAPIGateway.Session.GameplayFrameCounter;
+
+        for (int i = 0; i < count; i++)
+        {
+          var tuple = _prefabsToCheck.Dequeue();
+
+          if (curFrame - tuple.Item3 < 100)
+          {
+            _prefabsToCheck.Enqueue(tuple);
+            continue;
+          }
+
+          var ent = MyEntities.GetEntityById(tuple.Item1) as MyCubeGrid;
+
+          if (ent == null)
+            MyEntities.TryGetEntityByName(tuple.Item2, out ent);
+
+          var grid = ent as MyCubeGrid;
+          if (grid != null && IsEconGrid(grid))
+          {
+            EconomyGrids.Add(grid.EntityId);
+          }
+        }
+      }
     }
 
     bool _gpsUpdatesAvailable;
@@ -5407,16 +5565,19 @@ namespace AiEnabled
       }
     }
 
-    public IMyFaction GetBotFactionAssignment(IMyFaction playerFaction)
+    public IMyFaction GetBotFactionAssignment(IMyFaction factionToPairWith)
     {
-      if (playerFaction == null)
+      if (factionToPairWith == null)
         return null;
 
       IMyFaction helperFaction;
-      if (BotFactions.TryGetValue(playerFaction.FactionId, out helperFaction))
+      if (BotFactions.TryGetValue(factionToPairWith.FactionId, out helperFaction))
         return helperFaction;
 
-      Logger.Log($"Attempting to pair bot faction with {playerFaction.Name}");
+      if (!factionToPairWith.AcceptHumans)
+        return factionToPairWith;
+
+      Logger.Log($"Attempting to pair bot faction with {factionToPairWith.Name}");
       while (helperFaction == null)
       {
         if (BotFactionTags.Count == 0)
@@ -5432,13 +5593,13 @@ namespace AiEnabled
         helperFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(botFactionTag);
       }
 
-      if (helperFaction == null || !BotFactions.TryAdd(playerFaction.FactionId, helperFaction))
+      if (helperFaction == null || !BotFactions.TryAdd(factionToPairWith.FactionId, helperFaction))
       {
-        Logger.Log($"Aisession.BeforeStart: Failed to add faction pair - ID: {playerFaction.FactionId}, BotFactionTag: {helperFaction?.Tag ?? "NULL"}", MessageType.WARNING);
+        Logger.Log($"Aisession.BeforeStart: Failed to add faction pair - ID: {factionToPairWith.FactionId}, BotFactionTag: {helperFaction?.Tag ?? "NULL"}", MessageType.WARNING);
       }
       else
       {
-        Logger.Log($" -> Paired {playerFaction.Name} with {helperFaction.Name}");
+        Logger.Log($" -> Paired {factionToPairWith.Name} with {helperFaction.Name}");
 
         try
         {
@@ -5453,7 +5614,7 @@ namespace AiEnabled
               continue;
 
             var zoneFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(block.OwnerId);
-            if (zoneFaction == null || zoneFaction.FactionId != playerFaction.FactionId)
+            if (zoneFaction == null || zoneFaction.FactionId != factionToPairWith.FactionId)
               continue;
 
             if (zone.AccessTypeFactions == MySafeZoneAccess.Whitelist)
@@ -5468,7 +5629,7 @@ namespace AiEnabled
               int idx = 0;
               foreach (var id in ob.Factions)
               {
-                if (id != playerFaction.FactionId && BotFactions.ContainsKey(id))
+                if (id != factionToPairWith.FactionId && BotFactions.ContainsKey(id))
                   continue;
 
                 var faction = MyAPIGateway.Session.Factions.TryGetFactionById(id);

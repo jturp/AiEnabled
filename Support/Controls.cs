@@ -75,6 +75,23 @@ namespace AiEnabled.Support
         }
       }
 
+      var sorterToggle = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("SorterToggle");
+      sorterToggle.Enabled = CombineFunc.Create(sorterToggle.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      sorterToggle.Visible = CombineFunc.Create(sorterToggle.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      sorterToggle.SupportsMultipleBlocks = false;
+      sorterToggle.Title = MyStringId.GetOrCompute("Sorter Function");
+      sorterToggle.Tooltip = MyStringId.GetOrCompute("Toggle to enable / disable the auto-pulling of bot materials.");
+      sorterToggle.Getter = Block => GetSorterToggleValue(Block);
+      sorterToggle.Setter = SetSorterToggleValue;
+      sorterToggle.OnText = MyStringId.GetOrCompute("On");
+      sorterToggle.OffText = MyStringId.GetOrCompute("Off");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(sorterToggle);
+      controls.Add(sorterToggle);
+
+      var separatorOne = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separatorOne);
+      controls.Add(separatorOne);
+
       var labelFactory = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblFactory");
       labelFactory.Enabled = CombineFunc.Create(labelFactory.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       labelFactory.Visible = CombineFunc.Create(labelFactory.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
@@ -201,6 +218,24 @@ namespace AiEnabled.Support
       block.RefreshCustomInfo();
     }
 
+    private static void SetSorterToggleValue(IMyTerminalBlock block, bool enable)
+    {
+      var gameLogic = block?.GameLogic.GetAs<Factory>();
+      if (gameLogic == null)
+        return;
+
+      gameLogic.SorterEnabled = enable;
+    }
+
+    private static bool GetSorterToggleValue(IMyTerminalBlock block)
+    {
+      var gameLogic = block?.GameLogic.GetAs<Factory>();
+      if (gameLogic == null)
+        return false;
+
+      return gameLogic.SorterEnabled;
+    }
+
     private static void SetBotColor(IMyTerminalBlock block, Color clr)
     {
       var funcBlock = block as IMyFunctionalBlock;
@@ -272,8 +307,19 @@ namespace AiEnabled.Support
       List<long> helperIds;
       if (AiSession.Instance.PlayerToActiveHelperIds.TryGetValue(player.IdentityId, out helperIds) && helperIds.Count >= AiSession.Instance.ModSaveData.MaxHelpersPerPlayer)
       {
-        SetContextMessage(block, $"You already have {helperIds.Count} helper(s).");
-        return;
+        int num = 0;
+        for (int i = 0; i < AiSession.Instance.MyHelperInfo.Count; i++)
+        {
+          var helperInfo = AiSession.Instance.MyHelperInfo[i];
+          if (helperInfo.AdminSpawned && helperInfo.IsActiveHelper && helperIds.Contains(helperInfo.HelperId))
+            num++;
+        }
+
+        if (helperIds.Count - num >= AiSession.Instance.ModSaveData.MaxHelpersPerPlayer)
+        {
+          SetContextMessage(block, $"You already have {helperIds.Count - num} helper(s).");
+          return;
+        }
       }
 
       var botRole = gameLogic.SelectedRole;

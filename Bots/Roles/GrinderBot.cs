@@ -98,10 +98,10 @@ namespace AiEnabled.Bots.Roles
           }
           else if (AiSession.Instance.Bots.TryGetValue(tgtEnt.EntityId, out botTarget) && botTarget != null)
           {
-            var nomad = botTarget as NomadBot;
-            if (nomad != null && nomad.Target.Entity == null)
+            var neutralBot = botTarget as NeutralBotBase;
+            if (neutralBot != null && neutralBot.Target.Entity == null)
             {
-              nomad.SetHostile(Character);
+              neutralBot.SetHostile(Character);
             }
             else if (botTarget.Owner != null)
             {

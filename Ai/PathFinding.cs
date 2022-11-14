@@ -78,30 +78,41 @@ namespace AiEnabled.Ai
         }
         else if (!collection.Dirty)
         {
+          bool isInventory = false;
+
           if (graph.IsGridGraph && bot is RepairBot)
           {
-            if (!bot.Target.IsSlimBlock && !bot.Target.IsInventory)
+            isInventory = bot.Target.IsInventory;
+
+            if (!isInventory && !bot.Target.IsSlimBlock)
+            {
               bot._noPathCounter++;
+            }
             else
+            {
               bot.Target.RemoveTarget();
+            }
           }
           else
           {
             bot._noPathCounter++;
           }
 
-          if (graph.IsTemporaryBlock(goal))
+          if (!isInventory)
           {
-            if (!graph.TempBlockedNodes.ContainsKey(goal))
+            if (graph.IsTemporaryBlock(goal))
             {
-              //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to temp obstacles from Pathfinding");
-              graph.TempBlockedNodes[goal] = new byte();
+              if (!graph.TempBlockedNodes.ContainsKey(goal))
+              {
+                //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to temp obstacles from Pathfinding");
+                graph.TempBlockedNodes[goal] = new byte();
+              }
             }
-          }
-          else if (!collection.Obstacles.ContainsKey(goal))
-          {
-            //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to permanent obstacles from Pathfinding");
-            collection.Obstacles[goal] = new byte();
+            else if (!collection.Obstacles.ContainsKey(goal))
+            {
+              //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to permanent obstacles from Pathfinding");
+              collection.Obstacles[goal] = new byte();
+            }
           }
 
           bot._transitionPoint = null;

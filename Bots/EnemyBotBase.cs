@@ -42,12 +42,13 @@ namespace AiEnabled.Bots
     public EnemyBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
       var jetpack = bot.Components.Get<MyCharacterJetpackComponent>();
+      var jetpackWorldSetting = MyAPIGateway.Session.SessionSettings.EnableJetpack;
       var jetRequired = jetpack != null && bot.Definition.Id.SubtypeName == "Drone_Bot";
-      var jetAllowed = jetpack != null && (jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly);
+      var jetAllowed = jetpack != null && jetpackWorldSetting && (jetRequired || AiSession.Instance.ModSaveData.AllowEnemiesToFly);
 
       RequiresJetpack = jetRequired;
-      CanUseSpaceNodes = jetAllowed;
-      CanUseAirNodes = jetAllowed;
+      CanUseSpaceNodes = jetRequired || jetAllowed;
+      CanUseAirNodes = jetRequired || jetAllowed;
       GroundNodesFirst = !jetRequired;
       EnableDespawnTimer = true;
       CanUseWaterNodes = true;
@@ -225,7 +226,7 @@ namespace AiEnabled.Bots
 
         if (movement == Vector3.Backward && !NextIsLadder)
         {
-          DismountLadder(botPosition, waypoint);
+          DismountLadder(waypoint, botPosition);
         }
 
         return;
@@ -697,10 +698,10 @@ namespace AiEnabled.Bots
         if (Target.Player != null && !(this is GhostBot))
           PlaySoundServer("PlayVocPain", character.EntityId);
 
-        var nomad = botTarget as NomadBot;
-        if (nomad != null && nomad.Target.Entity == null)
+        var neutralBot = botTarget as NeutralBotBase;
+        if (neutralBot != null && neutralBot.Target.Entity == null)
         {
-          nomad.SetHostile(Character);
+          neutralBot.SetHostile(Character);
         }
       }
 

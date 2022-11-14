@@ -33,7 +33,7 @@ namespace AiEnabled.API
       }
       catch (Exception ex)
       {
-        MyLog.Default.WriteLineAndConsole($"Exception in AiEnabled.RemoteBotAPI.Close: {ex.Message}\n{ex.StackTrace}");
+        MyLog.Default.WriteLineAndConsole($"Exception in AiEnabled.RemoteBotAPI.Close: {ex}");
       }
     }
 
@@ -184,6 +184,16 @@ namespace AiEnabled.API
       /// If true, the bot's helmet visor will open / close automatically depending on oxygen level
       /// </summary>
       [ProtoMember(26)] public bool AllowHelmetVisorChanges = true;
+
+      /// <summary>
+      /// If true, the bot will be able to roam freely. Also requires server setting to be true.
+      /// </summary>
+      [ProtoMember(27)] public bool AllowMapTransitions = true;
+
+      /// <summary>
+      /// If true, the bot will wander around its map area when idle
+      /// </summary>
+      [ProtoMember(28)] public bool AllowIdleMovement = true;
     }
 
     /////////////////////////////////////////////
@@ -296,8 +306,16 @@ namespace AiEnabled.API
     /// <returns>true if the EntityId is an AiEnabled bot, otherwise false</returns>
     public bool CheckBotRelationTo(long botEntityId, long otherIdentityId, out MyRelationsBetweenPlayerAndBlock relationBetween)
     {
+      var result = _getBotAndRelationTo?.Invoke(botEntityId, otherIdentityId);
+
+      if (result.HasValue)
+      {
+        relationBetween = result.Value;
+        return true;
+      }
+
       relationBetween = MyRelationsBetweenPlayerAndBlock.NoOwnership;
-      return _getBotAndRelationTo?.Invoke(botEntityId, otherIdentityId, out relationBetween) ?? false;
+      return false;
     }
 
     /// <summary>
@@ -420,8 +438,16 @@ namespace AiEnabled.API
     [Obsolete("Use the overload that takes in a Vector3D for startPosition to avoid subgrid issues")]
     public bool GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3I startPosition, Vector3D? upVec, out Vector3D validWorldPosition)
     {
+      var result = _getClosestValidNode?.Invoke(botEntityId, grid, startPosition, upVec);
+
+      if (result.HasValue)
+      {
+        validWorldPosition = result.Value;
+        return true;
+      }
+
       validWorldPosition = Vector3D.Zero;
-      return _getClosestValidNode?.Invoke(botEntityId, grid, startPosition, upVec, out validWorldPosition) ?? false;
+      return false;
     }
 
     /// <summary>
@@ -434,8 +460,16 @@ namespace AiEnabled.API
     /// <returns>true if able to find a valid node nearby, otherwise false</returns>
     public bool GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3D startPosition, Vector3D? upVec, out Vector3D validWorldPosition, bool allowAirNodes)
     {
+      var result = _getClosestValidNodeNew?.Invoke(botEntityId, grid, startPosition, upVec, allowAirNodes);
+      
+      if (result.HasValue)
+      {
+        validWorldPosition = result.Value;
+        return true;
+      }
+
       validWorldPosition = Vector3D.Zero;
-      return _getClosestValidNodeNew?.Invoke(botEntityId, grid, startPosition, upVec, out validWorldPosition, allowAirNodes) ?? false;
+      return false;
     }
 
     /// <summary>
@@ -488,7 +522,7 @@ namespace AiEnabled.API
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     /// <param name="spawnData">The serialized <see cref="SpawnData"/> object</param>
     /// <returns>true if the change is successful, otherwise false</returns>
-    public bool SwitchBotRole(long botEntityId, SpawnData spawnData) => _switchBotRole?.Invoke(botEntityId, spawnData) ?? false;
+    public bool SwitchBotRole(long botEntityId, byte[] spawnData) => _switchBotRole?.Invoke(botEntityId, spawnData) ?? false;
 
     /// <summary>
     /// Changes the bot's role and potential tooltype
@@ -540,10 +574,6 @@ namespace AiEnabled.API
     //API Methods End
     /////////////////////////////////////////////
 
-    delegate bool GetClosestNodeDelegate(long botEntityId, MyCubeGrid grid, Vector3I start, Vector3D? up, out Vector3D result);
-    delegate bool GetClosestNodeDelegateNew(long botEntityId, MyCubeGrid grid, Vector3D start, Vector3D? up, out Vector3D result, bool allowAirNodes);
-    delegate bool GetBotAndRelationTo(long botEntityId, long otherIdentityId, out MyRelationsBetweenPlayerAndBlock relationBetween);
-
     private const long _botControllerModChannel = 2408831996; //This is the channel this object will receive API methods at. Sender should also use this.
     private Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, IMyCharacter> _spawnBot;
     private Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter> _spawnBotCustom;
@@ -570,11 +600,11 @@ namespace AiEnabled.API
     private Func<string, string, bool> _canBotUseTool;
     private Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>> _spawnBotQueued;
     private Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>> _spawnBotCustomQueued;
-    private Func<long, SpawnData, bool> _switchBotRole;
+    private Func<long, byte[], bool> _switchBotRole;
     private Func<long, string, List<string>, bool> _switchBotRoleSlim;
-    private GetClosestNodeDelegate _getClosestValidNode;
-    private GetClosestNodeDelegateNew _getClosestValidNodeNew;
-    private GetBotAndRelationTo _getBotAndRelationTo;
+    private Func<long, MyCubeGrid, Vector3I, Vector3D?, Vector3D?> _getClosestValidNode;
+    private Func<long, MyCubeGrid, Vector3D, Vector3D?, bool, Vector3D?> _getClosestValidNodeNew;
+    private Func<long, long, MyRelationsBetweenPlayerAndBlock?> _getBotAndRelationTo;
     private Func<long, long> _getBotOwnerId;
     private Func<long, string, bool> _switchBotWeapon;
     private Action<Dictionary<long, IMyCharacter>, bool, bool, bool> _getBots;
@@ -613,7 +643,8 @@ namespace AiEnabled.API
         _trySeatBot = dict["TrySeatBot"] as Func<long, IMyCockpit, bool>;
         _trySeatBotOnGrid = dict["TrySeatBotOnGrid"] as Func<long, IMyCubeGrid, bool>;
         _getAvailableGridNodes = dict["GetAvailableGridNodes"] as Action<MyCubeGrid, int, List<Vector3D>, Vector3D?, bool>;
-        _getClosestValidNode = dict["GetClosestValidNode"] as GetClosestNodeDelegate;
+        _getClosestValidNode = dict["GetClosestValidNode"] as Func<long, MyCubeGrid, Vector3I, Vector3D?, Vector3D?>;
+        _getClosestValidNodeNew = dict["GetClosestValidNodeNew"] as Func<long, MyCubeGrid, Vector3D, Vector3D?, bool, Vector3D?>;
         _createGridMap = dict["CreateGridMap"] as Func<MyCubeGrid, MatrixD?, bool>;
         _isGridMapReady = dict["IsGridMapReady"] as Func<MyCubeGrid, bool>;
         _removeBot = dict["RemoveBot"] as Func<long, bool>;
@@ -621,13 +652,12 @@ namespace AiEnabled.API
         _speak = dict["Speak"] as Action<long, string>;
         _isBot = dict["IsBot"] as Func<long, bool>;
         _getRelationshipBetween = dict["GetRelationshipBetween"] as Func<long, long, MyRelationsBetweenPlayerAndBlock>;
-        _getBotAndRelationTo = dict["GetBotAndRelationTo"] as GetBotAndRelationTo;
+        _getBotAndRelationTo = dict["GetBotAndRelationTo"] as Func<long, long, MyRelationsBetweenPlayerAndBlock?>; 
         _spawnBotQueued = dict["SpawnBotQueued"] as Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>;
         _spawnBotCustomQueued = dict["SpawnBotCustomQueued"] as Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>;
         _setBotPatrol = dict["SetBotPatrol"] as Func<long, List<Vector3D>, bool>;
         _canBotUseTool = dict["CanRoleUseTool"] as Func<string, string, bool>;
-        _switchBotRole = dict["SwitchBotRole"] as Func<long, SpawnData, bool>;
-        _getClosestValidNodeNew = dict["GetClosestValidNodeNew"] as GetClosestNodeDelegateNew;
+        _switchBotRole = dict["SwitchBotRole"] as Func<long, byte[], bool>;
         _switchBotRoleSlim = dict["SwitchBotRoleSlim"] as Func<long, string, List<string>, bool>;
         _switchBotWeapon = dict["SwitchBotWeapon"] as Func<long, string, bool>;
         _getBotOwnerId = dict["GetBotOwnerId"] as Func<long, long>;

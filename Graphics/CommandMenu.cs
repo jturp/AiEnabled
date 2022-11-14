@@ -1871,6 +1871,9 @@ namespace AiEnabled.Graphics
           if (botFaction != null)
           {
             info = $"[{botFaction.Tag}] {botFaction.Name}";
+
+            if (info.Length > 25)
+              info = info.Substring(0, 25) + "...";
           }
           else
           {

@@ -53,7 +53,6 @@ namespace AiEnabled.Networking
           var playerId = PlayerId.Value;
           if (RepairSearchRadius.HasValue)
           {
-            AiSession.Instance.Logger.Log($"Setting repair radius to {RepairSearchRadius.Value} for playerId {PlayerId}");
             AiSession.Instance.PlayerToRepairRadius[playerId] = RepairSearchRadius.Value;
           }
 

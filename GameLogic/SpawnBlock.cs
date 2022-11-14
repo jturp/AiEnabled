@@ -38,6 +38,7 @@ using AiEnabled.Utilities;
 using AiEnabled.Ai.Support;
 using Sandbox.Game.EntityComponents;
 using IMyFunctionalBlock = Sandbox.ModAPI.IMyFunctionalBlock;
+using Sandbox.Game.Entities.Character.Components;
 
 namespace AiEnabled.GameLogic
 {
@@ -66,7 +67,7 @@ namespace AiEnabled.GameLogic
     List<string> _neutralTypes = new List<string>(5);
     List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
     string _soldierColor, _zombieColor, _grinderColor, _nomadColor, _enforcerColor;
-    bool _useRandomColor = true, _spidersOnly, _wolvesOnly, _customOnly;
+    bool _useRandomColor = true, _allowFlight = true, _spidersOnly, _wolvesOnly, _customOnly;
 
     int _minSecondsBetweenSpawns = 60;
     int _maxSecondsBetweenSpawns = 180;
@@ -224,6 +225,7 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       _ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
+      _ini.Set("AiEnabled", "Allow Spawns to Fly", _allowFlight);
       _ini.Set("AiEnabled", "Use Random Spawn Colors", true);
       _ini.Set("AiEnabled", "Allow SoldierBot", true);
       _ini.Set("AiEnabled", "SoldierBot Color", hexColor);
@@ -257,6 +259,7 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
       _ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       _ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
+      _ini.SetComment("AiEnabled", "Allow Spawns to Fly", " \n If True, bots spawned by this block will be allowed to fly.\n Note that Admin settings override this, and bot must have\n a valid jetpack component.\n ");
       _ini.SetComment("AiEnabled", "Use Random Spawn Colors", " \n If True, all spawns will use a random color.\n ");
       _ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
@@ -294,6 +297,7 @@ namespace AiEnabled.GameLogic
       var defaultColor = Color.Red;
       var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
       _customOnly = ini.Get("AiEnabled", "Custom NPCs Only").ToBoolean(false);
+      _allowFlight = ini.Get("AiEnabled", "Allow Spawns to Fly").ToBoolean(_allowFlight);
 
       var allowSoldier = ini.Get("AiEnabled", "Allow SoldierBot").ToBoolean(true);
       _soldierColor = ini.Get("AiEnabled", "SoldierBot Color").ToString(hexColor);
@@ -585,6 +589,7 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Spawn Interval", _maxSecondsBetweenSpawns);
       ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
+      ini.Set("AiEnabled", "Allow Spawns to Fly", _allowFlight);
       ini.Set("AiEnabled", "Use Random Spawn Colors", _useRandomColor);
       ini.Set("AiEnabled", "Allow SoldierBot", allowSoldier);
       ini.Set("AiEnabled", "SoldierBot Color", _soldierColor);
@@ -618,6 +623,7 @@ namespace AiEnabled.GameLogic
       ini.SetComment("AiEnabled", "Min Spawn Interval", " \n The Minimum number of Seconds between spawns. (min = 1)\n ");
       ini.SetComment("AiEnabled", "Max Spawn Interval", " \n The Maximum number of Seconds between spawns.\n ");
       ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
+      ini.SetComment("AiEnabled", "Allow Spawns to Fly", " \n If True, bots spawned by this block will be allowed to fly.\n Note that Admin settings override this, and bot must have\n a valid jetpack component.\n ");
       ini.SetComment("AiEnabled", "Use Random Spawn Colors", " \n If True, all spawns will use a random color.\n ");
       ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
@@ -936,12 +942,29 @@ namespace AiEnabled.GameLogic
               botChar.CharacterDied += Bot_OnMarkForClose;
               botChar.OnClose += Bot_OnMarkForClose;
 
-              if (!string.IsNullOrEmpty(lootType))
+              BotBase bot;
+              if (AiSession.Instance.Bots.TryGetValue(botChar.EntityId, out bot) && bot != null)
               {
-                BotBase bot;
-                if (AiSession.Instance.Bots.TryGetValue(botChar.EntityId, out bot) && bot != null)
+                if (!string.IsNullOrEmpty(lootType))
                 {
                   bot._lootContainerSubtype = lootType;
+                }
+
+                if (!_allowFlight)
+                {
+                  var botFlightSetting = bot is NeutralBotBase ? AiSession.Instance.ModSaveData.AllowNeutralsToFly : AiSession.Instance.ModSaveData.AllowEnemiesToFly;
+
+                  var jetpack = botChar.Components.Get<MyCharacterJetpackComponent>();
+                  var jetpackWorldSetting = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+                  var jetRequired = jetpack != null && botChar.Definition.Id.SubtypeName == "Drone_Bot";
+                  var jetAllowed = jetpack != null && jetpackWorldSetting && (jetRequired || (botFlightSetting && _allowFlight));
+                  var flightAllowed = jetRequired || jetAllowed;
+
+                  bot.CanUseAirNodes = flightAllowed;
+                  bot.CanUseSpaceNodes = flightAllowed;
+
+                  if (!flightAllowed && jetpack.TurnedOn)
+                    jetpack.SwitchThrusts();
                 }
               }
             }

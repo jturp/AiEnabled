@@ -217,8 +217,24 @@ namespace AiEnabled.Ai.Support
         Vector3I node;
         if (!bot._currentGraph.GetClosestValidNode(bot, kvp.Key, out node, isSlimBlock: true))
         {
-          IMyTerminalBlock _;
-          _inventoryPositions.TryRemove(kvp.Key, out _);
+          bool valid = false;
+
+          foreach (var dir in AiSession.Instance.CardinalDirections)
+          {
+            var pos = kvp.Key + dir;
+            if (bot._currentGraph.IsOpenTile(pos))
+            {
+              valid = true;
+              break;
+            }
+          }
+
+          if (!valid)
+          {
+            IMyTerminalBlock _;
+            _inventoryPositions.TryRemove(kvp.Key, out _);
+          }
+
           continue;
         }
 

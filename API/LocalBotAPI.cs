@@ -67,8 +67,8 @@ namespace AiEnabled.API
         { "TrySeatBotOnGrid", new Func<long, IMyCubeGrid, bool>(TrySeatBotOnGrid) },
         { "TryRemoveBotFromSeat", new Func<long, bool>(TryRemoveBotFromSeat) },
         { "GetAvailableGridNodes", new Action<MyCubeGrid, int, List<Vector3D>, Vector3D?, bool>(GetAvailableGridNodes) },
-        { "GetClosestValidNode", new GetClosestNodeDelegate(GetClosestValidNode) },
-        { "GetClosestValidNodeNew", new GetClosestNodeDelegateNew(GetClosestValidNode) },
+        { "GetClosestValidNode", new Func<long, MyCubeGrid, Vector3I, Vector3D?, Vector3D?>(GetClosestValidNode) },
+        { "GetClosestValidNodeNew", new Func<long, MyCubeGrid, Vector3D, Vector3D?, bool, Vector3D?>(GetClosestValidNode) },
         { "CreateGridMap", new Func<MyCubeGrid, MatrixD?, bool>(CreateGridMap) },
         { "IsGridMapReady", new Func<MyCubeGrid, bool>(IsGridMapReady) },
         { "RemoveBot", new Func<long, bool>(CloseBot) },
@@ -76,10 +76,10 @@ namespace AiEnabled.API
         { "Perform", new Action<long, string>(Perform) },
         { "IsBot", new Func<long, bool>(IsBot) },
         { "GetRelationshipBetween", new Func<long, long, MyRelationsBetweenPlayerAndBlock>(GetRelationshipBetween) },
-        { "GetBotAndRelationTo", new GetBotAndRelationTo(CheckBotRelationTo) },
+        { "GetBotAndRelationTo", new Func<long, long, MyRelationsBetweenPlayerAndBlock?>(CheckBotRelationTo) },
         { "SetBotPatrol", new Func<long, List<Vector3D>, bool>(SetBotPatrol) },
         { "CanRoleUseTool", new Func<string, string, bool>(CanRoleUseTool) },
-        { "SwitchBotRole", new Func<long, RemoteBotAPI.SpawnData, bool>(SwitchBotRole) },
+        { "SwitchBotRole", new Func<long, byte[], bool>(SwitchBotRole) },
         { "SwitchBotRoleSlim", new Func<long, string, List<string>, bool>(SwitchBotRole) },
         { "GetBotOwnerId", new Func<long, long>(GetBotOwnerId) },
         { "SwitchBotWeapon", new Func<long, string, bool>(SwitchBotWeapon) },
@@ -92,10 +92,6 @@ namespace AiEnabled.API
 
       return dict;
     }
-
-    delegate bool GetClosestNodeDelegate(long botEntityId, MyCubeGrid grid, Vector3I start, Vector3D? up, out Vector3D result);
-    delegate bool GetClosestNodeDelegateNew(long botEntityId, MyCubeGrid grid, Vector3D start, Vector3D? up, out Vector3D result, bool allowAirNodes);
-    delegate bool GetBotAndRelationTo(long botEntityId, long otherIdentityId, out MyRelationsBetweenPlayerAndBlock relationBetween);
 
     /// <summary>
     /// Check this BEFORE attempting to spawn a bot to ensure the mod is ready
@@ -190,18 +186,17 @@ namespace AiEnabled.API
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     /// <param name="otherIdentityId">The IdentityId to check against</param>
-    /// <param name="relationBetween">The relationship between the bot and the identity, defaults to NoOwnership</param>
-    /// <returns>true if the EntityId is an AiEnabled bot, otherwise false</returns>
-    public bool CheckBotRelationTo(long botEntityId, long otherIdentityId, out MyRelationsBetweenPlayerAndBlock relationBetween)
+    /// <returns>the relation found if it's an AiEnabled bot, otherwise null</returns>
+    public MyRelationsBetweenPlayerAndBlock? CheckBotRelationTo(long botEntityId, long otherIdentityId)
     {
-      relationBetween = MyRelationsBetweenPlayerAndBlock.NoOwnership;
-
       if (AiSession.Instance?.Registered != true)
-        return false;
+        return null;
 
       BotBase bot;
       if (AiSession.Instance.Bots.TryGetValue(botEntityId, out bot))
       {
+        var relationBetween = MyRelationsBetweenPlayerAndBlock.NoOwnership;
+
         if (bot?.Character != null && !bot.IsDead)
         {
           if (otherIdentityId == bot.Owner?.IdentityId)
@@ -216,10 +211,10 @@ namespace AiEnabled.API
           }
         }
 
-        return true;
+        return relationBetween;
       }
 
-      return false;
+      return null;
     }
 
     /// <summary>
@@ -411,37 +406,34 @@ namespace AiEnabled.API
     /// <param name="grid">The grid the position is on</param>
     /// <param name="startPosition">The position you want to get a nearby node for</param>
     /// <param name="upVec">If supplied, the returned node will be confined to nodes on the same level as the start position</param>
-    /// <param name="validWorldPosition">The returned world position</param>
-    /// <returns>true if able to find a valid node nearby, otherwise false</returns>
+    /// <returns>the valid world position if found, otherwise null</returns>
     [Obsolete("Use the overload that takes in a Vector3D for startPosition to avoid subgrid issues")]
-    public bool GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3I startPosition, Vector3D? upVec, out Vector3D validWorldPosition)
+    public Vector3D? GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3I startPosition, Vector3D? upVec)
     {
-      validWorldPosition = Vector3D.Zero;
-
       if (AiSession.Instance?.Registered != true)
-        return false;
+        return null;
 
       if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
-        return false;
+        return null;
 
       CubeGridMap gridMap;
       if (!AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) || gridMap?.MainGrid == null || !gridMap.Ready)
-        return false;
+        return null;
 
       bool isSlim = gridMap.DoesBlockExist(startPosition); // gridMap.MainGrid.GetCubeBlock(startPosition) != null;
 
       BotBase bot;
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot))
-        return false;
+        return null;
 
       Vector3I node;
-      if (gridMap.GetClosestValidNode(bot, startPosition, out node, upVec, isSlim, currentIsDenied: true))
+      if (gridMap.GetClosestValidNode(bot, startPosition, out node, upVec, isSlim, currentIsDenied: false))
       {
-        validWorldPosition = gridMap.LocalToWorld(node);
-        return true;
+        var validWorldPosition = gridMap.LocalToWorld(node);
+        return validWorldPosition;
       }
 
-      return false;
+      return null;
     }
 
     /// <summary>
@@ -450,37 +442,34 @@ namespace AiEnabled.API
     /// <param name="grid">The grid the position is on</param>
     /// <param name="startPosition">The world position you want to get a nearby node for</param>
     /// <param name="upVec">If supplied, the returned node will be confined to nodes on the same level as the start position</param>
-    /// <param name="validWorldPosition">The returned world position</param>
-    /// <returns>true if able to find a valid node nearby, otherwise false</returns>
-    public bool GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3D startPosition, Vector3D? upVec, out Vector3D validWorldPosition, bool allowAirNodes = true)
+    /// <returns>the valid world position if found, otherwise null</returns>
+    public Vector3D? GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3D startPosition, Vector3D? upVec, bool allowAirNodes = true)
     {
-      validWorldPosition = Vector3D.Zero;
-
       if (AiSession.Instance?.Registered != true)
-        return false;
+        return null;
 
       if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
-        return false;
+        return null;
 
       CubeGridMap gridMap;
       if (!AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) || gridMap?.MainGrid == null || !gridMap.Ready)
-        return false;
+        return null;
 
       var localStart = gridMap.WorldToLocal(startPosition);
       bool isSlim = gridMap.DoesBlockExist(localStart); // gridMap.MainGrid.GetCubeBlock(startPosition) != null;
 
       BotBase bot;
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot))
-        return false;
+        return null;
 
       Vector3I node;
-      if (gridMap.GetClosestValidNode(bot, localStart, out node, upVec, isSlim, currentIsDenied: true, allowAirNodes: allowAirNodes))
+      if (gridMap.GetClosestValidNode(bot, localStart, out node, upVec, isSlim, currentIsDenied: false, allowAirNodes: allowAirNodes))
       {
-        validWorldPosition = gridMap.LocalToWorld(node);
-        return true;
+        var validWorldPosition = gridMap.LocalToWorld(node);
+        return validWorldPosition;
       }
 
-      return false;
+      return null;
     }
 
     /// <summary>
@@ -1286,6 +1275,8 @@ namespace AiEnabled.API
           newBot.CanUseSpaceNodes = bot.CanUseSpaceNodes;
         }
 
+        newBot.AllowIdleMovement = bot.AllowIdleMovement;
+        newBot.CanTransitionMaps = bot.CanTransitionMaps;
         newBot.ConfineToMap = bot.ConfineToMap;
         newBot.CanUseWaterNodes = bot.CanUseWaterNodes;
         newBot.WaterNodesOnly = bot.WaterNodesOnly;
@@ -1353,14 +1344,20 @@ namespace AiEnabled.API
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     /// <param name="spawnData">The serialized <see cref="RemoteBotAPI.SpawnData"/> object</param>
     /// <returns>true if the change is successful, otherwise false</returns>
-    public bool SwitchBotRole(long botEntityId, RemoteBotAPI.SpawnData spawnData)
+    public bool SwitchBotRole(long botEntityId, byte[] data)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered || spawnData == null)
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot, newBot;
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.Character == null || bot.IsDead)
         return false;
+
+      var spawnData = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(data);
+      if (spawnData == null)
+      {
+        return false;
+      }
 
       var newRole = spawnData.BotRole;
       var character = bot.Character;
@@ -1458,6 +1455,8 @@ namespace AiEnabled.API
           newBot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
         }
 
+        newBot.AllowIdleMovement = spawnData.AllowIdleMovement;
+        newBot.CanTransitionMaps = spawnData.AllowMapTransitions;
         newBot.ConfineToMap = spawnData.ConfineToMap;
         newBot.CanDamageGrid = spawnData.CanDamageGrids;
         newBot.CanUseWaterNodes = spawnData.CanUseWaterNodes;

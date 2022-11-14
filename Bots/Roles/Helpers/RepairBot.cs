@@ -98,7 +98,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in RepairBot.CleanUp: {ex.ToString()}", MessageType.ERROR);
+        AiSession.Instance.Logger.Log($"Exception in RepairBot.CleanUp: {ex}", MessageType.ERROR);
       }
       finally
       {
@@ -362,14 +362,15 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (invRatioOK)
           {
             var floatingObj = Target.Entity as MyFloatingObject;
-            if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null)
+            if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null
+              && !GridBase.PointInsideVoxel(floatingObj.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
             {
               return;
             }
 
             var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
             _threadOnlyEntList.Clear();
-            MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList);
+            MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _threadOnlyEntList);
 
             _threadOnlyEntList.ShellSort(botPosition, true);
 
@@ -389,7 +390,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 continue;
 
               var floater = ent as MyFloatingObject;
-              if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null)
+              if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floatingObj.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
                 continue;
 
               if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center))
@@ -1096,8 +1097,8 @@ namespace AiEnabled.Bots.Roles.Helpers
         UpdateRelativeDampening();
       }
 
-      if (!UseAPITargets && !Target.HasTarget)
-        SetTarget();
+      //if (!UseAPITargets && !Target.HasTarget)
+      //  SetTarget();
 
       return true;
     }

@@ -1020,6 +1020,8 @@ namespace AiEnabled.Bots
             bot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
           }
 
+          bot.AllowIdleMovement = spawnData.AllowIdleMovement;
+          bot.CanTransitionMaps = spawnData.AllowMapTransitions;
           bot.ConfineToMap = spawnData.ConfineToMap;
           bot.CanDamageGrid = spawnData.CanDamageGrids;
           bot.CanUseWaterNodes = spawnData.CanUseWaterNodes;
@@ -1106,7 +1108,7 @@ namespace AiEnabled.Bots
       }
     }
 
-    public static IMyCharacter SpawnBotFromAPI(string subtype, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, bool adminSpawn = false)
+    public static IMyCharacter SpawnBotFromAPI(string subtype, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, bool adminSpawn = false, long? factionId = null)
     {
       try
       {
@@ -1164,7 +1166,7 @@ namespace AiEnabled.Bots
         AiSession.Instance.VoxelMapListStack.Push(vList);
 
         if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
-          return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color, adminSpawned: adminSpawn);
+          return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color, adminSpawned: adminSpawn, factionId: factionId);
 
         return SpawnNPC(subtype, displayName, positionAndOrientation, grid, role, null, color, owner);
       }
@@ -1175,14 +1177,17 @@ namespace AiEnabled.Bots
       }
     }
 
-    public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null, bool adminSpawned = false)
+    public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null, bool adminSpawned = false, long? factionId = null)
     {
-      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color);
+      bool needsName = string.IsNullOrWhiteSpace(displayName);
+      if (adminSpawned && !needsName)
+        displayName = GetUniqueNameUser(displayName);
+
+      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color, factionToPairWith: factionId);
       var bot = tuple.Item1;
       if (bot != null)
       {
         var gridMap = AiSession.Instance.GetNewGraph(grid, bot.WorldAABB.Center, bot.WorldMatrix);
-        bool needsName = string.IsNullOrWhiteSpace(displayName);
 
         if (grid?.Physics != null && !grid.IsStatic)
         {
@@ -1525,7 +1530,7 @@ namespace AiEnabled.Bots
       return bot;
     }
 
-    public static MyTuple<IMyCharacter, AiSession.ControlInfo> CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null)
+    public static MyTuple<IMyCharacter, AiSession.ControlInfo> CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null, long? factionToPairWith = null)
     {
       try
       {
@@ -1548,13 +1553,22 @@ namespace AiEnabled.Bots
         IMyFaction ownerFaction = null;
         IMyFaction botFaction = null;
 
-        if (ownerId.HasValue)
+        if (ownerId.HasValue || factionToPairWith.HasValue)
         {
-          ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ownerId.Value);
+          if (factionToPairWith.HasValue)
+          {
+            ownerFaction = MyAPIGateway.Session.Factions.TryGetFactionById(factionToPairWith.Value);
+            ownerId = ownerFaction.FounderId;
+          }
+
           if (ownerFaction == null)
           {
-            AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: The bot owner is not in a faction!", MessageType.WARNING);
-            return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
+            ownerFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(ownerId.Value);
+            if (ownerFaction == null)
+            {
+              AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: The bot owner is not in a faction!", MessageType.WARNING);
+              return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
+            }
           }
 
           botFaction = AiSession.Instance.GetBotFactionAssignment(ownerFaction);
@@ -1803,6 +1817,26 @@ namespace AiEnabled.Bots
       {
         random++;
         displayName = $"{name}{random}";
+      }
+
+      return displayName;
+    }
+
+    public static string GetUniqueNameUser(string name)
+    {
+      if (string.IsNullOrWhiteSpace(name))
+        name = "AiEnabledBot";
+
+      if (!MyEntities.EntityExists(name))
+        return name;
+
+      int num = 1;
+      var displayName = $"{name}-{num}";
+
+      while (MyEntities.EntityExists(displayName))
+      {
+        num++;
+        displayName = $"{name}-{num}";
       }
 
       return displayName;
