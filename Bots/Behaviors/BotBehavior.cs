@@ -173,7 +173,10 @@ namespace AiEnabled.Bots.Behaviors
         var weapon = character.EquippedTool as IMyGunObject<MyDeviceBase>;
         var controlEnt = character as Sandbox.Game.Entities.IMyControllableEntity;
         if (weapon != null)
+        {
+          weapon.OnControlReleased();
           controlEnt.SwitchToWeapon(null);
+        }
 
         character.TriggerCharacterAnimationEvent("emote", true);
         character.TriggerCharacterAnimationEvent(action, true);

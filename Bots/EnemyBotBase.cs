@@ -18,7 +18,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using VRage;
 using VRage.Game;
+using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.Game.ModAPI.Interfaces;
 using VRage.ModAPI;
@@ -87,34 +89,43 @@ namespace AiEnabled.Bots
         var gun = Character?.EquippedTool as IMyHandheldGunObject<MyGunBase>;
         if (gun != null)
         {
-          var ammoCount = gun.CurrentMagazineAmount;
+          var ammoCount = _wcWeaponMagsLeft ?? gun.CurrentMagazineAmount;
           if (ammoCount <= 0 && !MyAPIGateway.Session.CreativeMode && !MyAPIGateway.Session.SessionSettings.InfiniteAmmo)
           {
             var inventory = Character.GetInventory();
-            string ammoSubtype;
+            string ammoSubtype = null;
 
             var weaponDefinition = ToolDefinition.PhysicalItemId;
-            var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(weaponDefinition) as MyWeaponItemDefinition;
-            if (weaponItemDef != null)
+
+            List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList;
+            if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(weaponDefinition, out magList))
             {
-              var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
-              ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
-            }
-            else if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
-            {
-              ammoSubtype = "NATO_5p56x45mm";
-            }
-            else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
-            {
-              ammoSubtype = "Missile200mm";
-            }
-            else if (weaponDefinition.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-              ammoSubtype = weaponDefinition.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+              ammoSubtype = magList[0].Item2.Item1.SubtypeName;
             }
             else
             {
-              ammoSubtype = "ElitePistolMagazine";
+              var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(weaponDefinition) as MyWeaponItemDefinition;
+              if (weaponItemDef != null)
+              {
+                var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
+                ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
+              }
+              else if (ToolDefinition.WeaponType == MyItemWeaponType.Rifle)
+              {
+                ammoSubtype = "NATO_5p56x45mm";
+              }
+              else if (ToolDefinition.WeaponType == MyItemWeaponType.RocketLauncher)
+              {
+                ammoSubtype = "Missile200mm";
+              }
+              else if (weaponDefinition.SubtypeName.IndexOf("auto", StringComparison.OrdinalIgnoreCase) >= 0)
+              {
+                ammoSubtype = weaponDefinition.SubtypeName.StartsWith("Full") ? "FullAutoPistolMagazine" : "SemiAutoPistolMagazine";
+              }
+              else
+              {
+                ammoSubtype = "ElitePistolMagazine";
+              }
             }
 
             var ammoDefinition = new MyDefinitionId(typeof(MyObjectBuilder_AmmoMagazine), ammoSubtype);
@@ -568,12 +579,39 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
-      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
-        return false;
-
       var targetEnt = Target.Entity as IMyEntity;
       if (targetEnt == null)
         return false;
+
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
+        return false;
+
+      var physGunObj = ToolDefinition.PhysicalItemId;
+
+      List<VRage.MyTuple<int, VRage.MyTuple<MyDefinitionId, string, string, bool>>> magList;
+      if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(physGunObj, out magList))
+      {
+        if (!_wcShotFired && !_wcWeaponReloading)
+        {
+          object tgt;
+          if (magList[0].Item2.Item4)
+          {
+            tgt = targetEnt;
+            AiSession.Instance.WcAPI.SetAiFocus((MyEntity)Character, (MyEntity)targetEnt);
+          }
+          else
+          {
+            tgt = (Object)targetEnt.WorldAABB.Center;
+          }
+
+          if (AiSession.Instance.WcAPI.ShootRequest((MyEntity)Character.EquippedTool, tgt))
+          {
+            _wcShotFired = true;
+          }
+        }
+
+        return _wcShotFired;
+      }
 
       if (gun.NeedsReload)
       {
@@ -614,7 +652,7 @@ namespace AiEnabled.Bots
           }
           else
           {
-            ammoCount = gun.GunBase.CurrentAmmo;
+            ammoCount = _wcWeaponAmmoCount ?? gun.GunBase.CurrentAmmo;
           }
 
           bool leadTargets = ShouldLeadTargets;

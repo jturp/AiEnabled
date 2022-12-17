@@ -596,10 +596,15 @@ namespace AiEnabled.Bots
         {
           var center = cube.WorldAABB.Center;
 
-          if (cube is IMyAirtightHangarDoor)
-            center += cube.WorldMatrix.Down * cube.CubeGrid.GridSize;
-          else if (cube.BlockDefinition.SubtypeName == "LargeBlockGate")
-            center += cube.WorldMatrix.Down * cube.CubeGrid.GridSize * 0.5;
+          if (cube is IMyDoor)
+          {
+            if (cube is IMyAirtightHangarDoor)
+              center += cube.WorldMatrix.Down * cube.CubeGrid.GridSize;
+            else if (cube.BlockDefinition.SubtypeName == "LargeBlockGate")
+              center += cube.WorldMatrix.Down * cube.CubeGrid.GridSize * 0.5;
+            else if (cube.BlockDefinition.SubtypeName == "LargeBlockSlideDoor")
+              center += cube.WorldMatrix.Forward * cube.CubeGrid.GridSize * 0.5;
+          }
 
           gotoPosition = center;
           actualPosition = center;

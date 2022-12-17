@@ -13,6 +13,7 @@ using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
 using VRage;
@@ -70,15 +71,14 @@ namespace AiEnabled.Networking
           var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
           if (AiSession.Instance.IsBotAllowedToUse(bot, _itemDefinition.SubtypeId, out reason) && controlEnt.CanSwitchToWeapon(_itemDefinition))
           {
-            if (!(bot.Character?.Parent is IMyCockpit))
-              controlEnt.SwitchToWeapon(_itemDefinition);
-
             bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(_itemDefinition);
-            bot.HasWeaponOrTool = true;
-            bot.SetShootInterval();
+            var hasWeapon = bot.ToolDefinition != null;
 
-            var rBot = bot as RepairBot;
-            rBot?.UpdateWeaponInfo();
+            bot.HasWeaponOrTool = hasWeapon;
+            if (hasWeapon && !(bot.Character?.Parent is IMyCockpit))
+            {
+              bot.EquipWeapon();
+            }
           }
           else
           {

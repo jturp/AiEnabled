@@ -360,6 +360,15 @@ namespace AiEnabled.API
     public bool SetBotPatrol(long botEntityId, List<Vector3D> waypoints) => _setBotPatrol?.Invoke(botEntityId, waypoints) ?? false;
 
     /// <summary>
+    /// Assigns a patrol route to the Bot. In patrol mode, the bot will attack any enemies that come near its route, but will not hunt outside of its current map.
+    /// You must call <see cref="ResetBotTargeting(long)"/> for it to resume normal functions
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="waypoints">A list of grid-local coordinates for the bot to patrol</param>
+    /// <returns>true if the route is assigned successfully, otherwise false</returns>
+    public bool SetBotPatrol(long botEntityId, List<Vector3I> waypoints) => _setBotPatrolLocal?.Invoke(botEntityId, waypoints) ?? false;
+
+    /// <summary>
     /// Clears the Bot's current target and re-enables autonomous targeting
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
@@ -425,7 +434,7 @@ namespace AiEnabled.API
     /// <param name="allowAirNodes">Whether or not to consider air nodes for inside-ness.</param>
     /// <param name="onlyAirtightNodes">Whether or not to only accept airtight nodes.</param>
     /// <param name="callBack">The Action to be invoked when the thread finishes</param>
-    public void GetInteriorNodes(MyCubeGrid grid, List<Vector3I> nodeList, int enclosureRating = 5, bool allowAirNodes = true, bool onlyAirtightNodes = false, Action callBack = null) => _getInteriorNodes?.Invoke(grid, nodeList, enclosureRating, allowAirNodes, onlyAirtightNodes, callBack);
+    public void GetInteriorNodes(MyCubeGrid grid, List<Vector3I> nodeList, int enclosureRating = 5, bool allowAirNodes = true, bool onlyAirtightNodes = false, Action<IMyCubeGrid, List<Vector3I>> callBack = null) => _getInteriorNodes?.Invoke(grid, nodeList, enclosureRating, allowAirNodes, onlyAirtightNodes, callBack);
 
     /// <summary>
     /// Attempts to get the closest valid node to a given grid position
@@ -570,6 +579,22 @@ namespace AiEnabled.API
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     public void ThrowGrenade(long botEntityId) => _throwGrenade?.Invoke(botEntityId);
 
+    /// <summary>
+    /// Attempts to transform world to local using the proper grid for a given Grid Map. Check null!
+    /// </summary>
+    /// <param name="gridEntityId">the EntityId for any grid in a Grid Map</param>
+    /// <param name="worldPosition">the World Position to transform</param>
+    /// <returns>the local position if everything is valid, otherwise null</returns>
+    public Vector3I? GetLocalPositionForGrid(long gridEntityId, Vector3D worldPosition) => _getLocalPositionForGrid?.Invoke(gridEntityId, worldPosition);
+
+    /// <summary>
+    /// Attempts to retrieve the main grid used for position transformations for a given grid map. Check null!
+    /// </summary>
+    /// <param name="gridEntityId">the EntityId for any grid in a Grid Map</param>
+    /// <returns>the IMyCubeGrid to use for a map's position transformations, if a map exists, otherwise null</returns>
+    public IMyCubeGrid GetMainMapGrid(long gridEntityId) => _getMainGrid?.Invoke(gridEntityId);
+
+
     /////////////////////////////////////////////
     //API Methods End
     /////////////////////////////////////////////
@@ -596,6 +621,7 @@ namespace AiEnabled.API
     private Action<long, string> _speak;
     private Func<long, bool> _isBot;
     private Func<long, List<Vector3D>, bool> _setBotPatrol;
+    private Func<long, List<Vector3I>, bool> _setBotPatrolLocal;
     private Func<long, long, MyRelationsBetweenPlayerAndBlock> _getRelationshipBetween;
     private Func<string, string, bool> _canBotUseTool;
     private Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>> _spawnBotQueued;
@@ -608,10 +634,12 @@ namespace AiEnabled.API
     private Func<long, long> _getBotOwnerId;
     private Func<long, string, bool> _switchBotWeapon;
     private Action<Dictionary<long, IMyCharacter>, bool, bool, bool> _getBots;
-    private Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action> _getInteriorNodes;
+    private Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action<IMyCubeGrid, List<Vector3I>>> _getInteriorNodes;
     private Func<IMyCubeGrid, bool> _isGridValidForPathfinding;
     private Action<long, Action<List<IMyCharacter>>> _reSyncBotCharacters;
     private Action<long> _throwGrenade;
+    private Func<long, Vector3D, Vector3I?> _getLocalPositionForGrid;
+    private Func<long, IMyCubeGrid> _getMainGrid;
 
     private void ReceiveModMessage(object payload)
     {
@@ -656,16 +684,19 @@ namespace AiEnabled.API
         _spawnBotQueued = dict["SpawnBotQueued"] as Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>;
         _spawnBotCustomQueued = dict["SpawnBotCustomQueued"] as Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>;
         _setBotPatrol = dict["SetBotPatrol"] as Func<long, List<Vector3D>, bool>;
+        _setBotPatrolLocal = dict["SetBotPatrolLocal"] as Func<long, List<Vector3I>, bool>;
         _canBotUseTool = dict["CanRoleUseTool"] as Func<string, string, bool>;
         _switchBotRole = dict["SwitchBotRole"] as Func<long, byte[], bool>;
         _switchBotRoleSlim = dict["SwitchBotRoleSlim"] as Func<long, string, List<string>, bool>;
         _switchBotWeapon = dict["SwitchBotWeapon"] as Func<long, string, bool>;
         _getBotOwnerId = dict["GetBotOwnerId"] as Func<long, long>;
         _getBots = dict["GetBots"] as Action<Dictionary<long, IMyCharacter>, bool, bool, bool>;
-        _getInteriorNodes = dict["GetInteriorNodes"] as Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action>;
+        _getInteriorNodes = dict["GetInteriorNodes"] as Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action<IMyCubeGrid, List<Vector3I>>>;
         _isGridValidForPathfinding = dict["IsValidForPathfinding"] as Func<IMyCubeGrid, bool>;
         _reSyncBotCharacters = dict["ReSyncBotCharacters"] as Action<long, Action<List<IMyCharacter>>>;
         _throwGrenade = dict["ThrowGrenade"] as Action<long>;
+        _getLocalPositionForGrid = dict["GetLocalPositionForGrid"] as Func<long, Vector3D, Vector3I?>;
+        _getMainGrid = dict["GetMainMapGrid"] as Func<long, IMyCubeGrid>;
 
       }
       catch
@@ -677,9 +708,6 @@ namespace AiEnabled.API
       }
 
       Valid = true;
-
     }
-
   }
-
 }

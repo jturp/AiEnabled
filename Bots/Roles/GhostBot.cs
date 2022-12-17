@@ -14,6 +14,7 @@ using AiEnabled.Utilities;
 using Sandbox.Definitions;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
 using VRage.Game;
@@ -114,6 +115,10 @@ namespace AiEnabled.Bots.Roles
           if (ch?.EquippedTool != null && resistCheck > 92)
           {
             msg = "Your tool falls from your frostbitten fingers!";
+
+            var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+            gun?.OnControlReleased();
+
             var controlEnt = ch as Sandbox.Game.Entities.IMyControllableEntity;
             controlEnt?.SwitchToWeapon(null);
           }

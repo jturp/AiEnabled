@@ -390,7 +390,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 continue;
 
               var floater = ent as MyFloatingObject;
-              if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floatingObj.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
+              if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floater.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
                 continue;
 
               if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center))

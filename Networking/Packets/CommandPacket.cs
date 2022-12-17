@@ -193,7 +193,7 @@ namespace AiEnabled.Networking
             }
           }
 
-          if (cube.CubeGrid.GridSize < 1)
+          if (cube?.CubeGrid != null && cube.CubeGrid.GridSize < 1)
           {
             var cpit = cube as IMyCockpit;
             if (cpit != null)

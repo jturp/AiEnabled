@@ -22,6 +22,7 @@ using Sandbox.Game;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
 using SpaceEngineers.Game.ModAPI;
@@ -487,7 +488,7 @@ namespace AiEnabled.Bots
       var apiData = workData as ApiWorkData;
       if (apiData != null)
       {
-        apiData.CallBack?.Invoke();
+        apiData.CallBack?.Invoke(apiData.Grid, apiData.NodeList);
         AiSession.Instance?.ApiWorkDataStack?.Push(apiData);
       }
     }
@@ -619,6 +620,9 @@ namespace AiEnabled.Bots
 
           if (bot.HasWeaponOrTool)
           {
+            var gun = bot.Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+            gun?.OnControlReleased();
+
             var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
             controlEnt?.SwitchToWeapon(null);
           }
@@ -1179,11 +1183,14 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null, bool adminSpawned = false, long? factionId = null)
     {
+      if (!adminSpawned && !string.IsNullOrEmpty(role) && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant()))
+        return null;
+
       bool needsName = string.IsNullOrWhiteSpace(displayName);
       if (adminSpawned && !needsName)
         displayName = GetUniqueNameUser(displayName);
 
-      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color, factionToPairWith: factionId);
+      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, ownerId, color, factionToPairWith: factionId, adminSpawn: adminSpawned);
       var bot = tuple.Item1;
       if (bot != null)
       {
@@ -1223,6 +1230,12 @@ namespace AiEnabled.Bots
         }
         else
           botRole = ParseFriendlyRole(role);
+
+        if (!adminSpawned && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(botRole.ToString()))
+        {
+          bot.Close();
+          return null;
+        }
 
         BotBase robot;
         switch (botRole)
@@ -1297,9 +1310,12 @@ namespace AiEnabled.Bots
       return bot;
     }
 
-    public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, long? ownerId = null)
+    public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, long? ownerId = null, bool adminSpawned = false)
     {
-      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, null, color);
+      if (!adminSpawned && !string.IsNullOrEmpty(role) && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant()))
+        return null;
+
+      var tuple = CreateBotObject(subType, displayName, positionAndOrientation, null, color, adminSpawn: adminSpawned);
       var bot = tuple.Item1;
       if (bot != null)
       {
@@ -1472,6 +1488,12 @@ namespace AiEnabled.Bots
           else
             botRole = ParseEnemyBotRole(role);
 
+          if (!adminSpawned && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(botRole.ToString()))
+          {
+            bot.Close();
+            return null;
+          }
+
           switch (botRole)
           {
             case BotRoleEnemy.ZOMBIE:
@@ -1530,11 +1552,14 @@ namespace AiEnabled.Bots
       return bot;
     }
 
-    public static MyTuple<IMyCharacter, AiSession.ControlInfo> CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null, long? factionToPairWith = null)
+    public static MyTuple<IMyCharacter, AiSession.ControlInfo> CreateBotObject(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, long? ownerId = null, Color? botColor = null, long? factionToPairWith = null, bool adminSpawn = false)
     {
       try
       {
-        if (AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn)
+        if (string.IsNullOrEmpty(subType))
+          subType = "Default_Astronaut";
+
+        if (AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn || (!adminSpawn && !AiSession.Instance.ModSaveData.AllowedBotSubtypes.Contains(subType)))
           return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
 
         var info = AiSession.Instance.GetBotIdentity();

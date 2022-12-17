@@ -25,6 +25,7 @@ namespace AiEnabled.ConfigData
     public float RepairBotSearchRadius = 0f;
     public SerializableVector3? RepairBotIgnoreColorHSV = null;
     public SerializableVector3? RepairBotGrindColorHSV = null;
+    public SerializableVector3I HelperGpsColorRGB = new Vector3I(117, 201, 241);
     public List<SerializableKeybind> Keybinds = new List<SerializableKeybind>();
     public List<SerializableRoute> PatrolRoutes = new List<SerializableRoute>();
   }

@@ -80,8 +80,8 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.3";
-    const int MIN_SPAWN_COUNT = 5;
+    public const string VERSION = "v1.4";
+    const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
 
@@ -140,7 +140,7 @@ namespace AiEnabled
     public HudAPIv2 HudAPI;
     public DefenseShieldsAPI ShieldAPI = new DefenseShieldsAPI();
     public WcApi WcAPI = new WcApi();
-    LocalBotAPI _localBotAPI;
+    public LocalBotAPI LocalBotAPI;
 
     IMyHudNotification _hudMsg;
     Vector3D _starterPosition;
@@ -558,6 +558,7 @@ namespace AiEnabled
       SubtypeToSkeletonDictionary?.Clear();
       PlayerToRepairRadius?.Clear();
       EconomyGrids?.Clear();
+      ColorDictionary?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -589,7 +590,8 @@ namespace AiEnabled
       _botAnalyzers?.Clear();
       _healthBars?.Clear();
       _prefabsToCheck?.Clear();
-      
+      _commandInfo?.Clear();
+
       Scheduler = null;
       AllCoreWeaponDefinitions = null;
       RepairWorkStack = null;
@@ -699,6 +701,8 @@ namespace AiEnabled
       SubtypeToSkeletonDictionary = null;
       PlayerToRepairRadius = null;
       EconomyGrids = null;
+      LocalBotAPI = null;
+      ColorDictionary = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -707,7 +711,6 @@ namespace AiEnabled
       _gpsRemovals = null;
       _localGpsBotIds = null;
       _graphRemovals = null;
-      _localBotAPI = null;
       _validSlopedBlockDefs = null;
       _pathCollections = null;
       _tempPlayers = null;
@@ -726,7 +729,6 @@ namespace AiEnabled
       _botsToClose = null;
       _botEntityIds = null;
       _useObjList = null;
-      _localBotAPI = null;
       _keyPresses = null;
       _iconRemovals = null;
       _hBarRemovals = null;
@@ -738,6 +740,7 @@ namespace AiEnabled
       _voxelMapResourceLock = null;
       _gridMapResourceLock = null;
       _prefabsToCheck = null;
+      _commandInfo = null;
 
       if (Logger != null)
       {
@@ -891,7 +894,7 @@ namespace AiEnabled
 
         if (IsServer)
         {
-          _localBotAPI = new LocalBotAPI();
+          LocalBotAPI = new LocalBotAPI();
 
           if (sessionOK)
           {
@@ -1132,6 +1135,30 @@ namespace AiEnabled
               "Default_Astronaut",
               "Default_Astronaut_Female"
             };
+          }
+
+          if (ModSaveData.AllowedBotSubtypes == null || ModSaveData.AllowedBotSubtypes.Count == 0)
+          {
+            ModSaveData.AllowedBotSubtypes = new List<string>();
+
+            foreach (var charDef in MyDefinitionManager.Static.Characters)
+            {
+              if (charDef != null)
+                ModSaveData.AllowedBotSubtypes.Add(charDef.Name ?? charDef.Id.SubtypeName);
+            }
+          }
+
+          if (ModSaveData.AllowedBotRoles == null || ModSaveData.AllowedBotRoles.Count == 0)
+          {
+            ModSaveData.AllowedBotRoles = new List<string>();
+
+            var friends = Enum.GetNames(typeof(BotFactory.BotRoleFriendly));
+            var enemies = Enum.GetNames(typeof(BotFactory.BotRoleEnemy));
+            var neutrals = Enum.GetNames(typeof(BotFactory.BotRoleNeutral));
+
+            ModSaveData.AllowedBotRoles.AddRange(friends);
+            ModSaveData.AllowedBotRoles.AddRange(enemies);
+            ModSaveData.AllowedBotRoles.AddRange(neutrals);
           }
 
           var factoryDef = new MyDefinitionId(typeof(MyObjectBuilder_ConveyorSorter), "RoboFactory");
@@ -1641,7 +1668,16 @@ namespace AiEnabled
     {
       WcAPILoaded = WcAPI.IsReady;
       WcAPI.GetAllCoreWeapons(AllCoreWeaponDefinitions);
+      WcAPI.GetNpcSafeWeapons(NpcSafeCoreWeaponDefinitions);
+
       Logger.Log($"WeaponCore Mod found. API loaded successfully = {WcAPILoaded}");
+
+      WcAPI.GetAllNpcSafeWeaponMagazines(NpcSafeCoreWeaponMagazines);
+      if (NpcSafeCoreWeaponMagazines.Count == 0)
+      {
+        Logger.Log($" -> No NPC-Safe WeaponCore Weapon Magazines found.");
+        WcAPI.GetAllWeaponMagazines(NpcSafeCoreWeaponMagazines);
+      }
     }
 
     bool _needsUpdate, _needsAdminUpdate, _needsAdminSettingSync;
@@ -3262,7 +3298,11 @@ namespace AiEnabled
         }
 
         var cmd = _cli.Argument(1);
-        if (cmd.Equals("fix", StringComparison.OrdinalIgnoreCase))
+        if (cmd == "?" || cmd.Equals("help", StringComparison.OrdinalIgnoreCase))
+        {
+          ShowCommandHelp(player.PromoteLevel >= MyPromoteLevel.Admin);
+        }
+        else if (cmd.Equals("fix", StringComparison.OrdinalIgnoreCase))
         {
           List<BotBase> helpers;
           PlayerToHelperDict.TryGetValue(player.IdentityId, out helpers);
@@ -3318,36 +3358,64 @@ namespace AiEnabled
             }
           }
 
+          bool roleSwitch = _cli.Switch("r");
+          bool nameSwitch = _cli.Switch("n");
+          bool modelSwitch = _cli.Switch("m");
+          bool factionSwitch = _cli.Switch("f");
+          bool distSwitch = _cli.Switch("d");
+          bool multSwitch = _cli.Switch("x");
+          bool colorSwitch = _cli.Switch("c");
+
+          if (!roleSwitch && !nameSwitch && !modelSwitch && !factionSwitch && !distSwitch && !multSwitch && !colorSwitch && _cli.ArgumentCount > 2)
+          {
+            ShowMessage("This command now requires the use of switches. Use [botai ?] to view command info", "White", 10000);
+            return;
+          }
+
           string role = null;
           string subtype = null;
           string factionTag = null;
           string name = "";
           float distance = 25;
+          int numSpawns = 1;
           long? owner = null;
+          Color? clr = null;
           IMyFaction faction = null;
 
-          if (_cli.ArgumentCount > 2)
-            role = _cli.Argument(2);
+          if (roleSwitch)
+            role = _cli.Switch("r", 0);
           else
             role = "Combat";
 
-          if (_cli.ArgumentCount > 3)
-            subtype = _cli.Argument(3);
+          if (modelSwitch)
+            subtype = _cli.Switch("m", 0);
 
-          if (_cli.ArgumentCount > 4)
-            name = _cli.Argument(4);
+          if (nameSwitch)
+            name = _cli.Switch("n", 0);
 
-          if (_cli.ArgumentCount > 5)
+          if (factionSwitch)
           {
-            factionTag = _cli.Argument(5);
+            factionTag = _cli.Switch("f", 0);
             faction = MyAPIGateway.Session.Factions.TryGetFactionByTag(factionTag);
           }
 
-          if (_cli.ArgumentCount > 6)
+          if (distSwitch)
           {
-            if (!float.TryParse(_cli.Argument(6), out distance))
+            if (!float.TryParse(_cli.Switch("d", 0), out distance))
               distance = 25;
-          }  
+          }
+
+          if (multSwitch)
+          {
+            if (!int.TryParse(_cli.Switch("x", 0), out numSpawns))
+              numSpawns = 1;
+          }
+
+          if (colorSwitch)
+          {
+            var colorString = _cli.Switch("c", 0);
+            clr = colorString.ToColor();
+          }
 
           float num;
           var natGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(character.WorldAABB.Center, out num);
@@ -3391,7 +3459,7 @@ namespace AiEnabled
           }
 
           ShowMessage("Sending spawn message to server", "White");
-          var packet = new SpawnPacket(position, forward, up, subtype, role, owner, name, faction?.FactionId);
+          var packet = new SpawnPacket(position, forward, up, subtype, role, owner, name, faction?.FactionId, numSpawns, clr);
           Network.SendToServer(packet);
         }
       }
@@ -3400,6 +3468,52 @@ namespace AiEnabled
         ShowMessage($"Error during command execution: {ex.Message}");
         Logger.Log($"Exception during command execution: '{messageText}'\n {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
+    }
+
+    StringBuilder _commandInfo = new StringBuilder(1024);
+    void ShowCommandHelp(bool isAdmin)
+    {
+      _commandInfo.Clear()
+        .Append("NOTE: All commands are prefixed with 'botai'\n\n")
+        .Append("? / Help - show this help screen\n\n")
+        .Append("Fix - used to teleport any lost helpers to the player's location\n\n");
+
+      if (isAdmin)
+      {
+        _commandInfo.Append('~', 15)
+          .Append(" Admin-only commands ")
+          .Append('~', 15)
+          .Append('\n')
+          .Append("NOTE: Debug and Debug 2 are only available offline\n\n")
+          .Append("Debug - toggles debug mode on / off, which shows active bots' pathing\n")
+          .Append("          info on screen. This will toggle debug 2 off, but not on.\n\n")
+          .Append("Debug 2 - toggles tier 2 debug info, which includes map nodes near any\n")
+          .Append("          active bots (sim hit). This will toggle debug mode on, but not off.\n\n")
+          .Append("Spawn - spawns a bot using the following optional switches\n")
+          .Append("  -r = role\n")
+          .Append("  -m = model (see available models below)\n")
+          .Append("  -n = name\n")
+          .Append("  -f = faction tag\n")
+          .Append("  -d = distance (in front of player)\n")
+          .Append("  -c = color, can be name (Red), hex (#FF0000), or rgb (255,0,0)\n")
+          .Append("  -x = number of bots to spawn\n\n")
+          .Append("  EXAMPLE: botai spawn -r combat -m \"Female Astronaut 4\"\n                    -n Annie -f ADV -d 5 -c Aqua -x 2\n\n");
+
+        _commandInfo.Append($"Below are all valid bot models available for use in the Spawn command:\n");
+
+        foreach (var charDef in MyDefinitionManager.Static.Characters)
+        {
+          if (charDef == null)
+            continue;
+
+          _commandInfo.Append(' ', 2)
+            .Append(charDef.Name ?? charDef.Id.SubtypeName)
+            .Append('\n');
+        }
+      }
+
+      var text = _commandInfo.ToString();
+      MyAPIGateway.Utilities.ShowMissionScreen("AiEnabled Command Info", "", "", text, null, "Close");
     }
 
     bool _drawMenu, _capsLock;
@@ -3736,6 +3850,16 @@ namespace AiEnabled
         return allowed;
       }
 
+      if (bot is CrewBot)
+      {
+        bool allowed = handItemDef != null && (handItemDef.WeaponType == MyItemWeaponType.Pistol || handItemDef.WeaponType == MyItemWeaponType.Rifle);
+
+        if (!allowed)
+          reason = "The CrewBot can only use rifles and pistols.";
+
+        return allowed;
+      }
+
       if (bot is ScavengerBot)
       {
         reason = "The ScavengerBot cannot use tools";
@@ -3766,6 +3890,11 @@ namespace AiEnabled
         if (botRole.IndexOf("Nomad", StringComparison.OrdinalIgnoreCase) >= 0)
         {
           return handItemDef.WeaponType == MyItemWeaponType.Pistol;
+        }
+
+        if (botRole.IndexOf("Crew", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          return handItemDef.WeaponType == MyItemWeaponType.Pistol || handItemDef.WeaponType == MyItemWeaponType.Rifle;
         }
 
         if (botRole.IndexOf("Grinder", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -5288,7 +5417,8 @@ namespace AiEnabled
             name = $"{botFaction.Tag}.{name}";
             if (playerFaction.FactionId == botFaction.FactionId)
             {
-              gpsColor = new Color(117, 201, 241);
+              Vector3I vector = PlayerData.HelperGpsColorRGB;
+              gpsColor = new Color(vector.X, vector.Y, vector.Z); // new Color(117, 201, 241);
             }
             else
             {

@@ -37,6 +37,42 @@ namespace AiEnabled.Utilities
 {
   public static class Extensions
   {
+    public static Color? ToColor(this string colorString)
+    {
+      try
+      {
+        if (!string.IsNullOrEmpty(colorString))
+        {
+          colorString = colorString.ToUpperInvariant();
+
+          Color clr;
+          if (AiSession.Instance.ColorDictionary.TryGetValue(colorString, out clr))
+            return clr;
+
+          var split = colorString.Split(',');
+          if (split.Length == 3)
+          {
+            int r, g, b;
+            if (int.TryParse(split[0].Trim(), out r) && int.TryParse(split[1].Trim(), out g) && int.TryParse(split[2].Trim(), out b))
+              return new Color(r, g, b);
+          }
+
+          if (!colorString.StartsWith("#"))
+            colorString = "#" + colorString;
+
+          var html = ColorExtensions.FromHtml(colorString);
+          if (html.HasValue)
+            return html.Value;
+        }
+      }
+      catch
+      {
+        AiSession.Instance.Logger.Log($"{colorString} is not valid for a color", MessageType.WARNING);
+      }
+
+      return null;
+    }
+
     public static bool ContainsItem(this Base6Directions.Direction[] array, Base6Directions.Direction item)
     {
       for (int i = 0; i < array.Length; i++)

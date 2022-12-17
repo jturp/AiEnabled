@@ -1392,8 +1392,29 @@ namespace AiEnabled.Ai.Support
           //if (!allowed)
           //  continue;
         }
-        else if (BlockedDoors.ContainsKey(point) || TempBlockedNodes.ContainsKey(point))
+        else if (TempBlockedNodes.ContainsKey(point))
+        {
           continue;
+        }
+
+        IMyDoor door;
+        if (BlockedDoors.TryGetValue(point, out door) && door != null)
+        {
+          if (bot == null || bot.Target.Entity == null)
+            continue;
+
+          var ch = bot.Target.Entity as IMyCharacter;
+          if (ch != null && ch == bot.Owner?.Character)
+            continue;
+
+          var grid = door.CubeGrid;
+          var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+          var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+
+          var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
+          if (rel != MyRelationsBetweenPlayers.Enemies)
+            continue;
+        }
 
         if (bot != null && !isWaterNode && bot.WaterNodesOnly)
           continue;
@@ -1539,9 +1560,23 @@ namespace AiEnabled.Ai.Support
 
     public override bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, bool checkRepairInfo = false)
     {
-      if (checkDoors && BlockedDoors.ContainsKey(nextNode))
+      IMyDoor door;
+      if (checkDoors && BlockedDoors.TryGetValue(nextNode, out door) && door != null)
       {
-        return false;
+        if (bot == null || bot.Target.Entity == null)
+          return false;
+
+        var ch = bot.Target.Entity as IMyCharacter;
+        if (ch != null && ch == bot.Owner?.Character)
+          return false;
+
+        var grid = door.CubeGrid;
+        var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+        var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+
+        var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
+        if (rel != MyRelationsBetweenPlayers.Enemies)
+          return false;
       }
 
       if (TempBlockedNodes.ContainsKey(nextNode) || bot?._pathCollection?.Obstacles.ContainsKey(nextNode) == true)
@@ -3433,7 +3468,7 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    void InteriorNodeCallback()
+    void InteriorNodeCallback(IMyCubeGrid grid, List<Vector3I> nodeList)
     {
       //AiSession.Instance.Logger.Log($"InteriorNodeCallback");
       InteriorNodesReady = true;
@@ -8173,12 +8208,34 @@ namespace AiEnabled.Ai.Support
     public override bool IsPositionAvailable(Vector3D position, BotBase bot)
     {
       var node = WorldToLocal(position);
-      return base.IsPositionAvailable(node, bot) && !BlockedDoors.ContainsKey(node);
+      return IsPositionAvailable(node, bot);
     }
 
     public override bool IsPositionAvailable(Vector3I node, BotBase bot)
     {
-      return base.IsPositionAvailable(node, bot) && !BlockedDoors.ContainsKey(node);
+      if (base.IsPositionAvailable(node, bot))
+      {
+        IMyDoor door;
+        if (BlockedDoors.TryGetValue(node, out door) && door != null)
+        {
+          if (bot == null || bot.Target.Entity == null)
+            return false;
+
+          var ch = bot.Target.Entity as IMyCharacter;
+          if (ch != null && ch == bot.Owner?.Character)
+            return false;
+
+          var grid = door.CubeGrid;
+          var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+          var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+
+          var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
+          if (rel != MyRelationsBetweenPlayers.Enemies)
+            return false;
+        }
+      }
+
+      return false;
     }
 
     public void RecalculateOBB()
@@ -8352,7 +8409,26 @@ namespace AiEnabled.Ai.Support
       if (!includeTemp)
         return result;
 
-      return result || ObstacleNodes.ContainsKey(position) || TempBlockedNodes.ContainsKey(position) || BlockedDoors.ContainsKey(position);
+      IMyDoor door;
+      if (BlockedDoors.TryGetValue(position, out door) && door != null)
+      {
+        if (bot == null || bot.Target.Entity == null)
+          return false;
+
+        var ch = bot.Target.Entity as IMyCharacter;
+        if (ch != null && ch == bot.Owner?.Character)
+          return false;
+
+        var grid = door.CubeGrid;
+        var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+        var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+
+        var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
+        if (rel != MyRelationsBetweenPlayers.Enemies)
+          return false;
+      }
+
+      return result || ObstacleNodes.ContainsKey(position) || TempBlockedNodes.ContainsKey(position);
     }
 
     public override Node GetValueOrDefault(Vector3I position, Node defaultValue)

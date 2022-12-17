@@ -4,6 +4,8 @@ using AiEnabled.Utilities;
 
 using Sandbox.Definitions;
 using Sandbox.Game;
+using Sandbox.Game.Entities;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
 using System;
@@ -43,8 +45,14 @@ namespace AiEnabled.Bots.Roles
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolType));
 
       if (ToolDefinition != null)
+      {
         AiSession.Instance.Scheduler.Schedule(AddWeapon);
-        //MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+
+        if (AiSession.Instance.WcAPILoaded)
+        {
+          AiSession.Instance.WcAPI.ShootRequestHandler(Character.EntityId, false, WCShootCallback);
+        }
+      }
     }
 
     internal override bool Update()
@@ -70,6 +78,9 @@ namespace AiEnabled.Bots.Roles
         {
           var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
           controlEnt.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+
+          var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+          gun?.OnControlAcquired(Character);
         }
       }
 

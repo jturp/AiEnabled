@@ -825,6 +825,7 @@ namespace AiEnabled.Bots
     internal Vector3D _lastEnd;
     internal Vector3I _lastCurrent, _lastPrevious, _lastEndLocal;
     internal short _patrolIndex = -1, _patrolWaitTime = 1;
+    internal int? _wcWeaponAmmoCount, _wcWeaponMagsLeft;
     internal int _stuckCounter, _stuckTimer, _stuckTimerReset, _teleportCounter, _floaterCounter;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter, _grenadeCounter, _grenadeChanceOffset = 25;
     internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
@@ -844,6 +845,7 @@ namespace AiEnabled.Bots
     internal string _animation_helmetClose;
     internal MyObjectBuilder_ConsumableItem _energyOB;
     internal BotBehavior Behavior;
+    internal bool _wcShotFired, _wcWeaponReloading;
 
     readonly List<IHitInfo> _hitList;
     Task _graphTask;
@@ -926,6 +928,7 @@ namespace AiEnabled.Bots
       IsSmallSpider = smallSpider;
       IsLargeSpider = largeSpider;
       HelmetEnabled = AiSession.Instance.ModSaveData.AllowHelmetVisorChanges;
+      AllowIdleMovement = AiSession.Instance.ModSaveData.AllowIdleMovement;
 
       if (!AiSession.Instance.HitListStack.TryPop(out _hitList) || _hitList == null)
         _hitList = new List<IHitInfo>();
@@ -1126,6 +1129,11 @@ namespace AiEnabled.Bots
 
       if (Character != null)
       {
+        if (ToolDefinition != null && AiSession.Instance.WcAPILoaded)
+        {
+          AiSession.Instance.WcAPI.ShootRequestHandler(Character.EntityId, true, WCShootCallback);
+        }
+
         Character.OnClosing -= Character_OnClosing;
         Character.OnClose -= Character_OnClosing;
         Character.CharacterDied -= Character_CharacterDied;
@@ -1269,6 +1277,25 @@ namespace AiEnabled.Bots
       PlaySound();
     }
 
+    internal bool WCShootCallback(Vector3D scopePos, Vector3D scopeDirection, int requestState, bool hasLos, object target, int currentAmmo, int remainingMags, int requestStage)
+    {
+      var stage = (WcApi.EventTriggers)requestStage;
+      var state = (WcApi.ShootState)requestState;
+
+      if (!hasLos || stage == WcApi.EventTriggers.Reloading || (stage == WcApi.EventTriggers.StopFiring && state == WcApi.ShootState.EventStart) || currentAmmo == 0 || target == null)
+        _wcShotFired = false;
+
+      if (stage == WcApi.EventTriggers.Reloading)
+      {
+        _wcWeaponReloading = state == WcApi.ShootState.EventStart;
+      }
+
+      _wcWeaponAmmoCount = currentAmmo;
+      _wcWeaponMagsLeft = remainingMags;
+
+      return hasLos;
+    }
+
     internal virtual void PlaySound(string sound = null, bool stop = false)
     {
       var isNull = string.IsNullOrWhiteSpace(sound);
@@ -1377,6 +1404,25 @@ namespace AiEnabled.Bots
           var wp = _currentGraph.WorldToLocal(waypoint);
           _patrolList.Add(wp);
         }
+      }
+
+      if (_patrolList.Count > 1)
+      {
+        var rBot = this as RepairBot;
+        rBot?.UpdatePatrolOBBCache();
+      }
+    }
+
+    internal void UpdatePatrolPoints(List<Vector3I> waypoints)
+    {
+      _patrolList.Clear();
+      _patrolIndex = -1;
+      _patrolWaitTime = 1;
+
+      if (waypoints?.Count > 0)
+      {
+        _patrolList.AddList(waypoints);
+        PatrolMode = true;
       }
 
       if (_patrolList.Count > 1)
@@ -1689,6 +1735,9 @@ namespace AiEnabled.Bots
             if (charController?.CanSwitchToWeapon(ToolDefinition.PhysicalItemId) == true)
             {
               charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
+
+              var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+              gun?.OnControlAcquired(Character);
             }
           }
         }
@@ -2053,15 +2102,28 @@ namespace AiEnabled.Bots
         {
           string ammoSubtype = null;
 
-          var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(toolDefinitionId) as MyWeaponItemDefinition;
-          if (weaponItemDef != null)
+          List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList;
+          if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(toolDefinitionId, out magList))
           {
-            var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
-            ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
+            ammoSubtype = magList[0].Item2.Item1.SubtypeName;
+            _wcWeaponAmmoCount = 1;
+            _wcWeaponMagsLeft = 1;
           }
           else
           {
-            AiSession.Instance.Logger.Log($"WeaponItemDef was null for {toolDefinitionId}");
+            _wcWeaponAmmoCount = null;
+            _wcWeaponMagsLeft = null;
+
+            var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(toolDefinitionId) as MyWeaponItemDefinition;
+            if (weaponItemDef != null)
+            {
+              var weaponDef = MyDefinitionManager.Static.GetWeaponDefinition(weaponItemDef.WeaponDefinitionId);
+              ammoSubtype = weaponDef?.AmmoMagazinesId?.Length > 0 ? weaponDef.AmmoMagazinesId[0].SubtypeName : null;
+            }
+            else
+            {
+              AiSession.Instance.Logger.Log($"WeaponItemDef was null for {toolDefinitionId}");
+            }
           }
 
           if (ammoSubtype == null)
@@ -2100,8 +2162,13 @@ namespace AiEnabled.Bots
             if (charController.CanSwitchToWeapon(toolDefinitionId))
             {
               if (!(Character.Parent is IMyCockpit))
+              {
                 charController.SwitchToWeapon(toolDefinitionId);
-              
+
+                var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+                gun?.OnControlAcquired(Character);
+              }
+
               HasWeaponOrTool = true;
             }
             else
@@ -2116,7 +2183,12 @@ namespace AiEnabled.Bots
           if (charController.CanSwitchToWeapon(toolDefinitionId))
           {
             if (!(Character.Parent is IMyCockpit))
+            {
               charController.SwitchToWeapon(toolDefinitionId);
+
+              var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+              gun?.OnControlAcquired(Character);
+            }
 
             HasWeaponOrTool = true;
           }
@@ -2132,22 +2204,74 @@ namespace AiEnabled.Bots
 
     public virtual void EquipWeapon()
     {
+      var rBot = this as RepairBot;
+      rBot?.UpdateWeaponInfo();
+
       if (ToolDefinition == null)
+        return;
+      
+      var inventory = Character?.GetInventory() as MyInventory;
+      if (inventory == null)
         return;
 
       var weaponDefinition = ToolDefinition.PhysicalItemId;
+      if (!inventory.ContainItems(1, weaponDefinition))
+      {
+        var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
+        controlEnt.SwitchToWeapon(null);
+        return;
+      }
+
+      List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList;
+      if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(weaponDefinition, out magList))
+      {
+        var ammoDef = magList[0].Item2.Item1;
+
+        if (inventory != null && inventory.ContainItems(1, ammoDef))
+        {
+          _wcWeaponAmmoCount = 1;
+          _wcWeaponMagsLeft = 1;
+        }
+        else
+        {
+          _wcWeaponAmmoCount = 0;
+          _wcWeaponMagsLeft = 0;
+        }
+      }
+      else
+      {
+        _wcWeaponAmmoCount = null;
+        _wcWeaponMagsLeft = null;
+      }
 
       var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
       if (charController?.CanSwitchToWeapon(weaponDefinition) == true)
       {
         if (!(Character.Parent is IMyCockpit))
+        {
           charController.SwitchToWeapon(weaponDefinition);
-  
+
+          var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+          gun?.OnControlAcquired(Character);
+        }
+
         HasWeaponOrTool = true;
         SetShootInterval();
       }
       else
         AiSession.Instance.Logger.Log($"{this.GetType().Name}.EquipWeapon: WARNING! Unable to switch to weapon ({weaponDefinition})!", MessageType.WARNING);
+    }
+
+    public void EnsureWeaponValidity()
+    {
+      var inventory = Character?.GetInventory() as MyInventory;
+      var weaponDefinition = ToolDefinition?.PhysicalItemId;
+      if (inventory == null || weaponDefinition == null || !inventory.ContainItems(1, weaponDefinition.Value))
+      {
+        ToolDefinition = null;
+        var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
+        controlEnt?.SwitchToWeapon(null);
+      }
     }
 
     public virtual void SetTarget()
@@ -2307,7 +2431,7 @@ namespace AiEnabled.Bots
             }
 
             var blockCounter = myGrid?.BlocksCounters;
-            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasGridAi(myGrid))
+            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasAi(myGrid))
               || (blockCounter != null 
               && (blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0) > 0
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0) > 0
@@ -3258,36 +3382,45 @@ namespace AiEnabled.Bots
       var pos = botPosition + botMatrix.Up * 0.4; // close to the muzzle height
       var tgt = targetEnt.WorldAABB.Center;
 
+      IMyAirtightHangarDoor hangar = null;
       var tgtChar = targetEnt as IMyCharacter;
       if (tgtChar != null)
       {
         tgt = tgtChar.GetHeadMatrix(true).Translation;
       }
-      else if (!(targetEnt is IMyLargeTurretBase))
+      else
       {
-        var hangar = targetEnt as IMyAirtightHangarDoor;
+        hangar = targetEnt as IMyAirtightHangarDoor;
         if (hangar != null)
           tgt += hangar.WorldMatrix.Down * hangar.CubeGrid.GridSize;
+      }
 
-        var angle = AiUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
-        if (Math.Abs(angle) > AiUtils.PiOver3)
+      var vectorToTgt = tgt - pos;
+      var dotFwd = vectorToTgt.Dot(botMatrix.Forward);
+      if (dotFwd <= 0)
+      {
+        HasLineOfSight = false;
+        return;
+      }
+
+      var angle = AiUtils.GetAngleBetween(botMatrix.Forward, vectorToTgt);
+      if (Math.Abs(angle) > AiUtils.PiOver3)
+      {
+        if (hangar != null)
         {
-          if (hangar != null)
-          {
-            // Just in case the bot happens to be standing in front of the tip of the hangar
-            tgt += hangar.WorldMatrix.Down * hangar.CubeGrid.GridSize;
-            angle = AiUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
-            if (Math.Abs(angle) > AiUtils.PiOver3)
-            {
-              HasLineOfSight = false;
-              return;
-            }
-          }
-          else
+          // Just in case the bot happens to be standing in front of the tip of the hangar
+          tgt += hangar.WorldMatrix.Down * hangar.CubeGrid.GridSize;
+          angle = AiUtils.GetAngleBetween(botMatrix.Forward, tgt - pos);
+          if (Math.Abs(angle) > AiUtils.PiOver3)
           {
             HasLineOfSight = false;
             return;
           }
+        }
+        else
+        {
+          HasLineOfSight = false;
+          return;
         }
       }
 

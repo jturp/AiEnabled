@@ -65,7 +65,7 @@ namespace AiEnabled.Input
         {
           if (name.StartsWith("RecallBots"))
           {
-            var text = $"Recall Bots: <color=green>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
+            var text = $"Recall Bots: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
             _instance.PlayerMenu.RecallBotsKeyBind.Text = text;
           }
 

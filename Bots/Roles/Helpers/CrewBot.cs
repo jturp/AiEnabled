@@ -79,6 +79,11 @@ namespace AiEnabled.Bots.Roles.Helpers
         _goToBlocks = new List<IMySlimBlock>();
       else
         _goToBlocks.Clear();
+
+      if (AiSession.Instance.WcAPILoaded)
+      {
+        AiSession.Instance.WcAPI.ShootRequestHandler(Character.EntityId, false, WCShootCallback);
+      }
     }
 
     internal override void Close(bool cleanConfig = false, bool removeBot = true)
@@ -153,6 +158,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
         if (HasWeaponOrTool)
         {
+          var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+          gun?.OnControlReleased();
+
           var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
           controlEnt?.SwitchToWeapon(null);
           HasWeaponOrTool = false;

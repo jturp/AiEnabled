@@ -12,6 +12,7 @@ using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
 using SpaceEngineers.Game.ModAPI;
@@ -78,16 +79,19 @@ namespace AiEnabled.API
         { "GetRelationshipBetween", new Func<long, long, MyRelationsBetweenPlayerAndBlock>(GetRelationshipBetween) },
         { "GetBotAndRelationTo", new Func<long, long, MyRelationsBetweenPlayerAndBlock?>(CheckBotRelationTo) },
         { "SetBotPatrol", new Func<long, List<Vector3D>, bool>(SetBotPatrol) },
+        { "SetBotPatrolLocal", new Func<long, List<Vector3I>, bool>(SetBotPatrol) },
         { "CanRoleUseTool", new Func<string, string, bool>(CanRoleUseTool) },
         { "SwitchBotRole", new Func<long, byte[], bool>(SwitchBotRole) },
         { "SwitchBotRoleSlim", new Func<long, string, List<string>, bool>(SwitchBotRole) },
         { "GetBotOwnerId", new Func<long, long>(GetBotOwnerId) },
         { "SwitchBotWeapon", new Func<long, string, bool>(SwitchBotWeapon) },
         { "GetBots", new Action<Dictionary<long, IMyCharacter>, bool, bool, bool>(GetBots) },
-        { "GetInteriorNodes", new Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action>(GetInteriorNodes) },
+        { "GetInteriorNodes", new Action<MyCubeGrid, List<Vector3I>, int, bool, bool, Action<IMyCubeGrid, List<Vector3I>>>(GetInteriorNodes) },
         { "IsValidForPathfinding", new Func<IMyCubeGrid, bool>(IsValidForPathfinding) },
         { "ReSyncBotCharacters", new Action<long, Action<List<IMyCharacter>>>(ReSyncBotCharacters) },
         { "ThrowGrenade", new Action<long>(ThrowGrenade) },
+        { "GetLocalPositionForGrid", new Func<long, Vector3D, Vector3I?>(GetLocalPositionForGrid) },
+        { "GetMainMapGrid", new Func<long, IMyCubeGrid>(GetMainMapGrid) },
      };
 
       return dict;
@@ -694,6 +698,61 @@ namespace AiEnabled.API
     }
 
     /// <summary>
+    /// Assigns a patrol route to the Bot. In patrol mode, the bot will attack any enemies that come near its route.
+    /// You must call <see cref="ResetBotTargeting(long)"/> for it to resume normal functions
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="waypoints">A list of grid-local coordinates for the bot to patrol</param>
+    /// <returns>true if the route is assigned successfully, otherwise false</returns>
+    public bool SetBotPatrol(long botEntityId, List<Vector3I> waypoints)
+    {
+      if (AiSession.Instance?.Registered != true)
+        return false;
+
+      if (waypoints == null || waypoints.Count == 0)
+        return false;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?._currentGraph == null || bot.IsDead)
+        return false;
+
+      bot.UseAPITargets = false;
+      bot.PatrolMode = true;
+      bot.FollowMode = false;
+      bot.Target.RemoveOverride(false);
+
+      if (bot is RepairBot)
+      {
+        bot.Target.RemoveTarget();
+      }
+
+      bot.UpdatePatrolPoints(waypoints);
+
+      var seat = bot.Character.Parent as IMyCockpit;
+      if (seat != null)
+      {
+        seat.RemovePilot();
+        Vector3D relPosition;
+        if (!AiSession.Instance.BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition))
+          relPosition = Vector3D.Forward * 2.5 + Vector3D.Up;
+
+        var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + bot.WorldMatrix.Down;
+        bot.Character.SetPosition(position);
+
+        var jetpack = bot.Character.Components?.Get<MyCharacterJetpackComponent>();
+        if (jetpack != null && bot.RequiresJetpack && !jetpack.TurnedOn)
+        {
+          var jetpacksAllowed = MyAPIGateway.Session.SessionSettings.EnableJetpack;
+          MyAPIGateway.Session.SessionSettings.EnableJetpack = true;
+          jetpack.TurnOnJetpack(true);
+          MyAPIGateway.Session.SessionSettings.EnableJetpack = jetpacksAllowed;
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
     /// Sets the Override Complete Action associated with a given Bot. 
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
@@ -902,11 +961,11 @@ namespace AiEnabled.API
     /// <param name="allowAirNodes">Whether or not to consider air nodes for inside-ness.</param>
     /// <param name="onlyAirtightNodes">Whether or not to only accept airtight nodes.</param>
     /// <param name="callBack">The Action to be invoked when the thread finishes</param>
-    public void GetInteriorNodes(MyCubeGrid grid, List<Vector3I> nodeList, int enclosureRating = 5, bool allowAirNodes = true, bool onlyAirtightNodes = false, Action callBack = null)
+    public void GetInteriorNodes(MyCubeGrid grid, List<Vector3I> nodeList, int enclosureRating = 5, bool allowAirNodes = true, bool onlyAirtightNodes = false, Action<IMyCubeGrid, List<Vector3I>> callBack = null)
     {
       if (AiSession.Instance == null || !AiSession.Instance.Registered)
       {
-        callBack?.Invoke();
+        callBack?.Invoke(grid, nodeList);
         return;
       }
 
@@ -922,6 +981,59 @@ namespace AiEnabled.API
       data.CallBack = callBack;
 
       MyAPIGateway.Parallel.Start(BotFactory.GetInteriorNodes, BotFactory.GetInteriorNodesCallback, data);
+    }
+
+    /// <summary>
+    /// Attempts to transform world to local using the proper grid for a given Grid Map. Check null!
+    /// </summary>
+    /// <param name="gridEntityId">the EntityId for any grid in a Grid Map</param>
+    /// <param name="worldPosition">the World Position to transform</param>
+    /// <returns>the local position if everything is valid, otherwise null</returns>
+    public Vector3I? GetLocalPositionForGrid(long gridEntityId, Vector3D worldPosition)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      {
+        return null;
+      }
+
+      var grid = MyEntities.GetEntityById(gridEntityId) as IMyCubeGrid;
+      if (grid != null)
+      {
+        CubeGridMap gridMap;
+        var biggest = GridBase.GetLargestGridForMap(grid);
+        if (biggest != null && AiSession.Instance.GridGraphDict.TryGetValue(biggest.EntityId, out gridMap))
+        {
+          return gridMap?.WorldToLocal(worldPosition);
+        }
+      }
+
+      return null;
+    }
+
+    /// <summary>
+    /// Attempts to retrieve the main grid used for position transformations for a given grid map. Check null!
+    /// </summary>
+    /// <param name="gridEntityId">the EntityId for any grid in a Grid Map</param>
+    /// <returns>the IMyCubeGrid to use for a map's position transformations, if a map exists, otherwise null</returns>
+    public IMyCubeGrid GetMainMapGrid(long gridEntityId)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      {
+        return null;
+      }
+
+      var grid = MyEntities.GetEntityById(gridEntityId) as IMyCubeGrid;
+      if (grid != null)
+      {
+        CubeGridMap gridMap;
+        var biggest = GridBase.GetLargestGridForMap(grid);
+        if (biggest != null && AiSession.Instance.GridGraphDict.TryGetValue(biggest.EntityId, out gridMap))
+        {
+          return gridMap?.MainGrid;
+        }
+      }
+
+      return null;
     }
 
     /// <summary>
@@ -1185,6 +1297,9 @@ namespace AiEnabled.API
         return false;
 
       var character = bot.Character;
+      var gun = character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+      gun?.OnControlReleased();
+
       var controlEnt = character as Sandbox.Game.Entities.IMyControllableEntity;
       controlEnt?.SwitchToWeapon(null);
 
@@ -1362,6 +1477,10 @@ namespace AiEnabled.API
       var newRole = spawnData.BotRole;
       var character = bot.Character;
       var controlEnt = character as Sandbox.Game.Entities.IMyControllableEntity;
+
+      var gun = character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+      gun?.OnControlReleased();
+
       controlEnt?.SwitchToWeapon(null);
       
       GridBase graph;

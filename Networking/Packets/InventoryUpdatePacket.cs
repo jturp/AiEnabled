@@ -13,6 +13,7 @@ using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
 
 using VRage;
@@ -74,28 +75,65 @@ namespace AiEnabled.Networking
             toInv.RaiseInventoryContentChanged(item.Value, 0);
             AiSession.Instance.CommandMenu.ResetChanges();
           }
-          else if (_equipAfterMove)
+          else
           {
             BotBase bot;
-            if (AiSession.Instance.Bots.TryGetValue(toInv.Owner.EntityId, out bot) && bot?.Owner != null)
+            if (AiSession.Instance.Bots.TryGetValue(_fromEntityId, out bot))
             {
-              string reason;
-              var content = item.Value.Content;
-              var itemDef = content.GetId();
-
-              var consumable = MyDefinitionManager.Static.GetDefinition(itemDef) as MyConsumableItemDefinition;
-              if (consumable != null)
+              var itemDef = item.Value.Content.GetId();
+              var toolDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(itemDef);
+              if (toolDef != null)
               {
-                var comp = bot.Character.Components.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
-                foreach (var statItem in consumable.Stats)
+                bot.EnsureWeaponValidity();
+              }
+            }
+
+            if (_equipAfterMove)
+            {
+              if (AiSession.Instance.Bots.TryGetValue(_toEntityId, out bot) && bot?.Owner != null)
+              {
+                string reason;
+                var content = item.Value.Content;
+                var itemDef = content.GetId();
+
+                var consumable = MyDefinitionManager.Static.GetDefinition(itemDef) as MyConsumableItemDefinition;
+                if (consumable != null)
                 {
-                  MyEntityStat stat;
-                  if (comp.Stats.TryGetValue(MyStringHash.GetOrCompute(statItem.Name), out stat))
-                    stat.ClearEffects();
+                  var comp = bot.Character.Components.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
+                  foreach (var statItem in consumable.Stats)
+                  {
+                    MyEntityStat stat;
+                    if (comp.Stats.TryGetValue(MyStringHash.GetOrCompute(statItem.Name), out stat))
+                      stat.ClearEffects();
+                  }
+
+                  toInv.ConsumeItem(itemDef, 1, bot.Character.EntityId);
+                  return false;
+                }
+                else
+                {
+                  fromInv.RaiseInventoryContentChanged(item.Value, 0);
+                  toInv.RaiseInventoryContentChanged(item.Value, 0);
+                  AiSession.Instance.CommandMenu.ResetChanges();
                 }
 
-                toInv.ConsumeItem(itemDef, 1, bot.Character.EntityId);
-                return false;
+                var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+                if (AiSession.Instance.IsBotAllowedToUse(bot, itemDef.SubtypeName, out reason) && controlEnt.CanSwitchToWeapon(itemDef))
+                {
+                  bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(itemDef);
+                  var hasWeapon = bot.ToolDefinition != null;
+
+                  bot.HasWeaponOrTool = hasWeapon;
+                  if (hasWeapon && !(bot.Character?.Parent is IMyCockpit))
+                  {
+                    bot.EquipWeapon();
+                  }
+                }
+                else
+                {
+                  var pkt = new MessagePacket(reason ?? $"{bot.Character.Name} was unable to use the item.");
+                  netHandler.SendToPlayer(pkt, bot.Owner.SteamUserId);
+                }
               }
               else
               {
@@ -103,31 +141,6 @@ namespace AiEnabled.Networking
                 toInv.RaiseInventoryContentChanged(item.Value, 0);
                 AiSession.Instance.CommandMenu.ResetChanges();
               }
-
-              var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
-              if (AiSession.Instance.IsBotAllowedToUse(bot, itemDef.SubtypeName, out reason) && controlEnt.CanSwitchToWeapon(itemDef))
-              {
-                if (!(bot.Character?.Parent is IMyCockpit))
-                  controlEnt.SwitchToWeapon(itemDef);
-
-                bot.ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(itemDef);
-                bot.HasWeaponOrTool = true;
-                bot.SetShootInterval();
-
-                var rBot = bot as RepairBot;
-                rBot?.UpdateWeaponInfo();
-              }
-              else
-              {
-                var pkt = new MessagePacket(reason ?? $"{bot.Character.Name} was unable to use the item.");
-                netHandler.SendToPlayer(pkt, bot.Owner.SteamUserId);
-              }
-            }
-            else
-            {
-              fromInv.RaiseInventoryContentChanged(item.Value, 0);
-              toInv.RaiseInventoryContentChanged(item.Value, 0);
-              AiSession.Instance.CommandMenu.ResetChanges();
             }
           }
         }

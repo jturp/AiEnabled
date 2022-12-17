@@ -46,8 +46,15 @@ namespace AiEnabled.Bots.Roles
       _attackSounds.Add(new MySoundPair("Enemy"));
       _attackSoundStrings.Add("Enemy");
 
-      AiSession.Instance.Scheduler.Schedule(AddWeapon);
-      //MyAPIGateway.Utilities.InvokeOnGameThread(AddWeapon, "AiEnabled");
+      if (ToolDefinition != null)
+      {
+        AiSession.Instance.Scheduler.Schedule(AddWeapon);
+
+        if (AiSession.Instance.WcAPILoaded)
+        {
+          AiSession.Instance.WcAPI.ShootRequestHandler(Character.EntityId, false, WCShootCallback);
+        }
+      }
     }
 
     internal override bool Update()

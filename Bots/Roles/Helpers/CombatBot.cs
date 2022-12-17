@@ -56,6 +56,11 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
       _attackSoundStrings.Add("DroneLoopSmall");
+
+      if (AiSession.Instance.WcAPILoaded)
+      {
+        AiSession.Instance.WcAPI.ShootRequestHandler(Character.EntityId, false, WCShootCallback);
+      }
     }
 
     internal override bool Update()
@@ -88,11 +93,24 @@ namespace AiEnabled.Bots.Roles.Helpers
         var gun = Character?.EquippedTool as IMyHandheldGunObject<MyGunBase>;
         if (gun != null)
         {
-          var ammoCount = gun.CurrentMagazineAmount;
+          var ammoCount = _wcWeaponMagsLeft ?? gun.CurrentMagazineAmount;
           if (ammoCount <= 0 && !MyAPIGateway.Session.CreativeMode && !MyAPIGateway.Session.SessionSettings.InfiniteAmmo)
           {
-            var ammoType = gun.GunBase.CurrentAmmoMagazineDefinition;
+            MyAmmoMagazineDefinition ammoType;
+
+            List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList;
+            if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(ToolDefinition.PhysicalItemId, out magList))
+            {
+              var ammoDef = magList[0].Item2.Item1;
+              ammoType = MyDefinitionManager.Static.GetAmmoMagazineDefinition(ammoDef);
+            }
+            else
+            {
+              ammoType = gun.GunBase.CurrentAmmoMagazineDefinition;
+            }
+
             var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
+            gun.OnControlReleased();
             controlEnt?.SwitchToWeapon(null);
             HasWeaponOrTool = HasLineOfSight = false;
 

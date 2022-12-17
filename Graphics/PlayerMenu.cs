@@ -55,7 +55,7 @@ namespace AiEnabled.Graphics
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
-    internal MenuTextInput RepairBotSearchRadius;
+    internal MenuTextInput RepairBotSearchRadius, HelperGpsColorInput;
     PlayerData _playerData;
 
     public PlayerMenu(PlayerData playerData)
@@ -95,6 +95,14 @@ namespace AiEnabled.Graphics
 
       color = (vec == null) ? "<color=yellow>" : "<color=orange>";
       RepairBotGrindColorInput = new MenuTextInput($"RepairBot grind color (HSV): {color}{{H:{x}, S:{y}, V:{z}}}", colorMenu, "Assign the grind color for Repair Bots, in format H,S,V", TextInputGrind_Submitted);
+
+      vec =  (Vector3)(Vector3I)_playerData.HelperGpsColorRGB;
+      x = vec?.X.ToString() ?? "N";
+      y = vec?.Y.ToString() ?? "N";
+      z = vec?.Z.ToString() ?? "N";
+
+      color = (vec == null) ? "<color=yellow>" : "<color=orange>";
+      HelperGpsColorInput = new MenuTextInput($"Helper GPS color (RGB): {color}{{R:{x}, G:{y}, B:{z}}}", colorMenu, "Assign the GPS color for all Helper Bots, in format R,G,B", TextInputGpsColor_Submitted);
 
       var keyBindMenu = new MenuSubCategory("Key Bindings                <color=cyan>==>", Menu, "Key Bindings");
       RecallBotsKeyBind = new MenuKeybindInput($"Recall bots: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
@@ -220,6 +228,22 @@ namespace AiEnabled.Graphics
           RepairBotIgnoreColorInput.OnSubmitAction = null;
           RepairBotIgnoreColorInput.BackingObject = null;
           RepairBotIgnoreColorInput = null;
+        }
+
+        if (RepairBotGrindColorInput != null)
+        {
+          RepairBotGrindColorInput.Text = null;
+          RepairBotGrindColorInput.OnSubmitAction = null;
+          RepairBotGrindColorInput.BackingObject = null;
+          RepairBotGrindColorInput = null;
+        }
+
+        if (HelperGpsColorInput != null)
+        {
+          HelperGpsColorInput.Text = null;
+          HelperGpsColorInput.OnSubmitAction = null;
+          HelperGpsColorInput.BackingObject = null;
+          HelperGpsColorInput = null;
         }
 
         if (MaxBots != null)
@@ -575,6 +599,7 @@ namespace AiEnabled.Graphics
 
         _playerData.RepairBotIgnoreColorHSV = vec;
         RepairBotIgnoreColorInput.Text = $"RepairBot ignore color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
+        AiSession.Instance.StartUpdateCounter();
 
         var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, vec, _playerData.RepairBotGrindColorHSV);
         AiSession.Instance.Network.SendToServer(pkt);
@@ -603,6 +628,7 @@ namespace AiEnabled.Graphics
 
         _playerData.RepairBotGrindColorHSV = vec;
         RepairBotGrindColorInput.Text = $"RepairBot grind color (HSV): {color}{{H:{vec.X}, S:{vec.Y}, V:{vec.Z}}}";
+        AiSession.Instance.StartUpdateCounter();
 
         var pkt = new ColorUpdatePacket(MyAPIGateway.Session.Player.IdentityId, _playerData.RepairBotIgnoreColorHSV, vec);
         AiSession.Instance.Network.SendToServer(pkt);
@@ -610,6 +636,32 @@ namespace AiEnabled.Graphics
       else
       {
         AiSession.Instance.ShowMessage("HSV was in improper format. Use format: H,S,V", timeToLive: 5000);
+      }
+    }
+
+    internal void TextInputGpsColor_Submitted(string text)
+    {
+      var split = text.Split(',');
+      if (split.Length != 3)
+        return;
+
+      float r, g, b;
+      if (float.TryParse(split[0], out r) && float.TryParse(split[1], out g) && float.TryParse(split[2], out b))
+      {
+        r = (int)MathHelper.Clamp(r, 0, 255);
+        g = (int)MathHelper.Clamp(g, 0, 255); 
+        b = (int)MathHelper.Clamp(b, 0, 255);
+
+        var vec = new Vector3I(r, g, b);
+        var color = (vec == Vector3.Zero) ? "<color=yellow>" : "<color=orange>";
+
+        _playerData.HelperGpsColorRGB = vec;
+        HelperGpsColorInput.Text = $"Helper GPS color (RGB): {color}{{R:{vec.X}, G:{vec.Y}, B:{vec.Z}}}";
+        AiSession.Instance.StartUpdateCounter();
+      }
+      else
+      {
+        AiSession.Instance.ShowMessage("RGB was in improper format. Use format: R,G,B", timeToLive: 5000);
       }
     }
 

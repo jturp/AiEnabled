@@ -41,6 +41,13 @@ namespace AiEnabled.ConfigData
 
     [XmlArrayItem("Subtype", typeof(string))]
     [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;
+
+    [XmlArrayItem("Subtype", typeof(string))]
+    [ProtoIgnore] public List<string> AllowedBotSubtypes = null;
+
+    [XmlArrayItem("Role", typeof(string))]
+    [ProtoIgnore] public List<string> AllowedBotRoles = null;
+
     [ProtoIgnore] public List<HelperData> PlayerHelperData = new List<HelperData>();
 
     public SaveData() { }

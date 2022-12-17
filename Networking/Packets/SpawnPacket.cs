@@ -33,10 +33,12 @@ namespace AiEnabled.Networking
     [ProtoMember(6)] readonly long? OwnerId;
     [ProtoMember(7)] readonly string Name;
     [ProtoMember(8)] readonly long? FactionId;
+    [ProtoMember(9)] readonly int NumSpawns;
+    [ProtoMember(10)] readonly Color? Color;
 
     public SpawnPacket() { }
 
-    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "Combat", long? ownerId = null, string name = null, long? faction = null)
+    public SpawnPacket(Vector3D pos, Vector3D forward, Vector3D up, string subtype = "Target_Dummy", string role = "Combat", long? ownerId = null, string name = null, long? faction = null, int numSpawns = 1, Color? clr = null)
     {
       Position = pos;
       Forward = forward;
@@ -46,6 +48,8 @@ namespace AiEnabled.Networking
       OwnerId = ownerId;
       FactionId = faction;
       Name = name;
+      NumSpawns = numSpawns;
+      Color = clr;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -72,22 +76,27 @@ namespace AiEnabled.Networking
         }
       }
 
-      Vector3D pos = Position;
       Vector3D fwd = Forward;
       Vector3D up = Up;
 
-      var posOr = new MyPositionAndOrientation((Vector3)pos, (Vector3)fwd, (Vector3)up);
-      var bot = BotFactory.SpawnBotFromAPI(Subtype, Name, posOr, null, Role, OwnerId, adminSpawn: true, factionId: FactionId);
-      if (bot == null)
+      for (int i = 0; i < NumSpawns; i++)
       {
-        var pkt = new MessagePacket($"Bot was null after creation!");
-        netHandler.SendToPlayer(pkt, SenderId);
-      }
-      else
-      {
-        BotBase b;
-        if (AiSession.Instance.Bots.TryGetValue(bot.EntityId, out b) && b?.ToolDefinition != null)
-          b.AddWeapon();
+        Vector3D pos = Position + fwd * i;
+        var posOr = new MyPositionAndOrientation((Vector3)pos, (Vector3)fwd, (Vector3)up);
+
+        var bot = BotFactory.SpawnBotFromAPI(Subtype, Name, posOr, null, Role, OwnerId, Color, adminSpawn: true, factionId: FactionId);
+        if (bot == null)
+        {
+          var pkt = new MessagePacket($"Bot {i + 1} was null after creation! Skipping any remaining spawns...");
+          netHandler.SendToPlayer(pkt, SenderId);
+          break;
+        }
+        else
+        {
+          BotBase b;
+          if (AiSession.Instance.Bots.TryGetValue(bot.EntityId, out b) && b?.ToolDefinition != null)
+            b.AddWeapon();
+        }
       }
 
       return false;

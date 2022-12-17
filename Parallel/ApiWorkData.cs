@@ -21,11 +21,11 @@ namespace AiEnabled.Parallel
     public List<Vector3I> NodeList;
     public bool AirtightNodesOnly;
     public bool AllowAirNodes;
-    public Action CallBack;
+    public Action<IMyCubeGrid, List<Vector3I>> CallBack;
 
     public ApiWorkData() { }
 
-    public ApiWorkData(MyCubeGrid grid, List<Vector3I> nodeList, int enclosureRating, bool airtightOnly, bool allowAirNodes, Action callback)
+    public ApiWorkData(MyCubeGrid grid, List<Vector3I> nodeList, int enclosureRating, bool airtightOnly, bool allowAirNodes, Action<IMyCubeGrid, List<Vector3I>> callback)
     {
       Grid = grid;
       NodeList = nodeList;

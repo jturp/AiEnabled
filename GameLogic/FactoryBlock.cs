@@ -84,7 +84,7 @@ namespace AiEnabled.GameLogic
 
     FactoryParticleInfo _particleInfo;
     IMyTerminalBlock _block;
-    MyTuple<IMyCharacter, AiSession.ControlInfo> _helperInfo;
+    MyTuple<IMyCharacter, AiSession.ControlInfo, AiSession.BotType> _helperInfo;
     int _controlTicks, _soundTicks;
     bool _soundPlaying, _playBuildSound, _btnPressed, _sorterEnabled;
     List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
@@ -170,7 +170,7 @@ namespace AiEnabled.GameLogic
       if (jetpack != null && jetpack.TurnedOn)
         jetpack.SwitchThrusts();
 
-      _helperInfo = botInfo;
+      _helperInfo = MyTuple.Create(botInfo.Item1, botInfo.Item2, SelectedRole);
       bot.CharacterDied += OnCharacterDied;
       bot.OnMarkForClose += Char_OnMarkForClose;
 
@@ -228,7 +228,7 @@ namespace AiEnabled.GameLogic
           _soundPlaying = false;
         }
 
-        _helperInfo = new MyTuple<IMyCharacter, AiSession.ControlInfo>(null, null);
+        _helperInfo = new MyTuple<IMyCharacter, AiSession.ControlInfo, AiSession.BotType>(null, null, AiSession.BotType.Combat);
       }
     }
 
@@ -257,10 +257,10 @@ namespace AiEnabled.GameLogic
       }
     }
 
-    BotBase CreateBot(MyTuple<IMyCharacter, AiSession.ControlInfo> botInfo, GridBase gBase, long ownerId)
+    BotBase CreateBot(MyTuple<IMyCharacter, AiSession.ControlInfo, AiSession.BotType> botInfo, GridBase gBase, long ownerId)
     {
       BotBase botBase = null;
-      switch (SelectedRole)
+      switch (botInfo.Item3)
       {
         case AiSession.BotType.Repair:
           botBase = new RepairBot(botInfo.Item1, gBase, ownerId, botInfo.Item2);
@@ -279,7 +279,7 @@ namespace AiEnabled.GameLogic
           break;
         default:
           SelectedHelper = null;
-          throw new ArgumentException($"Invalid value for SelectedRole, '{SelectedRole}'");
+          throw new ArgumentException($"Invalid value for SelectedRole, '{botInfo.Item3}'");
       }
 
       return botBase;
@@ -340,7 +340,7 @@ namespace AiEnabled.GameLogic
                 MyAPIGateway.Utilities.ShowNotification($"Error trying to spawn bot: {ex.Message}");
             }
 
-            _helperInfo = new MyTuple<IMyCharacter, AiSession.ControlInfo>(null, null);
+            _helperInfo = new MyTuple<IMyCharacter, AiSession.ControlInfo, AiSession.BotType>(null, null, AiSession.BotType.Combat);
           }
         }
 

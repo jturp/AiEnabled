@@ -639,51 +639,98 @@ namespace AiEnabled.Ai.Support
       int distanceCheck = 20;
 
       Vector3I? center = null;
+      Vector3I? centerLOS = null;
+
+      List<IHitInfo> hitList;
+      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
+        hitList = new List<IHitInfo>();
 
       for (int i = 1; i <= distanceCheck; i++)
       {
         var testPoint = botLocal + Vector3I.Up * i;
         if (IsPositionUsable(bot, testPoint))
         {
-          center = testPoint;
-          break;
+          if (!center.HasValue)
+            center = testPoint;
+
+          if (CheckLineOfSight(botLocal, testPoint, bot, hitList))
+          {
+            centerLOS = testPoint;
+            break;
+          }
         }
 
         testPoint = botLocal + Vector3I.Down * i;
         if (IsPositionUsable(bot, testPoint))
         {
-          center = testPoint;
-          break;
+          if (!center.HasValue)
+            center = testPoint;
+
+          if (CheckLineOfSight(botLocal, testPoint, bot, hitList))
+          {
+            centerLOS = testPoint;
+            break;
+          }
         }
 
         testPoint = botLocal + Vector3I.Left * i;
         if (IsPositionUsable(bot, testPoint))
         {
-          center = testPoint;
-          break;
+          if (!center.HasValue)
+            center = testPoint;
+
+          if (CheckLineOfSight(botLocal, testPoint, bot, hitList))
+          {
+            centerLOS = testPoint;
+            break;
+          }
         }
 
         testPoint = botLocal + Vector3I.Right * i;
         if (IsPositionUsable(bot, testPoint))
         {
-          center = testPoint;
-          break;
+          if (!center.HasValue)
+            center = testPoint;
+
+          if (CheckLineOfSight(botLocal, testPoint, bot, hitList))
+          {
+            centerLOS = testPoint;
+            break;
+          }
         }
 
         testPoint = botLocal + Vector3I.Forward * i;
         if (IsPositionUsable(bot, testPoint))
         {
-          center = testPoint;
-          break;
+          if (!center.HasValue)
+            center = testPoint;
+
+          if (CheckLineOfSight(botLocal, testPoint, bot, hitList))
+          {
+            centerLOS = testPoint;
+            break;
+          }
         }
 
         testPoint = botLocal + Vector3I.Backward * i;
         if (IsPositionUsable(bot, testPoint))
         {
-          center = testPoint;
-          break;
+          if (!center.HasValue)
+            center = testPoint;
+
+          if (CheckLineOfSight(botLocal, testPoint, bot, hitList))
+          {
+            centerLOS = testPoint;
+            break;
+          }
         }
       }
+
+      hitList.Clear();
+      AiSession.Instance.HitListStack.Push(hitList);
+
+      if (centerLOS.HasValue)
+        center = centerLOS;
 
       if (!center.HasValue)
       {
@@ -728,6 +775,28 @@ namespace AiEnabled.Ai.Support
         if (bot.Owner == null)
           bot.Character.Kill();
       }
+    }
+
+    bool CheckLineOfSight(Vector3I start, Vector3I end, BotBase bot, List<IHitInfo> hitList)
+    {
+      var graph = bot?._currentGraph;
+      if (graph == null)
+        return false;
+
+      var wStart = graph.LocalToWorld(start);
+      var wEnd = graph.LocalToWorld(end);
+
+      hitList.Clear();
+      MyAPIGateway.Physics.CastRay(wStart, wEnd, hitList);
+
+      for (int i = 0; i < hitList.Count; i++)
+      {
+        var ent = hitList[i] as IMyCharacter;
+        if (ent == null)
+          return false;
+      }
+
+      return true;
     }
 
     internal virtual void SetReady()

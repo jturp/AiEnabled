@@ -1,450 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+
 using ProtoBuf;
-using Sandbox.ModAPI;
-using VRage;
-using VRage.Game;
-using VRage.Game.Entity;
-using VRage.ModAPI;
+
 using VRageMath;
 
 namespace AiEnabled.API
 {
-  /// <summary>
-  /// https://github.com/sstixrud/CoreSystems/blob/master/BaseData/Scripts/CoreSystems/Api/CoreSystemsApiBase.cs
-  /// </summary>
-  public partial class WcApi
-  {
-    private bool _apiInit;
-
-    private Action<IList<byte[]>> _getAllWeaponDefinitions;
-    private Action<ICollection<MyDefinitionId>> _getCoreWeapons;
-    private Action<ICollection<MyDefinitionId>> _getCoreStaticLaunchers;
-    private Action<ICollection<MyDefinitionId>> _getCoreTurrets;
-    private Action<ICollection<MyDefinitionId>> _getCorePhantoms;
-    private Action<ICollection<MyDefinitionId>> _getCoreRifles;
-    private Action<IList<byte[]>> _getCoreArmors;
-
-    private Action<IMyEntity, ICollection<MyTuple<IMyEntity, float>>> _getSortedThreats;
-    private Action<IMyEntity, ICollection<IMyEntity>> _getObstructions;
-
-    private Func<MyDefinitionId, float> _getMaxPower;
-    private Func<IMyEntity, MyTuple<bool, int, int>> _getProjectilesLockedOn;
-    private Func<IMyEntity, int, IMyEntity> _getAiFocus;
-    private Func<IMyEntity, IMyEntity, int, bool> _setAiFocus;
-    private Func<IMyEntity, bool> _hasGridAi;
-    private Func<IMyEntity, float> _getOptimalDps;
-    private Func<IMyEntity, float> _getConstructEffectiveDps;
-    private Func<IMyEntity, MyTuple<bool, bool>> _isInRange;
-    private Func<ulong, MyTuple<Vector3D, Vector3D, float, float, long, string>> _getProjectileState;
-    private Action<MyEntity, int, Action<long, int, ulong, long, Vector3D, bool>> _addProjectileMonitor;
-    private Action<MyEntity, int, Action<long, int, ulong, long, Vector3D, bool>> _removeProjectileMonitor;
-
-    public void GetAllWeaponDefinitions(IList<byte[]> collection) => _getAllWeaponDefinitions?.Invoke(collection);
-    public void GetAllCoreWeapons(ICollection<MyDefinitionId> collection) => _getCoreWeapons?.Invoke(collection);
-    public void GetAllCoreStaticLaunchers(ICollection<MyDefinitionId> collection) => _getCoreStaticLaunchers?.Invoke(collection);
-    public void GetAllCoreTurrets(ICollection<MyDefinitionId> collection) => _getCoreTurrets?.Invoke(collection);
-    public void GetAllCorePhantoms(ICollection<MyDefinitionId> collection) => _getCorePhantoms?.Invoke(collection);
-    public void GetAllCoreRifles(ICollection<MyDefinitionId> collection) => _getCoreRifles?.Invoke(collection);
-    public void GetAllCoreArmors(IList<byte[]> collection) => _getCoreArmors?.Invoke(collection);
-
-    public MyTuple<bool, int, int> GetProjectilesLockedOn(IMyEntity victim) =>
-        _getProjectilesLockedOn?.Invoke(victim) ?? new MyTuple<bool, int, int>();
-    public void GetSortedThreats(IMyEntity shooter, ICollection<MyTuple<IMyEntity, float>> collection) =>
-        _getSortedThreats?.Invoke(shooter, collection);
-    public void GetObstructions(IMyEntity shooter, ICollection<IMyEntity> collection) =>
-        _getObstructions?.Invoke(shooter, collection);
-    public IMyEntity GetAiFocus(IMyEntity shooter, int priority = 0) => _getAiFocus?.Invoke(shooter, priority);
-    public bool SetAiFocus(IMyEntity shooter, IMyEntity target, int priority = 0) =>
-        _setAiFocus?.Invoke(shooter, target, priority) ?? false;
-    public MyTuple<bool, bool, bool, IMyEntity> GetWeaponTarget(IMyTerminalBlock weapon, int weaponId = 0) =>
-        _getWeaponTarget?.Invoke(weapon, weaponId) ?? new MyTuple<bool, bool, bool, IMyEntity>();
-    public float GetMaxPower(MyDefinitionId weaponDef) => _getMaxPower?.Invoke(weaponDef) ?? 0f;
-    public bool HasGridAi(IMyEntity entity) => _hasGridAi?.Invoke(entity) ?? false;
-    public float GetOptimalDps(IMyEntity entity) => _getOptimalDps?.Invoke(entity) ?? 0f;
-    public MyTuple<Vector3D, Vector3D, float, float, long, string> GetProjectileState(ulong projectileId) =>
-        _getProjectileState?.Invoke(projectileId) ?? new MyTuple<Vector3D, Vector3D, float, float, long, string>();
-    public float GetConstructEffectiveDps(IMyEntity entity) => _getConstructEffectiveDps?.Invoke(entity) ?? 0f;
-    public MyTuple<Vector3D, Vector3D> GetWeaponScope(IMyTerminalBlock weapon, int weaponId) =>
-        _getWeaponScope?.Invoke(weapon, weaponId) ?? new MyTuple<Vector3D, Vector3D>();
-
-    public void AddProjectileCallback(MyEntity entity, int weaponId, Action<long, int, ulong, long, Vector3D, bool> action) =>
-        _addProjectileMonitor?.Invoke(entity, weaponId, action);
-
-    public void RemoveProjectileCallback(MyEntity entity, int weaponId, Action<long, int, ulong, long, Vector3D, bool> action) =>
-        _removeProjectileMonitor?.Invoke(entity, weaponId, action);
-
-
-    // block/grid, Threat, Other 
-    public MyTuple<bool, bool> IsInRange(IMyEntity entity) =>
-        _isInRange?.Invoke(entity) ?? new MyTuple<bool, bool>();
-
-
-    private const long Channel = 67549756549;
-    private bool _getWeaponDefinitions;
-    private bool _isRegistered;
-    private Action _readyCallback;
-
-    /// <summary>
-    /// True if CoreSystems replied when <see cref="Load"/> got called.
-    /// </summary>
-    public bool IsReady { get; private set; }
-
-    /// <summary>
-    /// Only filled if giving true to <see cref="Load"/>.
-    /// </summary>
-    public readonly List<WcApiDef.WeaponDefinition> WeaponDefinitions = new List<WcApiDef.WeaponDefinition>();
-
-    /// <summary>
-    /// Ask CoreSystems to send the API methods.
-    /// <para>Throws an exception if it gets called more than once per session without <see cref="Unload"/>.</para>
-    /// </summary>
-    /// <param name="readyCallback">Method to be called when CoreSystems replies.</param>
-    /// <param name="getWeaponDefinitions">Set to true to fill <see cref="WeaponDefinitions"/>.</param>
-    public void Load(Action readyCallback = null, bool getWeaponDefinitions = false)
-    {
-      if (_isRegistered)
-        throw new Exception($"{GetType().Name}.Load() should not be called multiple times!");
-
-      _readyCallback = readyCallback;
-      _getWeaponDefinitions = getWeaponDefinitions;
-      _isRegistered = true;
-      MyAPIGateway.Utilities.RegisterMessageHandler(Channel, HandleMessage);
-      MyAPIGateway.Utilities.SendModMessage(Channel, "ApiEndpointRequest");
-    }
-
-    public void Unload()
-    {
-      MyAPIGateway.Utilities.UnregisterMessageHandler(Channel, HandleMessage);
-
-      ApiAssign(null);
-
-      _isRegistered = false;
-      _apiInit = false;
-      IsReady = false;
-    }
-
-    private void HandleMessage(object obj)
-    {
-      if (_apiInit || obj is string
-      ) // the sent "ApiEndpointRequest" will also be received here, explicitly ignoring that
-        return;
-
-      var dict = obj as IReadOnlyDictionary<string, Delegate>;
-
-      if (dict == null)
-        return;
-
-      ApiAssign(dict, _getWeaponDefinitions);
-
-      IsReady = true;
-      _readyCallback?.Invoke();
-    }
-
-    public void ApiAssign(IReadOnlyDictionary<string, Delegate> delegates, bool getWeaponDefinitions = false)
-    {
-      _apiInit = (delegates != null);
-      /// base methods
-      AssignMethod(delegates, "GetAllWeaponDefinitions", ref _getAllWeaponDefinitions);
-      AssignMethod(delegates, "GetCoreWeapons", ref _getCoreWeapons);
-      AssignMethod(delegates, "GetCoreStaticLaunchers", ref _getCoreStaticLaunchers);
-      AssignMethod(delegates, "GetCoreTurrets", ref _getCoreTurrets);
-      AssignMethod(delegates, "GetCorePhantoms", ref _getCorePhantoms);
-      AssignMethod(delegates, "GetCoreRifles", ref _getCoreRifles);
-      AssignMethod(delegates, "GetCoreArmors", ref _getCoreArmors);
-
-      AssignMethod(delegates, "GetBlockWeaponMap", ref _getBlockWeaponMap);
-      AssignMethod(delegates, "GetSortedThreats", ref _getSortedThreats);
-      AssignMethod(delegates, "GetObstructions", ref _getObstructions);
-      AssignMethod(delegates, "GetMaxPower", ref _getMaxPower);
-      AssignMethod(delegates, "GetProjectilesLockedOn", ref _getProjectilesLockedOn);
-      AssignMethod(delegates, "GetAiFocus", ref _getAiFocus);
-      AssignMethod(delegates, "SetAiFocus", ref _setAiFocus);
-      AssignMethod(delegates, "HasGridAi", ref _hasGridAi);
-      AssignMethod(delegates, "GetOptimalDps", ref _getOptimalDps);
-      AssignMethod(delegates, "GetConstructEffectiveDps", ref _getConstructEffectiveDps);
-      AssignMethod(delegates, "IsInRange", ref _isInRange);
-      AssignMethod(delegates, "GetProjectileState", ref _getProjectileState);
-      AssignMethod(delegates, "AddMonitorProjectile", ref _addProjectileMonitor);
-      AssignMethod(delegates, "RemoveMonitorProjectile", ref _removeProjectileMonitor);
-
-      /// block methods
-      AssignMethod(delegates, "GetWeaponTarget", ref _getWeaponTarget);
-      AssignMethod(delegates, "SetWeaponTarget", ref _setWeaponTarget);
-      AssignMethod(delegates, "FireWeaponOnce", ref _fireWeaponOnce);
-      AssignMethod(delegates, "ToggleWeaponFire", ref _toggleWeaponFire);
-      AssignMethod(delegates, "IsWeaponReadyToFire", ref _isWeaponReadyToFire);
-      AssignMethod(delegates, "GetMaxWeaponRange", ref _getMaxWeaponRange);
-      AssignMethod(delegates, "GetTurretTargetTypes", ref _getTurretTargetTypes);
-      AssignMethod(delegates, "SetTurretTargetTypes", ref _setTurretTargetTypes);
-      AssignMethod(delegates, "SetBlockTrackingRange", ref _setBlockTrackingRange);
-      AssignMethod(delegates, "IsTargetAligned", ref _isTargetAligned);
-      AssignMethod(delegates, "IsTargetAlignedExtended", ref _isTargetAlignedExtended);
-      AssignMethod(delegates, "CanShootTarget", ref _canShootTarget);
-      AssignMethod(delegates, "GetPredictedTargetPosition", ref _getPredictedTargetPos);
-      AssignMethod(delegates, "GetHeatLevel", ref _getHeatLevel);
-      AssignMethod(delegates, "GetCurrentPower", ref _currentPowerConsumption);
-      AssignMethod(delegates, "DisableRequiredPower", ref _disableRequiredPower);
-      AssignMethod(delegates, "HasCoreWeapon", ref _hasCoreWeapon);
-      AssignMethod(delegates, "GetActiveAmmo", ref _getActiveAmmo);
-      AssignMethod(delegates, "SetActiveAmmo", ref _setActiveAmmo);
-      AssignMethod(delegates, "MonitorProjectile", ref _monitorProjectile);
-      AssignMethod(delegates, "UnMonitorProjectile", ref _unMonitorProjectile);
-      AssignMethod(delegates, "GetPlayerController", ref _getPlayerController);
-      AssignMethod(delegates, "GetWeaponAzimuthMatrix", ref _getWeaponAzimuthMatrix);
-      AssignMethod(delegates, "GetWeaponElevationMatrix", ref _getWeaponElevationMatrix);
-      AssignMethod(delegates, "IsTargetValid", ref _isTargetValid);
-      AssignMethod(delegates, "GetWeaponScope", ref _getWeaponScope);
-
-      //Phantom methods
-      AssignMethod(delegates, "GetTargetAssessment", ref _getTargetAssessment);
-      //AssignMethod(delegates, "GetPhantomInfo", ref _getPhantomInfo);
-      AssignMethod(delegates, "SetTriggerState", ref _setTriggerState);
-      AssignMethod(delegates, "AddMagazines", ref _addMagazines);
-      AssignMethod(delegates, "SetAmmo", ref _setAmmo);
-      AssignMethod(delegates, "ClosePhantom", ref _closePhantom);
-      AssignMethod(delegates, "SpawnPhantom", ref _spawnPhantom);
-      AssignMethod(delegates, "SetFocusTarget", ref _setPhantomFocusTarget);
-
-      if (getWeaponDefinitions)
-      {
-        var byteArrays = new List<byte[]>();
-        GetAllWeaponDefinitions(byteArrays);
-        foreach (var byteArray in byteArrays)
-          WeaponDefinitions.Add(MyAPIGateway.Utilities.SerializeFromBinary<WcApiDef.WeaponDefinition>(byteArray));
-      }
-    }
-
-    private void AssignMethod<T>(IReadOnlyDictionary<string, Delegate> delegates, string name, ref T field)
-        where T : class
-    {
-      if (delegates == null)
-      {
-        field = null;
-        return;
-      }
-
-      Delegate del;
-      if (!delegates.TryGetValue(name, out del))
-        throw new Exception($"{GetType().Name} :: Couldn't find {name} delegate of type {typeof(T)}");
-
-      field = del as T;
-
-      if (field == null)
-        throw new Exception(
-            $"{GetType().Name} :: Delegate {name} is not type {typeof(T)}, instead it's: {del.GetType()}");
-    }
-  }
-
-  /// <summary>
-  /// https://github.com/sstixrud/CoreSystems/blob/master/BaseData/Scripts/CoreSystems/Api/CoreSystemsApiBlocks.cs
-  /// </summary>
-  public partial class WcApi
-  {
-    private Func<IMyTerminalBlock, IDictionary<string, int>, bool> _getBlockWeaponMap;
-    private Func<IMyTerminalBlock, int, MyTuple<bool, bool, bool, IMyEntity>> _getWeaponTarget;
-    private Action<IMyTerminalBlock, IMyEntity, int> _setWeaponTarget;
-    private Action<IMyTerminalBlock, bool, int> _fireWeaponOnce;
-    private Action<IMyTerminalBlock, bool, bool, int> _toggleWeaponFire;
-    private Func<IMyTerminalBlock, int, bool, bool, bool> _isWeaponReadyToFire;
-    private Func<IMyTerminalBlock, int, float> _getMaxWeaponRange;
-    private Func<IMyTerminalBlock, ICollection<string>, int, bool> _getTurretTargetTypes;
-    private Action<IMyTerminalBlock, ICollection<string>, int> _setTurretTargetTypes;
-    private Action<IMyTerminalBlock, float> _setBlockTrackingRange;
-    private Func<IMyTerminalBlock, IMyEntity, int, bool> _isTargetAligned;
-    private Func<IMyTerminalBlock, IMyEntity, int, MyTuple<bool, Vector3D?>> _isTargetAlignedExtended;
-    private Func<IMyTerminalBlock, IMyEntity, int, bool> _canShootTarget;
-    private Func<IMyTerminalBlock, IMyEntity, int, Vector3D?> _getPredictedTargetPos;
-    private Func<IMyTerminalBlock, float> _getHeatLevel;
-    private Func<IMyTerminalBlock, float> _currentPowerConsumption;
-    private Action<IMyTerminalBlock> _disableRequiredPower;
-    private Func<IMyTerminalBlock, bool> _hasCoreWeapon;
-    private Func<IMyTerminalBlock, int, string> _getActiveAmmo;
-    private Action<IMyTerminalBlock, int, string> _setActiveAmmo;
-    private Action<IMyTerminalBlock, int, Action<long, int, ulong, long, Vector3D, bool>> _monitorProjectile; // Legacy use base version
-    private Action<IMyTerminalBlock, int, Action<long, int, ulong, long, Vector3D, bool>> _unMonitorProjectile; // Legacy use base version
-    private Func<IMyTerminalBlock, long> _getPlayerController;
-    private Func<IMyTerminalBlock, int, Matrix> _getWeaponAzimuthMatrix;
-    private Func<IMyTerminalBlock, int, Matrix> _getWeaponElevationMatrix;
-    private Func<IMyTerminalBlock, IMyEntity, bool, bool, bool> _isTargetValid;
-    private Func<IMyTerminalBlock, int, MyTuple<Vector3D, Vector3D>> _getWeaponScope;
-
-    public bool GetBlockWeaponMap(IMyTerminalBlock weaponBlock, IDictionary<string, int> collection) =>
-        _getBlockWeaponMap?.Invoke(weaponBlock, collection) ?? false;
-
-    public void SetWeaponTarget(IMyTerminalBlock weapon, IMyEntity target, int weaponId = 0) =>
-        _setWeaponTarget?.Invoke(weapon, target, weaponId);
-
-    public void FireWeaponOnce(IMyTerminalBlock weapon, bool allWeapons = true, int weaponId = 0) =>
-        _fireWeaponOnce?.Invoke(weapon, allWeapons, weaponId);
-
-    public void ToggleWeaponFire(IMyTerminalBlock weapon, bool on, bool allWeapons, int weaponId = 0) =>
-        _toggleWeaponFire?.Invoke(weapon, on, allWeapons, weaponId);
-
-    public bool IsWeaponReadyToFire(IMyTerminalBlock weapon, int weaponId = 0, bool anyWeaponReady = true,
-        bool shootReady = false) =>
-        _isWeaponReadyToFire?.Invoke(weapon, weaponId, anyWeaponReady, shootReady) ?? false;
-
-    public float GetMaxWeaponRange(IMyTerminalBlock weapon, int weaponId) =>
-        _getMaxWeaponRange?.Invoke(weapon, weaponId) ?? 0f;
-
-    public bool GetTurretTargetTypes(IMyTerminalBlock weapon, IList<string> collection, int weaponId = 0) =>
-        _getTurretTargetTypes?.Invoke(weapon, collection, weaponId) ?? false;
-
-    public void SetTurretTargetTypes(IMyTerminalBlock weapon, IList<string> collection, int weaponId = 0) =>
-        _setTurretTargetTypes?.Invoke(weapon, collection, weaponId);
-
-    public void SetBlockTrackingRange(IMyTerminalBlock weapon, float range) =>
-        _setBlockTrackingRange?.Invoke(weapon, range);
-
-    public bool IsTargetAligned(IMyTerminalBlock weapon, IMyEntity targetEnt, int weaponId) =>
-        _isTargetAligned?.Invoke(weapon, targetEnt, weaponId) ?? false;
-
-    public MyTuple<bool, Vector3D?> IsTargetAlignedExtended(IMyTerminalBlock weapon, IMyEntity targetEnt, int weaponId) =>
-        _isTargetAlignedExtended?.Invoke(weapon, targetEnt, weaponId) ?? new MyTuple<bool, Vector3D?>();
-
-    public bool CanShootTarget(IMyTerminalBlock weapon, IMyEntity targetEnt, int weaponId) =>
-        _canShootTarget?.Invoke(weapon, targetEnt, weaponId) ?? false;
-
-    public Vector3D? GetPredictedTargetPosition(IMyTerminalBlock weapon, IMyEntity targetEnt, int weaponId) =>
-        _getPredictedTargetPos?.Invoke(weapon, targetEnt, weaponId) ?? null;
-
-    public float GetHeatLevel(IMyTerminalBlock weapon) => _getHeatLevel?.Invoke(weapon) ?? 0f;
-    public float GetCurrentPower(IMyTerminalBlock weapon) => _currentPowerConsumption?.Invoke(weapon) ?? 0f;
-    public void DisableRequiredPower(IMyTerminalBlock weapon) => _disableRequiredPower?.Invoke(weapon);
-    public bool HasCoreWeapon(IMyTerminalBlock weapon) => _hasCoreWeapon?.Invoke(weapon) ?? false;
-
-    public string GetActiveAmmo(IMyTerminalBlock weapon, int weaponId) =>
-        _getActiveAmmo?.Invoke(weapon, weaponId) ?? null;
-
-    public void SetActiveAmmo(IMyTerminalBlock weapon, int weaponId, string ammoType) =>
-        _setActiveAmmo?.Invoke(weapon, weaponId, ammoType);
-
-    public void MonitorProjectileCallback(IMyTerminalBlock weapon, int weaponId, Action<long, int, ulong, long, Vector3D, bool> action) =>
-        _monitorProjectile?.Invoke(weapon, weaponId, action);
-
-    public void UnMonitorProjectileCallback(IMyTerminalBlock weapon, int weaponId, Action<long, int, ulong, long, Vector3D, bool> action) =>
-        _unMonitorProjectile?.Invoke(weapon, weaponId, action);
-
-    public long GetPlayerController(IMyTerminalBlock weapon) => _getPlayerController?.Invoke(weapon) ?? -1;
-
-    public Matrix GetWeaponAzimuthMatrix(IMyTerminalBlock weapon, int weaponId) =>
-        _getWeaponAzimuthMatrix?.Invoke(weapon, weaponId) ?? Matrix.Zero;
-
-    public Matrix GetWeaponElevationMatrix(IMyTerminalBlock weapon, int weaponId) =>
-        _getWeaponElevationMatrix?.Invoke(weapon, weaponId) ?? Matrix.Zero;
-
-    public bool IsTargetValid(IMyTerminalBlock weapon, IMyEntity target, bool onlyThreats, bool checkRelations) =>
-        _isTargetValid?.Invoke(weapon, target, onlyThreats, checkRelations) ?? false;
-
-  }
-
-  /// <summary>
-  /// https://github.com/sstixrud/CoreSystems/blob/master/BaseData/Scripts/CoreSystems/Api/CoreSystemsApiPhantoms.cs
-  /// </summary>
-  public partial class WcApi
-  {
-    public enum TriggerActions
-    {
-      TriggerOff,
-      TriggerOn,
-      TriggerOnce,
-    }
-
-    private Func<MyEntity, MyEntity, int, bool, bool, MyTuple<bool, bool, Vector3D?>> _getTargetAssessment;
-    //private Action<string, ICollection<MyTuple<MyEntity, long, int, float, uint, long>>> _getPhantomInfo;
-    private Action<MyEntity, int> _setTriggerState;
-    private Action<MyEntity, int, long> _addMagazines;
-    private Action<MyEntity, int, string> _setAmmo;
-    private Func<MyEntity, bool> _closePhantom;
-    private Func<string, uint, bool, long, string, int, float?, MyEntity, bool, bool, long, bool, MyEntity> _spawnPhantom;
-    private Func<MyEntity, MyEntity, int, bool> _setPhantomFocusTarget;
-
-    /// <summary>
-    /// Get information about a particular target relative to this phantom
-    /// </summary>
-    /// <param name="phantom"></param>
-    /// <param name="target"></param>
-    /// <param name="weapon"></param>
-    /// <param name="mustBeInrange"></param>
-    /// <param name="checkTargetOrb"></param>
-    internal void GetTargetAssessment(MyEntity phantom, MyEntity target, int weapon = 0, bool mustBeInrange = false, bool checkTargetOrb = false) => _getTargetAssessment?.Invoke(phantom, target, weapon, mustBeInrange, checkTargetOrb);
-
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="phantomSubtypeId"></param>
-    /// <param name="collection"></param>
-    //internal void GetPhantomInfo(string phantomSubtypeId, ICollection<MyTuple<MyEntity, long, int, float, uint, long>> collection) => _getPhantomInfo?.Invoke(phantomSubtypeId, collection);
-
-    /// <summary>
-    /// Change the phantoms current fire state
-    /// </summary>
-    /// <param name="phantom"></param>
-    /// <param name="trigger"></param>
-    internal void SetTriggerState(MyEntity phantom, TriggerActions trigger) => _setTriggerState?.Invoke(phantom, (int)trigger);
-
-    /// <summary>
-    /// Add additional magazines
-    /// </summary>
-    /// <param name="phantom"></param>
-    /// <param name="weapon"></param>
-    /// <param name="quanity"></param>
-    internal void AddMagazines(MyEntity phantom, int weapon, long quanity) => _addMagazines?.Invoke(phantom, weapon, quanity);
-    /// <summary>
-    /// Set/switch ammo
-    /// </summary>
-    /// <param name="phantom"></param>
-    /// <param name="weapon"></param>
-    /// <param name="ammoName"></param>
-    internal void SetAmmo(MyEntity phantom, int weapon, string ammoName) => _setAmmo?.Invoke(phantom, weapon, ammoName);
-    /// <summary>
-    /// Close phantoms, required for phantoms that do not auto close
-    /// </summary>
-    /// <param name="phantom"></param>
-    /// <returns></returns>
-    internal bool ClosePhantom(MyEntity phantom) => _closePhantom?.Invoke(phantom) ?? false;
-
-    /// <summary>
-    /// string: weapon subtypeId
-    /// uint: max age, defaults to never die, you must issue close request!  Max duration is 14400 ticks (4 minutes)
-    /// bool: close when phantom runs out of ammo
-    /// long: Number of ammo reloads phantom has per default, prior to you adding more, defaults to long.MaxValue
-    /// string: name of the ammo you want the phantom to start with, if different than default
-    /// TriggerActions: TriggerOff, TriggerOn, TriggerOnce
-    /// float?: scales the model if defined in the WeaponDefinition for this subtypeId
-    /// MyEntity: Parent's this phantom to another world entity.
-    /// StringerBuilder: Assign a name to this phantom
-    /// bool: Add this phantom to the world PrunningStructure
-    /// bool: Enable shadows for the model. 
-    /// </summary>
-    /// <param name="phantomType"></param>
-    /// <param name="maxAge"></param>
-    /// <param name="closeWhenOutOfAmmo"></param>
-    /// <param name="defaultReloads"></param>
-    /// <param name="ammoOverideName"></param>
-    /// <param name="trigger"></param>
-    /// <param name="modelScale"></param>
-    /// <param name="parnet"></param>
-    /// <param name="addToPrunning"></param>
-    /// <param name="shadows"></param>
-    /// <param name="identityId"></param>
-    /// <param name="sync"></param>
-
-    /// <returns></returns>
-    internal MyEntity SpawnPhantom(string phantomType, uint maxAge = 0, bool closeWhenOutOfAmmo = false, long defaultReloads = long.MaxValue, string ammoOverideName = null, TriggerActions trigger = TriggerActions.TriggerOff, float? modelScale = null, MyEntity parnet = null, bool addToPrunning = false, bool shadows = false, long identityId = 0, bool sync = false)
-        => _spawnPhantom?.Invoke(phantomType, maxAge, closeWhenOutOfAmmo, defaultReloads, ammoOverideName, (int)trigger, modelScale, parnet, addToPrunning, shadows, identityId, sync) ?? null;
-
-    /// <summary>
-    /// Set/switch ammo
-    /// focusId is a value between 0 and 1, can have two active focus targets.
-    /// </summary>
-    /// <param name="phantom"></param>
-    /// <param name="target"></param>
-    /// <param name="focusId"></param>
-    internal bool SetPhantomFocusTarget(MyEntity phantom, MyEntity target, int focusId) => _setPhantomFocusTarget?.Invoke(phantom, target, focusId) ?? false;
-  }
-
   public static class WcApiDef
   {
     [ProtoContract]
@@ -850,6 +411,7 @@ namespace AiEnabled.API
         [ProtoMember(12)] internal OtherDef Other;
         [ProtoMember(13)] internal bool AddToleranceToTracking;
         [ProtoMember(14)] internal bool CanShootSubmerged;
+        [ProtoMember(15)] internal bool NpcSafe;
 
         [ProtoContract]
         public struct LoadingDef
@@ -899,6 +461,7 @@ namespace AiEnabled.API
           [ProtoMember(5)] internal bool LockOnFocus;
           [ProtoMember(6)] internal bool SuppressFire;
           [ProtoMember(7)] internal bool OverrideLeads;
+          [ProtoMember(8)] internal int DefaultLeadGroup;
         }
 
         [ProtoContract]
@@ -1003,6 +566,8 @@ namespace AiEnabled.API
         [ProtoMember(26)] internal bool IgnoreVoxels;
         [ProtoMember(27)] internal bool Synchronize;
         [ProtoMember(28)] internal double HeatModifier;
+        [ProtoMember(29)] internal bool NpcSafe;
+
 
         [ProtoContract]
         public struct DamageScaleDef
@@ -1020,6 +585,7 @@ namespace AiEnabled.API
           [ProtoMember(10)] internal double HealthHitModifier;
           [ProtoMember(11)] internal double VoxelHitModifier;
           [ProtoMember(12)] internal DamageTypes DamageType;
+          [ProtoMember(13)] internal DeformDef Deform;
 
           [ProtoContract]
           public struct FallOffDef
@@ -1089,6 +655,20 @@ namespace AiEnabled.API
             [ProtoMember(2)] internal ShieldType Type;
             [ProtoMember(3)] internal float BypassModifier;
           }
+
+          [ProtoContract]
+          public struct DeformDef
+          {
+            internal enum DeformTypes
+            {
+              HitBlock,
+              AllDamagedBlocks,
+              NoDeform,
+            }
+
+            [ProtoMember(1)] internal DeformTypes DeformType;
+            [ProtoMember(2)] internal int DeformDelay;
+          }
         }
 
         [ProtoContract]
@@ -1127,6 +707,7 @@ namespace AiEnabled.API
           [ProtoMember(3)] internal string ModelName;
           [ProtoMember(4)] internal AmmoParticleDef Particles;
           [ProtoMember(5)] internal LineDef Lines;
+          [ProtoMember(6)] internal DecalDef Decals;
 
           [ProtoContract]
           public struct AmmoParticleDef
@@ -1207,6 +788,21 @@ namespace AiEnabled.API
               [ProtoMember(9)] internal string[] Textures;
               [ProtoMember(10)] internal Texture TextureMode;
 
+            }
+          }
+
+          [ProtoContract]
+          public struct DecalDef
+          {
+
+            [ProtoMember(1)] internal int MaxAge;
+            [ProtoMember(2)] internal TextureMapDef[] Map;
+
+            [ProtoContract]
+            public struct TextureMapDef
+            {
+              [ProtoMember(1)] internal string HitMaterial;
+              [ProtoMember(2)] internal string DecalMaterial;
             }
           }
         }
@@ -1581,6 +1177,7 @@ namespace AiEnabled.API
           [ProtoMember(12)] internal MinesDef Mines;
           [ProtoMember(13)] internal float GravityMultiplier;
           [ProtoMember(14)] internal uint MaxTrajectoryTime;
+          [ProtoMember(15)] internal ApproachDef[] Approaches;
 
           [ProtoContract]
           public struct SmartsDef
@@ -1597,6 +1194,98 @@ namespace AiEnabled.API
             [ProtoMember(10)] internal bool KeepAliveAfterTargetLoss;
             [ProtoMember(11)] internal float OffsetRatio;
             [ProtoMember(12)] internal int OffsetTime;
+            [ProtoMember(13)] internal bool CheckFutureIntersection;
+            [ProtoMember(14)] internal double NavAcceleration;
+            [ProtoMember(15)] internal bool AccelClearance;
+          }
+
+          [ProtoContract]
+          public struct ApproachDef
+          {
+            public enum StartFailure
+            {
+              Wait,
+              MoveToPrevious,
+              MoveToNext,
+              ForceReset,
+            }
+
+            public enum Conditions
+            {
+              Ignore,
+              Spawn,
+              DistanceFromTarget,
+              Lifetime,
+              DesiredElevation,
+              MinTravelRequired,
+              MaxTravelRequired,
+              Deadtime,
+              DistanceToTarget,
+            }
+
+            public enum UpRelativeTo
+            {
+              RelativeToBlock,
+              RelativeToGravity,
+              TargetDirection,
+              TargetVelocity,
+            }
+
+            public enum VantagePointRelativeTo
+            {
+              Origin,
+              Shooter,
+              Target,
+              Surface,
+              MidPoint,
+            }
+            public enum ConditionOperators
+            {
+              StartEnd_And,
+              StartEnd_Or,
+              StartAnd_EndOr,
+              StartOr_EndAnd,
+            }
+
+            public enum StageEvents
+            {
+              NoNothing,
+              EndProjectile,
+              EndProjectileOnFailure,
+            }
+
+            [ProtoMember(1)] internal StartFailure Failure;
+            [ProtoMember(2)] internal Conditions StartCondition1;
+            [ProtoMember(3)] internal Conditions EndCondition1;
+            [ProtoMember(4)] internal UpRelativeTo UpDirection;
+            [ProtoMember(5)] internal VantagePointRelativeTo VantagePoint;
+            [ProtoMember(6)] internal double AngleOffset;
+            [ProtoMember(7)] internal double Start1Value;
+            [ProtoMember(8)] internal double End1Value;
+            [ProtoMember(9)] internal double LeadDistance;
+            [ProtoMember(10)] internal double DesiredElevation;
+            [ProtoMember(11)] internal double AccelMulti;
+            [ProtoMember(12)] internal double SpeedCapMulti;
+            [ProtoMember(13)] internal bool AdjustDestinationPosition;
+            [ProtoMember(14)] internal bool CanExpireOnceStarted;
+            [ProtoMember(15)] internal ParticleDef AlternateParticle;
+            [ProtoMember(16)] internal string AlternateSound;
+            [ProtoMember(17)] internal string AlternateModel;
+            [ProtoMember(18)] internal int OnFailureRevertTo;
+            [ProtoMember(19)] internal ParticleDef StartParticle;
+            [ProtoMember(20)] internal bool AdjustVantagePoint;
+            [ProtoMember(21)] internal bool AdjustUpDir;
+            [ProtoMember(22)] internal bool PushLeadByTravelDistance;
+            [ProtoMember(23)] internal double TrackingDistance;
+            [ProtoMember(24)] internal Conditions StartCondition2;
+            [ProtoMember(25)] internal double Start2Value;
+            [ProtoMember(26)] internal Conditions EndCondition2;
+            [ProtoMember(27)] internal double End2Value;
+            [ProtoMember(28)] internal VantagePointRelativeTo AdjustElevation;
+            [ProtoMember(29)] internal double ElevationTolerance;
+            [ProtoMember(30)] internal ConditionOperators Operators;
+            [ProtoMember(31)] internal StageEvents StartEvent;
+            [ProtoMember(32)] internal StageEvents EndEvent;
           }
 
           [ProtoContract]
@@ -1638,7 +1327,7 @@ namespace AiEnabled.API
         [ProtoMember(3)] internal Vector3D Offset;
         [ProtoMember(4)] internal ParticleOptionDef Extras;
         [ProtoMember(5)] internal bool ApplyToShield;
-        [ProtoMember(6)] internal bool ShrinkByDistance;
+        [ProtoMember(6)] internal bool DisableCameraCulling;
       }
     }
   }

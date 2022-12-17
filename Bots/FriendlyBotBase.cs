@@ -7,6 +7,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
+using Sandbox.ModAPI.Weapons;
 
 using SpaceEngineers.Game.ModAPI;
 
@@ -411,7 +412,7 @@ namespace AiEnabled.Bots
               continue;
 
             var blockCounter = myGrid?.BlocksCounters;
-            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasGridAi(myGrid))
+            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasAi(myGrid))
               || (blockCounter != null
               && (blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0) > 0
               || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0) > 0
@@ -941,12 +942,39 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
-      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
-        return false;
-
       var targetEnt = Target.Entity as IMyEntity;
       if (targetEnt == null)
         return false;
+
+      if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
+        return false;
+
+      var physGunObj = ToolDefinition.PhysicalItemId;
+
+      List<VRage.MyTuple<int, VRage.MyTuple<MyDefinitionId, string, string, bool>>> magList;
+      if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(physGunObj, out magList))
+      {
+        if (!_wcShotFired && !_wcWeaponReloading)
+        {
+          object tgt;
+          if (magList[0].Item2.Item4)
+          {
+            tgt = targetEnt;
+            AiSession.Instance.WcAPI.SetAiFocus((MyEntity)Character, (MyEntity)targetEnt);
+          }
+          else
+          {
+            tgt = (Object)targetEnt.WorldAABB.Center;
+          }
+
+          if (AiSession.Instance.WcAPI.ShootRequest((MyEntity)Character.EquippedTool, tgt))
+          {
+            _wcShotFired = true;
+          }
+        }
+
+        return _wcShotFired;
+      }
 
       if (gun.NeedsReload)
       {
@@ -987,7 +1015,7 @@ namespace AiEnabled.Bots
           }
           else
           {
-            ammoCount = gun.GunBase.CurrentAmmo;
+            ammoCount = _wcWeaponAmmoCount ?? gun.GunBase.CurrentAmmo;
           }
 
           bool leadTargets = ShouldLeadTargets;
