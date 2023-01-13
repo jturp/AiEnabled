@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.4";
+    public const string VERSION = "v1.4.5";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -887,6 +887,9 @@ namespace AiEnabled
             charDef.HeadServerOffset = -1.25f;
           }
 
+          if (charDef.Name != subtype.String && charDef.Name != null)
+            subtype = MyStringHash.GetOrCompute(charDef.Name);
+
           AnimationControllerDictionary[subtype] = charDef.AnimationController;
           SubtypeToSkeletonDictionary[subtype] = charDef.Skeleton;  
           RobotSubtypes.Add(subtype.String);
@@ -1255,12 +1258,14 @@ namespace AiEnabled
                   nameToUse = "Male Engineer";
                 else if (newSubtype == "Default_Astronaut_Female")
                   nameToUse = "Female Engineer";
+                else if (newSubtype == "RoboDog")
+                  nameToUse = "Robo Dog";
                 else
                 {
                   nameSB.Clear();
                   foreach (var ch in newSubtype)
                   {
-                    if (char.IsLetterOrDigit(ch))
+                    if (char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch))
                       nameSB.Append(ch);
                     else if (ch == '_')
                       nameSB.Append(' ');

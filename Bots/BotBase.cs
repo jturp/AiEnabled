@@ -2274,10 +2274,39 @@ namespace AiEnabled.Bots
       }
     }
 
+    void UpdatePatrol()
+    {
+      if (Target.Entity != null)
+        Target.RemoveTarget();
+
+      if (Target.Override.HasValue)
+        return;
+
+      _patrolWaitTime--;
+
+      if (_patrolWaitTime <= 0)
+      {
+        var patrolPoint = GetNextPatrolPoint();
+
+        if (patrolPoint.HasValue)
+        {
+          var patrolPointWorld = _currentGraph.LocalToWorld(patrolPoint.Value);
+          Target.SetOverride(patrolPointWorld);
+        }
+      }
+    }
+
     public virtual void SetTarget()
     {
       if (!WantsTarget)
+      {
+        if (!UseAPITargets && PatrolMode && _patrolList?.Count > 0)
+        {
+          UpdatePatrol();
+        }
+
         return;
+      }
 
       if (Target.IsDestroyed())
         Target.RemoveTarget();
@@ -2534,24 +2563,7 @@ namespace AiEnabled.Bots
       {
         if (onPatrol)
         {
-          if (Target.Entity != null)
-            Target.RemoveTarget();
-
-          if (Target.Override.HasValue)
-            return;
-
-          _patrolWaitTime--;
-
-          if (_patrolWaitTime <= 0)
-          {
-            var patrolPoint = GetNextPatrolPoint();
-
-            if (patrolPoint.HasValue)
-            {
-              var patrolPointWorld = _currentGraph.LocalToWorld(patrolPoint.Value);
-              Target.SetOverride(patrolPointWorld);
-            }
-          }
+          UpdatePatrol();
         }
         else
         {
@@ -3163,7 +3175,14 @@ namespace AiEnabled.Bots
             else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
               doorPos += door.WorldMatrix.Down * door.CubeGrid.GridSize * 0.5;
 
-            if (Target.Entity is IMyDoor && Vector3D.IsZero(doorPos - targetPosition))
+            var tgtDoor = Target.Entity as IMyDoor;
+            if (tgtDoor == null)
+            {
+              var tgtSlim = Target.Entity as IMySlimBlock;
+              tgtDoor = tgtSlim?.FatBlock as IMyDoor;
+            }
+
+            if (tgtDoor != null && Vector3D.IsZero(doorPos - tgtDoor.WorldAABB.Center))
             {
               if (ToolDefinition != null && ToolDefinition.WeaponType != MyItemWeaponType.None)
               {
@@ -4773,8 +4792,8 @@ namespace AiEnabled.Bots
 
         if (!isRotaryAirlock && !isPassageAirlock && door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
         {
-          if (door.IsWorking)
-            AiSession.Instance.DoorsToClose[door.EntityId] = MyAPIGateway.Session.ElapsedPlayTime;
+          //if (door.IsWorking)
+          //  AiSession.Instance.DoorsToClose[door.EntityId] = MyAPIGateway.Session.ElapsedPlayTime;
 
           return true;
         }

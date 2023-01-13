@@ -429,45 +429,56 @@ namespace AiEnabled.GameLogic
       }
     }
 
+    int _errorCount;
+
     private void AppendingCustomInfo(IMyTerminalBlock block, StringBuilder sb)
     {
-      sb.Append("Bot Factory v1.0\n")
-        .Append('-', 30)
-        .Append('\n');
-
-      var functional = _block as IMyFunctionalBlock;
-      sb.Append("Status: ")
-        .Append(functional.Enabled ? "Online" : "Offline")
-        .Append('\n');
-
-      sb.Append("Selected Bot: ")
-        .Append(SelectedRole)
-        .Append('\n', 2);
-
-      var compSubtype = $"AiEnabled_Comp_{SelectedRole}BotMaterial";
-      var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), compSubtype);
-      var def = AiSession.Instance.AllGameDefinitions[comp];
-
-      sb.Append("Build Requirements:\n")
-        .Append(" - ")
-        .Append(def?.DisplayNameText ?? comp.SubtypeName)
-        .Append('\n');
-
-      long price;
-      if (AiSession.Instance.BotPrices.TryGetValue(SelectedRole, out price) && price > 0)
+      try
       {
-        sb.Append(" - ")
-          .Append(price.ToString("#,###,##0"))
-          .Append(" Space Credits")
+        sb.Append("Bot Factory v1.0\n")
+          .Append('-', 30)
+          .Append('\n');
+
+        var functional = _block as IMyFunctionalBlock;
+        sb.Append("Status: ")
+          .Append(functional.Enabled ? "Online" : "Offline")
+          .Append('\n');
+
+        sb.Append("Selected Bot: ")
+          .Append(SelectedRole)
           .Append('\n', 2);
-      }
-      else
-      {
-        sb.Append('\n');
-      }
 
-      sb.Append("Description:\n")
-        .Append(AiSession.Instance.BotDescriptions[SelectedRole]);
+        var compSubtype = $"AiEnabled_Comp_{SelectedRole}BotMaterial";
+        var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), compSubtype);
+        var def = AiSession.Instance.AllGameDefinitions[comp];
+
+        sb.Append("Build Requirements:\n")
+          .Append(" - ")
+          .Append(def?.DisplayNameText ?? comp.SubtypeName)
+          .Append('\n');
+
+        long price;
+        if (AiSession.Instance.BotPrices.TryGetValue(SelectedRole, out price) && price > 0)
+        {
+          sb.Append(" - ")
+            .Append(price.ToString("#,###,##0"))
+            .Append(" Space Credits")
+            .Append('\n', 2);
+        }
+        else
+        {
+          sb.Append('\n');
+        }
+
+        sb.Append("Description:\n")
+          .Append(AiSession.Instance.BotDescriptions[SelectedRole]);
+      }
+      catch (Exception ex)
+      {
+        ++_errorCount;
+        if (_errorCount == 1 || _errorCount % 1000 == 0) 
+          AiSession.Instance.Logger.Log($"Exception in FactoryBlock.AppendingCustomInfo: {ex.ToString()}", MessageType.ERROR);
+      }
     }
   }
 }

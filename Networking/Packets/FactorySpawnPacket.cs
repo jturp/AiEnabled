@@ -84,7 +84,7 @@ namespace AiEnabled.Networking
       gameLogic.BotColor = BotColor;
 
       if (needsName)
-        BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : "ScavengerBot";
+        BotName = bType == AiSession.BotType.Combat ? "CombatBot" : bType == AiSession.BotType.Repair ? "RepairBot" : bType == AiSession.BotType.Crew ? "CrewBot" : "ScavengerBot";
 
       if (bModel == AiSession.Instance.MODEL_DEFAULT)
       {
@@ -97,27 +97,36 @@ namespace AiEnabled.Networking
             if (needsName)
               BotName = "RepairBot";
 
-            hash = MyStringId.GetOrCompute("DroneBot");
+            hash = MyStringId.GetOrCompute("Drone Bot");
             if (!modelDict.TryGetValue(hash, out subtype))
-              subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+            {
+              if (modelDict.Count > 1)
+                subtype = modelDict.FirstOrDefault(x => x.Value != "Default").Value;
+            }
 
             break;
           case AiSession.BotType.Combat:
             if (needsName)
               BotName = "CombatBot";
 
-            hash = MyStringId.GetOrCompute("TargetDummy");
+            hash = MyStringId.GetOrCompute("Target Dummy");
             if (!modelDict.TryGetValue(hash, out subtype))
-              subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+            {
+              if (modelDict.Count > 1)
+                subtype = modelDict.FirstOrDefault(x => x.Value != "Default").Value;
+            }
 
             break;
           case AiSession.BotType.Scavenger:
             if (needsName)
               BotName = "ScavengerBot";
 
-            hash = MyStringId.GetOrCompute("RoboDog");
+            hash = MyStringId.GetOrCompute("Robo Dog");
             if (!modelDict.TryGetValue(hash, out subtype))
-              subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+            {
+              if (modelDict.Count > 1)
+                subtype = modelDict.FirstOrDefault(x => x.Value != "Default").Value;
+            }
 
             break;
           case AiSession.BotType.Crew:
@@ -134,6 +143,9 @@ namespace AiEnabled.Networking
       {
         subtype = AiSession.Instance.BotModelDict[bModel];
       }
+
+      if (string.IsNullOrEmpty(subtype) || subtype == "Default")
+        subtype = "Default_Astronaut";
 
       if (needsName)
       {

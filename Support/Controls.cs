@@ -419,27 +419,36 @@ namespace AiEnabled.Support
               if (needsName)
                 displayName = "RepairBot";
 
-              hash = MyStringId.GetOrCompute("DroneBot");
+              hash = MyStringId.GetOrCompute("Drone Bot");
               if (!modelDict.TryGetValue(hash, out subtype))
-                subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+              {
+                if (modelDict.Count > 1)
+                  subtype = modelDict.FirstOrDefault(x => x.Value != "Default").Value;
+              }
 
               break;
             case AiSession.BotType.Combat:
               if (needsName)
                 displayName = "CombatBot";
 
-              hash = MyStringId.GetOrCompute("TargetDummy");
+              hash = MyStringId.GetOrCompute("Target Dummy");
               if (!modelDict.TryGetValue(hash, out subtype))
-                subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+              {
+                if (modelDict.Count > 1)
+                  subtype = modelDict.FirstOrDefault(x => x.Value != "Default").Value;
+              }
 
               break;
             case AiSession.BotType.Scavenger:
               if (needsName)
                 displayName = "ScavengerBot";
 
-              hash = MyStringId.GetOrCompute("RoboDog");
+              hash = MyStringId.GetOrCompute("Robo Dog");
               if (!modelDict.TryGetValue(hash, out subtype))
-                subtype = modelDict.Count > 0 ? modelDict.First().Value : "Default_Astronaut";
+              {
+                if (modelDict.Count > 1)
+                  subtype = modelDict.FirstOrDefault(x => x.Value != "Default").Value;
+              }
 
               break;
             case AiSession.BotType.Crew:
@@ -459,6 +468,9 @@ namespace AiEnabled.Support
 
           subtype = AiSession.Instance.BotModelDict[botModel];
         }
+
+        if (string.IsNullOrEmpty(subtype) || subtype == "Default")
+          subtype = "Default_Astronaut";
 
         if (needsName)
         {
@@ -768,46 +780,53 @@ namespace AiEnabled.Support
 
     public static void SetSelectedModel(IMyTerminalBlock block, long value)
     {
-      var gameLogic = block.GameLogic.GetAs<Factory>();
-      if (gameLogic == null)
-        return;
-
-      var index = (int)value;
-      var botModel = (index < 0 || index > AiSession.Instance.BotModelList.Count - 1) ? AiSession.Instance.MODEL_DEFAULT : AiSession.Instance.BotModelList[index];
-      bool invalidModel = false;
-
-      if (botModel != AiSession.Instance.MODEL_DEFAULT)
+      try
       {
-        if (gameLogic.SelectedRole == AiSession.BotType.Scavenger)
+        var gameLogic = block.GameLogic.GetAs<Factory>();
+        if (gameLogic == null)
+          return;
+
+        var index = (int)value;
+        var botModel = (index < 0 || index > AiSession.Instance.BotModelList.Count - 1) ? AiSession.Instance.MODEL_DEFAULT : AiSession.Instance.BotModelList[index];
+        bool invalidModel = false;
+
+        if (botModel != AiSession.Instance.MODEL_DEFAULT)
         {
-          var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
-          var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
-          if (skeleton == "Humanoid")
+          if (gameLogic.SelectedRole == AiSession.BotType.Scavenger)
           {
-            botModel = AiSession.Instance.MODEL_DEFAULT;
-            invalidModel = true;
+            var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
+            var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
+            if (skeleton == "Humanoid")
+            {
+              botModel = AiSession.Instance.MODEL_DEFAULT;
+              invalidModel = true;
+            }
+          }
+          else if (gameLogic.SelectedRole == AiSession.BotType.Repair)
+          {
+            var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
+            var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
+            var animController = AiSession.Instance.AnimationControllerDictionary[botSubtype];
+            if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" && animController != "Plushie_Astronaut"))
+            {
+              botModel = AiSession.Instance.MODEL_DEFAULT;
+              invalidModel = true;
+            }
           }
         }
-        else if (gameLogic.SelectedRole == AiSession.BotType.Repair)
-        {
-          var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
-          var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
-          var animController = AiSession.Instance.AnimationControllerDictionary[botSubtype];
-          if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" && animController != "Plushie_Astronaut"))
-          {
-            botModel = AiSession.Instance.MODEL_DEFAULT;
-            invalidModel = true;
-          }
-        }
+
+        gameLogic.SelectedModel = botModel;
+        block.RefreshCustomInfo();
+
+        if (invalidModel)
+          SetContextMessage(block, "Invalid model for role");
+        else
+          RefreshTerminalControls(block);
       }
-
-      gameLogic.SelectedModel = botModel;
-      block.RefreshCustomInfo();
-
-      if (invalidModel)
-        SetContextMessage(block, "Invalid model for role");
-      else
-        RefreshTerminalControls(block);
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log(ex.ToString());
+      }
     }
 
     public static void SetSelectedHelper(IMyTerminalBlock block, long value)

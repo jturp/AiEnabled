@@ -65,12 +65,14 @@ namespace AiEnabled.Networking.Packets
             nameToUse = "Male Engineer";
           else if (subtype == "Default_Astronaut_Female")
             nameToUse = "Female Engineer";
+          else if (subtype == "RoboDog")
+            nameToUse = "Robo Dog";
           else
           {
             sb.Clear();
             foreach (var ch in subtype)
             {
-              if (char.IsLetterOrDigit(ch))
+              if (char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch))
                 sb.Append(ch);
               else if (ch == '_')
                 sb.Append(' ');
