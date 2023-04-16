@@ -38,6 +38,7 @@ namespace AiEnabled.ConfigData
     [ProtoMember(24)] public bool EnforceGroundPathingFirst = false;
     [ProtoMember(25)] public bool IgnoreArmorDeformation = false;
     [ProtoMember(26)] public bool AllowHelperTokenBuilding = true;
+    [ProtoMember(27)] public bool IncreaseNodeWeightsNearWeapons = false;
 
     [XmlArrayItem("Subtype", typeof(string))]
     [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;

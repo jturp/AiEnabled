@@ -48,11 +48,13 @@ namespace AiEnabled.Graphics.Support
           IconName = "AiEnabled_ScavengerBotMaterial";
         }
       }
-      else if (itemDef.Id.SubtypeName == "JT_HandGrenade" || itemDef.Id.SubtypeName == "JT_StickyGrenade")
+      else if (itemDef.Context.ModItem.PublishedFileId == 2861675418 || itemDef.Context.ModItem.PublishedFileId == 2861285936
+        || itemDef.Context.ModPath.IndexOf(@"AppData\Roaming\SpaceEngineers\Mods\HandGrenade", StringComparison.OrdinalIgnoreCase) >= 0)
       {
         IconName = $"AiEnabled_MyObjectBuilder_ConsumableItem/{itemDef.Id.SubtypeName}";
       }
-      else if (itemDef.Context.IsBaseGame || (itemDef.Context.ModItem.PublishedFileId == 2344068716 && !itemDef.IsOre && !itemDef.IsIngot))
+      else if (itemDef.Context.IsBaseGame || (itemDef.Context.ModItem.PublishedFileId == 2344068716 && !itemDef.IsOre && !itemDef.IsIngot)
+        || (itemDef.Context.ModItem.PublishedFileId == 2180804144 && (defId.SubtypeName == "SteelPlate" || defId.SubtypeName == "InteriorPlate")))
         IconName = $"AiEnabled_{defId.ToString()}";
       else if (itemDef is MyConsumableItemDefinition)
         IconName = "AiEnabled_MyObjectBuilder_ConsumableItem/ClangCola";

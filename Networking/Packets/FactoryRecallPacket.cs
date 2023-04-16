@@ -21,17 +21,19 @@ namespace AiEnabled.Networking
   [ProtoContract]
   public class FactoryRecallPacket : PacketBase
   {
-    [ProtoMember(1)] long _factoryBlockId;
-    [ProtoMember(2)] long _botEntityId;
-    [ProtoMember(3)] long _ownerIdentityId;
+    [ProtoMember(1)] readonly long _factoryBlockId;
+    [ProtoMember(2)] readonly long _botEntityId;
+    [ProtoMember(3)] readonly long _ownerIdentityId;
+    [ProtoMember(4)] readonly List<KeyValuePair<string, bool>> _priorities;
 
     public FactoryRecallPacket() { }
 
-    public FactoryRecallPacket(long blockId, long botId, long ownerId)
+    public FactoryRecallPacket(long blockId, long botId, long ownerId, List<KeyValuePair<string, bool>> priorityList)
     {
       _factoryBlockId = blockId;
       _botEntityId = botId;
       _ownerIdentityId = ownerId;
+      _priorities = priorityList;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -109,6 +111,20 @@ namespace AiEnabled.Networking
 
                   helper.Position = block.WorldMatrix.Translation + block.WorldMatrix.Backward + block.WorldMatrix.Down;
                   helper.GridEntityId = block.CubeGrid.EntityId;
+
+                  if (_priorities != null)
+                  {
+                    if (helper.Priorities == null)
+                      helper.Priorities = new List<string>();
+                    else
+                      helper.Priorities.Clear();
+
+                    foreach (var item in _priorities)
+                    {
+                      var prefix = item.Value ? "[X]" : "[  ]";
+                      helper.Priorities.Add($"{prefix} {item.Key}");
+                    }
+                  }
 
                   var future = new FutureBot(helper, _ownerIdentityId);
                   AiSession.Instance.FutureBotQueue.Enqueue(future);

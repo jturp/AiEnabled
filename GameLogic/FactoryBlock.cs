@@ -30,6 +30,9 @@ using Sandbox.Definitions;
 using Sandbox.Game;
 using VRage;
 using VRage.Utils;
+using AiEnabled.API;
+using Sandbox.Game.EntityComponents;
+using AiEnabled.Networking.Packets;
 
 namespace AiEnabled.GameLogic
 {
@@ -41,6 +44,11 @@ namespace AiEnabled.GameLogic
     public HelperInfo SelectedHelper;
     public StringBuilder BotName;
     public Color? BotColor;
+    public RemoteBotAPI.RepairPriorities RepairPriorities;
+    public RemoteBotAPI.TargetPriorities TargetPriorities;
+    public KeyValuePair<string, bool> SelectedRepairPriority;
+    public KeyValuePair<string, bool> SelectedTargetPriority;
+    public bool ShowRepairPriorities = true;
 
     public bool ButtonPressed
     {
@@ -88,6 +96,8 @@ namespace AiEnabled.GameLogic
     int _controlTicks, _soundTicks;
     bool _soundPlaying, _playBuildSound, _btnPressed, _sorterEnabled;
     List<IMyCubeGrid> _gridList = new List<IMyCubeGrid>();
+    List<string> _priorities = new List<string>();
+    List<string> _priListTemp = new List<string>();
     CubeGridMap _gridGraph;
 
     public override void Init(MyObjectBuilder_EntityBase objectBuilder)
@@ -117,6 +127,84 @@ namespace AiEnabled.GameLogic
           SelectedRole = AiSession.BotType.Combat;
         else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Crew))
           SelectedRole = AiSession.BotType.Crew;
+        else
+          AiSession.Instance.Logger.Log($"FactoryBlock.UpdateBeforeFrame: Unable to set role to an allowed type!", MessageType.WARNING);
+      }
+
+      var ent = _block as MyEntity;
+      if (ent.EntityStorage == null)
+        ent.EntityStorage = new MyEntityStorageComponent();
+
+      var repList = ent.EntityStorage.ReadStringList("AiEnabled_RepairPriorityList");
+      var tgtList = ent.EntityStorage.ReadStringList("AiEnabled_TargetPriorityList");
+      var tgtDmgCheck = ent.EntityStorage.ReadBool("AiEnabled_DamageToDisable");
+      var priListKVP = new List<KeyValuePair<string, bool>>();
+
+      if (repList != null)
+      {
+        priListKVP.Clear();
+        foreach (var item in repList)
+        {
+          var idx = item.IndexOf("]");
+          if (idx >= 0)
+          {
+            var enabled = item.StartsWith("[X]");
+            var name = item.Substring(idx + 1).Trim();
+
+            priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
+          }
+        }
+
+        RepairPriorities = new RemoteBotAPI.RepairPriorities(priListKVP);
+      }
+      else
+      {
+        _priListTemp.Clear();
+        foreach (var item in RepairPriorities.PriorityTypes)
+        {
+          var prefix = item.Value ? "[X]" : "[  ]";
+          _priListTemp.Add($"{prefix} {item.Key}");
+        }
+
+        RepairPriorities = new RemoteBotAPI.RepairPriorities();
+        ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
+      }
+
+      if (tgtList != null)
+      {
+        priListKVP.Clear();
+        foreach (var item in tgtList)
+        {
+          var idx = item.IndexOf("]");
+          if (idx >= 0)
+          {
+            var enabled = item.StartsWith("[X]");
+            var name = item.Substring(idx + 1).Trim();
+
+            priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
+          }
+        }
+
+        TargetPriorities = new RemoteBotAPI.TargetPriorities(priListKVP)
+        {
+          DamageToDisable = tgtDmgCheck
+        };
+      }
+      else
+      {
+        _priListTemp.Clear();
+        foreach (var item in TargetPriorities.PriorityTypes)
+        {
+          var prefix = item.Value ? "[X]" : "[  ]";
+          _priListTemp.Add($"{prefix} {item.Key}");
+        }
+
+        TargetPriorities = new RemoteBotAPI.TargetPriorities()
+        {
+          DamageToDisable = tgtDmgCheck
+        };
+        ent.EntityStorage.Write("AiEnabled_TargetPriorityList", _priListTemp);
+        ent.EntityStorage.Write("AiEnabled_DamageToDisable", tgtDmgCheck);
       }
 
       var inv = _block.GetInventory() as MyInventory;
@@ -155,6 +243,46 @@ namespace AiEnabled.GameLogic
       Controls.CreateControls(_block);
       Controls.CreateActions(_block);
       AiSession.Instance.FactoryControlsHooked = true;
+    }
+
+    public void UpdatePriorityLists(bool updateRepairList, bool updateBoth = false)
+    {
+      var ent = _block as MyEntity;
+      if (ent != null)
+      {
+        if (updateRepairList)
+        {
+          _priListTemp.Clear();
+          foreach (var item in RepairPriorities.PriorityTypes)
+          {
+            var prefix = item.Value ? "[X]" : "[  ]";
+            _priListTemp.Add($"{prefix} {item.Key}");
+          }
+
+          ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
+        }
+
+        if (!updateRepairList || updateBoth)
+        {
+          _priListTemp.Clear();
+          foreach (var item in TargetPriorities.PriorityTypes)
+          {
+            var prefix = item.Value ? "[X]" : "[  ]";
+            _priListTemp.Add($"{prefix} {item.Key}");
+          }
+
+          ent.EntityStorage.Write("AiEnabled_TargetPriorityList", _priListTemp);
+          ent.EntityStorage.Write("AiEnabled_DamageToDisable", TargetPriorities.DamageToDisable);
+        }
+
+        if (AiSession.Instance != null && !AiSession.Instance.IsServer)
+        {
+          var repList = updateRepairList ? RepairPriorities.PriorityTypes : null;
+          var tgtList = (!updateRepairList || updateBoth) ? TargetPriorities.PriorityTypes : null;
+          var pkt = new FactorySyncPacket(_block.EntityId, TargetPriorities.DamageToDisable, repList, tgtList);
+          AiSession.Instance.Network.SendToServer(pkt);
+        }
+      }
     }
 
     public void SetHelper(MyTuple<IMyCharacter, AiSession.ControlInfo> botInfo, IMyPlayer owner)
@@ -323,6 +451,8 @@ namespace AiEnabled.GameLogic
               var ownerId = botInfo.OwnerId;
 
               var botChar = CreateBot(_helperInfo, _gridGraph, ownerId);
+              AssignPriorities(botChar);
+
               AiSession.Instance.AddBot(botChar, ownerId);
 
               IMyPlayer player;
@@ -391,6 +521,29 @@ namespace AiEnabled.GameLogic
       }
     }
 
+    void AssignPriorities(BotBase bot)
+    {
+      if (bot is RepairBot)
+      {
+        if (RepairPriorities != null)
+        {
+          bot.RepairPriorities = new RemoteBotAPI.RepairPriorities(RepairPriorities.PriorityTypes);
+        }
+        else
+        {
+          bot.RepairPriorities = new RemoteBotAPI.RepairPriorities(RemoteBotAPI.GetDefaultRepairPriorities());
+        }
+      }
+      else if (TargetPriorities != null)
+      {
+        bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(TargetPriorities.PriorityTypes);
+      }
+      else
+      {
+        bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(RemoteBotAPI.GetDefaultTargetPriorities());
+      }
+    }
+
     private void OnMarkForClose(IMyEntity obj)
     {
       try
@@ -417,6 +570,12 @@ namespace AiEnabled.GameLogic
 
         _gridList?.Clear();
         _gridList = null;
+
+        _priorities?.Clear();
+        _priorities = null;
+
+        _priListTemp?.Clear();
+        _priListTemp = null;
 
         _particleInfo?.Close();
         _particleInfo = null;

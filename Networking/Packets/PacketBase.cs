@@ -44,6 +44,8 @@ namespace AiEnabled.Networking
   [ProtoInclude(1029, typeof(SettingSyncPacket))]
   [ProtoInclude(1030, typeof(SettingProvidePacket))]
   [ProtoInclude(1031, typeof(HelmetChangePacket))]
+  [ProtoInclude(1032, typeof(PriorityUpdatePacket))]
+  [ProtoInclude(1033, typeof(FactorySyncPacket))]
   [ProtoContract]
   public abstract class PacketBase
   {

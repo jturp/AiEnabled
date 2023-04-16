@@ -45,7 +45,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       _sideNodeWaitTime = 30;
       _ticksSinceFoundTarget = 241;
-      _ticksBetweenAttacks = 150;
+      _ticksBetweenAttacks = 180;
       _blockDamagePerSecond = 200;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
       _shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(1.5f));

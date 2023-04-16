@@ -37,7 +37,7 @@ namespace AiEnabled.Projectiles
     public long WeaponId;
     public double ProjectileSpeed;
     public IMyCharacter Owner;
-    public IMyEntity Target;
+    //public IMyEntity Target;
 
     public Vector3D Start;
     public Vector3D LastPosition;
@@ -79,7 +79,7 @@ namespace AiEnabled.Projectiles
       // Keen does damage = DamageModifier * (IsCharacter ? (HeadShot ? HeadShotDamage : HealthDamage) : MassDamage);
 
       Owner = bot;
-      Target = target;
+      //Target = target;
       Damage = damage;
       WeaponId = bot.EquippedTool.EntityId;
       ShooterVelocity = (bot?.Physics.LinearVelocity ?? Vector3.Zero) / 60;

@@ -89,26 +89,43 @@ namespace AiEnabled.Bots
         var cube = Entity as IMyCubeBlock;
         if (cube != null)
         {
-          var door = cube as IMyDoor;
-          if (door != null && !cube.IsFunctional && cube.SlimBlock != null)
-          {
-            return door.SlimBlock.IsBlockUnbuilt();
-          }
-
-          var stator = cube as IMyMotorStator;
-          if (stator != null && (stator.MarkedForClose || !stator.Enabled || stator.Top == null))
+          if (cube.MarkedForClose || cube.SlimBlock?.IsDestroyed == true)
             return true;
 
-          return cube?.SlimBlock?.IsDestroyed ?? true;
+          var door = cube as IMyDoor;
+          if (door != null || _base.TargetPriorities?.DamageToDisable == true)
+          {
+            var isUnbuilt = cube.SlimBlock?.IsBlockUnbuilt() == true;
+            if (isUnbuilt)
+              return true;
+
+            if (door == null && !cube.IsFunctional)
+              return true;
+          }
+
+          var cubeCheck = cube.CubeGrid.GetCubeBlock(cube.Position);
+          return cubeCheck != cube.SlimBlock;
         }
 
         var slim = Entity as IMySlimBlock;
         if (slim != null)
-          return slim.IsDestroyed;
+        {
+          if (slim.IsDestroyed)
+            return true;
+
+          if (_base.TargetPriorities?.DamageToDisable == true && slim.FatBlock != null)
+          {
+            if (!slim.FatBlock.IsFunctional || slim.IsBlockUnbuilt())
+              return true;
+          }
+
+          var slimCheck = slim.CubeGrid.GetCubeBlock(slim.Position);
+          return slimCheck != slim;
+        }
 
         var ch = Entity as IMyCharacter;
         if (ch == null)
-          return false;
+          return true;
 
         BotBase b;
         if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out b))
@@ -171,7 +188,7 @@ namespace AiEnabled.Bots
         return false;
       }
 
-      public bool OnLadder(out MyCubeBlock ladder)
+      public bool IsOnLadder(out MyCubeBlock ladder)
       {
         ladder = null;
         if (!_base._currentGraph.IsGridGraph || !(Entity is IMyCharacter))
@@ -220,6 +237,9 @@ namespace AiEnabled.Bots
         Entity = target;
         IsNewTarget = Entity != null;
         _base.ResetSideNode();
+
+        if (Player == null && target is IMyEntity)
+          Player = MyAPIGateway.Players.GetPlayerControllingEntity((IMyEntity)target);
 
         if (!isInventory)
           Inventory = null;
@@ -421,17 +441,46 @@ namespace AiEnabled.Bots
 
         var botMatrix = _base.WorldMatrix;
 
-        var cube = Entity as IMyCubeBlock;
-        var isTurretOrRotor = !(_base is RepairBot) && cube != null && !cube.MarkedForClose
-          && (AiSession.Instance.AllCoreWeaponDefinitions.Contains(cube.BlockDefinition)
-          || cube is IMyMotorStator || cube is IMyLargeTurretBase || cube is IMySmallGatlingGun
-          || cube is IMySmallMissileLauncher || cube is IMySmallMissileLauncherReload);
+        var cube = IsSlimBlock ? ((IMySlimBlock)Entity).FatBlock : Entity as IMyCubeBlock;
+        bool isTurret = false;
+        bool checkWeapon = false;
+        if (!(_base is RepairBot) && cube != null && !cube.MarkedForClose)
+        {
+          isTurret = cube is IMyLargeTurretBase;
+          var isRotor = cube is IMyMotorStator;
+          var isWeapon = AiSession.Instance.AllCoreWeaponDefinitions.Contains(cube.BlockDefinition)
+            || cube is IMySmallGatlingGun || cube is IMySmallMissileLauncher || cube is IMySmallMissileLauncherReload;
 
-        if (isTurretOrRotor && cube.CubeGrid != null && !cube.CubeGrid.MarkedForClose)
+          checkWeapon = isTurret || isRotor || isWeapon;
+        }
+
+        if (checkWeapon && cube.CubeGrid != null && !cube.CubeGrid.MarkedForClose)
         {
           var turretGrid = cube.CubeGrid;
-          actualPosition = cube.WorldAABB.Center + cube.WorldMatrix.Up * (turretGrid.GridSize > 1 ? 1 : 0.5);
-          AssignGravityAtTarget(ref actualPosition);
+          bool validWeapon = _base.HasWeaponOrTool && _base.ToolDefinition != null && _base.ToolDefinition.WeaponType != MyItemWeaponType.None;
+
+          if (validWeapon)
+          {
+            actualPosition = cube.WorldAABB.Center + cube.WorldMatrix.Up * (turretGrid.GridSize > 1 ? 1 : 0.5);
+            AssignGravityAtTarget(ref actualPosition);
+          }
+          else
+          {
+            var pos = cube.Position;
+
+            if (isTurret && cube.CubeGrid.GridSizeEnum == MyCubeSize.Large)
+            {
+              var downVec = cube.WorldMatrix.Down;
+              var downDir = cube.CubeGrid.WorldMatrix.GetClosestDirection(downVec);
+              var intVec = Base6Directions.GetIntVector(downDir);
+              pos += intVec;
+            }
+
+            actualPosition = turretGrid.GridIntegerToWorld(pos);
+            gotoPosition = actualPosition;
+            AssignGravityAtTarget(ref actualPosition);
+            return true;
+          }
 
           var cubePosition = actualPosition;
 

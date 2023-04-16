@@ -29,7 +29,7 @@ namespace AiEnabled.Bots.Roles
     {
       Behavior = new CreatureBehavior(this);
 
-      _ticksBetweenAttacks = 150;
+      _ticksBetweenAttacks = 200;
       _blockDamagePerSecond = 175;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 

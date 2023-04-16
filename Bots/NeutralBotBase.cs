@@ -38,6 +38,7 @@ namespace AiEnabled.Bots
     internal bool _shouldMove = true;
     internal bool _allowedToSwitchWalk;
     internal bool _moveFromLadder;
+    internal bool _tooCloseUseSideNode;
     internal bool _firePacketSent;
     internal uint _lineOfSightTimer;
     internal int _lastMovementX, _ticksSinceFirePacket;
@@ -145,6 +146,7 @@ namespace AiEnabled.Bots
       if (_shouldMove)
       {
         GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, out shouldFire, distanceCheck);
+        CheckBlockTarget(ref isTgt, ref shouldAttack, ref movement, ref rotation, ref distanceCheck);
       }
       else
       {
@@ -254,6 +256,7 @@ namespace AiEnabled.Bots
       var reject = vecToWP - projUp;
       var angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
+      var absRelVector = Vector3D.Abs(relVectorBot);
 
       if (!WaitForStuckTimer && angleTwoOrLess)
       {
@@ -292,19 +295,24 @@ namespace AiEnabled.Bots
 
           if (_moveFromLadder)
           {
+            _tooCloseUseSideNode = false;
             _moveFromLadder = false;
             _sideNode = null;
           }
         }
       }
       else if (!_moveFromLadder || (_sideNode.HasValue && Vector3D.DistanceSquared(botPosition, _sideNode.Value) > 400))
+      {
+        _tooCloseUseSideNode = false;
         _sideNode = null;
+      }
 
       if (_currentGraph?.Ready == true)
       {
         var localPos = _currentGraph.WorldToLocal(botPosition);
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
-        if (Vector3D.DistanceSquared(worldPosAligned, waypoint) >= _currentGraph.CellSize * _currentGraph.CellSize)
+        var cellSize = _currentGraph.CellSize * 1.25f;
+        if (Vector3D.DistanceSquared(worldPosAligned, waypoint) > cellSize * cellSize)
         {
           var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(botMatrix));
           var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
@@ -331,11 +339,51 @@ namespace AiEnabled.Bots
               movement = Math.Sign(relVectorBot.Y) * Vector3.Up * 2;
             }
 
-            fistAttack = !isOwnerTgt && !hasWeapon && isTarget && angleTwoOrLess && distanceSqd <= distanceCheck;
+            bool checkFist2 = !isOwnerTgt && !HasWeaponOrTool && isTarget;
+            bool aligned2 = angleTwoOrLess && distanceSqd <= distanceCheck;
+
+            var slim2 = Target.Entity as IMySlimBlock;
+            if (checkFist2 && !aligned2 && slim2 != null)
+            {
+              double checkD;
+              if (slim2.FatBlock != null)
+              {
+                checkD = slim2.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 6f;
+              }
+              else
+              {
+                var size = Math.Max(1, (slim2.Max - slim2.Min).Length());
+                checkD = size * slim2.CubeGrid.GridSize * 0.5 + 6;
+              }
+
+              bool allowSecondGuess = (relVectorBot.Z <= 0 && relVectorBot.Z > -3) || (absRelVector.X < 0.1 && absRelVector.Z < 0.1);
+
+              if (allowSecondGuess && distanceSqd <= checkD)
+                aligned2 = true;
+            }
+
+            fistAttack = checkFist2 && aligned2;
+
+            if (fistAttack && slim2 != null && slim2.CubeGrid.Physics.LinearVelocity.LengthSquared() < 1)
+              movement = Vector3.Zero;
+
             return;
           }
         }
       }
+
+      if (!rifleAttack && !tgtFriendly && hasWeapon && Target.Entity != null && !_sideNode.HasValue)
+      {
+        var dirToWP = botMatrix.GetClosestDirection(vecToWP);
+        if ((dirToWP == Base6Directions.Direction.Down || dirToWP == Base6Directions.Direction.Up) && vecToWP.LengthSquared() < 100)
+        {
+          var clearDirection = GetClearTravelDirection();
+          _sideNode = botPosition + clearDirection * 5;
+          _tooCloseUseSideNode = true;
+        }
+      }
+      else if (_tooCloseUseSideNode && rifleAttack)
+        _tooCloseUseSideNode = false;
 
       if (rifleAttack || _sideNode.HasValue)
       {
@@ -371,7 +419,10 @@ namespace AiEnabled.Bots
             var xMove = absX <= 0.5 ? 0 : Math.Sign(relativeDir.X);
             var zMove = absZ <= 0.5 ? 0 : Math.Sign(relativeDir.Z);
             if (xMove == 0 && zMove == 0)
+            {
+              _tooCloseUseSideNode = false;
               _sideNode = null;
+            }
 
             movement = new Vector3(xMove, 0, zMove);
           }
@@ -380,6 +431,7 @@ namespace AiEnabled.Bots
             var worldNode = _currentGraph.LocalToWorld(node);
             _sideNode = worldNode;
             _sideNodeTimer = 0;
+            _tooCloseUseSideNode = false;
 
             if (Vector3D.DistanceSquared(worldNode, actualPosition) < 10)
             {
@@ -427,12 +479,14 @@ namespace AiEnabled.Bots
       }
       else if (PathFinderActive)
       {
+        _tooCloseUseSideNode = false;
+
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
           if (_currentGraph.IsGridGraph)
           {
             MyCubeBlock ladder;
-            if (flattenedLengthSquared <= flatDistanceCheck && relVectorBot.Y > 0 && Target.OnLadder(out ladder))
+            if (flattenedLengthSquared <= flatDistanceCheck && relVectorBot.Y > 0 && Target.IsOnLadder(out ladder))
             {
               var gridGraph = _currentGraph as CubeGridMap;
               _sideNode = gridGraph.GetLastValidNodeOnLine(ladder.PositionComp.WorldAABB.Center, ladder.WorldMatrix.Forward, 20);
@@ -490,9 +544,34 @@ namespace AiEnabled.Bots
       else
         movement = Vector3.Zero;
 
-      fistAttack = isTarget && !isOwnerTgt && !hasWeapon && angleTwoOrLess && distanceSqd <= distanceCheck;
+      bool checkFist = !isOwnerTgt && !HasWeaponOrTool && isTarget;
+      bool aligned = angleTwoOrLess && distanceSqd <= distanceCheck;
 
-      if (!fistAttack && isTarget && !isOwnerTgt && !hasWeapon && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
+      var slim = Target.Entity as IMySlimBlock;
+      if (checkFist && !aligned && slim != null)
+      {
+        double checkD;
+        if (slim.FatBlock != null)
+        {
+          checkD = slim.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 6f;
+        }
+        else
+        {
+          var size = Math.Max(1, (slim.Max - slim.Min).Length());
+          checkD = size * slim.CubeGrid.GridSize * 0.5 + 6;
+        }
+
+        bool allowSecondGuess = (relVectorBot.Z <= 0 && relVectorBot.Z > -3) || (absRelVector.X < 0.1 && absRelVector.Z < 0.1);
+
+        if (allowSecondGuess && distanceSqd <= checkD)
+          aligned = true;
+      }
+
+      fistAttack = checkFist && aligned;
+
+      if (fistAttack && slim != null && slim.CubeGrid.Physics.LinearVelocity.LengthSquared() < 1)
+        movement = Vector3.Zero;
+      else if (!fistAttack && isTarget && !isOwnerTgt && !hasWeapon && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
       if (jpEnabled)
@@ -551,7 +630,7 @@ namespace AiEnabled.Bots
       }
       else
       {
-        if (!_moveFromLadder)
+        if (!_moveFromLadder && !_tooCloseUseSideNode)
           _sideNode = null;
 
         if (isCrouching)
@@ -583,9 +662,21 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
+      IMySlimBlock slim = null;
+      Vector3D tgtPosition;
       var targetEnt = Target.Entity as IMyEntity;
       if (targetEnt == null)
-        return false;
+      {
+        slim = Target.Entity as IMySlimBlock;
+        if (slim == null)
+          return false;
+
+        slim.ComputeWorldCenter(out tgtPosition);
+      }
+      else
+      {
+        tgtPosition = targetEnt.WorldAABB.Center;
+      }
 
       if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
@@ -598,14 +689,14 @@ namespace AiEnabled.Bots
         if (!_wcShotFired && !_wcWeaponReloading)
         {
           object tgt;
-          if (magList[0].Item2.Item4)
+          if (magList[0].Item2.Item4 && targetEnt != null)
           {
             tgt = targetEnt;
             AiSession.Instance.WcAPI.SetAiFocus((MyEntity)Character, (MyEntity)targetEnt);
           }
           else
           {
-            tgt = (Object)targetEnt.WorldAABB.Center;
+            tgt = (Object)tgtPosition;
           }
 
           if (AiSession.Instance.WcAPI.ShootRequest((MyEntity)Character.EquippedTool, tgt))
@@ -638,7 +729,7 @@ namespace AiEnabled.Bots
 
         if (isLauncher)
         {
-          AiSession.Instance.Projectiles.AddMissileForBot(this, targetEnt);
+          AiSession.Instance.Projectiles.AddMissileForBot(this, targetEnt, slim);
         }
         else
         {
@@ -660,14 +751,15 @@ namespace AiEnabled.Bots
           }
 
           bool leadTargets = ShouldLeadTargets;
+          var topMost = slim?.CubeGrid ?? targetEnt;
 
           if (MyAPIGateway.Multiplayer.MultiplayerActive)
           {
-            var packet = new WeaponFirePacket(Character.EntityId, targetEnt.EntityId, 1.5f, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets);
+            var packet = new WeaponFirePacket(Character.EntityId, topMost.EntityId, 1.5f, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets, slim?.Position);
             AiSession.Instance.Network.RelayToClients(packet);
           }
 
-          AiSession.Instance.StartWeaponFire(Character.EntityId, targetEnt.EntityId, 1.5f, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets);
+          AiSession.Instance.StartWeaponFire(Character.EntityId, topMost.EntityId, 1.5f, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets, slim?.Position);
         }
 
         _firePacketSent = true;
@@ -873,7 +965,6 @@ namespace AiEnabled.Bots
               charController.SwitchToWeapon(ToolDefinition.PhysicalItemId);
               var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
               gun?.OnControlAcquired(Character);
-
             }
 
             HasWeaponOrTool = true;

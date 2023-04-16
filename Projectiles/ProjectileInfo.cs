@@ -63,6 +63,20 @@ namespace AiEnabled.Projectiles
         return;
       }
 
+      Vector3D targetPos;
+      if (info.BlockPosition.HasValue)
+      {
+        var grid = target as MyCubeGrid;
+        if (grid == null)
+          return;
+
+        targetPos = grid.GridIntegerToWorld(info.BlockPosition.Value);
+      }
+      else
+      {
+        targetPos = target.WorldAABB.Center;
+      }
+
       Vector3D muzzlePos;
       if (MyAPIGateway.Multiplayer.MultiplayerActive)
       {
@@ -72,7 +86,6 @@ namespace AiEnabled.Projectiles
       else
         muzzlePos = gun.GetMuzzleWorldPosition();
 
-      var targetPos = target.WorldAABB.Center;
       var cube = target as IMyCubeBlock;
       if (cube != null)
       {
@@ -81,11 +94,12 @@ namespace AiEnabled.Projectiles
         else if (cube.BlockDefinition.SubtypeName == "LargeBlockGate")
           targetPos += cube.WorldMatrix.Down * cube.CubeGrid.GridSize * 0.5;
       }
-      else if (info.LeadTargets && target.Physics.LinearVelocity.LengthSquared() > 0 && !Vector3D.IsZero(target.Physics.LinearVelocity - bot.Physics.LinearVelocity, 0.1))
+      
+      if (info.LeadTargets && target.Physics.LinearVelocity.LengthSquared() > 0 && !Vector3D.IsZero(target.Physics.LinearVelocity - bot.Physics.LinearVelocity, 0.1))
       {
         var ammoDef = gun.CurrentAmmoDefinition as MyProjectileAmmoDefinition;
         var ammoSpeed = ammoDef?.DesiredSpeed ?? 300;
-        targetPos = GetInterceptPoint(ammoSpeed, bot, target);
+        targetPos = GetInterceptPoint(ammoSpeed, bot, target, targetPos);
       }
  
       var targetVec = targetPos - muzzlePos;
@@ -105,12 +119,12 @@ namespace AiEnabled.Projectiles
       }
     }
 
-    public void AddMissileForBot(BotBase botBase, IMyEntity target)
+    public void AddMissileForBot(BotBase botBase, IMyEntity target, IMySlimBlock block = null)
     {
       var bot = botBase.Character;
       var gunObj = bot?.EquippedTool as IMyHandheldGunObject<MyGunBase>;
       var gun = gunObj?.GunBase;
-      if (gun == null || target == null || target.MarkedForClose)
+      if (gun == null || (block == null && (target == null || target.MarkedForClose)))
       {
         //AiSession.Instance.Logger.Log($"ProjectileInfo.Add: Gun or Target was bad, returning!");
         return;
@@ -128,7 +142,13 @@ namespace AiEnabled.Projectiles
       var ammoDef = gun.CurrentAmmoDefinition as MyMissileAmmoDefinition;
       var ammoSpeed = ammoDef?.DesiredSpeed ?? 200;
 
-      var targetPos = target.WorldAABB.Center;
+      Vector3D targetPos;
+      if (block != null)
+        block.ComputeWorldCenter(out targetPos);
+      else
+        targetPos = target.WorldAABB.Center;
+
+      var topMost = block?.CubeGrid ?? target;
       var cube = target as IMyCubeBlock;
       if (cube != null)
       {
@@ -137,9 +157,10 @@ namespace AiEnabled.Projectiles
         else if (cube.BlockDefinition.SubtypeName == "LargeBlockGate")
           targetPos += cube.WorldMatrix.Down * cube.CubeGrid.GridSize * 0.5;
       }
-      else if (botBase.ShouldLeadTargets && target.Physics.LinearVelocity.LengthSquared() > 0 && !Vector3D.IsZero(target.Physics.LinearVelocity - bot.Physics.LinearVelocity, 0.1))
+      
+      if (botBase.ShouldLeadTargets && topMost.Physics.LinearVelocity.LengthSquared() > 0 && !Vector3D.IsZero(topMost.Physics.LinearVelocity - bot.Physics.LinearVelocity, 0.1))
       {
-        targetPos = GetInterceptPoint(ammoSpeed, bot, target);
+        targetPos = GetInterceptPoint(ammoSpeed, bot, topMost, targetPos);
       }
 
       var targetVec = targetPos - muzzlePos;
@@ -212,11 +233,11 @@ namespace AiEnabled.Projectiles
       }
     }
 
-    Vector3D GetInterceptPoint(double ammoSpeed, IMyCharacter bot, IMyEntity tgt)
+    Vector3D GetInterceptPoint(double ammoSpeed, IMyCharacter bot, IMyEntity tgt, Vector3D? tgtCenter = null)
     {
       // Setup the equation
       var botPos = bot.WorldAABB.Center;
-      var tgtPos = tgt.WorldAABB.Center;
+      var tgtPos = tgtCenter ?? tgt.WorldAABB.Center;
       var botVel = (Vector3D)bot.Physics.LinearVelocity;
       var tgtVel = (Vector3D)tgt.Physics.LinearVelocity;
 

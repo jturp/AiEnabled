@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 using AiEnabled.API;
 using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Parallel;
 using AiEnabled.Utilities;
 
@@ -785,7 +786,7 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
         }
 
-        InvokePositionsRemoved(_positionsRemoved);
+        InvokePositionsRemoved(_positionsRemoved, false);
 
         //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
       }
@@ -814,7 +815,7 @@ namespace AiEnabled.Ai.Support
       Dirty = false;
       OpenTileDict.Clear();
       ObstacleNodes.Clear();
-      InvokePositionsRemoved(null);
+      InvokePositionsRemoved(null, false);
       MyAPIGateway.Parallel.StartBackground(InitGridArea, SetReady);
 
       // Testing only
@@ -989,7 +990,7 @@ namespace AiEnabled.Ai.Support
         if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
           node = new Node();
 
-        node.Update(localPoint, offset, nType, 0);
+        node.Update(localPoint, offset, this, nType, 0);
 
         if (checkForVoxel)
         {
@@ -1120,7 +1121,7 @@ namespace AiEnabled.Ai.Support
         if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
           continue;
 
-        if (grid.IsStatic && grid.GridSizeEnum == VRage.Game.MyCubeSize.Large && grid.BlocksCount > 5)
+        if (grid.IsStatic && grid.GridSizeEnum == MyCubeSize.Large && grid.BlocksCount > 5)
           continue;
 
         ((IMyCubeGrid)grid).GetBlocks(blocks);
@@ -1188,14 +1189,15 @@ namespace AiEnabled.Ai.Support
               ObstacleNodesTemp[graphLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, false);
             }
 
-            foreach (var dir in AiSession.Instance.CardinalDirections)
-            {
-              var otherLocal = graphLocal + dir;
+            // having this causes too many unnecessary teleportations when bots get out of vehicles and/or strafe near the grid during a fire fight
+            //foreach (var dir in AiSession.Instance.CardinalDirections)
+            //{
+            //  var otherLocal = graphLocal + dir;
 
-              if (OpenTileDict.ContainsKey(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal))
-                //ObstacleNodesTemp[otherLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, true);
-                _tempKVPList.Add(new KeyValuePair<IMySlimBlock, Vector3I>(b, otherLocal));
-            }
+            //  if (OpenTileDict.ContainsKey(otherLocal) && !ObstacleNodesTemp.ContainsKey(otherLocal))
+            //    //ObstacleNodesTemp[otherLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, true);
+            //    _tempKVPList.Add(new KeyValuePair<IMySlimBlock, Vector3I>(b, otherLocal));
+            //}
           }
         }
 
@@ -1317,6 +1319,48 @@ namespace AiEnabled.Ai.Support
     public override bool IsObstacle(Vector3I position, BotBase bot, bool includeTemp)
     {
       bool result = bot?._pathCollection != null && bot._pathCollection.Obstacles.ContainsKey(position);
+
+      if (!result && bot != null && !(bot is RepairBot) && (bot.Target.IsSlimBlock || bot.Target.IsCubeBlock))
+      {
+        var cube = bot.Target.Entity as IMyCubeBlock;
+        var slim = cube?.SlimBlock;
+
+        if (slim == null)
+          slim = bot.Target.Entity as IMySlimBlock;
+
+        if (slim?.CubeGrid != null)
+        {
+          List<KeyValuePair<IMySlimBlock, Vector3D>> blocks;
+          if (bot._pathCollection.BlockObstacles.TryGetValue(slim.CubeGrid.EntityId, out blocks))
+          {
+            Vector3D slimWorld;
+            if (cube != null)
+              slimWorld = cube.GetPosition();
+            else if (slim.FatBlock != null)
+              slimWorld = slim.FatBlock.GetPosition();
+            else
+              slim.ComputeWorldCenter(out slimWorld);
+
+            for (int i = 0; i < blocks.Count; i++)
+            {
+              var kvp = blocks[i];
+              if (kvp.Key == slim)
+              {
+                if (Vector3D.IsZero(slimWorld - kvp.Value, 1))
+                {
+                  result = true;
+                }
+                else
+                {
+                  blocks.RemoveAtFast(i);
+                }
+
+                break;
+              }
+            }
+          }
+        }
+      }
 
       if (!includeTemp)
         return result;

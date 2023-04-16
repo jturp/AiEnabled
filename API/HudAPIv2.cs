@@ -1,18 +1,13 @@
 ﻿using ProtoBuf;
-
 using Sandbox.ModAPI;
-
 using System;
 using System.Collections.Generic;
 using System.Text;
-
 using VRage;
 using VRage.Input;
 using VRage.ModAPI;
 using VRage.Utils;
-
 using VRageMath;
-
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 
 namespace AiEnabled.API
@@ -65,12 +60,12 @@ namespace AiEnabled.API
 			if (instance != null)
 			{
 
-				return;
+					return;
 			}
 			instance = this;
 			m_onRegisteredAction = onRegisteredAction;
-			MyAPIGateway.Utilities.RegisterMessageHandler(REGISTRATIONID, RegisterComponents);
-		}
+            MyAPIGateway.Utilities.RegisterMessageHandler(REGISTRATIONID, RegisterComponents);
+        }
 
 		public void Close()
 		{
@@ -88,9 +83,9 @@ namespace AiEnabled.API
 			RemoveMessage = null;
 			registered = false;
 			m_onRegisteredAction = null;
-			if (instance == this)
+			if(instance == this)
 				instance = null;
-		}
+        }
 		private enum RegistrationEnum : int
 		{
 			OnScreenUpdate = 2000
@@ -99,8 +94,8 @@ namespace AiEnabled.API
 		{
 			if (registered)
 				return;
-			if (obj is MyTuple<Func<int, object>, Action<object, int, object>, Func<object, int, object>, Action<object>>)
-			{
+			if(obj is MyTuple<Func<int, object>, Action<object, int, object>, Func<object, int, object>, Action<object>>)
+            {
 				var Handlers = (MyTuple<Func<int, object>, Action<object, int, object>, Func<object, int, object>, Action<object>>)obj;
 				MessageFactory = Handlers.Item1;
 				MessageSetter = Handlers.Item2;
@@ -112,9 +107,9 @@ namespace AiEnabled.API
 					m_onRegisteredAction();
 				APIDialog.GetDialogMethods(MessageGetter);
 				MessageSet(null, (int)RegistrationEnum.OnScreenUpdate, new MyTuple<Action>(ScreenChangedHandle));
-
-			}
-		}
+				
+            }
+        }
 
 		/// <summary>
 		/// If Heartbeat is true you may call any constructor in this class. Do not call any constructor or set properties if this is false.
@@ -132,14 +127,14 @@ namespace AiEnabled.API
 		#region Intercomm
 		private void DeleteMessage(object BackingObject)
 		{
-			if (BackingObject != null)
+			if(BackingObject != null)
 				RemoveMessage(BackingObject);
 		}
 		private object CreateMessage(MessageTypes type)
 		{
 			return MessageFactory((int)type);
 		}
-		private object MessageGet(object BackingObject, int Member)
+		private object MessageGet(object BackingObject, int Member )
 		{
 			return MessageGetter(BackingObject, Member);
 		}
@@ -156,11 +151,11 @@ namespace AiEnabled.API
 		}
 		private void ScreenChangedHandle()
 		{
-			if (m_onScreenDimensionsChanged != null)
+			if(m_onScreenDimensionsChanged != null)
 			{
 				m_onScreenDimensionsChanged();
-			}
-		}
+            }
+        }
 		#endregion
 		private enum MessageTypes : int
 		{
@@ -221,22 +216,22 @@ namespace AiEnabled.API
 			{
 				return ColorPickerDialogDelagete?.Invoke(Title, InitialColor, onSubmit, onUpdate, onCancel, showAlpha, usehsv) ?? false;
 			}
-
+			
 			public static bool TextDialog(Action<string> onSubmit, StringBuilder Title)
 			{
 				return TextDialogDelagete?.Invoke(onSubmit, Title) ?? false;
 			}
-
+			
 			public static bool KeybindDialog(Action<MyKeys, bool, bool, bool> onSubmit, StringBuilder Title)
 			{
 				return KeybindDialogDelagete?.Invoke(onSubmit, Title) ?? false;
 			}
-
+			
 			public static bool ScreenInputDialog(StringBuilder title, Vector2D origin, Vector2D size, Action<Vector2D> onSubmit, Action<Vector2D> onUpdate, Action onCancel)
 			{
 				return ScreenInputDialogDelagete?.Invoke(title, origin, size, onSubmit, onUpdate, onCancel) ?? false;
 			}
-
+			
 			static public bool SliderDialog(StringBuilder title, Action<float> onSubmit, float initialvalue, Func<float, object> SliderPercentToValue, Action OnCancel)
 			{
 				return SliderDialogDelagete?.Invoke(title, onSubmit, initialvalue, SliderPercentToValue, OnCancel) ?? false;
@@ -289,7 +284,7 @@ namespace AiEnabled.API
 			public static FontDefinition GetFontDefinition(MyStringId DefinitionName)
 			{
 				object retval = instance.MessageGet(DefinitionName, (int)APIinfoMembers.GetFontDefinition);
-				return new FontDefinition(retval);
+                return new FontDefinition(retval);
 
 			}
 			/// <summary>
@@ -636,7 +631,7 @@ namespace AiEnabled.API
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.EntityMessage);
-				if (BackingObject != null)
+				if(BackingObject != null)
 				{
 					if (Max.HasValue)
 						this.Max = Max.Value;
@@ -766,11 +761,11 @@ namespace AiEnabled.API
 			}
 			#endregion
 
-			public HUDMessage(StringBuilder Message, Vector2D Origin, Vector2D? Offset = null, int TimeToLive = -1, double Scale = 1.0d, bool HideHud = true, bool Shadowing = false, Color? ShadowColor = null, BlendTypeEnum Blend = DefaultHUDBlendType, string Font = DefaultFont)
+			public HUDMessage(StringBuilder Message, Vector2D Origin, Vector2D? Offset = null, int TimeToLive = -1,   double Scale = 1.0d, bool HideHud = true, bool Shadowing = false, Color? ShadowColor = null, BlendTypeEnum Blend = DefaultHUDBlendType, string Font = DefaultFont)
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.HUDMessage);
-				if (BackingObject != null)
+				if(BackingObject != null)
 				{
 					this.TimeToLive = TimeToLive;
 					this.Origin = Origin;
@@ -1001,7 +996,7 @@ namespace AiEnabled.API
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.BillBoardHUDMessage);
 
-				if (BackingObject != null)
+				if(BackingObject != null)
 				{
 					this.TimeToLive = TimeToLive;
 					this.Origin = Origin;
@@ -1398,11 +1393,11 @@ namespace AiEnabled.API
 			#endregion
 
 
-			public SpaceMessage(StringBuilder Message, Vector3D WorldPosition, Vector3D Up, Vector3D Left, double Scale = 1, Vector2D? Offset = null, int TimeToLive = -1, TextOrientation TxtOrientation = TextOrientation.ltr, BlendTypeEnum Blend = DefaultWorldBlendType, string Font = DefaultFont)
+			public SpaceMessage(StringBuilder Message, Vector3D WorldPosition, Vector3D Up, Vector3D Left, double Scale = 1, Vector2D? Offset = null, int TimeToLive = -1,  TextOrientation TxtOrientation = TextOrientation.ltr, BlendTypeEnum Blend = DefaultWorldBlendType, string Font = DefaultFont)
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.SpaceMessage);
-				if (BackingObject != null)
+				if(BackingObject != null)
 				{
 					this.TimeToLive = TimeToLive;
 					this.Scale = Scale;
@@ -1559,7 +1554,7 @@ namespace AiEnabled.API
 			private enum MenuRootCategoryMembers : int
 			{
 				MenuFlag = 200
-
+				
 			}
 			/// <summary>
 			/// Which menu to attach to, either Player or Admin menus. 
@@ -2049,7 +2044,7 @@ namespace AiEnabled.API
 			/// <param name="Update">Called every tick while the user is manipulating the dialog. </param>
 			/// <param name="Cancel">Called when user does not click the dialog box window to move it and cancels out of the dialog box.</param>
 			/// <param name="OnSelect">Called when user invokes this dialog box use to refresh the Size property</param>
-			public MenuScreenInput(string Text, MenuCategoryBase Parent, Vector2D Origin, Vector2D Size, string InputDialogTitle = "Move this element", Action<Vector2D> OnSubmit = null, Action<Vector2D> Update = null, Action Cancel = null, Action OnSelect = null)
+			public MenuScreenInput(string Text, MenuCategoryBase Parent, Vector2D Origin, Vector2D Size, string InputDialogTitle = "Move this element",  Action<Vector2D> OnSubmit = null, Action<Vector2D> Update = null, Action Cancel = null, Action OnSelect = null)
 			{
 				instance.RegisterCheck();
 				BackingObject = instance.CreateMessage(MessageTypes.MenuScreenInput);
@@ -2062,7 +2057,7 @@ namespace AiEnabled.API
 				this.OnCancel = Cancel;
 				this.OnSelect = OnSelect;
 				this.Parent = Parent;
-
+				
 			}
 		}
 		public class MenuSliderInput : MenuItemBase
@@ -2318,7 +2313,7 @@ namespace AiEnabled.API
 				public int margin;
 				[ProtoMember(8)]
 				public int padding;
-			}
+            }
 
 			public BoxUIDefinitionData BoxUIDef
 			{
@@ -2345,7 +2340,7 @@ namespace AiEnabled.API
 				Min
 			}
 
-
+						
 
 			public BoxUIDefinition()
 			{
@@ -2355,26 +2350,26 @@ namespace AiEnabled.API
 			{
 				BackingDefinition = instance.CreateMessage(MessageTypes.UIDefinition);
 				var data = new BoxUIDefinitionData()
-				{
-					Material = Material,
-					imagesize = imagesize,
-					topwidthpx = topwidthpx,
-					leftwidthpx = leftwidthpx,
-					bottomwidthpx = bottomwidthpx,
-					rightwidthpx = rightwidthpx,
-					margin = margin,
-					padding = padding
-				};
+					{
+						Material = Material,
+						imagesize = imagesize,
+						topwidthpx = topwidthpx,
+						leftwidthpx = leftwidthpx,
+						bottomwidthpx = bottomwidthpx,
+						rightwidthpx = rightwidthpx,
+						margin = margin,
+						padding = padding
+					};
 				BoxUIDef = data;
 
-			}
+            }
 			public BoxUIDefinition(object BackingObject)
 			{
 				BackingDefinition = BackingObject;
 			}
 		}
 
-
+		
 		/// <summary>
 		/// Unused at the moment, but will be expanded on in the future. 
 		/// </summary>
@@ -2494,7 +2489,7 @@ namespace AiEnabled.API
 				}
 				set
 				{
-					if (value is BoxUIDefinition)
+					if(value is BoxUIDefinition)
 					{
 						instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.Definition, (value as BoxUIDefinition).BackingDefinition);
 						return;
@@ -2514,12 +2509,12 @@ namespace AiEnabled.API
 				}
 				set
 				{
-					if (value is BoxUIBehaviourDef)
+					if(value is BoxUIBehaviourDef)
 					{
 						instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.Behaviour, (value as BoxUIDefinition).BackingDefinition);
 						return;
 					}
-
+						
 					instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.Behaviour, value);
 				}
 			}
@@ -2538,7 +2533,7 @@ namespace AiEnabled.API
 					instance.MessageSet(BackingObject, (int)BoxUIBaseMembers.HideHud, value);
 				}
 			}
-
+			
 			/// <summary>
 			/// Gets or sets the parent object, please be careful not to create a circular reference. Sub objects are automatically offset by the top left corner of the parent object. 
 			/// </summary>
@@ -2566,7 +2561,7 @@ namespace AiEnabled.API
 			{
 				BehaviourObject = def.BackingDefinition;
 			}
-
+			
 		}
 		public class BoxUIContainer : BoxUIBase
 		{

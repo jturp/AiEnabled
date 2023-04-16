@@ -41,7 +41,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       BotType = AiSession.BotType.Scavenger;
       Behavior = new ScavengerBehavior(this);
 
-      _ticksBetweenAttacks = 150;
+      _ticksBetweenAttacks = 180;
       _blockDamagePerSecond = 175;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 

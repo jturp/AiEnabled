@@ -457,7 +457,7 @@ namespace AiEnabled.API
 
     private const long Channel = 67549756549;
     private bool _getWeaponDefinitions;
-    private bool _isRegistered;
+    public bool _isRegistered;
     private Action _readyCallback;
 
     /// <summary>

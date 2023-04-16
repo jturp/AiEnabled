@@ -35,10 +35,13 @@ namespace AiEnabled.Networking
     [ProtoMember(6)] readonly string BotModel;
     [ProtoMember(7)] string BotName;
     [ProtoMember(8)] Color? BotColor;
+    [ProtoMember(9)] readonly List<KeyValuePair<string, bool>> RepairPriorities;
+    [ProtoMember(10)] readonly List<KeyValuePair<string, bool>> TargetPriorities;
+    [ProtoMember(11)] readonly bool AdminSpawned;
 
     public FactorySpawnPacket() { }
 
-    public FactorySpawnPacket(AiSession.BotType botType, string botModel, string botName, long blockId, long ownerId, long price, long creditsFromInv, Color? botClr)
+    public FactorySpawnPacket(AiSession.BotType botType, string botModel, string botName, long blockId, long ownerId, long price, long creditsFromInv, Color? botClr, List<KeyValuePair<string, bool>> repairPris, List<KeyValuePair<string, bool>> targetPris, bool adminSpawned)
     {
       BlockId = blockId;
       OwnerId = ownerId;
@@ -48,6 +51,9 @@ namespace AiEnabled.Networking
       BotModel = botModel;
       BotName = botName;
       BotColor = botClr;
+      RepairPriorities = repairPris;
+      TargetPriorities = targetPris;
+      AdminSpawned = adminSpawned;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -78,6 +84,40 @@ namespace AiEnabled.Networking
       var bType = (AiSession.BotType)BotType;
       var bModel = MyStringId.GetOrCompute(BotModel);
       bool needsName = string.IsNullOrWhiteSpace(BotName);
+
+      if (!AdminSpawned)
+      {
+        var compSubtype = $"AiEnabled_Comp_{bType}BotMaterial";
+        var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), compSubtype);
+
+        var blockInv = block.GetInventory() as MyInventory;
+        var amountInBlock = (int)(blockInv?.GetItemAmount(comp) ?? 0);
+
+        if (amountInBlock > 0)
+        {
+          blockInv.RemoveItemsOfType(1, comp);
+        }
+        else
+        {
+          var inv = player.Character?.GetInventory() as MyInventory;
+          var amountInPlayer = (int)(inv?.GetItemAmount(comp) ?? 0);
+
+          if (amountInPlayer > 0)
+          {
+            if (AiSession.Instance.IsServer)
+            {
+              inv.RemoveItemsOfType(1, comp);
+            }
+          }
+          else
+          {
+            var def = AiSession.Instance.AllGameDefinitions[comp];
+            var pkt = new MessagePacket($"Missing {def?.DisplayNameText ?? comp.SubtypeName}");
+            netHandler.SendToPlayer(pkt, SenderId);
+            return false;
+          }
+        }
+      }
 
       gameLogic.SelectedRole = bType;
       gameLogic.SelectedModel = bModel;
@@ -182,6 +222,34 @@ namespace AiEnabled.Networking
 
           var controlEnt = helper as Sandbox.Game.Entities.IMyControllableEntity;
           controlEnt.RelativeDampeningEntity = (MyEntity)block.CubeGrid;
+        }
+
+        if (gameLogic.RepairPriorities?.PriorityTypes == null)
+        {
+          gameLogic.RepairPriorities = new API.RemoteBotAPI.RepairPriorities(RepairPriorities);
+        }
+        else if (RepairPriorities?.Count > 0)
+        {
+          gameLogic.RepairPriorities.PriorityTypes.Clear();
+          gameLogic.RepairPriorities.PriorityTypes.AddList(RepairPriorities);
+        }
+        else
+        {
+          gameLogic.RepairPriorities.AssignDefaults();
+        }
+
+        if (gameLogic.TargetPriorities?.PriorityTypes == null)
+        {
+          gameLogic.TargetPriorities = new API.RemoteBotAPI.TargetPriorities(TargetPriorities);
+        }
+        else if (TargetPriorities?.Count > 0)
+        {
+          gameLogic.TargetPriorities.PriorityTypes.Clear();
+          gameLogic.TargetPriorities.PriorityTypes.AddList(RepairPriorities);
+        }
+        else
+        {
+          gameLogic.TargetPriorities.AssignDefaults();
         }
 
         gameLogic.SetHelper(tuple, player);

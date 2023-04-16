@@ -28,7 +28,7 @@ namespace AiEnabled.Ai.Support
 {
   public abstract class GridBase : IEqualityComparer<GridBase>
   {
-    internal readonly byte MovementCost = 1;
+    //internal readonly byte MovementCost = 1;
     internal byte LastActiveTicks;
     internal MyOrientedBoundingBoxD OBB;
     internal BoundingBoxI BoundingBox;
@@ -598,6 +598,9 @@ namespace AiEnabled.Ai.Support
     {
       var botPostion = bot.BotInfo.CurrentBotPositionActual;
       var graph = bot._currentGraph;
+
+      if (graph == null || !graph.Ready)
+        return;
 
       if (!graph.IsPositionValid(botPostion) && bot.Owner == null)
       {
@@ -1239,7 +1242,7 @@ namespace AiEnabled.Ai.Support
       try
       {
         IsValid = false;
-        OnPositionsRemoved?.Invoke(null);
+        OnPositionsRemoved?.Invoke(null, true);
         OnGridBaseClosing?.Invoke();
 
         ObstacleNodes?.Clear();
@@ -1256,10 +1259,10 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    public event Action<HashSet<Vector3I>> OnPositionsRemoved;
+    public event Action<HashSet<Vector3I>, bool> OnPositionsRemoved;
     public event Action OnGridBaseClosing;
 
-    internal void InvokePositionsRemoved(HashSet<Vector3I> positions) => OnPositionsRemoved?.Invoke(positions);
+    internal void InvokePositionsRemoved(HashSet<Vector3I> positions, bool includeBlocks) => OnPositionsRemoved?.Invoke(positions, includeBlocks);
 
     public void HookEventsForPathCollection(PathCollection pc)
     {

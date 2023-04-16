@@ -27,6 +27,8 @@ namespace AiEnabled.Networking
     [ProtoMember(3)] long? OwnerId;
     [ProtoMember(4)] bool? ShowHealthBars;
     [ProtoMember(5)] float? RepairSearchRadius;
+    [ProtoMember(6)] bool? KillAllBots;
+    [ProtoMember(7)] bool? KillFriendlyBots;
 
     public AdminPacket() { }
 
@@ -44,11 +46,27 @@ namespace AiEnabled.Networking
       OwnerId = ownerId;
     }
 
+    public AdminPacket(bool killFriendly)
+    {
+      KillAllBots = true;
+      KillFriendlyBots = killFriendly;
+    }
+
     public override bool Received(NetworkHandler netHandler)
     {
       if (AiSession.Instance.IsServer)
       {
-        if (PlayerId > 0)
+        if (KillAllBots == true)
+        {
+          foreach (var bot in AiSession.Instance.Bots)
+          {
+            if (bot.Value?.Owner != null && !KillFriendlyBots.Value)
+              continue;
+
+            bot.Value.Close(true);
+          }
+        }
+        else if (PlayerId > 0)
         {
           var playerId = PlayerId.Value;
           if (RepairSearchRadius.HasValue)

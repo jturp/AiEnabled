@@ -282,6 +282,71 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_VendingMachine), "FoodDispenser"), // DNSK
     };
 
+    public MyDefinitionId[] ConveyorFullBlockDefinitions = new MyDefinitionId[]
+    {
+      new MyDefinitionId(typeof(MyObjectBuilder_Conveyor), "ConveyorTubeDuctT"),
+      new MyDefinitionId(typeof(MyObjectBuilder_ConveyorConnector), "ConveyorTubeDuctCurved"),
+      new MyDefinitionId(typeof(MyObjectBuilder_ConveyorConnector), "ConveyorTubeDuct"),
+    };
+
+    public MyDefinitionId[] ConveyorEndCapDefinitions = new MyDefinitionId[]
+    {
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockConveyorPipeCap"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBlockConveyorCap"),
+    };
+
+    // Automatons DLC
+    public MyDefinitionId[] AutomatonsFullBlockDefinitions = new MyDefinitionId[]
+    {
+      //new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AngledInteriorWallA"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AngledInteriorWallB"),
+      new MyDefinitionId(typeof(MyObjectBuilder_InteriorLight), "LargeBlockInsetLight"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "PipeWorkBlockA"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "PipeWorkBlockB"),
+      new MyDefinitionId(typeof(MyObjectBuilder_AirVent), "AirVentFanFull"),
+      new MyDefinitionId(typeof(MyObjectBuilder_EmotionControllerBlock), "EmotionControllerLarge"),
+      new MyDefinitionId(typeof(MyObjectBuilder_FlightMovementBlock), "LargeFlightMovement"),
+      new MyDefinitionId(typeof(MyObjectBuilder_DefensiveCombatBlock), "LargeDefensiveCombat"),
+      new MyDefinitionId(typeof(MyObjectBuilder_OffensiveCombatBlock), "LargeOffensiveCombat"),
+      new MyDefinitionId(typeof(MyObjectBuilder_PathRecorderBlock), "LargePathRecorderBlock"),
+      new MyDefinitionId(typeof(MyObjectBuilder_BasicMissionBlock), "LargeBasicMission"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctRamp"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctX"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctT"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctCorner"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuct1"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuct2"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_InteriorLight), "AirDuctLight"),
+    };
+
+    public MyDefinitionId[] AirVentHalfBlockDefinitions = new MyDefinitionId[]
+    {
+      new MyDefinitionId(typeof(MyObjectBuilder_AirVent), "AirVentFan"),
+      new MyDefinitionId(typeof(MyObjectBuilder_AirVent)),
+    };
+
+    public MyDefinitionId[] AutomatonsFlatBlockDefinitions = new MyDefinitionId[]
+    {
+      new MyDefinitionId(typeof(MyObjectBuilder_TerminalBlock), "LargeBlockAccessPanel1"),
+      new MyDefinitionId(typeof(MyObjectBuilder_TerminalBlock), "LargeBlockAccessPanel2"),
+      new MyDefinitionId(typeof(MyObjectBuilder_ButtonPanel), "LargeBlockAccessPanel3"),
+      new MyDefinitionId(typeof(MyObjectBuilder_TerminalBlock), "LargeBlockAccessPanel4"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign1"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign2"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign3"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign4"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign5"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign6"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign7"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign8"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign9"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign10"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign11"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign12"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign13"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctGrate"),
+   };
+
     public Dictionary<MyDefinitionId, Base6Directions.Direction[]> CatwalkRailDirections { get; protected set; } = new Dictionary<MyDefinitionId, Base6Directions.Direction[]>(MyDefinitionId.Comparer)
     {
       { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },

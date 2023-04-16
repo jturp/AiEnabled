@@ -32,6 +32,7 @@ using Sandbox.Game.Weapons;
 using AiEnabled.Graphics.Support;
 using AiEnabled.API;
 using VRage.Voxels;
+using AiEnabled.Bots;
 
 namespace AiEnabled.Utilities
 {
@@ -315,6 +316,104 @@ namespace AiEnabled.Utilities
           list[length - i - 1] = tmp;
         }
       }
+    }
+
+    public static void ShellSort(this List<object> list, Vector3D checkPosition, bool reverse = false)
+    {
+      int length = list.Count;
+      var half = length / 2;
+
+      for (int h = half; h > 0; h /= 2)
+      {
+        for (int i = h; i < length; i += 1)
+        {
+          var tempValue = list[i];
+          double temp;
+          var ent = tempValue as IMyEntity;
+          var slim = tempValue as IMySlimBlock;
+          Vector3D pos = (ent != null) ? ent.GetPosition() : slim.CubeGrid.GridIntegerToWorld(slim.Position);
+          Vector3D.DistanceSquared(ref pos, ref checkPosition, out temp);
+
+          int j;
+          for (j = i; j >= h && Vector3D.DistanceSquared(GetObjectPosition(list[j - h]), checkPosition) > temp; j -= h)
+          {
+            list[j] = list[j - h];
+          }
+
+          list[j] = tempValue;
+        }
+      }
+
+      if (reverse)
+      {
+        for (int i = 0; i < half; i++)
+        {
+          var tmp = list[i];
+          list[i] = list[length - i - 1];
+          list[length - i - 1] = tmp;
+        }
+      }
+    }
+
+    static Vector3D GetObjectPosition(object a)
+    {
+      var ent = a as IMyEntity;
+      if (ent != null)
+        return ent.GetPosition();
+
+      var slim = a as IMySlimBlock;
+      return slim.CubeGrid.GridIntegerToWorld(slim.Position);
+    }
+
+    public static void PrioritySort(this List<object> list, SortedDictionary<int, List<object>> taskPriorities, RemoteBotAPI.Priorities priorities, Vector3D botPosition)
+    {
+      foreach (var kvp in taskPriorities)
+        kvp.Value.Clear();
+
+      if (priorities != null)
+      {
+        for (int i = 0; i < list.Count; i++)
+        {
+          var obj = list[i];
+          if (obj == null)
+            continue;
+
+          var cube = obj as IMyCubeBlock;
+          var block = cube?.SlimBlock;
+          if (block == null)
+            block = obj as IMySlimBlock;
+
+          var character = obj as IMyCharacter;
+          if (character == null)
+          {
+            if (block?.CubeGrid == null || block.IsDestroyed || ((MyCubeGrid)block.CubeGrid).BlocksCount == 1)
+              continue;
+
+            var tgtPriorities = priorities as RemoteBotAPI.TargetPriorities;
+            if (tgtPriorities?.DamageToDisable == true && block.FatBlock != null)
+            {
+              if (!block.FatBlock.IsFunctional || block.IsBlockUnbuilt())
+                continue;
+            }
+          }
+
+          var priNum = priorities.GetBlockPriority(obj);
+          if (priNum < 0)
+            continue;
+
+          List<object> taskList;
+          if (!taskPriorities.TryGetValue(priNum, out taskList))
+          {
+            taskList = new List<object>();
+            taskPriorities[priNum] = taskList;
+          }
+
+          taskList.Add(obj);
+        }
+      }
+
+      foreach (var kvp in taskPriorities)
+        kvp.Value.ShellSort(botPosition);
     }
 
     public static bool GetMissingComponentsProjected(this IMySlimBlock slim, Dictionary<string, int> comps, IMyInventory botInventory)

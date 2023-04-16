@@ -26,13 +26,13 @@ namespace AiEnabled.Graphics
   public class Route
   {
     public string WorldName;
-    public MyCubeGrid Grid;
+    public long? GridEntityId;
     public List<Vector3D> WaypointsWorld;
     public List<Vector3I> WaypointsLocal;
 
     public void Clear()
     {
-      Grid = null;
+      GridEntityId = null;
       WorldName = null;
       WaypointsLocal?.Clear();
       WaypointsWorld?.Clear();
@@ -63,9 +63,9 @@ namespace AiEnabled.Graphics
         WaypointsWorld.Add(points[i]);
     }
 
-    public void Set(List<Vector3I> points, MyCubeGrid grid)
+    public void Set(List<Vector3I> points, long? gridEntityId)
     {
-      Grid = grid;
+      GridEntityId = gridEntityId;
       WorldName = MyAPIGateway.Session.Name;
 
       if (WaypointsLocal == null)
@@ -76,10 +76,10 @@ namespace AiEnabled.Graphics
       WaypointsLocal.AddList(points);
     }
 
-    public void Set(List<SerializableVector3I> points, string world, MyCubeGrid grid)
+    public void Set(List<SerializableVector3I> points, string world, long? gridEntityId)
     {
       WorldName = string.IsNullOrWhiteSpace(world) ? MyAPIGateway.Session.Name : world;
-      Grid = grid;
+      GridEntityId = gridEntityId;
 
       if (WaypointsLocal == null)
         WaypointsLocal = new List<Vector3I>();

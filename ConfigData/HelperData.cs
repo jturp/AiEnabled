@@ -18,6 +18,7 @@ using VRage.Game.Entity;
 using Sandbox.Game.Weapons;
 using VRage.Game;
 using AiEnabled.Bots.Roles.Helpers;
+using Sandbox.Definitions;
 
 namespace AiEnabled.ConfigData
 {
@@ -41,7 +42,7 @@ namespace AiEnabled.ConfigData
   {
     [ProtoMember(100)] public long HelperId;
     [ProtoMember(101)] public long GridEntityId;
-    [ProtoMember(102)] public string CharacterSubtype;
+    [ProtoMember(102)] public string CharacterDefinitionName;
     [ProtoMember(103)] public string DisplayName;
     [ProtoMember(104)] public SerializableDefinitionId? ToolPhysicalItem;
     [ProtoMember(105)] public bool IsActiveHelper;
@@ -52,21 +53,25 @@ namespace AiEnabled.ConfigData
     [ProtoMember(110)] public Color BotColor;
     [ProtoMember(111)] public List<InventoryItem> InventoryItems;
     [ProtoMember(112)] public List<SerializableVector3I> PatrolRoute;
-    [ProtoMember(113)] public bool AdminSpawned;
+    [ProtoMember(113)] public List<string> Priorities;
+    [ProtoMember(114)] public bool DamageToDisable;
+    [ProtoMember(115)] public bool AdminSpawned;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, bool disableOnly, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
-      CharacterSubtype = bot.Definition.Id.SubtypeName;
+      CharacterDefinitionName = ((MyCharacterDefinition)bot.Definition).Name;
       ToolPhysicalItem = (bot.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.DefinitionId;
       DisplayName = bot.Name ?? "";
       Position = bot.GetPosition();
       Orientation = Quaternion.CreateFromRotationMatrix(bot.WorldMatrix);
       IsActiveHelper = true;
       Role = (int)botType;
+      Priorities = priList;
+      DamageToDisable = disableOnly;
       AdminSpawned = adminSpawn;
 
       if (crewRole.HasValue)
@@ -120,12 +125,26 @@ namespace AiEnabled.ConfigData
       Helpers = new List<HelperInfo>();
     }
 
-    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
+    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, List<KeyValuePair<string, bool>> priList, bool damageOnly, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
     {
       if (Helpers == null)
         Helpers = new List<HelperInfo>();
 
-      Helpers.Add(new HelperInfo(helper, botType, grid, patrolRoute, crewRole, adminSpawn));
+      List<string> pris = new List<string>();
+      if (priList != null)
+      {
+        foreach (var item in priList)
+        {
+          var prefix = item.Value ? "[X]" : "[  ]";
+          pris.Add($"{prefix} {item.Key}");
+        }
+      }
+      else
+      {
+        pris = botType == AiSession.BotType.Repair ? API.RemoteBotAPI.GetDefaultRepairPriorities() : API.RemoteBotAPI.GetDefaultTargetPriorities();
+      }
+
+      Helpers.Add(new HelperInfo(helper, botType, pris, damageOnly, grid, patrolRoute, crewRole, adminSpawn));
     }
 
     public bool RemoveHelper(long id)

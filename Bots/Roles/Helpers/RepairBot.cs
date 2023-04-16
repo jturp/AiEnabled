@@ -44,14 +44,8 @@ namespace AiEnabled.Bots.Roles.Helpers
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     List<IMySlimBlock> _cubes = new List<IMySlimBlock>();
     List<MyEntity> _threadOnlyEntList, _noThreadEntList;
-    BuildBotToolInfo _toolInfo = new BuildBotToolInfo();
-    ParallelTasks.Task _targetTask;
-    Action _targetAction;
-    bool _particlePacketSent;
     bool _cleaned;
 
-    public enum BuildMode { None, Weld, Grind }
-    public BuildMode CurrentBuildMode = BuildMode.Weld;
     public string FirstMissingItemForRepairs;
 
     public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo, string toolType = null) : base(bot, 1, 1, gridBase, ownerId, ctrlInfo)
@@ -61,7 +55,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       var toolSubtype = toolType ?? "Welder2Item";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
-      _targetAction = new Action(SetTargetInternal);
       _blockDamagePerSecond = 0;
       _blockDamagePerAttack = 0; // he's a lover, not a fighter :)
 
@@ -258,7 +251,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
     }
 
-    void SetTargetInternal()
+    internal override void SetTargetInternal()
     {
       if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || !WantsTarget)
         return;
@@ -656,6 +649,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList);
 
           _cubes.Clear();
+          _taskPrioritiesTemp.Clear();
           _projectedGrids.Clear();
 
           for (int i = 0; i < _threadOnlyEntList.Count; i++)
@@ -709,79 +703,86 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (gravityNormalized.LengthSquared() > 0)
             gravityNormalized.Normalize();
 
-          _cubes.ShellSort(botPosition);
+          //_cubes.ShellSort(botPosition);
+          _taskPrioritiesTemp.AddRange(_cubes);
+          _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition);
+
           bool ignoreDeformation = AiSession.Instance.ModSaveData.IgnoreArmorDeformation;
 
-          for (int j = 0; j < _cubes.Count; j++)
+          foreach (var kvp in _taskPriorities)
           {
-            var slim = _cubes[j];
-            if (slim?.CubeGrid == null || slim.IsDestroyed)
-              continue;
-
-            var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
-
-            if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+            for (int j = 0; j < kvp.Value.Count; j++)
             {
-              continue;
-            }
-            else if (!graph.OBB.Contains(ref slimWorld))
-            {
-              continue;
-            }
+              var obj = kvp.Value[j];
+              var slim = obj as IMySlimBlock;
+              if (slim?.CubeGrid == null || slim.IsDestroyed)
+                continue;
 
-            var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
-            if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
-              continue;
-            else if (grindColor.HasValue && Vector3.IsZero(grindColor.Value - color, 1E-2f))
-              continue;
+              var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-            var health = slim.GetBlockHealth(_threadOnlyEntList);
-            if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1))
-              continue;
-
-            var node = slim.Position;
-            if (slim.CubeGrid.EntityId != graph.MainGrid.EntityId)
-            {
-              if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
+              if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
               {
-                if (gravityNormalized.LengthSquared() > 0)
-                  slimWorld -= gravityNormalized;
-                else
-                  slimWorld += _currentGraph?.WorldMatrix.Up ?? WorldMatrix.Up;
+                continue;
+              }
+              else if (!graph.OBB.Contains(ref slimWorld))
+              {
+                continue;
               }
 
-              node = mainGrid.WorldToGridInteger(slimWorld);
-            }
+              var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
+              if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
+                continue;
+              else if (grindColor.HasValue && Vector3.IsZero(grindColor.Value - color, 1E-2f))
+                continue;
 
-            var slimGridId = slim.CubeGrid.EntityId;
+              var health = slim.GetBlockHealth(_threadOnlyEntList);
+              if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1))
+                continue;
 
-            if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, node) || graph.IsTileBeingRepaired(slimGridId, node, botId))
-            {
-              continue;
-            }
-
-            Vector3I _;
-            if (_currentGraph.GetClosestValidNode(this, node, out _, isSlimBlock: true))
-            {
-              if (CheckBotInventoryForItems(slim))
+              var node = slim.Position;
+              if (slim.CubeGrid.EntityId != graph.MainGrid.EntityId)
               {
-                tgt = slim;
-                graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
-                break;
-              }
-              else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
-              {
-                var botLocal = mainGrid.WorldToGridInteger(botPosition);
-                var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
-                if (inv != null)
+                if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
                 {
-                  Target.SetInventory(inv);
+                  if (gravityNormalized.LengthSquared() > 0)
+                    slimWorld -= gravityNormalized;
+                  else
+                    slimWorld += _currentGraph?.WorldMatrix.Up ?? WorldMatrix.Up;
+                }
 
+                node = mainGrid.WorldToGridInteger(slimWorld);
+              }
+
+              var slimGridId = slim.CubeGrid.EntityId;
+
+              if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, node) || graph.IsTileBeingRepaired(slimGridId, node, botId))
+              {
+                continue;
+              }
+
+              Vector3I _;
+              if (_currentGraph.GetClosestValidNode(this, node, out _, isSlimBlock: true))
+              {
+                if (CheckBotInventoryForItems(slim))
+                {
                   tgt = slim;
                   graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
-                  isInventory = true;
+                  break;
                 }
-                break;
+                else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
+                {
+                  var botLocal = mainGrid.WorldToGridInteger(botPosition);
+                  var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
+                  if (inv != null)
+                  {
+                    Target.SetInventory(inv);
+
+                    tgt = slim;
+                    graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
+                    isInventory = true;
+                  }
+                  break;
+                }
               }
             }
           }
@@ -817,74 +818,88 @@ namespace AiEnabled.Bots.Roles.Helpers
 
               if (projector.CubeGrid.EntityId != mainGrid.EntityId)
               {
+                var owner = projector.CubeGrid.BigOwners?.Count > 0 ? projector.CubeGrid.BigOwners[0] : projector.CubeGrid.SmallOwners?.Count > 0 ? projector.CubeGrid.SmallOwners[0] : -1L;
+                var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
+
+                if (relation != MyRelationsBetweenPlayers.Self && relation != MyRelationsBetweenPlayers.Allies)
+                  continue;
+
                 _cubes.Clear();
+                _taskPrioritiesTemp.Clear();
+
                 projector.CubeGrid.GetBlocks(_cubes);
-                _cubes.ShellSort(botPosition);
+                //_cubes.ShellSort(botPosition);
+                _taskPrioritiesTemp.AddRange(_cubes);
+                _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition);
 
-                for (int i = 0; i < _cubes.Count; i++)
+                foreach (var priKvp in _taskPriorities)
                 {
-                  var slim = _cubes[i];
-                  if (slim == null || slim.IsDestroyed)
-                    continue;
-
-                  var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
-
-                  if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+                  for (int j = 0; j < priKvp.Value.Count; j++)
                   {
-                    continue;
-                  }
-                  else if (!graph.OBB.Contains(ref slimWorld))
-                  {
-                    continue;
-                  }
+                    var obj = priKvp.Value[j];
+                    var slim = obj as IMySlimBlock;
+                    if (slim == null || slim.IsDestroyed)
+                      continue;
 
-                  var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
-                  if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
-                    continue;
+                    var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-                  var health = slim.GetBlockHealth(_threadOnlyEntList);
-                  if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1)) // this may be wrong!
-                    continue;
-
-                  var projectedLocal = slim.Position;
-                  var slimGridId = slim.CubeGrid.EntityId;
-
-                  if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, projectedLocal) || graph.IsTileBeingRepaired(slimGridId, projectedLocal, botId))
-                  {
-                    continue;
-                  }
-
-                  var projectedWorld = projector.CubeGrid.GridIntegerToWorld(projectedLocal);
-                  var node = mainGrid.WorldToGridInteger(projectedWorld);
-
-                  if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
-                  {
-                    returnNow = true;
-                    return null;
-                  }
-
-                  Vector3I closestNode;
-                  if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
-                  {
-                    if (CheckBotInventoryForItems(slim))
+                    if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
                     {
-                      tgt = slim;
-                      graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
-                      break;
+                      continue;
                     }
-                    else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
+                    else if (!graph.OBB.Contains(ref slimWorld))
                     {
-                      var botLocal = mainGrid.WorldToGridInteger(botPosition);
-                      var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
-                      if (inv != null)
-                      {
-                        Target.SetInventory(inv);
+                      continue;
+                    }
 
+                    var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
+                    if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
+                      continue;
+
+                    var health = slim.GetBlockHealth(_threadOnlyEntList);
+                    if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1)) // this may be wrong!
+                      continue;
+
+                    var projectedLocal = slim.Position;
+                    var slimGridId = slim.CubeGrid.EntityId;
+
+                    if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, projectedLocal) || graph.IsTileBeingRepaired(slimGridId, projectedLocal, botId))
+                    {
+                      continue;
+                    }
+
+                    var projectedWorld = projector.CubeGrid.GridIntegerToWorld(projectedLocal);
+                    var node = mainGrid.WorldToGridInteger(projectedWorld);
+
+                    if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+                    {
+                      returnNow = true;
+                      return null;
+                    }
+
+                    Vector3I closestNode;
+                    if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
+                    {
+                      if (CheckBotInventoryForItems(slim))
+                      {
                         tgt = slim;
-                        graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
-                        isInventory = true;
+                        graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
+                        break;
                       }
-                      break;
+                      else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
+                      {
+                        var botLocal = mainGrid.WorldToGridInteger(botPosition);
+                        var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
+                        if (inv != null)
+                        {
+                          Target.SetInventory(inv);
+
+                          tgt = slim;
+                          graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
+                          isInventory = true;
+                        }
+                        break;
+                      }
                     }
                   }
                 }
@@ -893,70 +908,78 @@ namespace AiEnabled.Bots.Roles.Helpers
               if (tgt == null)
               {
                 _cubes.Clear();
+                _taskPrioritiesTemp.Clear();
+
                 var projectedGrid = kvp.Value;
                 projectedGrid.GetBlocks(_cubes);
-                _cubes.ShellSort(botPosition);
+                //_cubes.ShellSort(botPosition);
+                _taskPrioritiesTemp.AddRange(_cubes);
+                _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition);
 
-                for (int i = 0; i < _cubes.Count; i++)
+                foreach (var priKvp in _taskPriorities)
                 {
-                  var slim = _cubes[i];
-                  if (slim == null || slim.IsDestroyed)
-                    continue;
-
-                  var buildResult = projector.CanBuild(slim, true);
-                  if (buildResult != BuildCheckResult.OK)
-                    continue;
-
-                  var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
-
-                  if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+                  for (int i = 0; i < priKvp.Value.Count; i++)
                   {
-                    continue;
-                  }
-                  else if (!graph.OBB.Contains(ref slimWorld))
-                  {
-                    continue;
-                  }
+                    var obj = priKvp.Value[i];
+                    var slim = obj as IMySlimBlock;
+                    if (slim == null || slim.IsDestroyed)
+                      continue;
 
-                  var projectedLocal = slim.Position;
-                  var slimGridId = slim.CubeGrid.EntityId;
+                    var buildResult = projector.CanBuild(slim, true);
+                    if (buildResult != BuildCheckResult.OK)
+                      continue;
 
-                  if (graph.IsTileBeingRepaired(slimGridId, projectedLocal, botId))
-                  {
-                    continue;
-                  }
+                    var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-                  var projectedWorld = projectedGrid.GridIntegerToWorld(projectedLocal);
-                  var node = mainGrid.WorldToGridInteger(projectedWorld);
-
-                  if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
-                  {
-                    returnNow = true;
-                    return null;
-                  }
-
-                  Vector3I closestNode;
-                  if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
-                  {
-                    if (CheckBotInventoryForItems(slim))
+                    if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
                     {
-                      tgt = slim;
-                      graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
-                      break;
+                      continue;
                     }
-                    else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
+                    else if (!graph.OBB.Contains(ref slimWorld))
                     {
-                      var botLocal = mainGrid.WorldToGridInteger(botPosition);
-                      var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
-                      if (inv != null)
-                      {
-                        Target.SetInventory(inv);
+                      continue;
+                    }
 
+                    var projectedLocal = slim.Position;
+                    var slimGridId = slim.CubeGrid.EntityId;
+
+                    if (graph.IsTileBeingRepaired(slimGridId, projectedLocal, botId))
+                    {
+                      continue;
+                    }
+
+                    var projectedWorld = projectedGrid.GridIntegerToWorld(projectedLocal);
+                    var node = mainGrid.WorldToGridInteger(projectedWorld);
+
+                    if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+                    {
+                      returnNow = true;
+                      return null;
+                    }
+
+                    Vector3I closestNode;
+                    if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
+                    {
+                      if (CheckBotInventoryForItems(slim))
+                      {
                         tgt = slim;
-                        graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
-                        isInventory = true;
+                        graph.AddRepairTile(slimGridId, projectedLocal, botId, _repairedBlocks);
+                        break;
                       }
-                      break;
+                      else if (graph.InventoryCache.ContainsItemsFor(slim, _invItems, this))
+                      {
+                        var botLocal = mainGrid.WorldToGridInteger(botPosition);
+                        var inv = graph.InventoryCache.GetClosestInventory(botLocal, this);
+                        if (inv != null)
+                        {
+                          Target.SetInventory(inv);
+
+                          tgt = slim;
+                          graph.AddRepairTile(slimGridId, node, botId, _repairedBlocks);
+                          isInventory = true;
+                        }
+                        break;
+                      }
                     }
                   }
                 }
@@ -1103,27 +1126,27 @@ namespace AiEnabled.Bots.Roles.Helpers
       return true;
     }
 
-    public override void SetTarget()
-    {
-      if (_targetTask.Exceptions != null)
-      {
-        AiSession.Instance.Logger.ClearCached();
-        AiSession.Instance.Logger.AddLine($"Exceptions found during RepairBot.SetTarget task!\n");
-        foreach (var ex in _targetTask.Exceptions)
-          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+    //public override void SetTarget()
+    //{
+    //  if (_targetTask.Exceptions != null)
+    //  {
+    //    AiSession.Instance.Logger.ClearCached();
+    //    AiSession.Instance.Logger.AddLine($"Exceptions found during RepairBot.SetTarget task!\n");
+    //    foreach (var ex in _targetTask.Exceptions)
+    //      AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
 
-        AiSession.Instance.Logger.LogAll();
-        MyAPIGateway.Utilities.ShowNotification($"Exception during RepairBot.SetTarget task!");
-      }
+    //    AiSession.Instance.Logger.LogAll();
+    //    MyAPIGateway.Utilities.ShowNotification($"Exception during RepairBot.SetTarget task!");
+    //  }
 
-      if (_targetTask.IsComplete)
-      {
-        _targetTask = MyAPIGateway.Parallel.Start(_targetAction);
-      }
+    //  if (_targetTask.IsComplete)
+    //  {
+    //    _targetTask = MyAPIGateway.Parallel.Start(_targetAction);
+    //  }
 
-      // Testing only!
-      //_targetAction?.Invoke();
-    }
+    //  // Testing only!
+    //  //_targetAction?.Invoke();
+    //}
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
     {
@@ -1286,7 +1309,7 @@ namespace AiEnabled.Bots.Roles.Helpers
               var myGrid = slim.CubeGrid as MyCubeGrid;
               var projector = myGrid?.Projector as IMyProjector;
 
-              if (RepairBlockManually(slim, projector))
+              if (RepairBlockManually(slim, projector, _missingComps, _noThreadEntList, _toolInfo))
               {
                 ParticlePacket pkt;
                 if (!_particlePacketSent && !BugZapped)
@@ -1314,7 +1337,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             }
             else if (CurrentBuildMode == BuildMode.Grind && ((byte)MySessionComponentSafeZones.AllowedActions & 16) != 0)
             {
-              if (GrindBlockManually(slim))
+              if (GrindBlockManually(slim, _toolInfo))
               {
                 ParticlePacket pkt;
                 if (!_particlePacketSent && !BugZapped)
@@ -1368,140 +1391,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
 
       MoveToPoint(movement, rotation, roll);
-    }
-
-    bool RepairBlockManually(IMySlimBlock block, IMyProjector projector)
-    {
-      var inv = Character?.GetInventory();
-      if (inv == null || block == null)
-        return false;
-
-      var isProjection = projector?.CanBuild(block, true) == BuildCheckResult.OK;
-      if (!isProjection)
-      {
-        var gridGraph = _currentGraph as CubeGridMap;
-        if (gridGraph != null)
-        {
-          _missingComps.Clear();
-          block.GetMissingComponents(_missingComps);
-
-          if (_missingComps.Count == 0 && !block.HasDeformation && block.GetBlockHealth(_noThreadEntList) >= 1)
-            return false;
-        }
-      }
-      else if (projector != null)
-      {
-        projector.Build(block, Owner.IdentityId, Owner.Character.EntityId, false, Owner.IdentityId);
-
-        var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
-        var compDef = cubeDef.Components[0].Definition.Id;
-        var obj = MyObjectBuilderSerializer.CreateNewObject(compDef.TypeId, compDef.SubtypeName) as MyObjectBuilder_PhysicalObject;
-        inv.RemoveItemsOfType(1, obj);
-
-        Vector3? ignoreColor = null;
-        Vector3? grindColor = null;
-        var modData = AiSession.Instance.ModSaveData.PlayerHelperData;
-        for (int i = 0; i < modData.Count; i++)
-        {
-          var data = modData[i];
-          if (data.OwnerIdentityId == Owner.IdentityId)
-          {
-            ignoreColor = data.RepairBotIgnoreColorMask;
-            grindColor = data.RepairBotGrindColorMask;
-            break;
-          }
-        }
-
-        if (ignoreColor.HasValue || grindColor.HasValue)
-        {
-          var color = MyColorPickerConstants.HSVOffsetToHSV(block.ColorMaskHSV) * new Vector3(360, 100, 100);
-          if (ignoreColor.HasValue && Vector3.IsZero(ignoreColor.Value - color, 1E-2f))
-            return false;
-          else if (grindColor.HasValue && Vector3.IsZero(grindColor.Value - color, 1E-2f))
-            return false;
-        }
-      }
-      else
-      {
-        return false;
-      }
-
-      if (inv.ItemCount > 0)
-        block.MoveItemsToConstructionStockpile(inv);
-
-      var weldAmount = _toolInfo.WeldAmount;
-      var boneFixAmount = _toolInfo.BoneFixAmount;
-
-      if (AiSession.Instance.ModSaveData.ObeyProjectionIntegrityForRepairs)
-      {
-        var realGrid = block.CubeGrid as MyCubeGrid;
-        if (realGrid?.Projector == null)
-        {
-          _noThreadEntList.Clear();          
-          var worldPosition = block.CubeGrid.GridIntegerToWorld(block.Position);
-          var sphere = new BoundingSphereD(worldPosition, block.CubeGrid.GridSize * 0.5);
-          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, _noThreadEntList);
-
-          for (int i = 0; i < _noThreadEntList.Count; i++)
-          {
-            var projGrid = _noThreadEntList[i] as MyCubeGrid;
-            if (projGrid?.Projector != null)
-            {
-              var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
-              var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
-
-              var blockDef = (MyCubeBlockDefinition)block.BlockDefinition;
-              var weldIntegrityAmount = weldAmount / blockDef.IntegrityPointsPerSec;
-              if (projectedBlock?.BlockDefinition.Id == blockDef.Id && block.BuildIntegrity + weldIntegrityAmount > projectedBlock.BuildIntegrity)
-              {
-                weldAmount = projectedBlock.BuildIntegrity - block.BuildIntegrity;
-                break;
-              }
-            }
-          }
-
-          if (weldAmount <= 0)
-            return false;
-        }
-      }
-
-      block.IncreaseMountLevel(weldAmount, BotIdentityId, null, boneFixAmount);
-
-      if (isProjection)
-      {
-        var projGrid = block.CubeGrid as MyCubeGrid;
-        var realGrid = projector.CubeGrid as MyCubeGrid;
-
-        if (projGrid != null && realGrid != null)
-        {
-          var localToWorld = projGrid.GridIntegerToWorld(block.Position);
-          var worldToLocal = realGrid.WorldToGridInteger(localToWorld);
-
-          var newBlock = realGrid.GetCubeBlock(worldToLocal) as IMySlimBlock;
-          if (newBlock != null)
-            Target.SetTarget(Owner, newBlock);
-        }
-      }
-
-      return true;
-    }
-
-    bool GrindBlockManually(IMySlimBlock block)
-    {
-      var inv = Character?.GetInventory();
-      if (inv == null || block == null)
-        return false;
-
-      block.DecreaseMountLevel(_toolInfo.GrindAmount, inv);
-      block.MoveItemsFromConstructionStockpile(inv);
-
-      if (block.IsDestroyed)
-      {
-        block.SpawnConstructionStockpile();
-        block.CubeGrid.RazeBlock(block.Min);
-      }
-
-      return true;
     }
   }
 }

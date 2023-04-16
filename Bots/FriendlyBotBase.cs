@@ -33,7 +33,7 @@ namespace AiEnabled.Bots
   {
     internal uint _lineOfSightTimer;
     internal int _lastMovementX, _ticksSinceFirePacket;
-    internal bool _firePacketSent, _moveFromLadder;
+    internal bool _firePacketSent, _moveFromLadder, _tooCloseUseSideNode;
     internal byte _sideNodeTimer, _sideNodeWaitTime;
 
     internal List<float> _randoms = new List<float>(10);
@@ -100,17 +100,17 @@ namespace AiEnabled.Bots
       }
     }
 
-    public override void SetTarget()
+    internal override void SetTargetInternal()
     {
-      var character = Owner?.Character;
-      if (character == null || !WantsTarget)
+      var ownerCharacter = Owner?.Character;
+      if (ownerCharacter == null || !WantsTarget)
       {
         return;
       }
 
       if (FollowMode)
       {
-        var ownerParent = character.GetTopMostParent();
+        var ownerParent = ownerCharacter.GetTopMostParent();
         var currentEnt = Target.Entity as IMyEntity;
 
         if (currentEnt?.EntityId != ownerParent.EntityId)
@@ -127,24 +127,40 @@ namespace AiEnabled.Bots
       {
         Target.RemoveTarget();
       }
-      else if (Target.Entity != null && HasLineOfSight)
+      else if (Target.Entity != null)
       {
         // if the current target is viable there's not reason to keep trying to switch targets
-        var ent = Target.Entity as IMyEntity;
-        if (ent != null && !ent.MarkedForClose && ent.EntityId != character.EntityId)
-        {
-          var maxRange = (double)AiSession.Instance.ModSaveData.MaxBotHuntingDistanceFriendly * 0.5;
-          if (Vector3D.DistanceSquared(ent.WorldAABB.Center, botPosition) < maxRange * maxRange)
-          {
-            var cube = ent as MyCubeBlock;
 
+        bool allowReturn = ToolDefinition == null || ToolDefinition.WeaponType == MyItemWeaponType.None;
+        if (allowReturn || HasLineOfSight)
+        {
+          var ent = Target.Entity as IMyEntity;
+          var cube = Target.Entity as IMyCubeBlock;
+          var slim = cube?.SlimBlock;
+          if (slim == null)
+            slim = Target.Entity as IMySlimBlock;
+
+          if ((ent == null && slim != null && !slim.IsDestroyed) || (ent != null && !ent.MarkedForClose && ent.EntityId != Owner?.Character?.EntityId))
+          {
+            Vector3D entCenter;
             if (cube != null)
+              entCenter = cube.GetPosition();
+            else if (slim != null)
+              slim.ComputeWorldCenter(out entCenter);
+            else
+              entCenter = ent.WorldAABB.Center;
+
+            var maxRange = (double)AiSession.Instance.ModSaveData.MaxBotHuntingDistanceFriendly * 0.5;
+            if (Vector3D.DistanceSquared(entCenter, botPosition) < maxRange * maxRange)
             {
-              if (cube.IsFunctional && !cube.SlimBlock.IsBlockUnbuilt())
+              if (cube != null)
+              {
+                if (cube.IsFunctional && !cube.SlimBlock.IsBlockUnbuilt())
+                  return;
+              }
+              else
                 return;
             }
-            else
-              return;
           }
         }
       }
@@ -175,9 +191,15 @@ namespace AiEnabled.Bots
       else
         checkedGridIDs.Clear();
 
+      List<IMySlimBlock> blockList;
+      if (!AiSession.Instance.SlimListStack.TryPop(out blockList) || blockList == null)
+        blockList = new List<IMySlimBlock>();
+      else
+        blockList.Clear();
+
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
-      var ownerPos = character.WorldAABB.Center;
-      var ownerHeadPos = character.GetHeadMatrix(true).Translation;
+      var ownerPos = ownerCharacter.WorldAABB.Center;
+      var ownerHeadPos = ownerCharacter.GetHeadMatrix(true).Translation;
       var botHeadPos = Character.GetHeadMatrix(true).Translation;
 
       var centerPoint = ownerPos;
@@ -195,29 +217,25 @@ namespace AiEnabled.Bots
       var sphere = new BoundingSphereD(centerPoint, distance);
       var blockDestroEnabled = MyAPIGateway.Session.SessionSettings.DestructibleBlocks;
       var queryType = blockDestroEnabled ? MyEntityQueryType.Both : MyEntityQueryType.Dynamic;
+      var hasWeapon = ToolDefinition != null && ToolDefinition.WeaponType != MyItemWeaponType.None;
+      var allowGridCheck = hasWeapon && blockDestroEnabled && CanDamageGrid;
 
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entities, queryType);
       entities.ShellSort(centerPoint);
 
-      IMyEntity tgt = null;
+      object tgt = null;
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
       var ownerId = Owner?.IdentityId ?? BotIdentityId;
-      var hasWeapon = ToolDefinition != null && ToolDefinition.WeaponType != MyItemWeaponType.None;
 
+      _taskPrioritiesTemp.Clear();
       for (int i = 0; i < entities.Count; i++)
       {
         var ent = entities[i];
-        if (ent?.MarkedForClose != false)
-          continue;
-
-        long entOwnerId;
         var ch = ent as IMyCharacter;
-        var grid = ent as MyCubeGrid;
-
         if (ch != null)
         {
-          if (ch.IsDead || ch.MarkedForClose || ch.EntityId == character.EntityId || ch.EntityId == Character.EntityId)
+          if (ch.IsDead || ch.MarkedForClose || ch.EntityId == ownerCharacter.EntityId || ch.EntityId == Character.EntityId)
             continue;
 
           long ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
@@ -290,7 +308,7 @@ namespace AiEnabled.Bots
               var hitEnt = hit.HitEntity as IMyCharacter;
               if (hitEnt != null)
               {
-                if (hitEnt.EntityId == character.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
+                if (hitEnt.EntityId == ownerCharacter.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
                   continue;
 
                 if (helpers != null)
@@ -330,7 +348,7 @@ namespace AiEnabled.Bots
                 var hitEnt = hit.HitEntity as IMyCharacter;
                 if (hitEnt != null)
                 {
-                  if (hitEnt.EntityId == character.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
+                  if (hitEnt.EntityId == ownerCharacter.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
                     continue;
 
                   if (helpers != null)
@@ -364,124 +382,94 @@ namespace AiEnabled.Bots
             }
           }
 
-          tgt = ch;
-          break;
+          _taskPrioritiesTemp.Add(ent);
         }
-        else if (hasWeapon && blockDestroEnabled && CanDamageGrid && grid?.Physics != null)
+        else if (allowGridCheck)
         {
-          if (grid.IsPreview || grid.MarkedAsTrash || grid.MarkedForClose || grid.Closed || checkedGridIDs.Contains(grid.EntityId))
-            continue;
-
-          blockTargets.Clear();
-          gridGroups.Clear();
-          grid.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridGroups);
-          var thisGridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0;
-
-          foreach (var g in gridGroups)
+          var grid = ent as MyCubeGrid;
+          if (grid?.Physics != null && !grid.IsPreview && !grid.MarkedForClose && !checkedGridIDs.Contains(grid.EntityId))
           {
-            var myGrid = g as MyCubeGrid;
-            if (myGrid == null || myGrid.MarkedForClose)
-              continue;
+            gridGroups.Clear();
+            grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroups);
 
-            checkedGridIDs.Add(g.EntityId);
-            var myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0;
-
-            if (myGridOwner != 0 && (thisGridOwner == 0 || grid.BlocksCount < myGrid.BlocksCount))
+            foreach (var g in gridGroups)
             {
-              thisGridOwner = myGridOwner;
-              grid = myGrid;
-            }
-          }
+              var myGrid = g as MyCubeGrid;
+              if (myGrid == null || myGrid.IsPreview || myGrid.MarkedForClose)
+                continue;
 
-          var playerControlling = MyAPIGateway.Players.GetPlayerControllingEntity(ent);
-          if (playerControlling != null)
-            entOwnerId = playerControlling.IdentityId;
-          else if (thisGridOwner != 0)
-            entOwnerId = thisGridOwner;
-          else
-            continue;
-
-          var relation = MyIDModule.GetRelationPlayerPlayer(ownerId, entOwnerId);
-          if (relation != MyRelationsBetweenPlayers.Enemies)
-            continue;
-
-          foreach (var g in gridGroups)
-          {
-            var myGrid = g as MyCubeGrid;
-            if (myGrid == null || myGrid.IsPreview || myGrid.MarkedForClose)
-              continue;
-
-            var blockCounter = myGrid?.BlocksCounters;
-            var hasTurretOrRotor = (AiSession.Instance.WcAPILoaded && AiSession.Instance.WcAPI.HasAi(myGrid))
-              || (blockCounter != null
-              && (blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeGatlingTurret), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_LargeMissileTurret), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_InteriorTurret), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncher), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallMissileLauncherReload), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_SmallGatlingGun), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_TurretControlBlock), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorStator), 0) > 0
-              || blockCounter.GetValueOrDefault(typeof(MyObjectBuilder_MotorAdvancedStator), 0) > 0));
-
-            if (hasTurretOrRotor)
-            {
-              var blocks = myGrid.GetFatBlocks();
-              for (int j = 0; j < blocks.Count; j++)
+              foreach (var cpit in myGrid.OccupiedBlocks)
               {
-                var b = blocks[j];
-                if (b == null || b.MarkedForClose)
-                  continue;
-
-                if (!b.IsWorking || b.SlimBlock.IsBlockUnbuilt())
-                  continue;
-
-                var stator = b as IMyMotorStator;
-                if (stator != null)
-                {
-                  if (stator.Enabled && stator.TopGrid != null)
-                    blockTargets.Add(b);
-                }
-                else if (AiSession.Instance.AllCoreWeaponDefinitions.Contains(b.BlockDefinition.Id)
-                  || b is IMyLargeTurretBase || b is IMySmallGatlingGun
-                  || b is IMySmallMissileLauncher || b is IMySmallMissileLauncherReload
-                  || b is IMyTurretControlBlock)
-                {
-                  blockTargets.Add(b);
-                }
+                if (cpit.Pilot != null)
+                  _taskPrioritiesTemp.Add(cpit.Pilot);
               }
+
+              checkedGridIDs.Add(g.EntityId);
+              var myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0L;
+
+              var relation = MyIDModule.GetRelationPlayerPlayer(myGridOwner, BotIdentityId);
+              if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
+                continue;
+              else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
+                continue;
+
+              blockList.Clear();
+              g.GetBlocks(blockList);
+
+              //blockList.ShellSort(botPosition);
+              _taskPrioritiesTemp.AddRange(blockList);
             }
           }
+        }
+      }
 
-          if (blockTargets.Count > 0)
+      blockList.Clear();
+      AiSession.Instance.SlimListStack.Push(blockList);
+
+      _taskPrioritiesTemp.PrioritySort(_taskPriorities, TargetPriorities, botPosition);
+      bool damageToDisable = TargetPriorities.DamageToDisable;
+      var huntDistanceSqd = distance * distance;
+
+      foreach (var priKvp in _taskPriorities)
+      {
+        for (int j = 0; j < priKvp.Value.Count; j++)
+        {
+          var obj = priKvp.Value[j];
+          var ch = obj as IMyCharacter;
+          if (ch != null)
           {
-            blockTargets.ShellSort(centerPoint);
-
-            // check for weapons or rotors
-            for (int j = 0; j < blockTargets.Count; j++)
+            if (!ch.IsDead && !ch.MarkedForClose)
             {
-              var blockTgt = blockTargets[j];
-              var blockPos = blockTgt.PositionComp.WorldAABB.Center;
+              tgt = ch;
+              break;
+            }
+          }
+          else
+          {
+            var slim = obj as IMySlimBlock;
+            if (slim != null && !slim.IsDestroyed)
+            {
+              var funcBlock = slim.FatBlock as IMyFunctionalBlock;
+              if (damageToDisable && funcBlock != null && (!funcBlock.IsFunctional || slim.IsBlockUnbuilt()))
+                continue;
 
-              IHitInfo hit;
-              MyAPIGateway.Physics.CastRay(botPosition, blockPos, out hit, CollisionLayers.CharacterCollisionLayer);
+              Vector3D slimWorld;
+              if (slim.FatBlock != null)
+                slimWorld = slim.FatBlock.GetPosition();
+              else
+                slim.ComputeWorldCenter(out slimWorld);
 
-              var hitGrid = hit?.HitEntity as IMyCubeGrid;
-              if (hitGrid != null)
+              if (Vector3D.DistanceSquared(botPosition, slimWorld) > huntDistanceSqd)
+                continue;
+
+              if (!GridBase.PointInsideVoxel(slimWorld, _currentGraph?.RootVoxel))
               {
-                var allowedDistance = hitGrid.GridSizeEnum == MyCubeSize.Large ? 2.5 : 10;
-                var d = Vector3D.DistanceSquared(blockPos, hit.Position);
-                if (d < allowedDistance * allowedDistance)
-                {
-                  tgt = blockTgt;
-                  break;
-                }
+                tgt = obj;
+                break;
               }
             }
           }
         }
-        else
-          continue;
 
         if (tgt != null)
           break;
@@ -526,7 +514,7 @@ namespace AiEnabled.Bots
         }
         else
         {
-          tgt = character;
+          tgt = ownerCharacter;
         }
       }
 
@@ -536,12 +524,12 @@ namespace AiEnabled.Bots
         Target.RemoveOverride(false);
       }
 
-      var parent = tgt is IMyCharacter ? tgt.GetTopMostParent() : tgt;
-      var currentTgt = Target.Entity as IMyEntity;
-      if (currentTgt?.EntityId == parent.EntityId)
+      var tgtChar = tgt as IMyCharacter;
+      var parent = (tgtChar != null && tgtChar.Parent != null) ? tgtChar.Parent : tgt;
+      if (ReferenceEquals(Target.Entity, parent))
         return;
 
-      Target.SetTarget(parent);
+      Target.SetTarget(null, parent);
       _pathCollection?.CleanUp(true);
     }
 
@@ -553,6 +541,7 @@ namespace AiEnabled.Bots
       bool shouldAttack, shouldFire;
 
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out shouldAttack, out shouldFire, distanceCheck);
+      CheckBlockTarget(ref isTgt, ref shouldAttack, ref movement, ref rotation, ref distanceCheck);
       CheckFire(shouldFire, shouldAttack, ref movement, ref rotation, ref roll);
       MoveToPoint(movement, rotation, roll);
     }
@@ -625,6 +614,7 @@ namespace AiEnabled.Bots
       var reject = vecToWP - projUp;
       var angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
       var angleTwoOrLess = relVectorBot.Z < 0 && Math.Abs(angle) < _twoDegToRads;
+      var absRelVector = Vector3D.Abs(relVectorBot);
 
       if (!WaitForStuckTimer && angleTwoOrLess)
       {
@@ -655,19 +645,24 @@ namespace AiEnabled.Bots
 
           if (_moveFromLadder)
           {
+            _tooCloseUseSideNode = false;
             _moveFromLadder = false;
             _sideNode = null;
           }
         }
       }
       else if (!_moveFromLadder || (_sideNode.HasValue && Vector3D.DistanceSquared(botPosition, _sideNode.Value) > 400))
+      {
+        _tooCloseUseSideNode = false;
         _sideNode = null;
+      }
 
       if (_currentGraph != null)
       {
         var localPos = _currentGraph.WorldToLocal(botPosition);
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
-        if (Vector3D.DistanceSquared(worldPosAligned, waypoint) >= _currentGraph.CellSize * _currentGraph.CellSize)
+        var cellSize = _currentGraph.CellSize * 1.25f;
+        if (Vector3D.DistanceSquared(worldPosAligned, waypoint) > cellSize * cellSize)
         {
           var relVectorWP = Vector3D.Rotate(waypoint - worldPosAligned, MatrixD.Transpose(botMatrix));
           var flattenedVecWP = new Vector3D(relVectorWP.X, 0, relVectorWP.Z);
@@ -694,11 +689,51 @@ namespace AiEnabled.Bots
               movement = Math.Sign(relVectorBot.Y) * Vector3.Up * 2;
             }
 
-            fistAttack = !isOwnerTgt && !HasWeaponOrTool && isTarget && angleTwoOrLess && distanceSqd <= distanceCheck;
+            bool checkFist2 = !isOwnerTgt && !HasWeaponOrTool && isTarget;
+            bool aligned2 = angleTwoOrLess && distanceSqd <= distanceCheck;
+
+            var slim2 = Target.Entity as IMySlimBlock;
+            if (checkFist2 && !aligned2 && slim2 != null)
+            {
+              double checkD;
+              if (slim2.FatBlock != null)
+              {
+                checkD = slim2.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 6f;
+              }
+              else
+              {
+                var size = Math.Max(1, (slim2.Max - slim2.Min).Length());
+                checkD = size * slim2.CubeGrid.GridSize * 0.5 + 6;
+              }
+
+              bool allowSecondGuess = (relVectorBot.Z <= 0 && relVectorBot.Z > -3) || (absRelVector.X < 0.1 && absRelVector.Z < 0.1);
+
+              if (allowSecondGuess && distanceSqd <= checkD)
+                aligned2 = true;
+            }
+
+            fistAttack = checkFist2 && aligned2;
+
+            if (fistAttack && slim2 != null && slim2.CubeGrid.Physics.LinearVelocity.LengthSquared() < 1)
+              movement = Vector3.Zero;
+
             return;
           }
         }
       }
+
+      if (!rifleAttack && !tgtFriendly && Target.Entity != null && HasWeaponOrTool && !_sideNode.HasValue)
+      {
+        var dirToWP = botMatrix.GetClosestDirection(vecToWP);
+        if ((dirToWP == Base6Directions.Direction.Down || dirToWP == Base6Directions.Direction.Up) && vecToWP.LengthSquared() < 100)
+        {
+          var clearDirection = GetClearTravelDirection();
+          _sideNode = botPosition + clearDirection * 5;
+          _tooCloseUseSideNode = true;
+        }
+      }
+      else if (_tooCloseUseSideNode && rifleAttack)
+        _tooCloseUseSideNode = false;
 
       if (rifleAttack || _sideNode.HasValue)
       {
@@ -710,7 +745,7 @@ namespace AiEnabled.Bots
           reject = vecToTgt - projUp;
           angle = AiUtils.GetAngleBetween(botMatrix.Forward, reject);
 
-          if (relToTarget.Z < 0 && Math.Abs(angle) < _twoDegToRads)
+          if (_tooCloseUseSideNode || (relToTarget.Z < 0 && Math.Abs(angle) < _twoDegToRads))
           {
             rotation = Vector2.Zero;
           }
@@ -734,7 +769,10 @@ namespace AiEnabled.Bots
             var xMove = absX <= 0.5 ? 0 : Math.Sign(relativeDir.X);
             var zMove = absZ <= 0.5 ? 0 : Math.Sign(relativeDir.Z);
             if (xMove == 0 && zMove == 0)
+            {
+              _tooCloseUseSideNode = false;
               _sideNode = null;
+            }
 
             movement = new Vector3(xMove, 0, zMove);
           }
@@ -743,6 +781,7 @@ namespace AiEnabled.Bots
             var worldNode = _currentGraph.LocalToWorld(node);
             _sideNode = worldNode;
             _sideNodeTimer = 0;
+            _tooCloseUseSideNode = false;
 
             if (Vector3D.DistanceSquared(worldNode, actualPosition) < 10)
             {
@@ -790,12 +829,14 @@ namespace AiEnabled.Bots
       }
       else if (PathFinderActive)
       {
+        _tooCloseUseSideNode = false;
+
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
           if (_currentGraph.IsGridGraph)
           {
             MyCubeBlock ladder;
-            if (flattenedLengthSquared <= flatDistanceCheck && relVectorBot.Y > 0 && Target.OnLadder(out ladder))
+            if (flattenedLengthSquared <= flatDistanceCheck && relVectorBot.Y > 0 && Target.IsOnLadder(out ladder))
             {
               var gridGraph = _currentGraph as CubeGridMap;
               _sideNode = gridGraph.GetLastValidNodeOnLine(ladder.PositionComp.WorldAABB.Center, ladder.WorldMatrix.Forward, 20);
@@ -853,9 +894,34 @@ namespace AiEnabled.Bots
       else
         movement = Vector3.Zero;
 
-      fistAttack = isTarget && !isOwnerTgt && !HasWeaponOrTool && angleTwoOrLess && distanceSqd <= distanceCheck;
+      bool checkFist = !isOwnerTgt && !HasWeaponOrTool && isTarget;
+      bool aligned = angleTwoOrLess && distanceSqd <= distanceCheck;
 
-      if (!fistAttack && isTarget && !isOwnerTgt && !HasWeaponOrTool && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
+      var slim = Target.Entity as IMySlimBlock;
+      if (checkFist && !aligned && slim != null)
+      {
+        double checkD;
+        if (slim.FatBlock != null)
+        {
+          checkD = slim.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 6f;
+        }
+        else
+        {
+          var size = Math.Max(1, (slim.Max - slim.Min).Length());
+          checkD = size * slim.CubeGrid.GridSize * 0.5 + 6;
+        }
+
+        bool allowSecondGuess = (relVectorBot.Z <= 0 && relVectorBot.Z > -3) || (absRelVector.X < 0.1 && absRelVector.Z < 0.1);
+
+        if (allowSecondGuess && distanceSqd <= checkD)
+          aligned = true;
+      }
+
+      fistAttack = checkFist && aligned;
+
+      if (fistAttack && slim != null && slim.CubeGrid.Physics.LinearVelocity.LengthSquared() < 1)
+        movement = Vector3.Zero;
+      else if (!fistAttack && isTarget && !isOwnerTgt && !HasWeaponOrTool && angleTwoOrLess && Vector3.IsZero(movement) && Vector2.IsZero(ref rotation))
         movement = Vector3.Forward * 0.5f;
 
       if (JetpackEnabled)
@@ -914,7 +980,7 @@ namespace AiEnabled.Bots
       }
       else
       {
-        if (!_moveFromLadder)
+        if (!_moveFromLadder && !_tooCloseUseSideNode)
           _sideNode = null;
 
         if (isCrouching)
@@ -942,9 +1008,21 @@ namespace AiEnabled.Bots
       if (gun == null)
         return false;
 
+      IMySlimBlock slim = null;
+      Vector3D tgtPosition;
       var targetEnt = Target.Entity as IMyEntity;
       if (targetEnt == null)
-        return false;
+      {
+        slim = Target.Entity as IMySlimBlock;
+        if (slim == null)
+          return false;
+
+        slim.ComputeWorldCenter(out tgtPosition);
+      }
+      else
+      {
+        tgtPosition = targetEnt.WorldAABB.Center;
+      }
 
       if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 2)))
         return false;
@@ -957,14 +1035,14 @@ namespace AiEnabled.Bots
         if (!_wcShotFired && !_wcWeaponReloading)
         {
           object tgt;
-          if (magList[0].Item2.Item4)
+          if (magList[0].Item2.Item4 && targetEnt != null)
           {
             tgt = targetEnt;
             AiSession.Instance.WcAPI.SetAiFocus((MyEntity)Character, (MyEntity)targetEnt);
           }
           else
           {
-            tgt = (Object)targetEnt.WorldAABB.Center;
+            tgt = (Object)tgtPosition;
           }
 
           if (AiSession.Instance.WcAPI.ShootRequest((MyEntity)Character.EquippedTool, tgt))
@@ -997,7 +1075,7 @@ namespace AiEnabled.Bots
 
         if (isLauncher)
         {
-          AiSession.Instance.Projectiles.AddMissileForBot(this, targetEnt);
+          AiSession.Instance.Projectiles.AddMissileForBot(this, targetEnt, slim);
         }
         else
         {
@@ -1019,14 +1097,15 @@ namespace AiEnabled.Bots
           }
 
           bool leadTargets = ShouldLeadTargets;
+          var topMost = slim?.CubeGrid ?? targetEnt;
 
           if (MyAPIGateway.Multiplayer.MultiplayerActive)
           {
-            var packet = new WeaponFirePacket(Character.EntityId, targetEnt.EntityId, 10, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets);
+            var packet = new WeaponFirePacket(Character.EntityId, topMost.EntityId, 10, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets, slim?.Position);
             AiSession.Instance.Network.RelayToClients(packet);
           }
 
-          AiSession.Instance.StartWeaponFire(Character.EntityId, targetEnt.EntityId, 10, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets);
+          AiSession.Instance.StartWeaponFire(Character.EntityId, topMost.EntityId, 10, _shotAngleDeviationTan, _randoms, TicksBetweenProjectiles, ammoCount, false, false, leadTargets, slim?.Position);
         }
 
         _firePacketSent = true;

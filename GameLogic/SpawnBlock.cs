@@ -39,6 +39,8 @@ using AiEnabled.Ai.Support;
 using Sandbox.Game.EntityComponents;
 using IMyFunctionalBlock = Sandbox.ModAPI.IMyFunctionalBlock;
 using Sandbox.Game.Entities.Character.Components;
+using AiEnabled.API;
+using AiEnabled.Bots.Roles.Helpers;
 
 namespace AiEnabled.GameLogic
 {
@@ -58,16 +60,20 @@ namespace AiEnabled.GameLogic
     }
 
     List<MyIniKey> _iniKeys = new List<MyIniKey>();
-    List<string> _iniLines = new List<string>();
+    List<string> _defaultPriorities = RemoteBotAPI.GetDefaultTargetPriorities();
+
     Dictionary<string, KeyValuePair<string, string>> _subtypeToRole = new Dictionary<string, KeyValuePair<string, string>>(10);
     Dictionary<string, string> _botTypeToLootContainerId = new Dictionary<string, string>(10);
     Stack<WeaponInfo> _wepInfoStack = new Stack<WeaponInfo>(10);
     List<string> _allSubtypes = new List<string>(10);
     List<string> _creatureTypes = new List<string>(5);
     List<string> _neutralTypes = new List<string>(5);
+    List<string> _priorities = new List<string>(15);
     List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
     string _soldierColor, _zombieColor, _grinderColor, _nomadColor, _enforcerColor;
     bool _useRandomColor = true, _allowFlight = true, _spidersOnly, _wolvesOnly, _customOnly;
+    bool _allowBossBot = true, _nomadBotOnly, _enforcerBotOnly, _neutralBotOnly, _creatureBotOnly;
+    bool _hasSpawned = true, _isClient, _isServer;
 
     int _minSecondsBetweenSpawns = 60;
     int _maxSecondsBetweenSpawns = 180;
@@ -77,9 +83,8 @@ namespace AiEnabled.GameLogic
     MyShipController _fakeBlock = new MyShipController();
     MyIni _ini = new MyIni();
     CubeGridMap _gridMap;
+    RemoteBotAPI.TargetPriorities _targetPriorities;
     string _lastConfig, _knownLootContainers;
-    bool _hasSpawned = true, _isClient, _isServer;
-    bool _allowBossBot = true, _nomadBotOnly, _enforcerBotOnly, _neutralBotOnly, _creatureBotOnly;
     int _nextSpawnTime = 1000, _spawnTimer, _currentSpawnCount;
 
     public override void Close()
@@ -90,7 +95,7 @@ namespace AiEnabled.GameLogic
 
         _ini?.Clear();
         _iniKeys?.Clear();
-        _iniLines?.Clear();
+        _defaultPriorities?.Clear();
         _allSubtypes?.Clear();
         _subtypeToRole?.Clear();
         _creatureTypes?.Clear();
@@ -98,19 +103,21 @@ namespace AiEnabled.GameLogic
         _weaponSubtypes?.Clear();
         _wepInfoStack?.Clear();
         _botTypeToLootContainerId?.Clear();
+        _targetPriorities?.PriorityTypes?.Clear();
 
         _fakeBlock = null;
         _allSubtypes = null;
         _block = null;
         _ini = null;
         _iniKeys = null;
-        _iniLines = null;
+        _defaultPriorities = null;
         _subtypeToRole = null;
         _creatureTypes = null;
         _neutralTypes = null;
         _weaponSubtypes = null;
         _wepInfoStack = null;
         _botTypeToLootContainerId = null;
+        _targetPriorities = null;
       }
       catch(Exception ex)
       {
@@ -203,6 +210,13 @@ namespace AiEnabled.GameLogic
       var hexColor = $"#{defaultColor.R:X2}{defaultColor.G:X2}{defaultColor.B:X2}";
       _soldierColor = _zombieColor = _grinderColor = _nomadColor = _enforcerColor = hexColor;
 
+      if (_targetPriorities == null)
+        _targetPriorities = new RemoteBotAPI.TargetPriorities();
+      else
+        _targetPriorities.AssignDefaults();
+
+      _targetPriorities.DamageToDisable = true;
+
       _allSubtypes.Clear();
       _creatureTypes.Clear();
       _neutralTypes.Clear();
@@ -270,6 +284,17 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including Neutral Bots.\n ");
       _ini.SetComment("AiEnabled", "Custom NPCs Only", " \n If you only want the block to spawn your custom NPCs, set this to true.\n Requires valid entries in the Additional Subtypes section below.\n ");
 
+      for (int i = 0; i < _targetPriorities.PriorityTypes.Count; i++)
+      {
+        var item = _targetPriorities.PriorityTypes[i];
+        _ini.Set("Target Priorities", item.Key, item.Value);
+      }
+
+      _ini.Set("Target Priorities", "Only Damage to Disable", _targetPriorities.DamageToDisable);
+      _ini.SetComment("TargetPriorities", "Only Damage to Disable", " \n If true, bots will only attack blocks until they are no longer functional.\n ");
+
+      _ini.SetSectionComment("Target Priorities", " \n This serves as the priority list for bots to use when deciding \n what to attack first. Adjust the order to your liking. If you\n want them to ignore the type entirely, set its value to false.\n ");
+
       _ini.Set("SoldierBot Weapon Subtypes", "AddWeaponSubtypeHere", 100);
       _ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
 
@@ -287,7 +312,6 @@ namespace AiEnabled.GameLogic
       _allSubtypes.Clear();
       _creatureTypes.Clear();
       _neutralTypes.Clear();
-      _iniLines.Clear();
 
       for (int i = 0; i < _weaponSubtypes.Count; i++)
         _wepInfoStack.Push(_weaponSubtypes[i]);
@@ -584,6 +608,36 @@ namespace AiEnabled.GameLogic
         }
       }
 
+      if (_targetPriorities == null)
+        _targetPriorities = new RemoteBotAPI.TargetPriorities();
+
+      _targetPriorities.DamageToDisable = ini.Get("Target Priorities", "Only Damage to Disable").ToBoolean(true);
+
+      _iniKeys.Clear();
+      ini.GetKeys("Target Priorities", _iniKeys);
+
+      if (_iniKeys.Count > 1)
+      {
+        _targetPriorities.PriorityTypes.Clear();
+
+        for (int i = 0; i < _iniKeys.Count; i++)
+        {
+          var key = _iniKeys[i];
+          var pri = key.Name;
+
+          if (pri == "Only Damage to Disable")
+            continue;
+
+          var value = ini.Get(key).ToBoolean(true);
+          _targetPriorities.AddPriority(pri, value);
+        }
+
+        foreach (var defaultPri in _defaultPriorities)
+        {
+          _targetPriorities.AddPriority(defaultPri, false);
+        }
+      }
+
       ini.Clear();
       ini.Set("AiEnabled", "Known Loot Container Ids", _knownLootContainers);
       ini.Set("AiEnabled", "Min Spawn Interval", _minSecondsBetweenSpawns);
@@ -633,6 +687,17 @@ namespace AiEnabled.GameLogic
       ini.SetComment("AiEnabled", "Neutral Bots Only", " \n Neutral Bots are neutral encounters that will only attack if / when\n provoked. Enabling this will disable all others.\n ");
       ini.SetComment("AiEnabled", "CreatureBots Only", " \n The CreatureBot can be used for hostile creatures (wolf, spider).\n Enabling this will disable all others, including Neutral Bots.\n ");
       ini.SetComment("AiEnabled", "Custom NPCs Only", " \n If you only want the block to spawn your custom NPCs, set this to true.\n Requires valid entries in the Additional Subtypes section below.\n ");
+
+      for (int i = 0; i < _targetPriorities.PriorityTypes.Count; i++)
+      {
+        var item = _targetPriorities.PriorityTypes[i];
+        ini.Set("Target Priorities", item.Key, item.Value);
+      }
+
+      ini.Set("Target Priorities", "Only Damage to Disable", _targetPriorities.DamageToDisable);
+      ini.SetComment("Target Priorities", "Only Damage to Disable", " \n If true, bots will only attack blocks until they are no longer functional.\n ");
+
+      ini.SetSectionComment("Target Priorities", " \n This serves as the priority list for bots to use when deciding \n what to attack first. Adjust the order to your liking. If you\n want them to ignore the type entirely, set its value to false.\n ");
 
       if (_weaponSubtypes.Count > 0)
       {
@@ -950,22 +1015,28 @@ namespace AiEnabled.GameLogic
                   bot._lootContainerSubtype = lootType;
                 }
 
+                var jetpack = botChar.Components.Get<MyCharacterJetpackComponent>();
+
                 if (!_allowFlight)
                 {
-                  var botFlightSetting = bot is NeutralBotBase ? AiSession.Instance.ModSaveData.AllowNeutralsToFly : AiSession.Instance.ModSaveData.AllowEnemiesToFly;
-
-                  var jetpack = botChar.Components.Get<MyCharacterJetpackComponent>();
                   var jetpackWorldSetting = MyAPIGateway.Session.SessionSettings.EnableJetpack;
                   var jetRequired = jetpack != null && botChar.Definition.Id.SubtypeName == "Drone_Bot";
-                  var jetAllowed = jetpack != null && jetpackWorldSetting && (jetRequired || (botFlightSetting && _allowFlight));
-                  var flightAllowed = jetRequired || jetAllowed;
+                  var jetAllowed = jetpack != null && jetpackWorldSetting && jetRequired;
+                  var flightAllowed = jetAllowed;
 
                   bot.CanUseAirNodes = flightAllowed;
                   bot.CanUseSpaceNodes = flightAllowed;
 
-                  if (!flightAllowed && jetpack.TurnedOn)
+                  if (!flightAllowed && jetpack?.TurnedOn == true)
                     jetpack.SwitchThrusts();
                 }
+                else if (jetpack == null)
+                {
+                  bot.CanUseAirNodes = false;
+                  bot.CanUseSpaceNodes = false;
+                }
+
+                AssignPriorities(bot);
               }
             }
 
@@ -1012,6 +1083,31 @@ namespace AiEnabled.GameLogic
         _hasSpawned = false;
 
       return _hasSpawned;
+    }
+
+    void AssignPriorities(BotBase bot)
+    {
+      if (_targetPriorities != null)
+      {
+        _priorities.Clear();
+        foreach (var pri in _targetPriorities.PriorityTypes)
+        {
+          if (pri.Value)
+            _priorities.Add(pri.Key);
+        }
+
+        bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(_priorities)
+        {
+          DamageToDisable = _targetPriorities.DamageToDisable
+        };
+      }
+      else
+      {
+        bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(_defaultPriorities)
+        {
+          DamageToDisable = true
+        };
+      }
     }
   }
 }

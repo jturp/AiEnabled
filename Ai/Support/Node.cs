@@ -34,6 +34,8 @@ namespace AiEnabled.Ai.Support
     public Vector3I Position;
     public Vector3 Offset;
     public int BlockedMask;
+    public byte MovementCost = 1;
+    public byte AddedMovementCost = 0;
     public NodeType NodeType;
     bool? _isSpaceNode;
     object _ref;
@@ -54,7 +56,7 @@ namespace AiEnabled.Ai.Support
 
     public Node() { }
 
-    public Node(Vector3I position, Vector3 surfaceOffset, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public Node(Vector3I position, Vector3 surfaceOffset, GridBase gBase, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
       Position = position;
       Offset = surfaceOffset;
@@ -70,16 +72,29 @@ namespace AiEnabled.Ai.Support
           _ref = block;
 
           if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
+          {
             NodeType |= NodeType.Ladder;
+            MovementCost++;
+          }
+          else if (block.FatBlock is IMyDoor)
+          {
+            MovementCost++;
+
+            if (block.FatBlock is IMyAirtightHangarDoor)
+              MovementCost++;
+          }
         }
         else
         {
           _ref = grid;
         }
       }
+
+      if (IsGridNode && AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+        CalculateMovementCost(gBase);
     }
 
-    public Node(Vector3I position, Vector3 surfaceOffset, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public Node(Vector3I position, Vector3 surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
       Position = position;
       Offset = surfaceOffset;
@@ -87,40 +102,121 @@ namespace AiEnabled.Ai.Support
       BlockedMask = blockMask;
       _isSpaceNode = null;
 
-      if (block != null)
-        _ref = block;
-      else
-        _ref = grid;
-
       if (grid != null)
       {
         NodeType |= NodeType.Grid;
 
-        if (block != null && AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
-          NodeType |= NodeType.Ladder;
+        if (block != null)
+        {
+          _ref = block;
+
+          if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
+          {
+            NodeType |= NodeType.Ladder;
+            MovementCost++;
+          }
+          else if (block.FatBlock is IMyDoor)
+          {
+            MovementCost++;
+
+            if (block.FatBlock is IMyAirtightHangarDoor)
+              MovementCost++;
+          }
+        }
+        else
+        {
+          _ref = grid;
+        }
+      }
+
+      if (IsGridNode && AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+        CalculateMovementCost(gBase);
+    }
+
+    public void CalculateMovementCost(GridBase gBase)
+    {
+      if (IsAirNode || IsWaterNode)
+        MovementCost++;
+
+      var gridMap = gBase as CubeGridMap;
+      if (gridMap?.WeaponPositions?.Count > 0)
+      {
+        var grid = gridMap.MainGrid;
+        var worldPosition = grid.GridIntegerToWorld(Position) + Offset;
+        var hitInfo = AiSession.Instance.CubeGridHitInfo;
+
+        var closestDistance = int.MaxValue;
+        foreach (var point in gridMap.WeaponPositions)
+        {
+          var worldPoint = grid.GridIntegerToWorld(point);
+          var line = new LineD(worldPoint, worldPosition);
+          bool hitSomething = grid.GetIntersectionWithLine(ref line, ref hitInfo);
+
+          if (!hitSomething || hitInfo.Position == Position)
+          {
+            var distance = (point - Position).Length();
+            if (distance < closestDistance)
+            {
+              closestDistance = distance;
+            }
+          }
+        }
+
+        var num = 5 - (closestDistance / 7);
+        if (num > 0)
+          AddedMovementCost = (byte)(num * num);
       }
     }
 
-    public void Update(Vector3I position, Vector3 surfaceOffset, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public void Update(Node other, Vector3 surfaceOffset)
+    {
+      Offset = surfaceOffset;
+      Position = other.Position;
+      BlockedMask = other.BlockedMask;
+      NodeType = other.NodeType;
+      MovementCost = other.MovementCost;
+      _isSpaceNode = other._isSpaceNode;
+      _ref = other._ref;
+    }
+
+    public void Update(Vector3I position, Vector3 surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
       Position = position;
       Offset = surfaceOffset;
       BlockedMask = blockMask;
       NodeType = nType;
+      MovementCost = 1;
       _isSpaceNode = null;
-
-      if (block != null)
-        _ref = block;
-      else
-        _ref = grid;
 
       if (grid != null)
       {
         NodeType |= NodeType.Grid;
 
-        if (block != null && AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
-          NodeType |= NodeType.Ladder;
+        if (block != null)
+        {
+          _ref = block;
+
+          if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
+          {
+            NodeType |= NodeType.Ladder;
+            MovementCost++;
+          }
+          else if (block.FatBlock is IMyDoor)
+          {
+            MovementCost++;
+
+            if (block.FatBlock is IMyAirtightHangarDoor)
+              MovementCost++;
+          }
+        }
+        else
+        {
+          _ref = grid;
+        }
       }
+
+      if (IsGridNode && AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+        CalculateMovementCost(gBase);
     }
 
     public void SetNodeType(NodeType nType)

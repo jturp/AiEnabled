@@ -56,7 +56,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       _sideNodeWaitTime = 30;
       _followDistanceSqd = 25;
       _ticksSinceFoundTarget = 241;
-      _ticksBetweenAttacks = 150;
+      _ticksBetweenAttacks = 180;
       _blockDamagePerSecond = 200;
       _blockDamagePerAttack = _blockDamagePerSecond * (_ticksBetweenAttacks / 60f);
 
@@ -257,7 +257,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
     }
 
-    public override void SetTarget()
+    internal override void SetTargetInternal()
     {
       if (Owner?.Character != null)
       {
@@ -302,7 +302,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         }
       }
 
-      base.SetTarget();
+      base.SetTargetInternal();
     }
 
     bool FaceCube()

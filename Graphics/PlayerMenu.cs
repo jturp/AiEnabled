@@ -52,6 +52,7 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
+    internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
@@ -67,6 +68,7 @@ namespace AiEnabled.Graphics
     {
       bool showHealthBars = _playerData.ShowHealthBars;
       bool showGPS = _playerData.ShowHelperGPS;
+      bool useHighlight = _playerData.HighlightHelpersOnMouseOver;
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
       float searchRadius = _playerData.RepairBotSearchRadius;
 
@@ -74,6 +76,7 @@ namespace AiEnabled.Graphics
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);
       ShowHealthWhenFull = CreateMenuItemToggle(Menu, _playerData.ShowHealthWhenFull, "Show health bar when full", ShowHealthWhenFull_Clicked);
       ShowHelperGPS = CreateMenuItemToggle(Menu, showGPS, "Show helper GPS", ShowHelperGPS_Clicked);
+      HighLightHelpers = CreateMenuItemToggle(Menu, useHighlight, "Highlight Helpers On Mouse Over", UseHighlight_Clicked);
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
 
       var color = (searchRadius == 0) ? "<color=yellow>" : "<color=orange>";
@@ -105,7 +108,7 @@ namespace AiEnabled.Graphics
       HelperGpsColorInput = new MenuTextInput($"Helper GPS color (RGB): {color}{{R:{x}, G:{y}, B:{z}}}", colorMenu, "Assign the GPS color for all Helper Bots, in format R,G,B", TextInputGpsColor_Submitted);
 
       var keyBindMenu = new MenuSubCategory("Key Bindings                <color=cyan>==>", Menu, "Key Bindings");
-      RecallBotsKeyBind = new MenuKeybindInput($"Recall bots: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
+      RecallBotsKeyBind = new MenuKeybindInput($"Resume All: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
 
       var data = AiSession.Instance.ModSaveData;
       AdminMenu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.AdminMenu, "Admin Settings");
@@ -139,6 +142,9 @@ namespace AiEnabled.Graphics
 
       color = data.AllowHelperTokenBuilding ? "<color=orange>" : "<color=yellow>";
       AllowTokenProduction = new MenuItem($"Allow build token production (requires restart): {color}{data.AllowHelperTokenBuilding}", AdminMenu, AllowTokenBuilding_Clicked);
+
+      color = data.IncreaseNodeWeightsNearWeapons ? "<color=orange>" : "<color=yellow>";
+      IncreaseNodeWeightsNearWeapons = new MenuItem($"Increase path cost near weapons (requires restart): {color}{data.IncreaseNodeWeightsNearWeapons}", AdminMenu, IncreaseNodeCost_Clicked);
 
       color = data.AllowBotMusic ? "<color=orange>" : "<color=yellow>";
       AllowBotMusic = new MenuItem($"Allow bot music: {color}{data.AllowBotMusic}", AdminMenu, AllowBotMusic_Clicked);
@@ -276,6 +282,14 @@ namespace AiEnabled.Graphics
           DisableCollisionOnDeath.OnClick = null;
           DisableCollisionOnDeath.BackingObject = null;
           DisableCollisionOnDeath = null;
+        }
+
+        if (IncreaseNodeWeightsNearWeapons != null)
+        {
+          IncreaseNodeWeightsNearWeapons.Text = null;
+          IncreaseNodeWeightsNearWeapons.OnClick = null;
+          IncreaseNodeWeightsNearWeapons.BackingObject = null;
+          IncreaseNodeWeightsNearWeapons = null;
         }
 
         if (AllowRepairBot != null)
@@ -503,6 +517,15 @@ namespace AiEnabled.Graphics
     }
 
     #region PlayerOnly
+    private void UseHighlight_Clicked()
+    {
+      var enabled = !_playerData.HighlightHelpersOnMouseOver;
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
+      HighLightHelpers.Text = $"Highlight Helpers On Mouse Over: {color}{enabled.ToString()}";
+      _playerData.HighlightHelpersOnMouseOver = enabled;
+      AiSession.Instance.StartUpdateCounter();
+    }
+
     internal void ShowHealthBars_Clicked()
     {
       var enabled = !_playerData.ShowHealthBars;
@@ -551,7 +574,7 @@ namespace AiEnabled.Graphics
       try
       {
         var tuple = MyTuple.Create(key, shift, ctrl, alt);
-        var text = $"Recall bots: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
+        var text = $"Resume All: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
         AiSession.Instance.Input.AddKeybind(tuple, RecallBots_Used);
         RecallBotsKeyBind.Text = text;
       }
@@ -781,6 +804,19 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartSettingSyncCounter();
     }
 
+    private void IncreaseNodeCost_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.IncreaseNodeWeightsNearWeapons;
+      data.IncreaseNodeWeightsNearWeapons = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      IncreaseNodeWeightsNearWeapons.Text = $"Increase path cost near weapons (requires restart): {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
     internal void DisableCollisions_Clicked()
     {
       var data = AiSession.Instance.ModSaveData;
@@ -845,6 +881,18 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartSettingSyncCounter();
     }
 
+    internal void AllowTokenBuilding_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.AllowHelperTokenBuilding;
+      AiSession.Instance.ModSaveData.AllowHelperTokenBuilding = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowTokenProduction.Text = $"Allow build token production (requires restart): {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
     internal void AllowCrewBot_Clicked()
     {
       var newValue = !AiSession.Instance.ModSaveData.AllowCrewBot;
@@ -853,17 +901,14 @@ namespace AiEnabled.Graphics
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowCrewBot.Text = $"Allow CrewBot helpers: {color}{newValue}";
 
-      AiSession.Instance.StartAdminUpdateCounter();
-      AiSession.Instance.StartSettingSyncCounter();
-    }
-
-    internal void AllowTokenBuilding_Clicked()
-    {
-      var newValue = !AiSession.Instance.ModSaveData.AllowHelperTokenBuilding;
-      AiSession.Instance.ModSaveData.AllowHelperTokenBuilding = newValue;
-
-      var color = newValue ? "<color=orange>" : "<color=yellow>";
-      AllowTokenProduction.Text = $"Allow build token production (requires reload): {color}{newValue}";
+      if (!newValue)
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Remove("CREW");
+      }
+      else if (!AiSession.Instance.ModSaveData.AllowedBotRoles.Contains("CREW"))
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Add("CREW");
+      }
 
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
@@ -877,6 +922,15 @@ namespace AiEnabled.Graphics
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowScavengerBot.Text = $"Allow ScavengerBot helpers: {color}{newValue}";
 
+      if (!newValue)
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Remove("SCAVENGER");
+      }
+      else if (!AiSession.Instance.ModSaveData.AllowedBotRoles.Contains("SCAVENGER"))
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Add("SCAVENGER");
+      }
+
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
     }
@@ -889,6 +943,15 @@ namespace AiEnabled.Graphics
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowCombatBot.Text = $"Allow CombatBot helpers: {color}{newValue}";
 
+      if (!newValue)
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Remove("COMBAT");
+      }
+      else if (!AiSession.Instance.ModSaveData.AllowedBotRoles.Contains("COMBAT"))
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Add("COMBAT");
+      }
+
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
     }
@@ -900,6 +963,15 @@ namespace AiEnabled.Graphics
 
       var color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowRepairBot.Text = $"Allow RepairBot helpers: {color}{newValue}";
+
+      if (!newValue)
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Remove("REPAIR");
+      }
+      else if (!AiSession.Instance.ModSaveData.AllowedBotRoles.Contains("REPAIR"))
+      {
+        AiSession.Instance.ModSaveData.AllowedBotRoles.Add("REPAIR");
+      }
 
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
@@ -1069,6 +1141,10 @@ namespace AiEnabled.Graphics
       color = newValue ? "<color=orange>" : "<color=yellow>";
       DisableCollisionOnDeath.Text = $"Disable character collision on bot death: {color}{newValue}";
 
+      newValue = data.IncreaseNodeWeightsNearWeapons;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      IncreaseNodeWeightsNearWeapons.Text = $"Increase path cost near weapons (requires restart): {color}{newValue}";
+
       newValue = data.ObeyProjectionIntegrityForRepairs;
       color = newValue ? "<color=orange>" : "<color=yellow>";
       ObeyProjectionIntegrity.Text = $"Obey projection integrity for repairs: {color}{newValue}";
@@ -1103,7 +1179,7 @@ namespace AiEnabled.Graphics
 
       newValue = data.AllowHelperTokenBuilding;
       color = newValue ? "<color=orange>" : "<color=yellow>";
-      AllowTokenProduction.Text = $"Allow build token production (requires reload): {color}{newValue}";
+      AllowTokenProduction.Text = $"Allow build token production (requires restart): {color}{newValue}";
 
       newValue = data.AllowHelmetVisorChanges;
       color = newValue ? "<color=orange>" : "<color=yellow>";

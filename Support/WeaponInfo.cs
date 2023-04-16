@@ -26,11 +26,12 @@ namespace AiEnabled.Support
     public bool IsGrinder;
     public bool IsWelder;
     public bool LeadTargets;
+    public Vector3I? BlockPosition;
     internal int _maxTicks;
     internal int _ticksBetweenProjectiles;
     internal int _ammoRemaining;
 
-    public void Set(IMyCharacter bot, IMyEntity tgt, float damage, float angleDeviationTan, List<float> rand, int ticksBetween, int ammoLeft, bool isGrinder, bool isWelder, bool leadTargets)
+    public void Set(IMyCharacter bot, IMyEntity tgt, float damage, float angleDeviationTan, List<float> rand, int ticksBetween, int ammoLeft, bool isGrinder, bool isWelder, bool leadTargets, Vector3I? gridPosition = null)
     {
       Bot = bot;
       Target = tgt;
@@ -42,6 +43,8 @@ namespace AiEnabled.Support
       IsGrinder = isGrinder;
       IsWelder = isWelder;
       LeadTargets = leadTargets;
+      BlockPosition = gridPosition;
+
       _ticksBetweenProjectiles = ticksBetween;
       _ammoRemaining = ammoLeft;
       _maxTicks = isGrinder || isWelder ? 60 : ticksBetween * 10;

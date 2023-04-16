@@ -94,8 +94,14 @@ namespace AiEnabled.Networking
         else
         {
           BotBase b;
-          if (AiSession.Instance.Bots.TryGetValue(bot.EntityId, out b) && b?.ToolDefinition != null)
-            b.AddWeapon();
+          if (AiSession.Instance.Bots.TryGetValue(bot.EntityId, out b) && b != null)
+          {
+            if (b.ToolDefinition != null)
+              b.AddWeapon();
+  
+            b.RepairPriorities = new API.RemoteBotAPI.RepairPriorities();
+            b.TargetPriorities = new API.RemoteBotAPI.TargetPriorities();
+          }
         }
       }
 

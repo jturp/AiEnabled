@@ -4,11 +4,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.API;
 using AiEnabled.Bots;
 using AiEnabled.Bots.Roles;
 using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.GameLogic;
 using AiEnabled.Networking;
+using AiEnabled.Networking.Packets;
 
 using Sandbox.Definitions;
 using Sandbox.Game;
@@ -34,9 +36,9 @@ namespace AiEnabled.Support
   {
     private static IMyTerminalControlOnOffSwitch _refreshToggle;
 
-    internal static void CreateControls(IMyTerminalBlock block)
+    internal static void CreateControls(IMyTerminalBlock b)
     {
-      if (AiSession.Instance.FactoryControlsCreated || !(block is IMyConveyorSorter))
+      if (AiSession.Instance.FactoryControlsCreated || !(b is IMyConveyorSorter))
         return;
 
       AiSession.Instance.FactoryControlsCreated = true;
@@ -60,7 +62,6 @@ namespace AiEnabled.Support
 
       List<IMyTerminalControl> controls;
       MyAPIGateway.TerminalControls.GetControls<IMyConveyorSorter>(out controls);
-      block.ShowInToolbarConfig = false;
 
       for (int i = 0; i < controls.Count; i++)
       {
@@ -79,16 +80,153 @@ namespace AiEnabled.Support
       sorterToggle.Enabled = CombineFunc.Create(sorterToggle.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       sorterToggle.Visible = CombineFunc.Create(sorterToggle.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       sorterToggle.SupportsMultipleBlocks = false;
-      sorterToggle.Title = MyStringId.GetOrCompute("Sorter Function");
+      sorterToggle.Title = MyStringId.GetOrCompute("Automatically Pull Bot Materials");
       sorterToggle.Tooltip = MyStringId.GetOrCompute("Toggle to enable / disable the auto-pulling of bot materials.");
       sorterToggle.Getter = Block => GetSorterToggleValue(Block);
       sorterToggle.Setter = SetSorterToggleValue;
-      sorterToggle.OnText = MyStringId.GetOrCompute("On");
-      sorterToggle.OffText = MyStringId.GetOrCompute("Off");
+      sorterToggle.OnText = MyStringId.GetOrCompute("Yes");
+      sorterToggle.OffText = MyStringId.GetOrCompute("No");
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(sorterToggle);
       controls.Add(sorterToggle);
 
-      var separatorOne = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator");
+      var separator = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator0");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separator);
+      controls.Add(separator);
+
+      var labelPriorities = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblPriorities");
+      labelPriorities.Enabled = CombineFunc.Create(labelPriorities.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      labelPriorities.Visible = CombineFunc.Create(labelPriorities.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      labelPriorities.SupportsMultipleBlocks = false;
+      labelPriorities.Label = MyStringId.GetOrCompute("Helper Priorities");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(labelPriorities);
+      controls.Add(labelPriorities);
+
+      var PriBtnVisSwitch = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnVisSwitch");
+      PriBtnVisSwitch.Visible = CombineFunc.Create(PriBtnVisSwitch.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      PriBtnVisSwitch.SupportsMultipleBlocks = false;
+      PriBtnVisSwitch.Title = MyStringId.GetOrCompute(""); // Switch Priority List
+      PriBtnVisSwitch.Tooltip = MyStringId.GetOrCompute("Switches which priority list is shown.");
+      PriBtnVisSwitch.OnText = MyStringId.GetOrCompute("Repair");
+      PriBtnVisSwitch.OffText = MyStringId.GetOrCompute("Target");
+      PriBtnVisSwitch.Setter = (Block, enabled) => PriBoxSwitch_Setter(Block, enabled);
+      PriBtnVisSwitch.Getter = (Block) => PriBoxSwitch_Getter(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(PriBtnVisSwitch);
+      controls.Add(PriBtnVisSwitch);
+
+      var repairPriorityBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("ListBoxRepairPri");
+      repairPriorityBox.Visible = CombineFunc.Create(repairPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
+      repairPriorityBox.SupportsMultipleBlocks = false;
+      repairPriorityBox.VisibleRowsCount = 15;
+      repairPriorityBox.Multiselect = false;
+      repairPriorityBox.Title = MyStringId.GetOrCompute("Repair Priorities");
+      repairPriorityBox.Tooltip = MyStringId.GetOrCompute("Adjust your helper's repair priorities.");
+      repairPriorityBox.ListContent = (Block, lst1, lst2) => RepairBoxListContent(Block, lst1, lst2);
+      repairPriorityBox.ItemSelected = (Block, selectedItems) => RepairBox_ItemSelected(Block, selectedItems);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(repairPriorityBox);
+      controls.Add(repairPriorityBox);
+
+      var rprPriBtnOnOff = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnOnOffRprPri");
+      rprPriBtnOnOff.Visible = CombineFunc.Create(rprPriBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
+      rprPriBtnOnOff.SupportsMultipleBlocks = false;
+      rprPriBtnOnOff.Title = MyStringId.GetOrCompute("Toggle Priority Type");
+      rprPriBtnOnOff.Tooltip = MyStringId.GetOrCompute("Toggles the selected priority type On/Off.");
+      rprPriBtnOnOff.OnText = MyStringId.GetOrCompute("Enable");
+      rprPriBtnOnOff.OffText = MyStringId.GetOrCompute("Disable");
+      rprPriBtnOnOff.Setter = (Block, enabled) => RepairPriBoxOnOff_Setter(Block, enabled);
+      rprPriBtnOnOff.Getter = (Block) => RepairPriBoxOnOff_Getter(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(rprPriBtnOnOff);
+      controls.Add(rprPriBtnOnOff);
+
+      var rprPriBtnUp = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnUpRprPri");
+      rprPriBtnUp.Visible = CombineFunc.Create(rprPriBtnUp.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
+      rprPriBtnUp.SupportsMultipleBlocks = false;
+      rprPriBtnUp.Title = MyStringId.GetOrCompute("Move Priority Up");
+      rprPriBtnUp.Tooltip = MyStringId.GetOrCompute("Moves the selected priority type Up.");
+      rprPriBtnUp.Action = Block => RepairPriBoxUp_Submitted(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(rprPriBtnUp);
+      controls.Add(rprPriBtnUp);
+
+      var rprPriBtnDown = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnDwnRprPri");
+      rprPriBtnDown.Visible = CombineFunc.Create(rprPriBtnDown.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
+      rprPriBtnDown.SupportsMultipleBlocks = false;
+      rprPriBtnDown.Title = MyStringId.GetOrCompute("Move Priority Down");
+      rprPriBtnDown.Tooltip = MyStringId.GetOrCompute("Moves the selected priority type Down.");
+      rprPriBtnDown.Action = Block => RepairPriBoxDown_Submitted(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(rprPriBtnDown);
+      controls.Add(rprPriBtnDown);
+
+      var tgtDmgCheckBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyConveyorSorter>("CheckBoxDmgToDisable");
+      tgtDmgCheckBox.Visible = CombineFunc.Create(tgtDmgCheckBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
+      tgtDmgCheckBox.Title = MyStringId.GetOrCompute("Damage to Disable");
+      tgtDmgCheckBox.Tooltip = MyStringId.GetOrCompute("If checked, bots will only damage functional blocks until they are disabled, otherwise until destroyed.");
+      tgtDmgCheckBox.OnText = MyStringId.GetOrCompute("Checked");
+      tgtDmgCheckBox.OffText = MyStringId.GetOrCompute("Unchecked");
+      tgtDmgCheckBox.Getter = (Block) => TargetDamageToDisableBtn_Getter(Block);
+      tgtDmgCheckBox.Setter = (Block, enabled) => TargetDamageToDisableBtn_Setter(Block, enabled);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(tgtDmgCheckBox);
+      controls.Add(tgtDmgCheckBox);
+
+      var targetPriorityBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("ListBoxTargetPri");
+      targetPriorityBox.Visible = CombineFunc.Create(targetPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
+      targetPriorityBox.SupportsMultipleBlocks = false;
+      targetPriorityBox.VisibleRowsCount = 16;
+      targetPriorityBox.Multiselect = false;
+      targetPriorityBox.Title = MyStringId.GetOrCompute("Target Priorities");
+      targetPriorityBox.Tooltip = MyStringId.GetOrCompute("Adjust your helper's target priorities.");
+      targetPriorityBox.ListContent = (Block, lst1, lst2) => TargetBoxListContent(Block, lst1, lst2);
+      targetPriorityBox.ItemSelected = (Block, selectedItems) => TargetBox_ItemSelected(Block, selectedItems);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(targetPriorityBox);
+      controls.Add(targetPriorityBox);
+
+      var tgtPriBtnOnOff = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnOnOffTgtPri");
+      tgtPriBtnOnOff.Visible = CombineFunc.Create(tgtPriBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                    && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
+      tgtPriBtnOnOff.SupportsMultipleBlocks = false;
+      tgtPriBtnOnOff.Title = MyStringId.GetOrCompute("Toggle Priority Type");
+      tgtPriBtnOnOff.Tooltip = MyStringId.GetOrCompute("Toggles the selected priority type On/Off.");
+      tgtPriBtnOnOff.OnText = MyStringId.GetOrCompute("Enable");
+      tgtPriBtnOnOff.OffText = MyStringId.GetOrCompute("Disable");
+      tgtPriBtnOnOff.Setter = (Block, enabled) => TargetPriBoxOnOff_Setter(Block, enabled);
+      tgtPriBtnOnOff.Getter = (Block) => TargetPriBoxOnOff_Getter(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(tgtPriBtnOnOff);
+      controls.Add(tgtPriBtnOnOff);
+
+      var tgtPriBtnUp = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnUpTgtPri");
+      tgtPriBtnUp.Visible = CombineFunc.Create(tgtPriBtnUp.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
+      tgtPriBtnUp.SupportsMultipleBlocks = false;
+      tgtPriBtnUp.Title = MyStringId.GetOrCompute("Move Priority Up");
+      tgtPriBtnUp.Tooltip = MyStringId.GetOrCompute("Moves the selected priority type Up.");
+      tgtPriBtnUp.Action = Block => TargetPriBoxUp_Submitted(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(tgtPriBtnUp);
+      controls.Add(tgtPriBtnUp);
+
+      var tgtPriBtnDown = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnDwnTgtPri");
+      tgtPriBtnDown.Visible = CombineFunc.Create(tgtPriBtnDown.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                  && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
+      tgtPriBtnDown.SupportsMultipleBlocks = false;
+      tgtPriBtnDown.Title = MyStringId.GetOrCompute("Move Priority Down");
+      tgtPriBtnDown.Tooltip = MyStringId.GetOrCompute("Moves the selected priority type Down.");
+      tgtPriBtnDown.Action = Block => TargetPriBoxDown_Submitted(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(tgtPriBtnDown);
+      controls.Add(tgtPriBtnDown);
+
+      var updatePriBtn = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnUpdatePri");
+      updatePriBtn.Visible = CombineFunc.Create(updatePriBtn.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      updatePriBtn.SupportsMultipleBlocks = false;
+      updatePriBtn.Title = MyStringId.GetOrCompute("Update Helper Priorities");
+      updatePriBtn.Tooltip = MyStringId.GetOrCompute("Propagates changes to any active helpers for the local player. Does nothing for stored helpers.");
+      updatePriBtn.Action = Block => UpdatePriorities_Submitted(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(updatePriBtn);
+      controls.Add(updatePriBtn);
+
+      var separatorOne = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator1");
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separatorOne);
       controls.Add(separatorOne);
 
@@ -134,8 +272,8 @@ namespace AiEnabled.Support
       controls.Add(txtBox);
 
       var colorInput = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlColor, IMyConveyorSorter>("CtrlColor");
-      colorInput.Enabled = CombineFunc.Create(colorInput.Enabled, Block => block.BlockDefinition.SubtypeId == "RoboFactory");
-      colorInput.Visible = CombineFunc.Create(colorInput.Enabled, Block => block.BlockDefinition.SubtypeId == "RoboFactory");
+      colorInput.Enabled = CombineFunc.Create(colorInput.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      colorInput.Visible = CombineFunc.Create(colorInput.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       colorInput.SupportsMultipleBlocks = false;
       colorInput.Title = MyStringId.GetOrCompute("Select Color");
       colorInput.Tooltip = MyStringId.GetOrCompute("Adjust your helper's color to your liking.");
@@ -143,7 +281,7 @@ namespace AiEnabled.Support
       colorInput.Setter = (Block, clr) => SetBotColor(Block, clr);
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(colorInput);
       controls.Add(colorInput);
-      
+
       var labelPrice = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblPrice");
       labelPrice.Enabled = CombineFunc.Create(labelPrice.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       labelPrice.Visible = CombineFunc.Create(labelPrice.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
@@ -162,9 +300,9 @@ namespace AiEnabled.Support
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonBuild);
       controls.Add(buttonBuild);
 
-      var separator = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator");
-      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separator);
-      controls.Add(separator);
+      var separatorTwo = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator2");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separatorTwo);
+      controls.Add(separatorTwo);
 
       var labelMgmt = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblManagement");
       labelMgmt.Enabled = CombineFunc.Create(labelMgmt.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
@@ -214,8 +352,297 @@ namespace AiEnabled.Support
       buttonDismiss.Action = DismissHelper;
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonDismiss);
       controls.Add(buttonDismiss);
+    }
 
-      block.RefreshCustomInfo();
+    private static bool TargetDamageToDisableBtn_Getter(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      return logic?.TargetPriorities?.DamageToDisable ?? false;
+    }
+
+    private static void TargetDamageToDisableBtn_Setter(IMyTerminalBlock block, bool enabled)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      if (logic.TargetPriorities == null)
+        logic.TargetPriorities = new RemoteBotAPI.TargetPriorities();
+
+      logic.TargetPriorities.DamageToDisable = enabled;
+      RefreshTerminalControls(block);
+    }
+
+    private static bool PriBoxSwitch_Getter(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      return logic?.ShowRepairPriorities ?? true;
+    }
+
+    private static void PriBoxSwitch_Setter(IMyTerminalBlock block, bool enabled)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      logic.ShowRepairPriorities = enabled;
+      RefreshTerminalControls(block);
+    }
+
+    private static void UpdatePriorities_Submitted(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var player = MyAPIGateway.Session.Player;
+      if (player == null)
+        return;
+
+      var repList = logic.RepairPriorities.PriorityTypes;
+      var tgtList = logic.TargetPriorities.PriorityTypes;
+
+      var pkt = new PriorityUpdatePacket(player.IdentityId, repList, tgtList, logic.TargetPriorities.DamageToDisable);
+      AiSession.Instance.Network.SendToServer(pkt);
+
+      logic.ButtonPressed = true;
+      SetContextMessage(block, "Updates sent!");
+    }
+
+    private static void RepairBox_ItemSelected(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> selectedItems)
+    {
+      if (selectedItems == null || selectedItems.Count == 0)
+        return;
+
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var item = selectedItems[0].Text.String;
+      var enabled = item.StartsWith("[X]");
+
+      var idx = item.IndexOf("]");
+      if (idx >= 0)
+        item = item.Substring(idx + 1).Trim();
+
+      logic.SelectedRepairPriority = new KeyValuePair<string, bool>(item, enabled);
+      RefreshTerminalControls(block);
+    }
+
+    private static void TargetBox_ItemSelected(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> selectedItems)
+    {
+      if (selectedItems == null || selectedItems.Count == 0)
+        return;
+
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var item = selectedItems[0].Text.String;
+      var enabled = item.StartsWith("[X]");
+
+      var idx = item.IndexOf("]");
+      if (idx >= 0)
+        item = item.Substring(idx + 1).Trim();
+
+      logic.SelectedTargetPriority = new KeyValuePair<string, bool>(item, enabled);
+      RefreshTerminalControls(block);
+    }
+
+    private static void TargetPriBoxUp_Submitted(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedTargetPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.TargetPriorities.IndexOf(selected.Key);
+      
+      if (index > 0)
+      {
+        logic.TargetPriorities.PriorityTypes.Move(index, index - 1);
+        logic.UpdatePriorityLists(false);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static void TargetPriBoxDown_Submitted(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedTargetPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.TargetPriorities.IndexOf(selected.Key);
+
+      if (index >= 0 && index < logic.TargetPriorities.PriorityTypes.Count - 1)
+      {
+        logic.TargetPriorities.PriorityTypes.Move(index, index + 1);
+        logic.UpdatePriorityLists(false);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static bool TargetPriBoxOnOff_Getter(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return false;
+
+      var selected = logic.SelectedTargetPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return false;
+
+      return selected.Value;
+    }
+
+    private static void TargetPriBoxOnOff_Setter(IMyTerminalBlock block, bool enabled)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedTargetPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.TargetPriorities.IndexOf(selected.Key);
+      if (index >= 0)
+      {
+        var kvp = new KeyValuePair<string, bool>(selected.Key, enabled);
+        logic.TargetPriorities.PriorityTypes[index] = kvp;
+        logic.SelectedTargetPriority = kvp;
+        logic.UpdatePriorityLists(false);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static void RepairPriBoxDown_Submitted(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedRepairPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.RepairPriorities.PriorityTypes.IndexOf(selected);
+
+      if (index >= 0 && index < logic.RepairPriorities.PriorityTypes.Count - 1)
+      {
+        logic.RepairPriorities.PriorityTypes.Move(index, index + 1);
+        logic.UpdatePriorityLists(true);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static void RepairPriBoxUp_Submitted(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedRepairPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.RepairPriorities.PriorityTypes.IndexOf(selected);
+
+      if (index > 0)
+      {
+        logic.RepairPriorities.PriorityTypes.Move(index, index - 1);
+        logic.UpdatePriorityLists(true);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static bool RepairPriBoxOnOff_Getter(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return false;
+
+      var selected = logic.SelectedRepairPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return false;
+
+      return selected.Value;
+    }
+
+    private static void RepairPriBoxOnOff_Setter(IMyTerminalBlock block, bool enabled)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedRepairPriority;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.RepairPriorities.IndexOf(selected.Key);
+      if (index >= 0)
+      {
+        var kvp = new KeyValuePair<string, bool>(selected.Key, enabled);
+        logic.RepairPriorities.PriorityTypes[index] = kvp;
+        logic.SelectedRepairPriority = kvp;
+        logic.UpdatePriorityLists(true);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static void TargetBoxListContent(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> listItems, List<MyTerminalControlListBoxItem> selectedItems)
+    {
+      var gameLogic = block?.GameLogic.GetAs<Factory>();
+      if (gameLogic?.TargetPriorities == null)
+        return;
+
+      listItems.Clear();
+      selectedItems.Clear();
+
+      foreach (var pt in gameLogic.TargetPriorities.PriorityTypes)
+      {
+        var prefix = pt.Value ? "[X]" : "[  ]";
+        var name = $"{prefix} {pt.Key}";
+        var id = MyStringId.GetOrCompute(name);
+        var item = new MyTerminalControlListBoxItem(id, MyStringId.NullOrEmpty, null);
+        listItems.Add(item);
+
+        if (pt.Key == gameLogic.SelectedTargetPriority.Key)
+        {
+          selectedItems.Add(item);
+        }
+      }
+    }
+
+    private static void RepairBoxListContent(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> listItems, List<MyTerminalControlListBoxItem> selectedItems)
+    {
+      var gameLogic = block?.GameLogic.GetAs<Factory>();
+      if (gameLogic?.RepairPriorities == null)
+        return;
+
+      listItems.Clear();
+      selectedItems.Clear();
+
+      foreach (var pt in gameLogic.RepairPriorities.PriorityTypes)
+      {
+        var prefix = pt.Value ? "[X]" : "[  ]";
+        var name = $"{prefix} {pt.Key}";
+        var id = MyStringId.GetOrCompute(name);
+        var item = new MyTerminalControlListBoxItem(id, MyStringId.NullOrEmpty, null);
+        listItems.Add(item);
+
+        if (pt.Key == gameLogic.SelectedRepairPriority.Key)
+        {
+          selectedItems.Add(item);
+        }
+      }
     }
 
     private static void SetSorterToggleValue(IMyTerminalBlock block, bool enable)
@@ -350,8 +777,9 @@ namespace AiEnabled.Support
 
       var creativeMode = MyAPIGateway.Session.CreativeMode;
       var copyPasteEnabled = MyAPIGateway.Session.EnableCopyPaste;
+      var adminSpawn = creativeMode || copyPasteEnabled;
 
-      if (!creativeMode && !copyPasteEnabled)
+      if (!adminSpawn)
       {
         long balance;
         player.TryGetBalanceInfo(out balance);
@@ -382,7 +810,10 @@ namespace AiEnabled.Support
 
         if (amountInBlock > 0)
         {
-          blockInv.RemoveItemsOfType(1, comp);
+          if (AiSession.Instance.IsServer)
+          {
+            blockInv.RemoveItemsOfType(1, comp);
+          }
         }
         else
         {
@@ -390,7 +821,10 @@ namespace AiEnabled.Support
 
           if (amountInPlayer > 0)
           {
-            inv.RemoveItemsOfType(1, comp);
+            if (AiSession.Instance.IsServer)
+            {
+              inv.RemoveItemsOfType(1, comp);
+            }
           }
           else
           {
@@ -512,7 +946,10 @@ namespace AiEnabled.Support
       }
       else
       {
-        var packet = new FactorySpawnPacket(botRole, botModel.String, displayName, block.EntityId, player.IdentityId, price, inventoryCredits, gameLogic.BotColor);
+        var repairPris = gameLogic.RepairPriorities?.PriorityTypes;
+        var targetPris = gameLogic.TargetPriorities?.PriorityTypes;
+
+        var packet = new FactorySpawnPacket(botRole, botModel.String, displayName, block.EntityId, player.IdentityId, price, inventoryCredits, gameLogic.BotColor, repairPris, targetPris, adminSpawn);
         AiSession.Instance.Network.SendToServer(packet);
         SetContextMessage(block, "Build request sent!");
       }
@@ -682,7 +1119,13 @@ namespace AiEnabled.Support
         return;
       }
 
-      var pkt = new FactoryRecallPacket(block.EntityId, helperInfo.HelperId, player.IdentityId);
+      List<KeyValuePair<string, bool>> pris;
+      if (helperInfo.Role == 2)
+        pris = gameLogic.TargetPriorities?.PriorityTypes;
+      else
+        pris = gameLogic.RepairPriorities?.PriorityTypes;
+
+      var pkt = new FactoryRecallPacket(block.EntityId, helperInfo.HelperId, player.IdentityId, pris);
       AiSession.Instance.Network.SendToServer(pkt);
       SetContextMessage(block, "Recalling helper...");
     }
@@ -700,7 +1143,9 @@ namespace AiEnabled.Support
           continue;
 
         var label = ctrl as IMyTerminalControlLabel;
-        if (label.Label.String == "Helper Factory")
+        var labelText = label.Label.String;
+
+        if (labelText == "Helper Factory" || labelText == "Helper Priorities" || labelText == "Helper Management")
           continue;
 
         label.Label = MyStringId.GetOrCompute(message);

@@ -142,17 +142,31 @@ namespace AiEnabled.Bots.Roles
       if (!MySessionComponentSafeZones.IsActionAllowed(Character.WorldAABB.Center, AiUtils.CastHax(MySessionComponentSafeZones.AllowedActions, 16)))
         return false;
 
+      IMySlimBlock slim = null;
+      Vector3D tgtPosition;
       var targetEnt = Target.Entity as IMyEntity;
       if (targetEnt == null)
-        return false;
+      {
+        slim = Target.Entity as IMySlimBlock;
+        if (slim == null)
+          return false;
+
+        slim.ComputeWorldCenter(out tgtPosition);
+      }
+      else
+      {
+        tgtPosition = targetEnt.WorldAABB.Center;
+      }
+
+      var topMost = slim?.CubeGrid ?? targetEnt;
 
       if (MyAPIGateway.Multiplayer.MultiplayerActive)
       {
-        var packet = new WeaponFirePacket(Character.EntityId, targetEnt.EntityId, 0.2f, 0f, null, TicksBetweenProjectiles, 100, true, false, false);
+        var packet = new WeaponFirePacket(Character.EntityId, topMost.EntityId, 0.2f, 0f, null, TicksBetweenProjectiles, 100, true, false, false, slim?.Position);
         AiSession.Instance.Network.RelayToClients(packet);
       }
 
-      AiSession.Instance.StartWeaponFire(Character.EntityId, targetEnt.EntityId, 0.2f, 0f, null, TicksBetweenProjectiles, 100, true, false, false);
+      AiSession.Instance.StartWeaponFire(Character.EntityId, topMost.EntityId, 0.2f, 0f, null, TicksBetweenProjectiles, 100, true, false, false, slim?.Position);
       return true;
     }
   }

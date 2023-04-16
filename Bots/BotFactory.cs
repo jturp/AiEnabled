@@ -1101,6 +1101,24 @@ namespace AiEnabled.Bots
             sounds.Clear();
             sounds.AddList(spawnData.PainSounds);
           }
+
+          if (spawnData.RepairPriorities?.Count > 0)
+          {
+            bot.RepairPriorities = new RemoteBotAPI.RepairPriorities(spawnData.RepairPriorities);
+          }
+          else
+          {
+            bot.RepairPriorities = new RemoteBotAPI.RepairPriorities();
+          }
+
+          if (spawnData.TargetPriorities?.Count > 0)
+          {
+            bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(spawnData.TargetPriorities);
+          }
+          else
+          {
+            bot.TargetPriorities = new RemoteBotAPI.TargetPriorities();
+          }
         }
 
         return botChar;

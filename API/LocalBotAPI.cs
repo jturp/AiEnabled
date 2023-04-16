@@ -92,6 +92,7 @@ namespace AiEnabled.API
         { "ThrowGrenade", new Action<long>(ThrowGrenade) },
         { "GetLocalPositionForGrid", new Func<long, Vector3D, Vector3I?>(GetLocalPositionForGrid) },
         { "GetMainMapGrid", new Func<long, IMyCubeGrid>(GetMainMapGrid) },
+        { "SetToolsEnabled", new Func<long, bool, bool>(SetToolsEnabled) },
      };
 
       return dict;
@@ -1281,6 +1282,32 @@ namespace AiEnabled.API
     }
 
     /// <summary>
+    /// Changes a Bot's ability to equip character tools. If disabled, the bot will unequip its current tool.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="enable">Whether or not to allow the Bot to use tools and weapons</param>
+    /// <returns>true if the change is successful, otherwise false</returns>
+    public bool SetToolsEnabled(long botEntityId, bool enable)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+        return false;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.Character == null || bot.IsDead)
+        return false;
+
+      bot.AllowEquipWeapon = enable;
+
+      if (!enable && bot.Character.EquippedTool != null)
+      {
+        var controlEnt = bot.Character as Sandbox.Game.Entities.IMyControllableEntity;
+        controlEnt?.SwitchToWeapon(null);
+      }
+
+      return true;
+    }
+
+    /// <summary>
     /// Changes the bot's role
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
@@ -1651,6 +1678,24 @@ namespace AiEnabled.API
           var sounds = newBot.Behavior.Taunts;
           sounds.Clear();
           sounds.AddList(spawnData.TauntSounds);
+        }
+
+        if (spawnData.RepairPriorities?.Count > 0)
+        {
+          newBot.RepairPriorities = new RemoteBotAPI.RepairPriorities(spawnData.RepairPriorities);
+        }
+        else
+        {
+          newBot.RepairPriorities = bot.RepairPriorities ?? new RemoteBotAPI.RepairPriorities();
+        }
+
+        if (spawnData.TargetPriorities?.Count > 0)
+        {
+          newBot.TargetPriorities = new RemoteBotAPI.TargetPriorities(spawnData.TargetPriorities);
+        }
+        else
+        {
+          newBot.TargetPriorities = bot.TargetPriorities ?? new RemoteBotAPI.TargetPriorities();
         }
       }
 

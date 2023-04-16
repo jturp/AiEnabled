@@ -281,12 +281,13 @@ namespace AiEnabled.Graphics.Support
           vector /= rte.WaypointsWorld.Count;
           return Vector3D.DistanceSquared(vector, player.WorldAABB.Center);
         }
-        else if (rte.WaypointsLocal?.Count > 0 && rte.Grid != null)
+        else if (rte.WaypointsLocal?.Count > 0 && rte.GridEntityId.HasValue)
         {
+          var grid = MyEntities.GetEntityById(rte.GridEntityId.Value) as MyCubeGrid;
           var vector = Vector3D.Zero;
           foreach (var pt in rte.WaypointsLocal)
           {
-            var worldPt = rte.Grid.GridIntegerToWorld(pt);
+            var worldPt = grid.GridIntegerToWorld(pt);
             vector += worldPt;
           }
 
@@ -372,7 +373,7 @@ namespace AiEnabled.Graphics.Support
           stringId = MyStringId.GetOrCompute($"{name} ({num})");
         }
 
-        rte.Set(routeLocal, grid);
+        rte.Set(routeLocal, grid?.EntityId);
         _patrolRoutes[stringId] = rte;
       }
       else if (routeWorld?.Count > 0)
@@ -426,10 +427,10 @@ namespace AiEnabled.Graphics.Support
             {
               routeListWorld.AddList(rte.WaypointsWorld);
             }
-            else if (rte.WaypointsLocal?.Count > 0)
+            else if (rte.WaypointsLocal?.Count > 0 && rte.GridEntityId.HasValue)
             {
               routeListLocal.AddList(rte.WaypointsLocal);
-              gridId = rte.Grid.EntityId;
+              gridId = rte.GridEntityId.Value;
             }
           }
         }
@@ -443,27 +444,9 @@ namespace AiEnabled.Graphics.Support
         for (int i = 0; i < routeList.Count; i++)
         {
           var newRoute = routeList[i];
-          if (newRoute?.WaypointsWorld?.Count > 0)
+          if (newRoute != null)
           {
-            Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
-
-            var routeName = newRoute.Name;
-            var stringId = MyStringId.GetOrCompute(routeName);
-
-            int num = 0;
-            while (_patrolRoutes.ContainsKey(stringId))
-            {
-              num++;
-              stringId = MyStringId.GetOrCompute($"{routeName} ({num})");
-            }
-
-            rte.Set(newRoute.WaypointsWorld, newRoute.World);
-            _patrolRoutes[stringId] = rte;
-          }
-          else if (newRoute?.WaypointsLocal?.Count > 0 && newRoute.GridEntityId.HasValue)
-          {
-            var grid = MyEntities.GetEntityById(newRoute.GridEntityId.Value) as MyCubeGrid;
-            if (grid != null)
+            if (newRoute.WaypointsWorld?.Count > 0)
             {
               Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
 
@@ -477,7 +460,24 @@ namespace AiEnabled.Graphics.Support
                 stringId = MyStringId.GetOrCompute($"{routeName} ({num})");
               }
 
-              rte.Set(newRoute.WaypointsLocal, newRoute.World, grid);
+              rte.Set(newRoute.WaypointsWorld, newRoute.World);
+              _patrolRoutes[stringId] = rte;
+            }
+            else if (newRoute.WaypointsLocal?.Count > 0 && newRoute.GridEntityId.HasValue)
+            {
+              Route rte = _routeStack.Count > 0 ? _routeStack.Pop() : new Route();
+
+              var routeName = newRoute.Name;
+              var stringId = MyStringId.GetOrCompute(routeName);
+
+              int num = 0;
+              while (_patrolRoutes.ContainsKey(stringId))
+              {
+                num++;
+                stringId = MyStringId.GetOrCompute($"{routeName} ({num})");
+              }
+
+              rte.Set(newRoute.WaypointsLocal, newRoute.World, newRoute.GridEntityId.Value);
               _patrolRoutes[stringId] = rte;
             }
           }
@@ -494,7 +494,7 @@ namespace AiEnabled.Graphics.Support
 
       foreach (var kvp in _patrolRoutes)
       {
-        var route = new SerializableRoute(kvp.Key.String, kvp.Value.WaypointsWorld, kvp.Value.WaypointsLocal, kvp.Value.Grid?.EntityId);
+        var route = new SerializableRoute(kvp.Key.String, kvp.Value.WaypointsWorld, kvp.Value.WaypointsLocal, kvp.Value.GridEntityId);
         routeList.Add(route);
       }
     }

@@ -21,6 +21,7 @@ namespace AiEnabled.ConfigData
     public bool ShowHealthBars = true;
     public bool ShowHealthWhenFull = false;
     public bool ShowHelperGPS = true;
+    public bool HighlightHelpersOnMouseOver = true;
     public float MouseSensitivityModifier = 1f;
     public float RepairBotSearchRadius = 0f;
     public SerializableVector3? RepairBotIgnoreColorHSV = null;

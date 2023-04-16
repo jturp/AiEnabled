@@ -11,6 +11,8 @@ using VRage.Game.ModAPI;
 using VRageMath;
 using ProtoBuf;
 using VRage.Utils;
+using Sandbox.Definitions;
+using VRage.ObjectBuilders;
 
 namespace AiEnabled.API
 {
@@ -194,6 +196,303 @@ namespace AiEnabled.API
       /// If true, the bot will wander around its map area when idle
       /// </summary>
       [ProtoMember(28)] public bool AllowIdleMovement = true;
+
+      /// <summary>
+      /// A list of priorities for repair bots to use when deciding which block to weld. Bots will use the default list not supplied.
+      /// See <see cref="GetDefaultRepairPriorities"/> for allowable entries.
+      /// Remove entries you want bots to ignore completely.
+      /// </summary>
+      [ProtoMember(29)] public List<string> RepairPriorities;
+
+      /// <summary>
+      /// A list of priorities for bots to use when deciding what to attack. Bots will use the default list if this is not supplied.
+      /// See <see cref="GetDefaultTargetPriorities"/> for allowable entries.
+      /// Remove entries you want bots to ignore completely.
+      /// </summary>
+      [ProtoMember(30)] public List<string> TargetPriorities;
+    }
+
+    [ProtoContract]
+    public abstract class Priorities
+    {
+      [ProtoMember(1)] public List<KeyValuePair<string, bool>> PriorityTypes;
+
+      public Priorities() { }
+
+      internal void AssignDefaults()
+      {
+        PriorityTypes = new List<KeyValuePair<string, bool>>()
+        {
+          new KeyValuePair<string, bool>("IMyUserControllableGun", true),
+          new KeyValuePair<string, bool>("IMyShipController", true),
+          new KeyValuePair<string, bool>("IMyPowerProducer", true),
+          new KeyValuePair<string, bool>("IMyThrust", true),
+          new KeyValuePair<string, bool>("IMyGyro", true),
+          new KeyValuePair<string, bool>("IMyProductionBlock", true),
+          new KeyValuePair<string, bool>("IMyDoor", true),
+          new KeyValuePair<string, bool>("IMyProgrammableBlock", true),
+          new KeyValuePair<string, bool>("IMyProjector", true),
+          new KeyValuePair<string, bool>("IMyConveyor", true),
+          new KeyValuePair<string, bool>("IMyCargoContainer", true),
+          new KeyValuePair<string, bool>("IMyFunctionalBlock", true),
+          new KeyValuePair<string, bool>("IMyTerminalBlock", true),
+          new KeyValuePair<string, bool>("IMyCubeBlock", true),
+          new KeyValuePair<string, bool>("IMySlimBlock", true),
+        };
+
+        if (this is TargetPriorities)
+          PriorityTypes.Insert(0, new KeyValuePair<string, bool>("IMyCharacter", true));
+      }
+
+      internal int GetBlockPriority(object item)
+      {
+        for (int i = 0; i < PriorityTypes.Count; i++)
+        {
+          var pri = PriorityTypes[i];
+          if (pri.Value)
+          {
+            var priName = GetPriorityName(pri.Key);
+
+            if (CheckTypeFromString(item, priName))
+              return i;
+          }
+        }
+
+        return -1;
+      }
+
+      internal int IndexOf(string priority)
+      {
+        var pri = GetPriorityName(priority);
+
+        for (int i = 0; i < PriorityTypes.Count; i++)
+        {
+          if (PriorityTypes[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
+            return i;
+        }
+
+        return -1;
+      }
+
+      internal void UpdatePriority(int oldIndex, int newIndex)
+      {
+        PriorityTypes.Move(oldIndex, newIndex);
+      }
+
+      internal bool ContainsPriority(string priority)
+      {
+        if (string.IsNullOrEmpty(priority))
+          return false;
+
+        var idx = priority.IndexOf("]");
+
+        if (idx >= 0)
+          priority = priority.Substring(idx + 1);
+
+        priority = priority.Trim();
+
+        for (int i = 0; i < PriorityTypes.Count; i++)
+        {
+          if (PriorityTypes[i].Key.Equals(priority, StringComparison.OrdinalIgnoreCase))
+            return true;
+        }
+
+        return false;
+      }
+
+      internal void AddPriority(string priority, bool enabled)
+      {
+        if (!ContainsPriority(priority))
+        {
+          PriorityTypes.Add(new KeyValuePair<string, bool>(priority.Trim(), enabled));
+        }
+      }
+
+      internal bool GetEnabled(string priority)
+      {
+        var idx = priority.IndexOf("]");
+
+        if (idx >= 0)
+          priority = priority.Substring(idx + 1);
+
+        priority = priority.Trim();
+
+        foreach (var pri in PriorityTypes)
+        {
+          if (pri.Key.Equals(priority, StringComparison.OrdinalIgnoreCase))
+            return pri.Value;
+        }
+
+        return false;
+      }
+
+      internal string GetPriorityName(string priority)
+      {
+        var idx = priority.IndexOf("]");
+
+        if (idx >= 0)
+          priority = priority.Substring(idx + 1);
+
+        return priority.Trim();
+      }
+
+      bool CheckTypeFromString(object item, string priType)
+      {
+        var block = item as IMySlimBlock;
+        var fatBlock = block?.FatBlock;
+
+        switch (priType)
+        {
+          case "IMyCharacter":
+            return item is IMyCharacter;
+          case "IMyUserControllableGun":
+            return fatBlock is IMyUserControllableGun;
+          case "IMyShipController":
+            return fatBlock is IMyShipController;
+          case "IMyPowerProducer":
+            return fatBlock is IMyPowerProducer;
+          case "IMyThrust":
+            return fatBlock is IMyThrust;
+          case "IMyGyro":
+            return fatBlock is IMyGyro;
+          case "IMyProductionBlock":
+            return fatBlock is IMyProductionBlock;
+          case "IMyDoor":
+            return fatBlock is IMyDoor;
+          case "IMyProjector":
+            return fatBlock is IMyProjector;
+          case "IMyProgrammableBlock":
+            return fatBlock is IMyProgrammableBlock;
+          case "IMyConveyor":
+            return fatBlock is IMyConveyor || fatBlock is IMyConveyorSorter || fatBlock is IMyConveyorTube;
+          case "IMyCargoContainer":
+            return fatBlock is IMyCargoContainer;
+          case "IMyFunctionalBlock":
+            return fatBlock is IMyFunctionalBlock;
+          case "IMyTerminalBlock":
+            return fatBlock is IMyTerminalBlock;
+          case "IMyCubeBlock":
+            return fatBlock != null;
+          default:
+            return block != null;
+        }
+      }
+    }
+
+    [ProtoContract]
+    public class RepairPriorities : Priorities
+    {
+      public RepairPriorities()
+      {
+        AssignDefaults();
+      }
+
+      public RepairPriorities(List<KeyValuePair<string, bool>> pris)
+      {
+        if (pris?.Count > 0)
+        {
+          PriorityTypes = new List<KeyValuePair<string, bool>>(pris);
+        }
+        else
+        {
+          AssignDefaults();
+        }
+      }
+
+      public RepairPriorities(List<string> pris)
+      {
+        if (pris?.Count > 0)
+        {
+          var defaultPris = GetDefaultRepairPriorities();
+
+          PriorityTypes = new List<KeyValuePair<string, bool>>();
+
+          foreach (var p in pris)
+          {
+            var idx = p.IndexOf("]");
+            if (idx >= 0)
+            {
+              var enabled = p.Trim().StartsWith("[X]");
+              var name = GetPriorityName(p);
+
+              PriorityTypes.Add(new KeyValuePair<string, bool>(name, enabled));
+            }
+            else
+            {
+              PriorityTypes.Add(new KeyValuePair<string, bool>(p.Trim(), true));
+            }
+          }
+
+          foreach (var p in defaultPris)
+          {
+            if (!ContainsPriority(p))
+              PriorityTypes.Add(new KeyValuePair<string, bool>(p, false));
+          }
+        }
+        else
+        {
+          AssignDefaults();
+        }
+      }
+    }
+
+    [ProtoContract]
+    public class TargetPriorities : Priorities
+    {
+      [ProtoMember(1)] public bool DamageToDisable = true;
+
+      public TargetPriorities()
+      {
+        AssignDefaults();
+      }
+
+      public TargetPriorities(List<KeyValuePair<string, bool>> pris)
+      {
+        if (pris?.Count > 0)
+        {
+          PriorityTypes = new List<KeyValuePair<string, bool>>(pris);
+        }
+        else
+        {
+          AssignDefaults();
+        }
+      }
+
+      public TargetPriorities(List<string> pris)
+      {
+        if (pris?.Count > 0)
+        {
+          var defaultPris = GetDefaultTargetPriorities();
+
+          PriorityTypes = new List<KeyValuePair<string, bool>>();
+
+          foreach (var p in pris)
+          {
+            var idx = p.IndexOf("]");
+            if (idx >= 0)
+            {
+              var enabled = p.Trim().StartsWith("[X]");
+              var name = GetPriorityName(p);
+
+              PriorityTypes.Add(new KeyValuePair<string, bool>(name, enabled));
+            }
+            else
+            {
+              PriorityTypes.Add(new KeyValuePair<string, bool>(p.Trim(), true));
+            }
+          }
+
+          foreach (var p in defaultPris)
+          {
+            if (!ContainsPriority(p))
+              PriorityTypes.Add(new KeyValuePair<string, bool>(p, false));
+          }
+        }
+        else
+        {
+          AssignDefaults();
+        }
+      }
     }
 
     /////////////////////////////////////////////
@@ -594,6 +893,60 @@ namespace AiEnabled.API
     /// <returns>the IMyCubeGrid to use for a map's position transformations, if a map exists, otherwise null</returns>
     public IMyCubeGrid GetMainMapGrid(long gridEntityId) => _getMainGrid?.Invoke(gridEntityId);
 
+    /// <summary>
+    /// Changes a Bot's ability to equip character tools. If disabled, the bot will unequip its current tool.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="enable">Whether or not to allow the Bot to use tools and weapons</param>
+    /// <returns>true if the change is successful, otherwise false</returns>
+    public bool SetToolsEnabled(long botEntityId, bool enable) => _setToolsEnabled?.Invoke(botEntityId, enable) ?? false;
+
+    /// <summary>
+    /// Provides the default list of repair priorities. Allocates a new list when called!
+    /// </summary>
+    /// <returns>a list of strings representing priority types</returns>
+    public static List<string> GetDefaultRepairPriorities() => new List<string>()
+    {
+      "IMyUserControllableGun",
+      "IMyShipController",
+      "IMyPowerProducer",
+      "IMyThrust",
+      "IMyGyro",
+      "IMyProductionBlock",
+      "IMyDoor",
+      "IMyProgrammableBlock",
+      "IMyProjector",
+      "IMyConveyor",
+      "IMyCargoContainer",
+      "IMyFunctionalBlock",
+      "IMyTerminalBlock",
+      "IMyCubeBlock",
+      "IMySlimBlock",
+   };
+
+    /// <summary>
+    /// Provides the default list of target priorities. Allocates a new list when called!
+    /// </summary>
+    /// <returns>a list of strings representing priority types</returns>
+    public static List<string> GetDefaultTargetPriorities() => new List<string>()
+    {
+      "IMyCharacter",
+      "IMyUserControllableGun",
+      "IMyShipController",
+      "IMyPowerProducer",
+      "IMyThrust",
+      "IMyGyro",
+      "IMyProductionBlock",
+      "IMyDoor",
+      "IMyProgrammableBlock",
+      "IMyProjector",
+      "IMyConveyor",
+      "IMyCargoContainer",
+      "IMyFunctionalBlock",
+      "IMyTerminalBlock",
+      "IMyCubeBlock",
+      "IMySlimBlock",
+    };
 
     /////////////////////////////////////////////
     //API Methods End
@@ -640,6 +993,7 @@ namespace AiEnabled.API
     private Action<long> _throwGrenade;
     private Func<long, Vector3D, Vector3I?> _getLocalPositionForGrid;
     private Func<long, IMyCubeGrid> _getMainGrid;
+    private Func<long, bool, bool> _setToolsEnabled;
 
     private void ReceiveModMessage(object payload)
     {
@@ -697,6 +1051,7 @@ namespace AiEnabled.API
         _throwGrenade = dict["ThrowGrenade"] as Action<long>;
         _getLocalPositionForGrid = dict["GetLocalPositionForGrid"] as Func<long, Vector3D, Vector3I?>;
         _getMainGrid = dict["GetMainMapGrid"] as Func<long, IMyCubeGrid>;
+        _setToolsEnabled = dict["SetToolsEnabled"] as Func<long, bool, bool>;
 
       }
       catch

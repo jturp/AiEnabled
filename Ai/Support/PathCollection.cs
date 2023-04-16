@@ -110,6 +110,12 @@ namespace AiEnabled.Ai.Support
     internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
 
     /// <summary>
+    /// Used for potential block targets that reside outside the current map area.
+    /// Key = block.CubeGrid.EntityId, Value = block
+    /// </summary>
+    internal ConcurrentDictionary<long, List<KeyValuePair<IMySlimBlock, Vector3D>>> BlockObstacles = new ConcurrentDictionary<long, List<KeyValuePair<IMySlimBlock, Vector3D>>>();
+
+    /// <summary>
     /// The priority queue is used to sort and return the cell with the highest priority (lowest number)
     /// </summary>
     public SimplePriorityQueue<Vector3I> Queue = new SimplePriorityQueue<Vector3I>(Vector3I.Comparer);
@@ -192,11 +198,80 @@ namespace AiEnabled.Ai.Support
       return false;
     }
 
-    public void ClearObstacles(HashSet<Vector3I> positionsToClear)
+    public bool CheckIfBlockedObstacle(IMySlimBlock slim)
+    {
+      List<KeyValuePair<IMySlimBlock, Vector3D>> kvpList;
+      if (BlockObstacles != null && BlockObstacles.TryGetValue(slim.CubeGrid.EntityId, out kvpList))
+      {
+        for (int i = kvpList.Count - 1; i >= 0; i--)
+        {
+          var kvp = kvpList[i];
+          if (kvp.Key == null || kvp.Key.IsDestroyed || kvp.Key.CubeGrid.GetCubeBlock(kvp.Key.Position) != kvp.Key)
+          {
+            kvpList.RemoveAtFast(i);
+          }
+          else if (kvp.Key == slim)
+          {
+            return Vector3D.IsZero(kvp.Value - slim.CubeGrid.GridIntegerToWorld(slim.Position), 1);
+          }
+        }
+      }
+
+      return false;
+    }
+
+    public void AddBlockedObstacle(IMySlimBlock slim, Vector3D? slimWorld = null)
+    {
+      if (BlockObstacles == null)
+        return;
+
+      List<KeyValuePair<IMySlimBlock, Vector3D>> kvpList;
+      if (!BlockObstacles.TryGetValue(slim.CubeGrid.EntityId, out kvpList))
+      {
+        kvpList = new List<KeyValuePair<IMySlimBlock, Vector3D>>();
+        BlockObstacles[slim.CubeGrid.EntityId] = kvpList;
+      }
+
+      if (slimWorld == null)
+        slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+
+      bool found = false;
+      for (int i = kvpList.Count - 1; i >= 0; i--)
+      {
+        var kvp = kvpList[i];
+        if (kvp.Key == null || kvp.Key.IsDestroyed || kvp.Key.CubeGrid.GetCubeBlock(kvp.Key.Position) != kvp.Key)
+        {
+          kvpList.RemoveAtFast(i);
+        }
+        else if (kvp.Key == slim)
+        {
+          found = true;
+
+          if (!Vector3D.IsZero(kvp.Value - slimWorld.Value, 1))
+          {
+            kvpList[i] = new KeyValuePair<IMySlimBlock, Vector3D>(kvp.Key, slimWorld.Value);
+            AiSession.Instance.Logger.Log($"Updated block obstacle for {slim.BlockDefinition.DisplayNameText} [{slim.Position}]");
+          }
+
+          break;
+        }
+      }
+
+      if (!found)
+      {
+        AiSession.Instance.Logger.Log($"Added block obstacle for {slim.BlockDefinition.DisplayNameText} [{slim.Position}]");
+        kvpList.Add(new KeyValuePair<IMySlimBlock, Vector3D>(slim, slimWorld.Value));
+      }
+    }
+
+    public void ClearObstacles(HashSet<Vector3I> positionsToClear, bool includeBlocks = false)
     {
       if (positionsToClear == null)
       {
-        Obstacles.Clear();
+        Obstacles?.Clear();
+
+        if (includeBlocks)
+          BlockObstacles?.Clear();
       }
       else
       {
@@ -1045,6 +1120,8 @@ namespace AiEnabled.Ai.Support
       CostSoFar = null;
       Queue = null;
       Cache = null;
+      Obstacles = null;
+      BlockObstacles = null;
     }
 
     public void CheckDoors(out MyRelationsBetweenPlayers relation)
@@ -1158,8 +1235,6 @@ namespace AiEnabled.Ai.Support
 
         var transition = Bot?._transitionPoint;
         var rotation = Quaternion.CreateFromRotationMatrix(curGraph.WorldMatrix);
-
-        var botTile = curGraph.GetValueOrDefault(current, null);
 
         MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe;
         MyOrientedBoundingBoxD obb;
