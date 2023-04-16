@@ -1,5 +1,6 @@
 ﻿using AiEnabled.Ai.Support;
 using AiEnabled.Bots.Roles;
+using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Networking;
 using AiEnabled.Particles;
 using AiEnabled.Utilities;
@@ -227,7 +228,7 @@ namespace AiEnabled.Bots
       var graphMatrix = _currentGraph?.WorldMatrix ?? botMatrix;
       var graphUpVector = graphMatrix.Up;
       var jpEnabled = JetpackEnabled;
-      var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder);
+      var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder) && !(Character.EquippedTool is IMyWelder);
 
       var vecToWP = waypoint - botPosition;
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));

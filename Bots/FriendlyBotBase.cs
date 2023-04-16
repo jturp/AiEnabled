@@ -1,4 +1,5 @@
 ﻿using AiEnabled.Ai.Support;
+using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Networking;
 using AiEnabled.Utilities;
 
@@ -595,6 +596,7 @@ namespace AiEnabled.Bots
       var tgtFriendly = Target.IsFriendly();
       var isFriendly = isTarget && tgtFriendly;
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
+      var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder) && !(Character.EquippedTool is IMyWelder);
 
       if (BotInfo.IsOnLadder)
       {
@@ -722,7 +724,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      if (!rifleAttack && !tgtFriendly && Target.Entity != null && HasWeaponOrTool && !_sideNode.HasValue)
+      if (!rifleAttack && !tgtFriendly && hasWeapon && Target.Entity != null && !_sideNode.HasValue)
       {
         var dirToWP = botMatrix.GetClosestDirection(vecToWP);
         if ((dirToWP == Base6Directions.Direction.Down || dirToWP == Base6Directions.Direction.Up) && vecToWP.LengthSquared() < 100)

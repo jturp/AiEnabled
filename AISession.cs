@@ -903,7 +903,8 @@ namespace AiEnabled
           {
             charDef.HeadServerOffset = -0.15f;
           }
-          else if (subtype.String.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0)
+          else if (subtype.String.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0
+            || subtype.String.IndexOf("cyberhound", StringComparison.OrdinalIgnoreCase) >= 0)
           {
             charDef.HeadServerOffset = 0.15f;
           }

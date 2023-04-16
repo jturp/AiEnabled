@@ -236,7 +236,7 @@ namespace AiEnabled.Bots
       var tgtFriendly = Target.IsFriendly();
       var isFriendly = isTarget && tgtFriendly;
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
-      var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder);
+      var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder) && !(Character.EquippedTool is IMyWelder);
 
       if (BotInfo.IsOnLadder)
       {

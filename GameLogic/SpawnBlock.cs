@@ -291,7 +291,7 @@ namespace AiEnabled.GameLogic
       }
 
       _ini.Set("Target Priorities", "Only Damage to Disable", _targetPriorities.DamageToDisable);
-      _ini.SetComment("TargetPriorities", "Only Damage to Disable", " \n If true, bots will only attack blocks until they are no longer functional.\n ");
+      _ini.SetComment("Target Priorities", "Only Damage to Disable", " \n If true, bots will only attack blocks until they are no longer functional.\n ");
 
       _ini.SetSectionComment("Target Priorities", " \n This serves as the priority list for bots to use when deciding \n what to attack first. Adjust the order to your liking. If you\n want them to ignore the type entirely, set its value to false.\n ");
 
