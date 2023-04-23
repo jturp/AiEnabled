@@ -29,7 +29,7 @@ namespace AiEnabled.TSS
     Vector2 _startPos;
     Vector2 _surfaceSize;
     List<MySprite> _sprites = new List<MySprite>(10);
-    int _spriteIndex;
+    int _spriteIndex, _frameCounter;
 
     public TSS_BotStatus(IMyTextSurface surface, IMyCubeBlock block, Vector2 size) : base(surface, block, size)
     {
@@ -62,7 +62,7 @@ namespace AiEnabled.TSS
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in {GetType().FullName}.Dispose: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance?.Logger?.Log($"Exception in {GetType().FullName}.Dispose: {ex}", Utilities.MessageType.ERROR);
       }
       finally
       {
@@ -104,7 +104,7 @@ namespace AiEnabled.TSS
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.Run: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.Run: {ex}", Utilities.MessageType.ERROR);
       }
     }
 
@@ -151,6 +151,8 @@ namespace AiEnabled.TSS
 
           if (stats?.Count > 0)
           {
+            _frameCounter++;
+
             for (int i = 0; i < stats.Count; i++)
             {
               var stat = stats[i];
@@ -161,19 +163,14 @@ namespace AiEnabled.TSS
               sprite = MySprite.CreateText($"[{i + 1}/{stats.Count}] {stat.BotName}", _font, color, _scale, TextAlignment.LEFT);
               _sprites.Add(sprite);
 
-              sprite = MySprite.CreateText($"Action: {stat.Action}", _font, color, _scale, TextAlignment.LEFT);
-              _sprites.Add(sprite);
-
               if (stat.NeededItem != null)
               {
                 sprite = MySprite.CreateText($"Missing: {stat.NeededItem}", _font, color, _scale, TextAlignment.LEFT);
                 _sprites.Add(sprite);
               }
-
-              if (stat.TargetPosition.HasValue && stat.Action != "Idle" && !(Block is IMyCockpit))
+              else
               {
-                Vector3D pos = Vector3D.Round(stat.TargetPosition.Value, 2);
-                sprite = MySprite.CreateText($"Tgt Pos: {pos}", _font, color, _scale, TextAlignment.LEFT);
+                sprite = MySprite.CreateText($"Action: {stat.Action}", _font, color, _scale, TextAlignment.LEFT);
                 _sprites.Add(sprite);
               }
             }
@@ -204,10 +201,13 @@ namespace AiEnabled.TSS
                   break;
               }
 
-              ++_spriteIndex;
+              if (_frameCounter % 2 == 0)
+              {
+                _spriteIndex += 2;
 
-              if (skipTwo)
-                ++_spriteIndex;
+                if (skipTwo)
+                  ++_spriteIndex;
+              }
             }
             else
             {
@@ -232,6 +232,7 @@ namespace AiEnabled.TSS
           }
           else
           {
+            _frameCounter = 0;
             var icon = MySprite.CreateSprite("Circle", position + new Vector2(_sizePX.Y * 0.25f, _sizePX.Y * 0.5f), new Vector2(_sizePX.Y * 0.25f));
             icon.Color = color;
             frame.Add(icon);
@@ -244,7 +245,7 @@ namespace AiEnabled.TSS
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.UpdateStats: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.UpdateStats: {ex}", Utilities.MessageType.ERROR);
       }
     }
   }

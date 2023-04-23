@@ -146,8 +146,8 @@ namespace AiEnabled.Bots
           if (controllingPlayer.IdentityId == _base.Owner.IdentityId)
             return true;
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, controllingPlayer.IdentityId);
-          return relation != MyRelationsBetweenPlayers.Enemies;
+          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, controllingPlayer.IdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          return controllingPlayer.IdentityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
         var ch = ent as IMyCharacter;
@@ -170,8 +170,8 @@ namespace AiEnabled.Bots
               ownerIdentityId = p.IdentityId;
           }
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, ownerIdentityId);
-          return relation != MyRelationsBetweenPlayers.Enemies;
+          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, ownerIdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          return ownerIdentityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
         var grid = ent as IMyCubeGrid;
@@ -180,8 +180,10 @@ namespace AiEnabled.Bots
           if (grid.BigOwners?.Count > 0 || grid.SmallOwners?.Count > 0)
           {
             var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners[0];
-            var relation = MyIDModule.GetRelationPlayerBlock(owner, _base.Owner.IdentityId);
-            return relation != MyRelationsBetweenPlayerAndBlock.Enemies;
+            var relation = MyIDModule.GetRelationPlayerBlock(owner, _base.Owner.IdentityId, MyOwnershipShareModeEnum.None, 
+              MyRelationsBetweenPlayerAndBlock.Neutral, MyRelationsBetweenFactions.Neutral, 
+              MyRelationsBetweenPlayerAndBlock.Neutral, MyRelationsBetweenPlayerAndBlock.Neutral);
+            return owner == 0 || relation != MyRelationsBetweenPlayerAndBlock.Enemies;
           }
         }
 

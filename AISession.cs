@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.0";
+    public const string VERSION = "v1.5.2";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -118,7 +118,7 @@ namespace AiEnabled
     public bool FactoryControlsCreated;
     public bool FactoryActionsCreated;
     public bool IsServer, IsClient;
-    public bool DrawDebug, DrawDebug2;
+    public bool DrawDebug, DrawDebug2, DrawObstacles;
     public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded, EemLoaded, GrenadesEnabled;
     public bool InfiniteAmmoEnabled;
     public double SyncRange = 3000;
@@ -1265,6 +1265,8 @@ namespace AiEnabled
 
             if (!compDef.Public)
               AllGameDefinitions.Remove(component);
+            else if (!AllGameDefinitions.ContainsKey(component))
+              AllGameDefinitions[component] = compDef;
           }
 
           component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_RepairBotMaterial");
@@ -1279,6 +1281,8 @@ namespace AiEnabled
 
             if (!compDef.Public)
               AllGameDefinitions.Remove(component);
+            else if (!AllGameDefinitions.ContainsKey(component))
+              AllGameDefinitions[component] = compDef;
           }
 
           component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_ScavengerBotMaterial");
@@ -1293,6 +1297,8 @@ namespace AiEnabled
 
             if (!compDef.Public)
               AllGameDefinitions.Remove(component);
+            else if (!AllGameDefinitions.ContainsKey(component))
+              AllGameDefinitions[component] = compDef;
           }
 
           component = new MyDefinitionId(typeof(MyObjectBuilder_Component), "AiEnabled_Comp_CrewBotMaterial");
@@ -1307,6 +1313,8 @@ namespace AiEnabled
 
             if (!compDef.Public)
               AllGameDefinitions.Remove(component);
+            else if (!AllGameDefinitions.ContainsKey(component))
+              AllGameDefinitions[component] = compDef;
           }
 
           foreach (var def in AllGameDefinitions)
@@ -2990,7 +2998,7 @@ namespace AiEnabled
 
                     var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
                     var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-                    playerData.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType);
+                    playerData.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, false, bot._patrolName);
                   }
 
                   bot.Close();
@@ -3018,7 +3026,7 @@ namespace AiEnabled
 
                 var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
                 var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-                playerData.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType);
+                playerData.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, false, bot._patrolName);
                 bot.Close();
               }
 
@@ -3415,6 +3423,24 @@ namespace AiEnabled
           ShowMessage("You must have admin privileges to use that command.", timeToLive: 5000);
           return;
         }
+        else if (cmd.Equals("drawobstacles", StringComparison.OrdinalIgnoreCase))
+        {
+          if (!IsServer)
+          {
+            ShowMessage("Debug draw is only available server side.", timeToLive: 5000);
+            return;
+          }
+
+          bool b = !DrawObstacles;
+          if (_cli.ArgumentCount > 2)
+          {
+            if (!bool.TryParse(_cli.Argument(2), out b))
+              b = !DrawObstacles;
+          }
+
+          DrawObstacles = b;
+          MyAPIGateway.Utilities.ShowNotification($"Draw Obstacles set to {b} (requires Debug Draw enabled)", 5000);
+        }
         else if (cmd.Equals("debug", StringComparison.OrdinalIgnoreCase))
         {
           if (!IsServer)
@@ -3594,6 +3620,7 @@ namespace AiEnabled
           .Append('~', 15)
           .Append('\n')
           .Append("NOTE: Debug and Debug 2 are only available offline\n\n")
+          .Append("DrawObstacles - toggles displaying obstacle nodes when debug mode is active.\n\n")
           .Append("Debug - toggles debug mode on / off, which shows active bots' pathing\n")
           .Append("          info on screen. This will toggle debug 2 off, but not on.\n\n")
           .Append("Debug 2 - toggles tier 2 debug info, which includes map nodes near any\n")
@@ -4106,9 +4133,14 @@ namespace AiEnabled
 
             for (int k = 0; k < bot._patrolList.Count; k++)
               helperData.PatrolRoute.Add(bot._patrolList[k]);
+
+            helperData.PatrolName = bot._patrolName;
           }
           else
+          {
+            helperData.PatrolName = null;
             helperData.PatrolRoute?.Clear();
+          }
         }
       }
 
@@ -4321,11 +4353,25 @@ namespace AiEnabled
 
     public void AddOverHeadIcons(List<long> analyzers)
     {
+      List<long> helperIds = null;
+      if (MyAPIGateway.Session?.Player != null)
+        PlayerToActiveHelperIds.TryGetValue(MyAPIGateway.Session.Player.IdentityId, out helperIds);
+      
       for (int i = 0; i < analyzers.Count; i++)
       {
         var botId = analyzers[i];
         if (_botAnalyzers.ContainsKey(botId))
           continue;
+
+        if (helperIds != null && helperIds.Contains(botId))
+        {
+          if (!PlayerData.ShowMapIconFriendly)
+            continue;
+        }
+        else if (!PlayerData.ShowMapIconNonFriendly)
+        {
+          continue;
+        }
 
         var bot = MyEntities.GetEntityById(botId) as IMyCharacter;
         if (bot == null || bot.MarkedForClose)
@@ -5049,7 +5095,7 @@ namespace AiEnabled
                 if (Bots.TryGetValue(bot.EntityId, out botBase) && botBase != null)
                 {
                   if (info.PatrolRoute?.Count > 0)
-                    botBase.UpdatePatrolPoints(info.PatrolRoute);
+                    botBase.UpdatePatrolPoints(info.PatrolRoute, info.PatrolName);
 
                   if (info.Priorities != null)
                   {
@@ -5732,7 +5778,7 @@ namespace AiEnabled
 
               var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
               var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-              helperData.AddHelper(bot.Character, bot.BotType, priList, damageOnly, grid, bot._patrolList, crewType, adminSpawn);
+              helperData.AddHelper(bot.Character, bot.BotType, priList, damageOnly, grid, bot._patrolList, crewType, adminSpawn, bot._patrolName);
             }
 
             var pkt = new ClientHelperPacket(helperData.Helpers);
@@ -5753,7 +5799,7 @@ namespace AiEnabled
 
           var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
           var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-          data.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, adminSpawn);
+          data.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, adminSpawn, bot._patrolName);
           ModSaveData.PlayerHelperData.Add(data);
 
           var pkt = new ClientHelperPacket(data.Helpers);

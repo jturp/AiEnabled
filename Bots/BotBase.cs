@@ -873,6 +873,7 @@ namespace AiEnabled.Bots
     internal List<object> _taskPrioritiesTemp = new List<object>();
     internal ParallelTasks.Task _targetTask;
     internal Action _targetAction;
+    internal string _patrolName;
 
     readonly List<IHitInfo> _hitList;
     Task _graphTask;
@@ -1456,14 +1457,17 @@ namespace AiEnabled.Bots
       }
     }
 
-    internal void UpdatePatrolPoints(List<Vector3D> waypoints)
+    internal void UpdatePatrolPoints(List<Vector3D> waypoints, string name)
     {
+      _patrolName = null;
       _patrolList.Clear();
       _patrolIndex = -1;
       _patrolWaitTime = 1;
 
       if (waypoints?.Count > 0)
       {
+        _patrolName = name;
+
         for (int i = 0; i < waypoints.Count; i++)
         {
           var waypoint = waypoints[i] + WorldMatrix.Down;
@@ -1492,14 +1496,16 @@ namespace AiEnabled.Bots
       }
     }
 
-    internal void UpdatePatrolPoints(List<Vector3I> waypoints)
+    internal void UpdatePatrolPoints(List<Vector3I> waypoints, string name)
     {
+      _patrolName = null;
       _patrolList.Clear();
       _patrolIndex = -1;
       _patrolWaitTime = 1;
 
       if (waypoints?.Count > 0)
       {
+        _patrolName = name;
         _patrolList.AddList(waypoints);
         PatrolMode = true;
       }
@@ -1511,14 +1517,16 @@ namespace AiEnabled.Bots
       }
     }
 
-    internal void UpdatePatrolPoints(List<SerializableVector3I> waypoints)
+    internal void UpdatePatrolPoints(List<SerializableVector3I> waypoints, string name)
     {
+      _patrolName = null;
       _patrolList.Clear();
       _patrolIndex = -1;
       _patrolWaitTime = 1;
 
       if (waypoints?.Count > 0)
       {
+        _patrolName = name;
         for (int i = 0; i < waypoints.Count; i++)
           _patrolList.Add(waypoints[i]);
 
@@ -2397,6 +2405,9 @@ namespace AiEnabled.Bots
 
     public virtual void SetTarget()
     {
+      if (_currentGraph == null || !_currentGraph.Ready)
+        return;
+
       if (_targetTask.Exceptions != null)
       {
         AiSession.Instance.Logger.ClearCached();
@@ -2596,7 +2607,7 @@ namespace AiEnabled.Bots
           if (grid?.Physics != null && !grid.IsPreview && !grid.MarkedForClose && !checkedGridIDs.Contains(grid.EntityId))
           {
             gridGroups.Clear();
-            grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroups);
+            grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroups);
 
             foreach (var g in gridGroups)
             {
@@ -2607,20 +2618,28 @@ namespace AiEnabled.Bots
               foreach (var cpit in myGrid.OccupiedBlocks)
               {
                 if (cpit.Pilot != null)
-                  _taskPrioritiesTemp.Add(cpit.Pilot);
+                  entList.Add(cpit.Pilot);
               }
 
               checkedGridIDs.Add(g.EntityId);
-              var myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0L;
+              long myGridOwner;
+              try
+              {
+                myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0L;
+              }
+              catch
+              {
+                myGridOwner = 0L;
+              }
 
-              var relation = MyIDModule.GetRelationPlayerPlayer(myGridOwner, BotIdentityId);
-              if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
+              var relation = MyIDModule.GetRelationPlayerPlayer(myGridOwner, BotIdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+              if (myGridOwner > 0 && (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self))
                 continue;
-              else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
+              else if ((myGridOwner == 0 || relation == MyRelationsBetweenPlayers.Neutral) && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
                 continue;
 
               blockList.Clear();
-              g.GetBlocks(blockList);
+              g.GetBlocks(blockList, b => b?.CubeGrid?.EntityId == g.EntityId);
 
               blockList.ShellSort(botPosition);
               _taskPrioritiesTemp.AddRange(blockList);
@@ -3075,8 +3094,19 @@ namespace AiEnabled.Bots
         var max = grid.WorldToGridInteger(botPosition);
         Vector3I.MinMax(ref min, ref max);
 
-        min = Vector3I.Max(grid.Min, min) - 1;
-        max = Vector3I.Min(grid.Max, max) + 1;
+        var halfAABB = Character.WorldAABB.HalfExtents;
+        var botHead = grid.WorldToGridInteger(botPosition + halfAABB);
+        var botFeet = grid.WorldToGridInteger(botPosition - halfAABB);
+
+        var boxI = new BoundingBoxI(min, max);
+        boxI.Include(botHead);
+        boxI.Include(botFeet);
+
+        min = boxI.Min;
+        max = boxI.Max;
+
+        min = Vector3I.Max(grid.Min, min);
+        max = Vector3I.Min(grid.Max, max);
 
         Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref min, ref max);
         while (iter.IsValid())
@@ -4179,6 +4209,7 @@ namespace AiEnabled.Bots
             NeedsTransition = false;
 
             _previousGraph = null;
+            _nextGraph = null;
             _pathCollection?.OnGridBaseClosing();
             _currentGraph = AiSession.Instance.GetVoxelGraph(BotInfo.CurrentBotPositionActual, WorldMatrix, true);
 

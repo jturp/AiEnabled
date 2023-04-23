@@ -198,10 +198,10 @@ namespace AiEnabled.Ai.Support
         gridGroup.OnReleased += GridGroup_OnReleased;
 
         var isStatic = grid.Physics.IsStatic;
-        if (isStatic)
-          _boxExpansion = 10;
-        else
-          _boxExpansion = 5;
+        //if (isStatic)
+        //  _boxExpansion = 10;
+        //else
+        _boxExpansion = 5;
 
         if (!AiSession.Instance.ObstacleWorkDataStack.TryPop(out _tempObstaclesWorkData) || _tempObstaclesWorkData == null)
           _tempObstaclesWorkData = new ObstacleWorkData();
@@ -1924,21 +1924,23 @@ namespace AiEnabled.Ai.Support
         BoundingBox.Inflate(_boxExpansion);
         OBB = new MyOrientedBoundingBoxD(worldCenter, BoundingBox.HalfExtents * cellSize + halfVector, quat);
 
+        List<MyVoxelBase> voxelMaps;
+        if (!AiSession.Instance.VoxelMapListStack.TryPop(out voxelMaps) || voxelMaps == null)
+          voxelMaps = new List<MyVoxelBase>();
+        else
+          voxelMaps.Clear();
+
+        var obbCenter = OBB.Center;
+        var distanceToOBBCenter = double.MaxValue;
+
         float _;
         Vector3 gravityNorm;
-        var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
+        var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(obbCenter, out _);
         if (nGrav.LengthSquared() > 0)
         {
           RootVoxel = MyGamePruningStructure.GetClosestPlanet(WorldMatrix.Translation);
           gravityNorm = Vector3.Normalize(nGrav);
-        }
-        else
-        {
-          List<MyVoxelBase> voxelMaps;
-          if (!AiSession.Instance.VoxelMapListStack.TryPop(out voxelMaps) || voxelMaps == null)
-            voxelMaps = new List<MyVoxelBase>();
-          else
-            voxelMaps.Clear();
+          distanceToOBBCenter = Vector3D.DistanceSquared(RootVoxel.PositionComp.WorldAABB.Center, obbCenter);
 
           var aabb = OBB.GetAABB();
           MyGamePruningStructure.GetAllVoxelMapsInBox(ref aabb, voxelMaps);
@@ -1950,7 +1952,43 @@ namespace AiEnabled.Ai.Support
               var voxel = voxelMaps[i]?.RootVoxel;
               if (voxel != null && voxel.EntityId != rootVoxel?.EntityId)
               {
-                rootVoxel = voxel;
+                var dSquared = Vector3D.DistanceSquared(voxel.PositionComp.WorldAABB.Center, obbCenter);
+                if (dSquared < distanceToOBBCenter)
+                {
+                  distanceToOBBCenter = dSquared;
+                  rootVoxel = voxel;
+                }
+              }
+            }
+
+            if (rootVoxel != null)
+            {
+              RootVoxel = rootVoxel;
+
+              var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(OBB.Center, 0);
+              if (aGrav.LengthSquared() > 0)
+                gravityNorm = Vector3D.Normalize(aGrav);
+            }
+          }
+        }
+        else
+        {
+          var aabb = OBB.GetAABB();
+          MyGamePruningStructure.GetAllVoxelMapsInBox(ref aabb, voxelMaps);
+          if (voxelMaps.Count > 0)
+          {
+            MyVoxelBase rootVoxel = null;
+            for (int i = 0; i < voxelMaps.Count; i++)
+            {
+              var voxel = voxelMaps[i]?.RootVoxel;
+              if (voxel != null && voxel.EntityId != rootVoxel?.EntityId)
+              {
+                var dSquared = Vector3D.DistanceSquared(voxel.PositionComp.WorldAABB.Center, obbCenter);
+                if (dSquared < distanceToOBBCenter)
+                {
+                  distanceToOBBCenter = dSquared;
+                  rootVoxel = voxel;
+                }
               }
             }
 
@@ -1975,10 +2013,10 @@ namespace AiEnabled.Ai.Support
             RootVoxel = null;
             gravityNorm = (Vector3)WorldMatrix.Down;
           }
-
-          voxelMaps.Clear();
-          AiSession.Instance.VoxelMapListStack.Push(voxelMaps);
         }
+
+        voxelMaps.Clear();
+        AiSession.Instance.VoxelMapListStack.Push(voxelMaps);
 
         upDir = MainGrid.WorldMatrix.GetClosestDirection(WorldMatrix.Up);
         upVec = Base6Directions.GetIntVector(upDir);
@@ -2015,8 +2053,8 @@ namespace AiEnabled.Ai.Support
           GetBlockedNodeEdges(tile);
         }
 
-        if (!MainGrid.Physics.IsStatic)
-          AddAdditionalGridTiles();
+        //if (!MainGrid.Physics.IsStatic)
+        //  AddAdditionalGridTiles();
 
         //AiSession.Instance.Logger.Log($"{this}.InitGridArea: Finished");
       }
@@ -2476,6 +2514,10 @@ namespace AiEnabled.Ai.Support
           if (cubeAboveEmpty && block.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock"))
           {
             addThis = upIsUp || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Forward;
+          }
+          else if (block.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
+          {
+            addThis = upDir == block.Orientation.Left || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Left;
           }
 
           if (!addThis)
@@ -3208,12 +3250,43 @@ namespace AiEnabled.Ai.Support
       {
         if (block.Orientation.Forward == Base6Directions.GetOppositeDirection(upDir))
         {
-          Node node;
-          if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
-            node = new Node();
+          Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
+          if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(cubeDef.Id, out faceDict))
+          {
+            AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {block.CubeGrid.DisplayName}, Position = {block.Position})", MessageType.WARNING);
+          }
+          else
+          {
 
-          node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, MainGrid, block); 
-          OpenTileDict[mainGridPosition] = node;
+            Matrix matrix = new Matrix
+            {
+              Forward = Base6Directions.GetVector(block.Orientation.Forward),
+              Left = Base6Directions.GetVector(block.Orientation.Left),
+              Up = Base6Directions.GetVector(block.Orientation.Up)
+            };
+
+            if (faceDict.Count < 2)
+              matrix.TransposeRotationInPlace();
+
+            Vector3I side, center = cubeDef.Center;
+            Vector3I.TransformNormal(ref upVec, ref matrix, out side);
+            Vector3I.TransformNormal(ref center, ref matrix, out center);
+            var adjustedPosition = block.Position - center;
+
+            foreach (var kvp in faceDict)
+            {
+              var cell = kvp.Key;
+              Vector3I.TransformNormal(ref cell, ref matrix, out cell);
+              var cellPosition = adjustedPosition + cell;
+
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(cellPosition, Vector3.Zero, this, NodeType.Ground, 0, MainGrid, block);
+              OpenTileDict[cellPosition] = node;
+            }
+          }
         }
       }
       else if (/*isDigiLadder ||*/ cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
@@ -4062,6 +4135,24 @@ namespace AiEnabled.Ai.Support
                 break;
               }
             }
+            else if (slim.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
+            {
+              if (slim.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0)
+              {
+                add = false;
+                break;
+              }
+            }
+
+            else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(slim.BlockDefinition.Id))
+            {
+              if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(slim.BlockDefinition.Id)
+                || slim.BlockDefinition.Id.SubtypeName.Contains("Centered"))
+              {
+                add = false;
+                break;
+              }
+            }
             else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slim.BlockDefinition.Id))
             {
               add = false;
@@ -4124,6 +4215,21 @@ namespace AiEnabled.Ai.Support
                 add = false;
               }
             }
+            else if (block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
+            {
+              if (block.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0)
+              {
+                add = false;
+              }
+            }
+            else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(block.BlockDefinition.Id))
+            {
+              if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(block.BlockDefinition.Id)
+                || block.BlockDefinition.Id.SubtypeName.Contains("Centered"))
+              {
+                add = false;
+              }
+            }
             else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id))
               add = false;
           }
@@ -4147,6 +4253,21 @@ namespace AiEnabled.Ai.Support
                 var midPoint = turbineBasePosition + turbineUpVec;
                 var topPoint = midPoint + turbineUpVec;
                 if (localAbove == turbineBasePosition || localAbove == midPoint || localAbove == topPoint)
+                {
+                  add = false;
+                }
+              }
+              else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(slim.BlockDefinition.Id))
+              {
+                if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(slim.BlockDefinition.Id)
+                  || slim.BlockDefinition.Id.SubtypeName.Contains("Centered"))
+                {
+                  add = false;
+                }
+              }
+              else if (slim.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
+              {
+                if (slim.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                   add = false;
                 }
@@ -5394,7 +5515,7 @@ namespace AiEnabled.Ai.Support
                 continue;
               }
             }
-            else if (!nextIsHalfBlock)
+            else if (!nextIsPassage && !nextIsSolar && !nextIsHalfBlock)
             {
               node.SetBlocked(dirVec); 
               continue;
@@ -5934,6 +6055,15 @@ namespace AiEnabled.Ai.Support
                       node.SetBlocked(dirVec); 
                       continue;
                     }
+                  }
+                }
+                else if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip")
+                  && (upDir == thisBlock.Orientation.Left || Base6Directions.GetOppositeDirection(upDir) == thisBlock.Orientation.Left))
+                {
+                  if (oppositeDir == thisBlock.Orientation.Up)
+                  {
+                    node.SetBlocked(dirVec);
+                    continue;
                   }
                 }
                 else if (ExemptNodesSide.Contains(nodePos))
@@ -7302,6 +7432,15 @@ namespace AiEnabled.Ai.Support
                 else
                 {
                   node.SetBlocked(dirVec); 
+                  continue;
+                }
+              }
+              else if (nextBlock.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip")
+                && (upDir == nextBlock.Orientation.Left || Base6Directions.GetOppositeDirection(upDir) == nextBlock.Orientation.Left))
+              {
+                if (dir == nextBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
                   continue;
                 }
               }

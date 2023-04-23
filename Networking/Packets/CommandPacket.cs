@@ -31,6 +31,7 @@ namespace AiEnabled.Networking
     [ProtoMember(7)] long GridEntityId;
     [ProtoMember(8)] List<Vector3I> PatrolNodesLocal;
     [ProtoMember(9)] List<Vector3D> PatrolNodesWorld;
+    [ProtoMember(10)] string PatrolName;
 
     public CommandPacket() { }
 
@@ -48,18 +49,20 @@ namespace AiEnabled.Networking
       GoTo = goTo;
     }
 
-    public CommandPacket(long botId, List<Vector3I> patrolList, long gridId)
+    public CommandPacket(long botId, List<Vector3I> patrolList, long gridId, string patrolName)
     {
       BotEntityId = botId;
       GridEntityId = gridId;
       PatrolNodesLocal = patrolList;
+      PatrolName = patrolName;
       Patrol = true;
     }
 
-    public CommandPacket(long botId, List<Vector3D> patrolList)
+    public CommandPacket(long botId, List<Vector3D> patrolList, string patrolName)
     {
       BotEntityId = botId;
       PatrolNodesWorld = patrolList;
+      PatrolName = patrolName;
       Patrol = true;
     }
 
@@ -134,6 +137,7 @@ namespace AiEnabled.Networking
   
             GoTo = null;
             Patrol = true;
+            PatrolName = "GoTo Route";
           }
         }
         else if (isCrew)
@@ -310,7 +314,7 @@ namespace AiEnabled.Networking
         }
 
         if (PatrolNodesWorld.Count > 0)
-          bot.UpdatePatrolPoints(PatrolNodesWorld);
+          bot.UpdatePatrolPoints(PatrolNodesWorld, PatrolName);
 
         var seat = bot.Character.Parent as IMyCockpit;
         if (seat != null)

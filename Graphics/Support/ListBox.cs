@@ -284,15 +284,18 @@ namespace AiEnabled.Graphics.Support
         else if (rte.WaypointsLocal?.Count > 0 && rte.GridEntityId.HasValue)
         {
           var grid = MyEntities.GetEntityById(rte.GridEntityId.Value) as MyCubeGrid;
-          var vector = Vector3D.Zero;
-          foreach (var pt in rte.WaypointsLocal)
+          if (grid != null)
           {
-            var worldPt = grid.GridIntegerToWorld(pt);
-            vector += worldPt;
-          }
+            var vector = Vector3D.Zero;
+            foreach (var pt in rte.WaypointsLocal)
+            {
+              var worldPt = grid.GridIntegerToWorld(pt);
+              vector += worldPt;
+            }
 
-          vector /= rte.WaypointsLocal.Count;
-          return Vector3D.DistanceSquared(vector, player.WorldAABB.Center);
+            vector /= rte.WaypointsLocal.Count;
+            return Vector3D.DistanceSquared(vector, player.WorldAABB.Center);
+          }
         }
       }
 
@@ -406,11 +409,12 @@ namespace AiEnabled.Graphics.Support
       }
     }
 
-    public void GetPatrolList(List<Vector3D> routeListWorld, List<Vector3I> routeListLocal, out long gridId)
+    public void GetPatrolList(List<Vector3D> routeListWorld, List<Vector3I> routeListLocal, out long gridId, out string patrolName)
     {
       gridId = -1;
       routeListWorld.Clear();
       routeListLocal.Clear();
+      patrolName = null;
 
       if (SelectedItem != null)
       {
@@ -426,11 +430,13 @@ namespace AiEnabled.Graphics.Support
             if (rte.WaypointsWorld?.Count > 0)
             {
               routeListWorld.AddList(rte.WaypointsWorld);
+              patrolName = kvp.Key.String;
             }
             else if (rte.WaypointsLocal?.Count > 0 && rte.GridEntityId.HasValue)
             {
               routeListLocal.AddList(rte.WaypointsLocal);
               gridId = rte.GridEntityId.Value;
+              patrolName = kvp.Key.String;
             }
           }
         }

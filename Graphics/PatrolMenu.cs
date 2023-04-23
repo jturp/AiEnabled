@@ -313,11 +313,12 @@ namespace AiEnabled.Graphics
       RouteBox = new ListBox(bg, bdr, buttonColor, emitter, mouseOver, aspectRatio);
     }
 
-    public void TryActivate(ref double aspectRatio, List<Vector3D> patrolListWorld, List<Vector3I> patrolListLocal, out long gridId, out bool newPatrol, out bool closeMenu, out bool renamePatrol)
+    public void TryActivate(ref double aspectRatio, List<Vector3D> patrolListWorld, List<Vector3I> patrolListLocal, out long gridId, out bool newPatrol, out bool closeMenu, out bool renamePatrol, out string patrolName)
     {
       gridId = -1;
       newPatrol = BtnCreate.IsMouseOver;
       closeMenu = BtnClose.IsMouseOver;
+      patrolName = null;
       renamePatrol = false;
 
       if (newPatrol || closeMenu)
@@ -335,7 +336,7 @@ namespace AiEnabled.Graphics
         if (RouteBox.SelectedItem != null)
         {
           PlaySound(_hudClickSoundPair);
-          RouteBox.GetPatrolList(patrolListWorld, patrolListLocal, out gridId);
+          RouteBox.GetPatrolList(patrolListWorld, patrolListLocal, out gridId, out patrolName);
         }
         else
         {

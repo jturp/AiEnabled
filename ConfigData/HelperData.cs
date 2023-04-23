@@ -53,13 +53,14 @@ namespace AiEnabled.ConfigData
     [ProtoMember(110)] public Color BotColor;
     [ProtoMember(111)] public List<InventoryItem> InventoryItems;
     [ProtoMember(112)] public List<SerializableVector3I> PatrolRoute;
-    [ProtoMember(113)] public List<string> Priorities;
-    [ProtoMember(114)] public bool DamageToDisable;
-    [ProtoMember(115)] public bool AdminSpawned;
+    [ProtoMember(113)] public string PatrolName;
+    [ProtoMember(114)] public List<string> Priorities;
+    [ProtoMember(115)] public bool DamageToDisable;
+    [ProtoMember(116)] public bool AdminSpawned;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, bool disableOnly, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, bool disableOnly, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
@@ -89,6 +90,8 @@ namespace AiEnabled.ConfigData
 
         for (int i = 0; i < route.Count; i++)
           PatrolRoute.Add(route[i]);
+
+        PatrolName = patrolName;
       }
 
       var inventory = bot.GetInventory() as MyInventory;
@@ -125,7 +128,7 @@ namespace AiEnabled.ConfigData
       Helpers = new List<HelperInfo>();
     }
 
-    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, List<KeyValuePair<string, bool>> priList, bool damageOnly, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false)
+    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, List<KeyValuePair<string, bool>> priList, bool damageOnly, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null)
     {
       if (Helpers == null)
         Helpers = new List<HelperInfo>();
@@ -144,7 +147,7 @@ namespace AiEnabled.ConfigData
         pris = botType == AiSession.BotType.Repair ? API.RemoteBotAPI.GetDefaultRepairPriorities() : API.RemoteBotAPI.GetDefaultTargetPriorities();
       }
 
-      Helpers.Add(new HelperInfo(helper, botType, pris, damageOnly, grid, patrolRoute, crewRole, adminSpawn));
+      Helpers.Add(new HelperInfo(helper, botType, pris, damageOnly, grid, patrolRoute, crewRole, adminSpawn, patrolName));
     }
 
     public bool RemoveHelper(long id)

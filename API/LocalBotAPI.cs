@@ -672,7 +672,7 @@ namespace AiEnabled.API
         bot.Target.RemoveTarget();
       }
 
-      bot.UpdatePatrolPoints(waypoints);
+      bot.UpdatePatrolPoints(waypoints, "API Route");
 
       var seat = bot.Character.Parent as IMyCockpit;
       if (seat != null)
@@ -727,7 +727,7 @@ namespace AiEnabled.API
         bot.Target.RemoveTarget();
       }
 
-      bot.UpdatePatrolPoints(waypoints);
+      bot.UpdatePatrolPoints(waypoints, "API Route");
 
       var seat = bot.Character.Parent as IMyCockpit;
       if (seat != null)
@@ -1062,7 +1062,7 @@ namespace AiEnabled.API
       else
         gridList.Clear();
 
-      var gridLink = grid.GetGridGroup(GridLinkTypeEnum.Logical);
+      var gridLink = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
       if (gridLink == null)
         gridList.Add(grid);
       else

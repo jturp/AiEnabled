@@ -774,7 +774,7 @@ namespace AiEnabled.GameLogic
         {
           _gridMap = AiSession.Instance.GetGridGraph((MyCubeGrid)_block.CubeGrid, _block.WorldMatrix);
         }
-        else if (_gridMap.LastActiveTicks > 100)
+        else if (_gridMap.LastActiveTicks >= 100)
         {
           _gridMap.LastActiveTicks = 10;
         }
@@ -991,7 +991,7 @@ namespace AiEnabled.GameLogic
             var intVecFwd = -Base6Directions.GetIntVector(_block.Orientation.Forward);
             var localPoint = _block.Position + intVecFwd;
 
-            while (_block.CubeGrid.CubeExists(localPoint))
+            while (_block.CubeGrid.CubeExists(localPoint) || GridBase.PointInsideVoxel(_block.CubeGrid.GridIntegerToWorld(localPoint), _gridMap.RootVoxel))
               localPoint += intVecFwd;
 
             var spawnPoint = _block.CubeGrid.GridIntegerToWorld(localPoint);

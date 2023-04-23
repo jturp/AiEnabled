@@ -1274,19 +1274,6 @@ namespace AiEnabled.Ai.Support
 
             iter.MoveNext();
           }
-
-
-          foreach (var point in curGraph.TempBlockedNodes.Keys)
-          {
-            if (curGraph.IsOpenTile(point))
-            {
-              _tempDebug.Add(point);
-              vec = curGraph.LocalToWorld(point);
-              obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
-
-              AiUtils.DrawOBB(obb, Color.Red, MySimpleObjectRasterizer.Solid);
-            }
-          }
         }
 
         raster = MySimpleObjectRasterizer.Solid;

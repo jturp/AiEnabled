@@ -120,7 +120,7 @@ namespace AiEnabled.Bots
         else
           gridList.Clear();
 
-        var group = grid.GetGridGroup(GridLinkTypeEnum.Logical);
+        var group = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
         if (group == null)
           gridList.Add(grid);
         else

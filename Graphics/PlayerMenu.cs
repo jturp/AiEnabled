@@ -52,7 +52,7 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
-    internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons;
+    internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
@@ -69,6 +69,8 @@ namespace AiEnabled.Graphics
       bool showHealthBars = _playerData.ShowHealthBars;
       bool showGPS = _playerData.ShowHelperGPS;
       bool useHighlight = _playerData.HighlightHelpersOnMouseOver;
+      bool mapFriendly = _playerData.ShowMapIconFriendly;
+      bool mapOther = _playerData.ShowMapIconNonFriendly;
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
       float searchRadius = _playerData.RepairBotSearchRadius;
 
@@ -77,6 +79,8 @@ namespace AiEnabled.Graphics
       ShowHealthWhenFull = CreateMenuItemToggle(Menu, _playerData.ShowHealthWhenFull, "Show health bar when full", ShowHealthWhenFull_Clicked);
       ShowHelperGPS = CreateMenuItemToggle(Menu, showGPS, "Show helper GPS", ShowHelperGPS_Clicked);
       HighLightHelpers = CreateMenuItemToggle(Menu, useHighlight, "Highlight Helpers On Mouse Over", UseHighlight_Clicked);
+      ShowMapIconFriendly = CreateMenuItemToggle(Menu, mapFriendly, "Show Map Icon for Helpers", ShowMapIconFriendly_Clicked);
+      ShowMapIconOther = CreateMenuItemToggle(Menu, mapOther, "Show Map Icon for Non-Helpers", ShowMapIconOther_Clicked);
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
 
       var color = (searchRadius == 0) ? "<color=yellow>" : "<color=orange>";
@@ -557,6 +561,24 @@ namespace AiEnabled.Graphics
       var color = enabled ? "<color=orange>" : "<color=yellow>";
       ShowHelperGPS.Text = $"Show helper GPS: {color}{enabled.ToString()}";
       _playerData.ShowHelperGPS = enabled;
+      AiSession.Instance.StartUpdateCounter();
+    }
+
+    private void ShowMapIconOther_Clicked()
+    {
+      var enabled = !_playerData.ShowMapIconNonFriendly;
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
+      ShowMapIconOther.Text = $"Show Map Icon for Non-Helpers: {color}{enabled.ToString()}";
+      _playerData.ShowMapIconNonFriendly = enabled;
+      AiSession.Instance.StartUpdateCounter();
+    }
+
+    private void ShowMapIconFriendly_Clicked()
+    {
+      var enabled = !_playerData.ShowMapIconFriendly;
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
+      ShowMapIconFriendly.Text = $"Show Map Icon for Helpers: {color}{enabled.ToString()}";
+      _playerData.ShowMapIconFriendly = enabled;
       AiSession.Instance.StartUpdateCounter();
     }
 

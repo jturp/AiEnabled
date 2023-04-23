@@ -391,7 +391,7 @@ namespace AiEnabled.Bots
           if (grid?.Physics != null && !grid.IsPreview && !grid.MarkedForClose && !checkedGridIDs.Contains(grid.EntityId))
           {
             gridGroups.Clear();
-            grid.GetGridGroup(GridLinkTypeEnum.Logical).GetGrids(gridGroups);
+            grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroups);
 
             foreach (var g in gridGroups)
             {
@@ -402,22 +402,30 @@ namespace AiEnabled.Bots
               foreach (var cpit in myGrid.OccupiedBlocks)
               {
                 if (cpit.Pilot != null)
-                  _taskPrioritiesTemp.Add(cpit.Pilot);
+                  entities.Add(cpit);
               }
 
               checkedGridIDs.Add(g.EntityId);
-              var myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0L;
-
-              var relation = MyIDModule.GetRelationPlayerPlayer(myGridOwner, BotIdentityId);
-              if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
+              long myGridOwner;
+              try
+              {
+                myGridOwner = myGrid.BigOwners?.Count > 0 ? myGrid.BigOwners[0] : myGrid.SmallOwners?.Count > 0 ? myGrid.SmallOwners[0] : 0L;
+              }
+              catch
+              {
                 continue;
-              else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
+              }
+
+              if (myGridOwner == 0)
+                continue;
+
+              var relation = MyIDModule.GetRelationPlayerPlayer(myGridOwner, ownerId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+              if (relation != MyRelationsBetweenPlayers.Enemies)
                 continue;
 
               blockList.Clear();
               g.GetBlocks(blockList);
 
-              //blockList.ShellSort(botPosition);
               _taskPrioritiesTemp.AddRange(blockList);
             }
           }

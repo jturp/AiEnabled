@@ -24,8 +24,7 @@ namespace AiEnabled.Bots
   {
     [ProtoMember(1)] public string BotName;
     [ProtoMember(2)] public string Action;
-    [ProtoMember(3)] public SerializableVector3D? TargetPosition;
-    [ProtoMember(4)] public string NeededItem;
+    [ProtoMember(3)] public string NeededItem;
 
     public BotStatus() { }
 
@@ -35,22 +34,14 @@ namespace AiEnabled.Bots
       {
         BotName = bot.Character.Name;
 
-        if (bot.Target.PositionsValid)
-        {
-          TargetPosition = bot.Target.CurrentActualPosition;
-        }
-        else
-        {
-          TargetPosition = null;
-        }
-
         if (bot.FollowMode && bot.Owner != null)
         {
-          Action = $"Following {bot.Owner.DisplayName}";
+          Action = $"Following {bot.Owner.DisplayName} [Follow Mode]";
         }
         else if (bot.Character.Parent is IMyCockpit)
         {
-          Action = $"Sitting";
+          var cpit = bot.Character.Parent as IMyCockpit;
+          Action = $"Seated in {cpit.DisplayName}";
         }
         else if (bot.BotType == AiSession.BotType.Repair)
         {
@@ -92,12 +83,31 @@ namespace AiEnabled.Bots
           }
           else if (bot.PatrolMode && bot._patrolList?.Count > 0)
           {
-            var suffix = bot._patrolList.Count > 1 ? "waypoints" : "waypoint";
-            Action = $"Patrolling {bot._patrolList.Count} {suffix}";
+            var count = bot._patrolList.Count;
+            var idx = bot._patrolIndex % count + 1;
+            string name;
+            if (bot._patrolName?.Length > 0)
+            {
+              var bktIndex = bot._patrolName.LastIndexOf('[');
+              if (bktIndex > 0)
+                name = bot._patrolName.Substring(0, bktIndex - 1).Trim();
+              else
+                name = bot._patrolName.Trim();
+            }
+            else
+            {
+              name = "Unknown Route";
+            }
+
+            Action = $"Patrolling wp {idx }/{count} for '{name}'";
+          }
+          else if (bot._currentGraph?.Ready != true)
+          {
+            Action = "Analyzing terrain";
           }
           else
           {
-            Action = "Idle";
+            Action = $"Following {bot.Owner.DisplayName} [Idle]";
           }
 
           if (buildMode == RepairBot.BuildMode.Weld)
@@ -121,17 +131,34 @@ namespace AiEnabled.Bots
           {
             var terminal = cb.AttachedBlock as IMyTerminalBlock;
             Action = $"Inspecting {terminal?.CustomName ?? cb.AttachedBlock.DefinitionDisplayNameText}";
-
-            TargetPosition = terminal.GetPosition();
           }
           else if (bot.PatrolMode && bot._patrolList?.Count > 0)
           {
-            var suffix = bot._patrolList.Count > 1 ? "waypoints" : "waypoint";
-            Action = $"Patrolling {bot._patrolList.Count} {suffix}";
+            var count = bot._patrolList.Count;
+            var idx = bot._patrolIndex % count + 1;
+            string name;
+            if (bot._patrolName?.Length > 0)
+            {
+              var bktIndex = bot._patrolName.LastIndexOf('[');
+              if (bktIndex > 0)
+                name = bot._patrolName.Substring(0, bktIndex - 1).Trim();
+              else
+                name = bot._patrolName.Trim();
+            }
+            else
+            {
+              name = "Unknown Route";
+            }
+
+            Action = $"Patrolling wp {idx }/{count} for '{name}'";
+          }
+          else if (bot._currentGraph?.Ready != true)
+          {
+            Action = "Analyzing terrain";
           }
           else
           {
-            Action = "Wandering";
+            Action = "Wandering [Idle]";
           }
         }
         else if (bot.Target.IsCubeBlock)
@@ -148,7 +175,7 @@ namespace AiEnabled.Bots
           {
             if (ch.ControllerInfo?.ControllingIdentityId == bot.Owner.IdentityId)
             {
-              Action = "Idle";
+              Action = $"Following {bot.Owner.DisplayName} [Idle]";
             }
             else if (AiSession.Instance.Bots.ContainsKey(ch.EntityId))
             {              
@@ -179,8 +206,27 @@ namespace AiEnabled.Bots
         }
         else if (bot.PatrolMode && bot._patrolList?.Count > 0)
         {
-          var suffix = bot._patrolList.Count > 1 ? "waypoints" : "waypoint";
-          Action = $"Patrolling {bot._patrolList.Count} {suffix}";
+          var count = bot._patrolList.Count;
+          var idx = bot._patrolIndex % count + 1;
+          string name;
+          if (bot._patrolName?.Length > 0)
+          {
+            var bktIndex = bot._patrolName.LastIndexOf('[');
+            if (bktIndex > 0)
+              name = bot._patrolName.Substring(0, bktIndex - 1).Trim();
+            else
+              name = bot._patrolName.Trim();
+          }
+          else
+          {
+            name = "Unknown Route";
+          }
+
+          Action = $"Patrolling wp {idx }/{count} for '{name}'";
+        }
+        else if (bot._currentGraph?.Ready != true)
+        {
+          Action = "Analyzing terrain";
         }
         else
         {
@@ -198,7 +244,6 @@ namespace AiEnabled.Bots
       BotName = null;
       Action = null;
       NeededItem = null;
-      TargetPosition = null;
     }
   }
 }

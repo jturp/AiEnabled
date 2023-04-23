@@ -966,7 +966,7 @@ namespace AiEnabled.Ai.Support
           gridList.Clear();
 
         var biggest = initialGrid;
-        initialGrid?.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
+        initialGrid?.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
 
         for (int i = 0; i < gridList.Count; i++)
         {
@@ -1301,7 +1301,7 @@ namespace AiEnabled.Ai.Support
           else
             gridList.Clear();
 
-          gridGraph.MainGrid.GetGridGroup(GridLinkTypeEnum.Logical)?.GetGrids(gridList);
+          gridGraph.MainGrid.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
           bool airtight = false;
 
           for (int i = 0; i < gridList.Count; i++)
@@ -1335,34 +1335,38 @@ namespace AiEnabled.Ai.Support
           return;
 
         _tempDebug.Clear();
-        MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe;
-        MyOrientedBoundingBoxD obb;
         Vector4 color = Color.Purple;
         var rotation = Quaternion.CreateFromRotationMatrix(WorldMatrix);
         var playerLocation = WorldToLocal(player.WorldAABB.Center);
 
         MyAPIGateway.Utilities.ShowNotification($"{this}: ObstacleNodes = {ObstacleNodes.Count}, TempBlocked = {TempBlockedNodes.Count}, PlayerLoc = {playerLocation}", 16);
 
-        foreach (var localVec in ObstacleNodes.Keys)
+        if (AiSession.Instance.DrawObstacles)
         {
-          if (_tempDebug.Add(localVec))
+          MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe;
+          MyOrientedBoundingBoxD obb;
+
+          foreach (var localVec in ObstacleNodes.Keys)
           {
-            var vec = LocalToWorld(localVec);
-            obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.25, rotation);
-            AiUtils.DrawOBB(obb, Color.Firebrick, raster);
+            if (_tempDebug.Add(localVec))
+            {
+              var vec = LocalToWorld(localVec);
+              obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.25, rotation);
+              AiUtils.DrawOBB(obb, Color.Firebrick, raster);
+            }
           }
-        }
 
-        raster = MySimpleObjectRasterizer.Solid;
+          raster = MySimpleObjectRasterizer.Solid;
 
-        foreach (var point in TempBlockedNodes.Keys)
-        {
-          if (IsOpenTile(point) && _tempDebug.Add(point))
+          foreach (var point in TempBlockedNodes.Keys)
           {
-            var vec = LocalToWorld(point);
-            obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
+            if (IsOpenTile(point) && _tempDebug.Add(point))
+            {
+              var vec = LocalToWorld(point);
+              obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
 
-            AiUtils.DrawOBB(obb, Color.Red, MySimpleObjectRasterizer.Solid);
+              AiUtils.DrawOBB(obb, Color.Red, MySimpleObjectRasterizer.Solid);
+            }
           }
         }
 

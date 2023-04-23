@@ -117,7 +117,7 @@ namespace AiEnabled.Graphics
       CommandPacket pkt;
       if (_patrolListLocal.Count > 0)
       {
-        pkt = new CommandPacket(ActiveBot.EntityId, _patrolListLocal, _patrolGrid.EntityId);
+        pkt = new CommandPacket(ActiveBot.EntityId, _patrolListLocal, _patrolGrid.EntityId, name);
 
         Vector3I? last = null;
         count = 0;
@@ -133,7 +133,7 @@ namespace AiEnabled.Graphics
       }
       else
       {
-        pkt = new CommandPacket(ActiveBot.EntityId, _patrolListWorld);
+        pkt = new CommandPacket(ActiveBot.EntityId, _patrolListWorld, name);
 
         Vector3D? last = null;
         count = 0;
@@ -531,7 +531,8 @@ namespace AiEnabled.Graphics
       var ratio = AspectRatio;
       long gridEntityId;
       bool newPatrol, closeMenu, renamePatrol;
-      _patrolMenu.TryActivate(ref ratio, _patrolListWorld, _patrolListLocal, out gridEntityId, out newPatrol, out closeMenu, out renamePatrol);
+      string patrolName = null;
+      _patrolMenu.TryActivate(ref ratio, _patrolListWorld, _patrolListLocal, out gridEntityId, out newPatrol, out closeMenu, out renamePatrol, out patrolName);
 
       if (closeMenu || newPatrol)
       {
@@ -549,7 +550,7 @@ namespace AiEnabled.Graphics
         CommandPacket pkt;
         if (_patrolListLocal.Count > 0)
         {
-          pkt = new CommandPacket(ActiveBot.EntityId, _patrolListLocal, gridEntityId);
+          pkt = new CommandPacket(ActiveBot.EntityId, _patrolListLocal, gridEntityId, patrolName);
 
           Vector3I? last = null;
           count = 0;
@@ -565,7 +566,7 @@ namespace AiEnabled.Graphics
         }
         else
         {
-          pkt = new CommandPacket(ActiveBot.EntityId, _patrolListWorld);
+          pkt = new CommandPacket(ActiveBot.EntityId, _patrolListWorld, patrolName);
 
           Vector3D? last = null;
           count = 0;

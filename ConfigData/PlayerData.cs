@@ -22,6 +22,8 @@ namespace AiEnabled.ConfigData
     public bool ShowHealthWhenFull = false;
     public bool ShowHelperGPS = true;
     public bool HighlightHelpersOnMouseOver = true;
+    public bool ShowMapIconFriendly = true;
+    public bool ShowMapIconNonFriendly = false;
     public float MouseSensitivityModifier = 1f;
     public float RepairBotSearchRadius = 0f;
     public SerializableVector3? RepairBotIgnoreColorHSV = null;

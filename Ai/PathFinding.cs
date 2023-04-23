@@ -951,6 +951,28 @@ namespace AiEnabled.Ai
 
                   continue;
                 }
+                else if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
+                {                  
+                  if (botDownDir == thisBlock.Orientation.Left || Base6Directions.GetOppositeDirection(botDownDir) == thisBlock.Orientation.Left)
+                  {
+                    offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
+
+                    Node node;
+                    gridGraph.TryGetNodeForPosition(localVec, out node);
+
+                    TempNode tempNode;
+                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
+                      tempNode = new TempNode();
+
+                    tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                    path.Enqueue(tempNode);
+
+                    if (nextIsCatwalkExpansion)
+                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+
+                    continue;
+                  }
+                }
               }
             }
             else if (isBeam)
