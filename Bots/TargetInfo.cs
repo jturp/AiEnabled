@@ -12,6 +12,7 @@ using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Utilities;
 using System.Collections.Generic;
 using Sandbox.Definitions;
+using VRage.Game.Models;
 
 namespace AiEnabled.Bots
 {
@@ -193,16 +194,12 @@ namespace AiEnabled.Bots
       public bool IsOnLadder(out MyCubeBlock ladder)
       {
         ladder = null;
-        if (!_base._currentGraph.IsGridGraph || !(Entity is IMyCharacter))
+        var charTgt = Entity as IMyCharacter;
+        if (!_base._currentGraph.IsGridGraph || charTgt == null)
           return false;
 
         var gridGraph = _base._currentGraph as CubeGridMap;
-
-        Vector3D gotoPos, actualPos;
-        if (!GetTargetPosition(out gotoPos, out actualPos))
-          return false;
-
-        var localPos = gridGraph.WorldToLocal(actualPos);
+        var localPos = gridGraph.WorldToLocal(charTgt.WorldAABB.Center);
 
         MyCube cube;
         if (gridGraph.MainGrid.TryGetCube(localPos, out cube) && cube?.CubeBlock != null)
@@ -694,6 +691,104 @@ namespace AiEnabled.Bots
           return true;
         }
 
+        var charTgt = Entity as IMyCharacter;
+        if (charTgt != null && charTgt.EntityId == _base.Owner?.Character?.EntityId)
+        {
+          var ownerPos = charTgt.WorldAABB.Center;
+          var ownerMatrix = charTgt.WorldMatrix;
+          actualPosition = ownerPos;
+
+          bool foundPos = false;
+          var cellSize = _base._currentGraph.CellSize;
+
+          List<MyLineSegmentOverlapResult<MyEntity>> overlapList;
+          if (!AiSession.Instance.OverlapResultListStack.TryPop(out overlapList))
+            overlapList = new List<MyLineSegmentOverlapResult<MyEntity>>();
+          else
+            overlapList.Clear();
+
+          List<Vector3I> cellList;
+          if (!AiSession.Instance.LineListStack.TryPop(out cellList))
+            cellList = new List<Vector3I>();
+          else
+            cellList.Clear();
+
+          for (int i = 5; i > 0; i--)
+          {
+            var testPoint = ownerPos + (ownerMatrix.Backward * i + ownerMatrix.Left * i) * cellSize;
+            if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+            {
+              foundPos = true;
+              gotoPosition = testPoint;
+              break;
+            }
+
+            testPoint = ownerPos + (ownerMatrix.Backward * i + ownerMatrix.Right * i) * cellSize;
+            if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+            {
+              foundPos = true;
+              gotoPosition = testPoint;
+              break;
+            }
+
+            testPoint = ownerPos + ownerMatrix.Left * i * cellSize;
+            if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+            {
+              foundPos = true;
+              gotoPosition = testPoint;
+              break;
+            }
+
+            testPoint = ownerPos + ownerMatrix.Right * i * cellSize;
+            if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+            {
+              foundPos = true;
+              gotoPosition = testPoint;
+              break;
+            }
+
+            testPoint = ownerPos + ownerMatrix.Backward * i * cellSize;
+            if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+            {
+              foundPos = true;
+              gotoPosition = testPoint;
+              break;
+            }
+          }
+
+          if (!foundPos)
+          {
+            for (int i = 5; i > 0; i--)
+            {
+              var testPoint = ownerPos + (ownerMatrix.Forward * i + ownerMatrix.Left * i) * cellSize;
+              if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+              {
+                foundPos = true;
+                gotoPosition = testPoint;
+                break;
+              }
+
+              testPoint = ownerPos + (ownerMatrix.Forward * i + ownerMatrix.Right * i) * cellSize;
+              if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
+              {
+                foundPos = true;
+                gotoPosition = testPoint;
+                break;
+              }
+            }
+
+            if (!foundPos)
+              gotoPosition = actualPosition;
+          }
+
+          overlapList.Clear();
+          cellList.Clear();
+          AiSession.Instance.OverlapResultListStack.Push(overlapList);
+          AiSession.Instance.LineListStack.Push(cellList);
+
+          return true;
+        }
+
         var ent = Entity as IMyEntity;
         if (ent != null)
         {
@@ -740,6 +835,46 @@ namespace AiEnabled.Bots
         }
 
         return false;
+      }
+
+      bool HasLineOfSight(Vector3D aimPoint, Vector3D testPoint, List<MyLineSegmentOverlapResult<MyEntity>> overlapList, List<Vector3I> cellList)
+      {
+        var voxel = _base._currentGraph?.RootVoxel;
+        if (GridBase.PointInsideVoxel(testPoint, voxel))
+          return false;
+
+        var line = new LineD(testPoint, aimPoint);
+
+        if (voxel != null)
+        {
+          MyIntersectionResultLineTriangleEx? hit;
+          voxel.GetIntersectionWithLine(ref line, out hit);
+          if (hit.HasValue)
+            return false;
+        }
+
+        MyGamePruningStructure.GetAllEntitiesInRay(ref line, overlapList);
+
+        for (int i = 0; i < overlapList.Count; i++)
+        {
+          var result = overlapList[i];
+          var grid = result.Element as MyCubeGrid;
+          if (grid?.Physics != null && !grid.IsPreview)
+          {
+            cellList.Clear();
+            grid.RayCastCells(testPoint, aimPoint, cellList);
+
+            foreach (var cell in cellList)
+            {
+              var cube = grid.GetCubeBlock(cell) as IMySlimBlock;
+              var cubeDef = cube?.BlockDefinition as MyCubeBlockDefinition;
+              if (cubeDef?.IsAirTight == true)
+                return false;
+            }
+          }
+        }
+
+        return true;
       }
     }
   }

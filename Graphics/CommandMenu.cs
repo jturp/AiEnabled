@@ -692,7 +692,7 @@ namespace AiEnabled.Graphics
             Height: 0.09f,
             Blend: BlendTypeEnum.PostPP);
 
-          _cursor.Options |= HudAPIv2.Options.Fixed | HudAPIv2.Options.FOVScale;
+          _cursor.Options = HudAPIv2.Options.Fixed | HudAPIv2.Options.FOVScale;
           _cursor.Visible = true;
         }
       }
@@ -1803,12 +1803,12 @@ namespace AiEnabled.Graphics
             BillBoardColor: Color.LightCyan * 0.9f,
             Blend: BlendTypeEnum.PostPP);
 
-          equipBB.Options |= options;
+          equipBB.Options = options;
           equipBB.Visible = false;
 
           var equipMsg = new HudAPIv2.HUDMessage(new StringBuilder("Equip"), equipBB.Origin, Scale: 0.7f, Blend: BlendTypeEnum.PostPP);
           equipMsg.Offset = equipBB.Offset - equipMsg.GetTextLength() * 0.5;
-          equipMsg.Options |= options;
+          equipMsg.Options = options;
           equipMsg.Visible = false;
           equipMsg.InitialColor = Color.Black;
 
@@ -1823,7 +1823,7 @@ namespace AiEnabled.Graphics
             Height: 0.09f,
             Blend: BlendTypeEnum.PostPP);
 
-          _cursor.Options |= options;
+          _cursor.Options = options;
           _cursor.Visible = true;
         }
 
@@ -2011,7 +2011,7 @@ namespace AiEnabled.Graphics
           BillBoardColor: _radialColor * 0.8f,
           Blend: BlendTypeEnum.PostPP);
 
-        _interactBB.Options |= options;
+        _interactBB.Options = options;
         _interactBB.Visible = false;
 
         UseControl = MyAPIGateway.Input.GetGameControl(MyControlsSpace.USE);
@@ -2023,7 +2023,7 @@ namespace AiEnabled.Graphics
         _lastSecondaryString = GetControlString(SecondaryActionControl);
 
         _interactMsg = new HudAPIv2.HUDMessage(new StringBuilder($"Press '{_lastControlString}'\nto interact"), Vector2D.Zero, Blend: BlendTypeEnum.PostPP);
-        _interactMsg.Options |= options;
+        _interactMsg.Options = options;
         _interactMsg.Visible = false;
 
         var length = _interactMsg.GetTextLength();
@@ -2040,7 +2040,7 @@ namespace AiEnabled.Graphics
           Height: 0.55f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBracket1.Options |= options;
+        _radialBracket1.Options = options;
         _radialBracket1.Visible = false;
 
         _radialBracket2 = new HudAPIv2.BillBoardHUDMessage(
@@ -2051,7 +2051,7 @@ namespace AiEnabled.Graphics
           Height: 0.55f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBracket2.Options |= options;
+        _radialBracket2.Options = options;
         _radialBracket2.Visible = false;
         _radialBracket2.Rotation = MathHelper.PiOver2;
 
@@ -2066,11 +2066,11 @@ namespace AiEnabled.Graphics
           Height: 0.5f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialBBTop.Options |= options;
+        _radialBBTop.Options = options;
         _radialBBTop.Visible = false;
 
         _radialMsgTop = new HudAPIv2.HUDMessage(new StringBuilder("Inventory"), origin, _radialBBTop.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgTop.Options |= options;
+        _radialMsgTop.Options = options;
         _radialMsgTop.Visible = false;
 
         var textSize = _radialMsgTop.GetTextLength();
@@ -2086,11 +2086,11 @@ namespace AiEnabled.Graphics
           Blend: BlendTypeEnum.PostPP);
 
         _radialBBTopLeft.Rotation = (float)-AiUtils.PiOver3;
-        _radialBBTopLeft.Options |= options;
+        _radialBBTopLeft.Options = options;
         _radialBBTopLeft.Visible = false;
 
         _radialMsgTopLeft = new HudAPIv2.HUDMessage(new StringBuilder("Patrol"), origin, _radialBBTopLeft.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgTopLeft.Options |= options;
+        _radialMsgTopLeft.Options = options;
         _radialMsgTopLeft.Visible = false;
 
         textSize = _radialMsgTopLeft.GetTextLength();
@@ -2106,11 +2106,11 @@ namespace AiEnabled.Graphics
           Blend: BlendTypeEnum.PostPP);
 
         _radialBBTopRight.Rotation = (float)AiUtils.PiOver3;
-        _radialBBTopRight.Options |= options;
+        _radialBBTopRight.Options = options;
         _radialBBTopRight.Visible = false;
 
         _radialMsgTopRight = new HudAPIv2.HUDMessage(new StringBuilder("Go To"), origin, _radialBBTopRight.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgTopRight.Options |= options;
+        _radialMsgTopRight.Options = options;
         _radialMsgTopRight.Visible = false;
 
         textSize = _radialMsgTopRight.GetTextLength();
@@ -2126,11 +2126,11 @@ namespace AiEnabled.Graphics
           Blend: BlendTypeEnum.PostPP);
 
         _radialBBBottom.Rotation = MathHelper.Pi;
-        _radialBBBottom.Options |= options;
+        _radialBBBottom.Options = options;
         _radialBBBottom.Visible = false;
 
         _radialMsgBottom = new HudAPIv2.HUDMessage(new StringBuilder("Resume"), origin, _radialBBBottom.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgBottom.Options |= options;
+        _radialMsgBottom.Options = options;
         _radialMsgBottom.Visible = false;
 
         textSize = _radialMsgBottom.GetTextLength();
@@ -2146,11 +2146,11 @@ namespace AiEnabled.Graphics
           Blend: BlendTypeEnum.PostPP);
 
         _radialBBBottomLeft.Rotation = MathHelper.Pi + (float)AiUtils.PiOver3;
-        _radialBBBottomLeft.Options |= options;
+        _radialBBBottomLeft.Options = options;
         _radialBBBottomLeft.Visible = false;
 
         _radialMsgBottomLeft = new HudAPIv2.HUDMessage(new StringBuilder("Follow"), origin, _radialBBBottomLeft.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgBottomLeft.Options |= options;
+        _radialMsgBottomLeft.Options = options;
         _radialMsgBottomLeft.Visible = false;
 
         textSize = _radialMsgBottomLeft.GetTextLength();
@@ -2166,11 +2166,11 @@ namespace AiEnabled.Graphics
           Blend: BlendTypeEnum.PostPP);
 
         _radialBBBottomRight.Rotation = MathHelper.Pi - (float)AiUtils.PiOver3;
-        _radialBBBottomRight.Options |= options;
+        _radialBBBottomRight.Options = options;
         _radialBBBottomRight.Visible = false;
 
         _radialMsgBottomRight = new HudAPIv2.HUDMessage(new StringBuilder("Stay"), origin, _radialBBBottomRight.Offset, Blend: BlendTypeEnum.PostPP);
-        _radialMsgBottomRight.Options |= options;
+        _radialMsgBottomRight.Options = options;
         _radialMsgBottomRight.Visible = false;
 
         textSize = _radialMsgBottomRight.GetTextLength();
@@ -2184,7 +2184,7 @@ namespace AiEnabled.Graphics
           Height: 0.1f,
           Blend: BlendTypeEnum.PostPP);
 
-        _radialArrow.Options |= options;
+        _radialArrow.Options = options;
         _radialArrow.Visible = false;
 
         _invBackground = new HudAPIv2.BillBoardHUDMessage(
@@ -2195,7 +2195,7 @@ namespace AiEnabled.Graphics
           Height: 1.25f,
           Blend: BlendTypeEnum.Standard);
 
-        _invBackground.Options |= options;
+        _invBackground.Options = options;
         _invBackground.Visible = false;
 
         _invBgBorder = new HudAPIv2.BillBoardHUDMessage(
@@ -2206,7 +2206,7 @@ namespace AiEnabled.Graphics
           Height: _invBackground.Height,
           Blend: BlendTypeEnum.PostPP);
 
-        _invBgBorder.Options |= options;
+        _invBgBorder.Options = options;
         _invBgBorder.Visible = false;
 
         var half = new Vector2D(_invBackground.Width * AspectRatio, _invBackground.Height) * 0.5;
@@ -2223,7 +2223,7 @@ namespace AiEnabled.Graphics
           Height: logoSize,
           Blend: BlendTypeEnum.PostPP);
 
-        logoBg.Options |= options;
+        logoBg.Options = options;
         logoBg.Visible = false;
         
         var logoIcon = new HudAPIv2.BillBoardHUDMessage(
@@ -2235,12 +2235,12 @@ namespace AiEnabled.Graphics
           Height: logoSize,
           Blend: BlendTypeEnum.PostPP);
 
-        logoIcon.Options |= options;
+        logoIcon.Options = options;
         logoIcon.Visible = false;
 
         var logoMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Bot Inventory Manager ~"), logoBg.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
         length = logoMsg.GetTextLength();
-        logoMsg.Options |= options;
+        logoMsg.Options = options;
         logoMsg.Visible = false;
         logoMsg.Offset = logoBg.Offset - new Vector2D(length.X * 0.5, logoBg.Height * 0.5 + length.Y * -0.5);
 
@@ -2258,7 +2258,7 @@ namespace AiEnabled.Graphics
           Height: _invBackground.Height * 0.85f,
           Blend: BlendTypeEnum.Standard);
 
-        lBoxBB1.Options |= options;
+        lBoxBB1.Options = options;
         lBoxBB1.Visible = false;
 
         var lBoxBB2 = new HudAPIv2.BillBoardHUDMessage(
@@ -2270,7 +2270,7 @@ namespace AiEnabled.Graphics
           Height: _invBackground.Height * 0.85f,
           Blend: BlendTypeEnum.Standard);
 
-        lBoxBB2.Options |= options;
+        lBoxBB2.Options = options;
         lBoxBB2.Visible = false;
 
         _playerInvBox = new InventoryBox(lBoxBB1, AspectRatio, _billboardColor, _emitter, _mouseOverSoundPair);
@@ -2282,11 +2282,11 @@ namespace AiEnabled.Graphics
           BillBoardColor: _billboardColor,
           Blend: BlendTypeEnum.PostPP);
 
-        invCloseBB.Options |= options;
+        invCloseBB.Options = options;
         invCloseBB.Visible = false;
 
         var invCloseMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Close ~"), invCloseBB.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
-        invCloseMsg.Options |= options;
+        invCloseMsg.Options = options;
         invCloseMsg.Visible = false;
 
         length = invCloseMsg.GetTextLength();
@@ -2303,13 +2303,13 @@ namespace AiEnabled.Graphics
         _factionMsgHeader = new HudAPIv2.HUDMessage(new StringBuilder("~ Faction Info ~"), _invBackground.Origin + _invBackground.Offset, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
         length = _factionMsgHeader.GetTextLength();
         _factionMsgHeader.Offset = new Vector2D(0, height * -1.75 * 3) - length * 0.5;
-        _factionMsgHeader.Options |= options;
+        _factionMsgHeader.Options = options;
         _factionMsgHeader.Visible = false;
 
         _factionMsgBody = new HudAPIv2.HUDMessage(new StringBuilder("[PREN] Perceptive Encoding"), _invBackground.Origin + _invBackground.Offset, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
         length = _factionMsgBody.GetTextLength();
         _factionMsgBody.Offset = new Vector2D(0, height * -1.75 * 3) + new Vector2D(-length.X * 0.5, length.Y * 0.75);
-        _factionMsgBody.Options |= options;
+        _factionMsgBody.Options = options;
         _factionMsgBody.Visible = false;
 
         height *= 1.25;
@@ -2324,7 +2324,7 @@ namespace AiEnabled.Graphics
           BillBoardColor: _billboardColor,
           Blend: BlendTypeEnum.PostPP);
 
-        addToPlayerBB.Options |= options;
+        addToPlayerBB.Options = options;
         addToPlayerBB.Visible = false;
 
         var addtoPlayerIcon = new HudAPIv2.BillBoardHUDMessage(
@@ -2336,7 +2336,7 @@ namespace AiEnabled.Graphics
           BillBoardColor: Color.White,
           Blend: BlendTypeEnum.PostPP);
 
-        addtoPlayerIcon.Options |= options;
+        addtoPlayerIcon.Options = options;
         addtoPlayerIcon.Visible = false;
 
         _invAddToPlayer = new Button(addToPlayerBB, null, AspectRatio, _billboardColor, borderColor, mouseOverColor, mouseOverColor, _emitter, _mouseOverSoundPair);
@@ -2351,7 +2351,7 @@ namespace AiEnabled.Graphics
           BillBoardColor: _billboardColor,
           Blend: BlendTypeEnum.PostPP);
 
-        addToBotBB.Options |= options;
+        addToBotBB.Options = options;
         addToBotBB.Visible = false;
 
         var addtoBotIcon = new HudAPIv2.BillBoardHUDMessage(
@@ -2364,7 +2364,7 @@ namespace AiEnabled.Graphics
           Blend: BlendTypeEnum.PostPP);
 
         addtoBotIcon.Rotation = MathHelper.Pi;
-        addtoBotIcon.Options |= options;
+        addtoBotIcon.Options = options;
         addtoBotIcon.Visible = false;
 
         _invAddToBot = new Button(addToBotBB, null, AspectRatio, _billboardColor, borderColor, mouseOverColor, mouseOverColor, _emitter, _mouseOverSoundPair);
@@ -2378,12 +2378,12 @@ namespace AiEnabled.Graphics
           BillBoardColor: Color.LightCyan * 0.9f,
           Blend: BlendTypeEnum.PostPP);
 
-        equipBB.Options |= options;
+        equipBB.Options = options;
         equipBB.Visible = false;
 
         var equipMsg = new HudAPIv2.HUDMessage(new StringBuilder("Equip"), equipBB.Origin, Scale: 0.7f, Blend: BlendTypeEnum.PostPP);
         equipMsg.Offset = equipBB.Offset - equipMsg.GetTextLength() * 0.5;
-        equipMsg.Options |= options;
+        equipMsg.Options = options;
         equipMsg.Visible = false;
         equipMsg.InitialColor = Color.Black;
 
@@ -2399,13 +2399,13 @@ namespace AiEnabled.Graphics
           BillBoardColor: new Color(0, 0, 0, 250),
           Blend: BlendTypeEnum.PostPP);
 
-        _patrolNameBG.Options |= options;
+        _patrolNameBG.Options = options;
         _patrolNameBG.Visible = false;
 
         _patrolNameLabel = new HudAPIv2.HUDMessage(new StringBuilder("Enter Route Name"), _patrolNameBG.Origin, Scale: 1f, Blend: BlendTypeEnum.PostPP);
         length = _patrolNameLabel.GetTextLength() * 0.5;
         _patrolNameLabel.Offset = new Vector2D(-length.X, _patrolNameBG.Height * 0.45 + length.Y);
-        _patrolNameLabel.Options |= options;
+        _patrolNameLabel.Options = options;
         _patrolNameLabel.Visible = false;
 
         var nameInputBg = new HudAPIv2.BillBoardHUDMessage(
@@ -2415,11 +2415,11 @@ namespace AiEnabled.Graphics
           Height: _patrolNameBG.Height * 0.25f,
           BillBoardColor: _billboardColor,
           Blend: BlendTypeEnum.PostPP);
-        nameInputBg.Options |= options;
+        nameInputBg.Options = options;
         nameInputBg.Visible = false;
 
         var nameInputMsg = new HudAPIv2.HUDMessage(new StringBuilder(128), nameInputBg.Origin, Scale: 1f, Blend: BlendTypeEnum.PostPP);
-        nameInputMsg.Options |= options;
+        nameInputMsg.Options = options;
         nameInputMsg.Visible = false;
 
         _patrolNameInput = new TextBox(nameInputBg, nameInputMsg, AspectRatio, borderColor);
@@ -2429,11 +2429,11 @@ namespace AiEnabled.Graphics
           Origin: _patrolNameBG.Origin,
           BillBoardColor: _billboardColor,
           Blend: BlendTypeEnum.PostPP);
-        nameBtnBg.Options |= options;
+        nameBtnBg.Options = options;
         nameBtnBg.Visible = false;
 
         var nameBtnMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Accept ~"), nameInputBg.Origin, Scale: 1f, Blend: BlendTypeEnum.PostPP);
-        nameBtnMsg.Options |= options;
+        nameBtnMsg.Options = options;
         nameBtnMsg.Visible = false;
 
         length = nameBtnMsg.GetTextLength();
@@ -2452,7 +2452,7 @@ namespace AiEnabled.Graphics
           Height: 0.09f,
           Blend: BlendTypeEnum.PostPP);
 
-        _cursor.Options |= options;
+        _cursor.Options = options;
         _cursor.Visible = false;
       }
       catch (Exception ex)

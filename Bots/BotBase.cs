@@ -1115,7 +1115,7 @@ namespace AiEnabled.Bots
             Mass = MyAPIGateway.Physics.CreateMassForBox(extents, mass)
           };
 
-          MyAPIGateway.Physics.CreateModelPhysics(settings);
+          MyAPIGateway.Physics.CreateBoxPhysics(settings, bot.PositionComp.LocalAABB.HalfExtents * 0.9f, 0);
           if (bot.Physics != null)
           {
             bot.Physics.SetSpeeds(linearVel, angularVel);
@@ -1172,7 +1172,7 @@ namespace AiEnabled.Bots
 
         if (Owner != null)
         {
-          MyVisualScriptLogicProvider.SetHighlightLocal(Character.Name, -1, playerId: Owner.IdentityId);
+          MyVisualScriptLogicProvider.SetHighlight(Character.Name, false, -1, playerId: Owner.IdentityId);
 
           if (!MyAPIGateway.Utilities.IsDedicated && AiSession.Instance.CommandMenu?.ActiveBot?.EntityId == Character.EntityId)
           {
@@ -4259,6 +4259,11 @@ namespace AiEnabled.Bots
           MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
         }
 
+        if (CheckIfShouldWait())
+        {
+          return;
+        }
+
         bool returnNow;
         if (CheckIfCloseEnoughToAct(ref actualPosition, out returnNow))
         {
@@ -4618,7 +4623,10 @@ namespace AiEnabled.Bots
       bool found = false;
       if (isCharacter && tgtCharacter.EntityId == Owner?.Character?.EntityId && _currentGraph.TryGetNodeForPosition(goal, out goalNode) && goalNode.IsAirNode)
       {
-        found = _currentGraph.GetClosestValidNode(this, goalNode.Position, out adjustedGoal, WorldMatrix.Up, currentIsDenied: true);
+        var ownerPos = _currentGraph.WorldToLocal(Owner.Character.WorldAABB.Center);
+        var isDenied = ownerPos == goal;
+
+        found = _currentGraph.GetClosestValidNode(this, goalNode.Position, out adjustedGoal, WorldMatrix.Up, currentIsDenied: isDenied);
       }
 
       bool isInventory = Target.IsInventory;
@@ -6176,6 +6184,61 @@ namespace AiEnabled.Bots
         if (AiSession.Instance.IsServer && MyAPIGateway.Multiplayer.MultiplayerActive)
           AiSession.Instance.Network.RelayToClients(packet);
       }
+    }
+
+    bool _waiting;
+
+    bool CheckIfShouldWait()
+    {
+      if (Owner?.Character == null || Owner.Character.IsDead || Target.Entity != Owner.Character)
+      {
+        _waiting = false;
+        return false;
+      }
+
+      var ch = Owner.Character;
+      var position = Character.WorldAABB.Center;
+      var playerPosition = ch.WorldAABB.Center;
+
+      var vector = playerPosition - position;
+      var relativeVector = Vector3D.Rotate(vector, MatrixD.Transpose(Character.WorldMatrix));
+
+      if (Math.Abs(relativeVector.Y) > 3 || ch.WorldMatrix.Forward.Dot(vector) > 0 || vector.LengthSquared() > 10)
+      {
+        _waiting = false;
+        return false;
+      }
+
+      IHitInfo hit;
+      var direction = Vector3D.Normalize(vector);
+      MyAPIGateway.Physics.CastRay(position + direction * 0.25, ch.WorldAABB.Center, out hit);
+
+      var hitEnt = hit?.HitEntity as IMyCharacter;
+      if (hitEnt == null || hitEnt.EntityId != ch.EntityId)
+      {
+        _waiting = false;
+        return false;
+      }
+
+      if (!_waiting)
+      {
+        _waiting = true;
+
+        var rand = MyUtils.GetRandomInt(AiSession.Instance.HelperAnimations.Count);
+        Behavior.Perform(AiSession.Instance.HelperAnimations[rand]);
+      }
+
+      var projUp = AiUtils.Project(vector, Character.WorldMatrix.Up);
+      var reject = vector - projUp;
+      var angleRads = AiUtils.GetAngleBetween(Character.WorldMatrix.Forward, reject);
+
+      if (relativeVector.Z > 0 || Math.Abs(angleRads) > MathHelper.ToRadians(3))
+      {
+        var rotation = new Vector2(0, (float)angleRads * Math.Sign(relativeVector.X) * 25);
+        Character.MoveAndRotate(Vector3.Zero, rotation, 0);
+      }
+
+      return true;
     }
   }
 }

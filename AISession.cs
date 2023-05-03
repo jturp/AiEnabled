@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.2";
+    public const string VERSION = "v1.5.5";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -561,6 +561,7 @@ namespace AiEnabled
       EconomyGrids?.Clear();
       ColorDictionary?.Clear();
       CubeGridHitInfo?.Reset();
+      HelperAnimations?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -706,6 +707,7 @@ namespace AiEnabled
       LocalBotAPI = null;
       ColorDictionary = null;
       CubeGridHitInfo = null;
+      HelperAnimations = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -3857,9 +3859,7 @@ namespace AiEnabled
       try
       {
         if (MyAPIGateway.Utilities.IsDedicated || MyParticlesManager.Paused)
-        {
           return;
-        }
 
         var player = MyAPIGateway.Session?.Player;
         var character = player?.Character;

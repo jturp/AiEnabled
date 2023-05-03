@@ -36,6 +36,52 @@ namespace AiEnabled.Utilities
       MySimpleObjectDraw.DrawTransparentBox(ref wm, ref box, ref color, raster, 1, thickness, material, material);
     }
 
+    /// <summary>
+    /// From the Math Wizard himself - Whiplash141 <3
+    /// </summary>
+    public static bool IsPositionInCone(Vector3D testPosition, Vector3D coneTipPosition, Vector3D coneDirection, double coneHeight = 250, double coneRadius = 250 * MathHelper.Sqrt3)
+    {
+      if (!Vector3D.IsUnit(ref coneDirection))
+      {
+        coneDirection = Vector3D.Normalize(coneDirection);
+        // Don't plug in a zero vector, i dont feel like checking for it lol
+      }
+
+      /*
+         /|
+      h / |
+       /  | y
+      /   |
+      -----
+          x
+
+      cos(ang) = x/h
+      cos^2(ang) = x^2/h^2
+      */
+
+      Vector3D testDirection = testPosition - coneTipPosition;
+
+      double x = Vector3D.Dot(testDirection, coneDirection);
+      if (x < 0)
+      {
+        // Behind the cone
+        return false;
+      }
+
+      double heightSq = coneHeight * coneHeight;
+      double xSq = x * x;
+      if (xSq > heightSq)
+      {
+        return false;
+      }
+
+      double minCosSq = heightSq / (heightSq + coneRadius * coneRadius); // You could technically cache this for better perf
+
+      double hSq = testDirection.LengthSquared();
+      double cosSq = x * x / hSq;
+      return cosSq > minCosSq;
+    }
+
     public static MatrixD GetRotationBetweenMatrices(ref MatrixD a, ref MatrixD b)
     {
       // Find rotation (q0) between new matrix (q1) and old matrix (q2)

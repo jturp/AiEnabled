@@ -249,13 +249,10 @@ namespace AiEnabled.API
         for (int i = 0; i < PriorityTypes.Count; i++)
         {
           var pri = PriorityTypes[i];
-          if (pri.Value)
-          {
-            var priName = GetPriorityName(pri.Key);
+          var priName = GetPriorityName(pri.Key);
 
-            if (CheckTypeFromString(item, priName))
-              return i;
-          }
+          if (CheckTypeFromString(item, priName))
+            return pri.Value ? i : -1;
         }
 
         return -1;

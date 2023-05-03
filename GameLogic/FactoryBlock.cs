@@ -72,7 +72,8 @@ namespace AiEnabled.GameLogic
           var sorter = (IMyConveyorSorter)_block;
           sorter.DrainAll = value;
 
-          AiSession.Instance.Logger.Log($"Sorter.DrainAll switched to {sorter.DrainAll} (value was {value})");
+          var ent = _block as MyEntity;
+          ent.EntityStorage.Write("AiEnabled_SorterEnabled", _sorterEnabled);
         }
       }
     }
@@ -219,9 +220,9 @@ namespace AiEnabled.GameLogic
         inv.Constraint.IsWhitelist = true;
       }
 
+      _sorterEnabled = ent.EntityStorage.ReadBool("AiEnabled_SorterEnabled");
       var sorter = _block as IMyConveyorSorter;
-      sorter.DrainAll = true;
-      _sorterEnabled = true;
+      sorter.DrainAll = _sorterEnabled;
 
       // Workaround - using SetFilter with a list of items causes CTD on DS due to SE trying to serialize the MyDefinitionIds, which aren't serializable
       sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, AiSession.Instance.EmptySorterCache);

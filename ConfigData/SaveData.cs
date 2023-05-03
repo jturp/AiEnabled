@@ -39,6 +39,9 @@ namespace AiEnabled.ConfigData
     [ProtoMember(25)] public bool IgnoreArmorDeformation = false;
     [ProtoMember(26)] public bool AllowHelperTokenBuilding = true;
     [ProtoMember(27)] public bool IncreaseNodeWeightsNearWeapons = false;
+    [ProtoMember(28)] public bool AllowScavengerDigging = true;
+    [ProtoMember(29)] public bool AllowScavengerLooting = true;
+    [ProtoMember(30)] public bool AllowRepairBotGathering = true;
 
     [XmlArrayItem("Subtype", typeof(string))]
     [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;

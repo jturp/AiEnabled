@@ -74,7 +74,7 @@ namespace AiEnabled.Graphics.Support
       _background.Height -= heightAdjustment;
 
       _header.Offset = new Vector2D(-_border.Width * aspectRatio * 0.25, _border.Height * 0.5) - new Vector2D(length.X * 0.5, length.Y * 1.25);
-      _header.Options |= options;
+      _header.Options = options;
       _header.Visible = false;
 
       _footer = new HudAPIv2.HUDMessage(
@@ -84,7 +84,7 @@ namespace AiEnabled.Graphics.Support
 
       length = _footer.GetTextLength();
       _footer.Offset = new Vector2D(_border.Width * aspectRatio * 0.25, -_border.Height * 0.5) + new Vector2D(length.X * -0.5, length.Y * 0.25);
-      _footer.Options |= options;
+      _footer.Options = options;
       _footer.Visible = false;
 
       var scrollBoxBg = new HudAPIv2.BillBoardHUDMessage(
@@ -95,7 +95,7 @@ namespace AiEnabled.Graphics.Support
         Height: _border.Height,
         Blend: BlendTypeEnum.PostPP);
 
-      scrollBoxBg.Options |= options;
+      scrollBoxBg.Options = options;
       scrollBoxBg.Offset = new Vector2D(_border.Width - scrollBoxBg.Width, 0) * 0.5 * aspectRatio;
       var val = false;
 
@@ -110,7 +110,7 @@ namespace AiEnabled.Graphics.Support
           Height: scrollBoxBg.Height - 0.01f,
           Blend: BlendTypeEnum.PostPP);
 
-      scrollBarBg.Options |= options;
+      scrollBarBg.Options = options;
       scrollBarBg.Visible = false;
       scrollBarBg.uvEnabled = true;
 

@@ -39,6 +39,7 @@ using VRage.Voxels;
 
 using static AiEnabled.API.HudAPIv2;
 using AiEnabled.ConfigData;
+using AiEnabled.Networking.Packets;
 
 namespace AiEnabled.Graphics
 {
@@ -46,13 +47,14 @@ namespace AiEnabled.Graphics
   {
     internal MenuRootCategory Menu, AdminMenu;
     internal MenuSliderInput MouseSensitivity;
-    internal MenuKeybindInput RecallBotsKeyBind;
+    internal MenuKeybindInput ResumeBotsKeyBind, RadioRecallKeyBind;
     internal MenuItem ShowHealthBars, ShowHelperGPS, ObeyProjectionIntegrity, DisableCollisionOnDeath;
     internal MenuItem AllowRepairBot, AllowCombatBot, AllowScavengerBot, AllowCrewBot, AllowBotMusic;
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
+    internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
@@ -71,6 +73,7 @@ namespace AiEnabled.Graphics
       bool useHighlight = _playerData.HighlightHelpersOnMouseOver;
       bool mapFriendly = _playerData.ShowMapIconFriendly;
       bool mapOther = _playerData.ShowMapIconNonFriendly;
+      bool notifyOnDeath = _playerData.NotifyOnHelperDeath;
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
       float searchRadius = _playerData.RepairBotSearchRadius;
 
@@ -81,6 +84,7 @@ namespace AiEnabled.Graphics
       HighLightHelpers = CreateMenuItemToggle(Menu, useHighlight, "Highlight Helpers On Mouse Over", UseHighlight_Clicked);
       ShowMapIconFriendly = CreateMenuItemToggle(Menu, mapFriendly, "Show Map Icon for Helpers", ShowMapIconFriendly_Clicked);
       ShowMapIconOther = CreateMenuItemToggle(Menu, mapOther, "Show Map Icon for Non-Helpers", ShowMapIconOther_Clicked);
+      NotifyOnDeath = CreateMenuItemToggle(Menu, notifyOnDeath, "Show Notification on Death", NotifyOnHelperDeath_Clicked);
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
 
       var color = (searchRadius == 0) ? "<color=yellow>" : "<color=orange>";
@@ -112,7 +116,8 @@ namespace AiEnabled.Graphics
       HelperGpsColorInput = new MenuTextInput($"Helper GPS color (RGB): {color}{{R:{x}, G:{y}, B:{z}}}", colorMenu, "Assign the GPS color for all Helper Bots, in format R,G,B", TextInputGpsColor_Submitted);
 
       var keyBindMenu = new MenuSubCategory("Key Bindings                <color=cyan>==>", Menu, "Key Bindings");
-      RecallBotsKeyBind = new MenuKeybindInput($"Resume All: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RecallBotsKeyBind_Submitted);
+      ResumeBotsKeyBind = new MenuKeybindInput($"Resume All: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", ResumeBotsKeyBind_Submitted);
+      RadioRecallKeyBind = new MenuKeybindInput($"Radio Recall: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RadioRecallKeyBind_Submitted);
 
       var data = AiSession.Instance.ModSaveData;
       AdminMenu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.AdminMenu, "Admin Settings");
@@ -132,62 +137,28 @@ namespace AiEnabled.Graphics
       
       MaxBotProjectileDistance = new MenuTextInput($"Max projectile distance: <color=orange>{data.MaxBotProjectileDistance}", AdminMenu, "Set max bot projectile distance in meters (default = 150)", MaxProjectileRange_Submitted);
 
-      color = data.AllowRepairBot ? "<color=orange>" : "<color=yellow>";
-      AllowRepairBot = new MenuItem($"Allow RepairBot helpers: {color}{data.AllowRepairBot}", AdminMenu, AllowRepairBot_Clicked);
-
-      color = data.AllowCombatBot ? "<color=orange>" : "<color=yellow>";
-      AllowCombatBot = new MenuItem($"Allow CombatBot helpers: {color}{data.AllowCombatBot}", AdminMenu, AlloCombatBot_Clicked);
-
-      color = data.AllowScavengerBot ? "<color=orange>" : "<color=yellow>";
-      AllowScavengerBot = new MenuItem($"Allow ScavengerBot helpers: {color}{data.AllowScavengerBot}", AdminMenu, AllowScavengerBot_Clicked);
-
-      color = data.AllowCrewBot ? "<color=orange>" : "<color=yellow>";
-      AllowCrewBot = new MenuItem($"Allow CrewBot helpers: {color}{data.AllowCrewBot}", AdminMenu, AllowCrewBot_Clicked);
-
-      color = data.AllowHelperTokenBuilding ? "<color=orange>" : "<color=yellow>";
-      AllowTokenProduction = new MenuItem($"Allow build token production (requires restart): {color}{data.AllowHelperTokenBuilding}", AdminMenu, AllowTokenBuilding_Clicked);
-
-      color = data.IncreaseNodeWeightsNearWeapons ? "<color=orange>" : "<color=yellow>";
-      IncreaseNodeWeightsNearWeapons = new MenuItem($"Increase path cost near weapons (requires restart): {color}{data.IncreaseNodeWeightsNearWeapons}", AdminMenu, IncreaseNodeCost_Clicked);
-
-      color = data.AllowBotMusic ? "<color=orange>" : "<color=yellow>";
-      AllowBotMusic = new MenuItem($"Allow bot music: {color}{data.AllowBotMusic}", AdminMenu, AllowBotMusic_Clicked);
-
-      color = data.AllowEnemiesToFly ? "<color=orange>" : "<color=yellow>";
-      AllowEnemyFlight = new MenuItem($"Allow enemy bots to fly: {color}{data.AllowEnemiesToFly}", AdminMenu, AllowEnemyFlight_Clicked);
-
-      color = data.AllowNeutralsToFly ? "<color=orange>" : "<color=yellow>";
-      AllowNeutralFlight = new MenuItem($"Allow neutral bots to fly: {color}{data.AllowNeutralsToFly}", AdminMenu, AllowNeutralFlight_Clicked);
-
-      color = data.AllowHelpersToFly ? "<color=orange>" : "<color=yellow>";
-      AllowFriendlyFlight = new MenuItem($"Allow helper bots to fly: {color}{data.AllowHelpersToFly}", AdminMenu, AllowFriendlyFlight_Clicked);
-
-      color = data.AllowNeutralTargets ? "<color=orange>" : "<color=yellow>";
-      AllowNeutralTargets = new MenuItem($"Allow enemy bots to target neutrals: {color}{data.AllowNeutralTargets}", AdminMenu, AllowNeutralTargets_Clicked);
-
-      color = data.AllowIdleMovement ? "<color=orange>" : "<color=yellow>";
-      AllowIdleMovement = new MenuItem($"Allow idle bot movement: {color}{data.AllowIdleMovement}", AdminMenu, AllowIdleMovement_Clicked);
-
-      color = data.AllowIdleMapTransitions ? "<color=orange>" : "<color=yellow>";
-      AllowIdleTransitions = new MenuItem($"Allow idle map transitions: {color}{data.AllowIdleMapTransitions}", AdminMenu, AllowIdleTransitions_Clicked);
-
-      color = data.AllowHelmetVisorChanges ? "<color=orange>" : "<color=yellow>";
-      AllowHelmetVisorChanges = new MenuItem($"Allow helmet visor changes: {color}{data.AllowHelmetVisorChanges}", AdminMenu, AllowVisorChanges_Clicked);
-
-      color = data.EnforceGroundPathingFirst ? "<color=orange>" : "<color=yellow>";
-      EnforceGroundPathingFirst = new MenuItem($"Enforce ground pathing first: {color}{data.EnforceGroundPathingFirst}", AdminMenu, EnforceGroundPathing_Clicked);
-
-      color = data.EnforceWalkingOnPatrol ? "<color=orange>" : "<color=yellow>";
-      EnforceWalkingOnPatrol = new MenuItem($"Enforce walking on patrol: {color}{data.EnforceWalkingOnPatrol}", AdminMenu, EnforcePatrolWalking_Clicked);
-
-      color = data.ObeyProjectionIntegrityForRepairs ? "<color=orange>" : "<color=yellow>";
-      ObeyProjectionIntegrity = new MenuItem($"Obey projection integrity for repairs: {color}{data.ObeyProjectionIntegrityForRepairs}", AdminMenu, ObeyProjectionIntegrity_Clicked);
-
-      color = data.IgnoreArmorDeformation ? "<color=orange>" : "<color=yellow>";
-      IgnoreArmorDeformation = new MenuItem($"Ignore armor deformation for repairs: {color}{data.IgnoreArmorDeformation}", AdminMenu, IgnoreArmorDeformation_Clicked);
-
-      color = data.DisableCharacterCollisionOnBotDeath ? "<color=orange>" : "<color=yellow>";
-      DisableCollisionOnDeath = new MenuItem($"Disable character collision on bot death: {color}{data.DisableCharacterCollisionOnBotDeath}", AdminMenu, DisableCollisions_Clicked);
+      AllowRepairBot = CreateMenuItemToggle(AdminMenu, data.AllowRepairBot, "Allow RepairBot helpers", AllowRepairBot_Clicked);
+      AllowCombatBot = CreateMenuItemToggle(AdminMenu, data.AllowCombatBot, "Allow CombatBot helpers", AllowCombatBot_Clicked);
+      AllowScavengerBot = CreateMenuItemToggle(AdminMenu, data.AllowScavengerBot, "Allow ScavengerBot helpers", AllowScavengerBot_Clicked);
+      AllowCrewBot = CreateMenuItemToggle(AdminMenu, data.AllowCrewBot, "Allow CrewBot helpers", AllowCrewBot_Clicked);
+      AllowTokenProduction = CreateMenuItemToggle(AdminMenu, data.AllowHelperTokenBuilding, "Allow build token production (requires restart)", AllowTokenBuilding_Clicked);
+      IncreaseNodeWeightsNearWeapons = CreateMenuItemToggle(AdminMenu, data.IncreaseNodeWeightsNearWeapons, "Increase path cost near weapons (requires restart)", IncreaseNodeCost_Clicked);
+      AllowBotMusic = CreateMenuItemToggle(AdminMenu, data.AllowBotMusic, "Allow bot music", AllowBotMusic_Clicked);
+      AllowScavengerDigging = CreateMenuItemToggle(AdminMenu, data.AllowScavengerDigging, "Allow ScavengerBot to dig and find", AllowScavengerDigging_Clicked);
+      AllowScavengerLooting = CreateMenuItemToggle(AdminMenu, data.AllowScavengerLooting, "Allow ScavengerBot to gather and loot", AllowScavengerLooting_Clicked);
+      AllowRepairLooting = CreateMenuItemToggle(AdminMenu, data.AllowRepairBotGathering, "Allow RepairBot to gather", AllowRepairLooting_Clicked);
+      AllowEnemyFlight = CreateMenuItemToggle(AdminMenu, data.AllowEnemiesToFly, "Allow enemy bots to fly", AllowEnemyFlight_Clicked);
+      AllowNeutralFlight = CreateMenuItemToggle(AdminMenu, data.AllowNeutralsToFly, "Allow neutral bots to fly", AllowNeutralFlight_Clicked);
+      AllowFriendlyFlight = CreateMenuItemToggle(AdminMenu, data.AllowHelpersToFly, "Allow hepler bots to fly", AllowFriendlyFlight_Clicked);
+      AllowNeutralTargets = CreateMenuItemToggle(AdminMenu, data.AllowNeutralTargets, "Allow enemy bots to target neutrals", AllowNeutralTargets_Clicked);
+      AllowIdleMovement = CreateMenuItemToggle(AdminMenu, data.AllowIdleMovement, "Allow idle bot movement", AllowIdleMovement_Clicked);
+      AllowIdleTransitions = CreateMenuItemToggle(AdminMenu, data.AllowIdleMapTransitions, "Allow idle map transitions", AllowIdleTransitions_Clicked);
+      AllowHelmetVisorChanges = CreateMenuItemToggle(AdminMenu, data.AllowHelmetVisorChanges, "Allow helmet visor changes", AllowVisorChanges_Clicked);
+      EnforceGroundPathingFirst = CreateMenuItemToggle(AdminMenu, data.EnforceGroundPathingFirst, "Enforce ground pathing first", EnforceGroundPathing_Clicked);
+      EnforceWalkingOnPatrol = CreateMenuItemToggle(AdminMenu, data.EnforceWalkingOnPatrol, "Enforce walking on patrol", EnforcePatrolWalking_Clicked);
+      ObeyProjectionIntegrity = CreateMenuItemToggle(AdminMenu, data.ObeyProjectionIntegrityForRepairs, "Obey projection integrity for repairs", ObeyProjectionIntegrity_Clicked);
+      IgnoreArmorDeformation = CreateMenuItemToggle(AdminMenu, data.IgnoreArmorDeformation, "Ignore armor deformation for repairs", IgnoreArmorDeformation_Clicked);
+      DisableCollisionOnDeath = CreateMenuItemToggle(AdminMenu, data.DisableCharacterCollisionOnBotDeath, "Disable character collision on bot death", DisableCollisions_Clicked);
     }
 
     public void Close()
@@ -223,13 +194,22 @@ namespace AiEnabled.Graphics
           MouseSensitivity = null;
         }
 
-        if (RecallBotsKeyBind != null)
+        if (ResumeBotsKeyBind != null)
         {
-          RecallBotsKeyBind.OnSubmitAction = null;
-          RecallBotsKeyBind.InputDialogTitle = null;
-          RecallBotsKeyBind.Text = null;
-          RecallBotsKeyBind.BackingObject = null;
-          RecallBotsKeyBind = null;
+          ResumeBotsKeyBind.OnSubmitAction = null;
+          ResumeBotsKeyBind.InputDialogTitle = null;
+          ResumeBotsKeyBind.Text = null;
+          ResumeBotsKeyBind.BackingObject = null;
+          ResumeBotsKeyBind = null;
+        }
+
+        if (RadioRecallKeyBind != null)
+        {
+          RadioRecallKeyBind.OnSubmitAction = null;
+          RadioRecallKeyBind.InputDialogTitle = null;
+          RadioRecallKeyBind.Text = null;
+          RadioRecallKeyBind.BackingObject = null;
+          RadioRecallKeyBind = null;
         }
 
         if (RepairBotIgnoreColorInput != null)
@@ -496,6 +476,62 @@ namespace AiEnabled.Graphics
           AllowTokenProduction = null;
         }
 
+        if (NotifyOnDeath != null)
+        {
+          NotifyOnDeath.Text = null;
+          NotifyOnDeath.OnClick = null;
+          NotifyOnDeath.BackingObject = null;
+          NotifyOnDeath = null;
+        }
+
+        if (HighLightHelpers != null)
+        {
+          HighLightHelpers.Text = null;
+          HighLightHelpers.OnClick = null;
+          HighLightHelpers.BackingObject = null;
+          HighLightHelpers = null;
+        }
+
+        if (ShowMapIconFriendly != null)
+        {
+          ShowMapIconFriendly.Text = null;
+          ShowMapIconFriendly.OnClick = null;
+          ShowMapIconFriendly.BackingObject = null;
+          ShowMapIconFriendly = null;
+        }
+
+        if (ShowMapIconOther != null)
+        {
+          ShowMapIconOther.Text = null;
+          ShowMapIconOther.OnClick = null;
+          ShowMapIconOther.BackingObject = null;
+          ShowMapIconOther = null;
+        }
+
+        if (AllowRepairLooting != null)
+        {
+          AllowRepairLooting.Text = null;
+          AllowRepairLooting.OnClick = null;
+          AllowRepairLooting.BackingObject = null;
+          AllowRepairLooting = null;
+        }
+
+        if (AllowScavengerDigging != null)
+        {
+          AllowScavengerDigging.Text = null;
+          AllowScavengerDigging.OnClick = null;
+          AllowScavengerDigging.BackingObject = null;
+          AllowScavengerDigging = null;
+        }
+
+        if (AllowScavengerLooting != null)
+        {
+          AllowScavengerLooting.Text = null;
+          AllowScavengerLooting.OnClick = null;
+          AllowScavengerLooting.BackingObject = null;
+          AllowScavengerLooting = null;
+        }
+
         _playerData = null;
       }
       catch (Exception ex)
@@ -546,6 +582,15 @@ namespace AiEnabled.Graphics
       }
     }
 
+    private void NotifyOnHelperDeath_Clicked()
+    {
+      var enabled = !_playerData.NotifyOnHelperDeath;
+      var color = enabled ? "<color=orange>" : "<color=yellow>";
+      NotifyOnDeath.Text = $"Show Notification on Death: {color}{enabled.ToString()}";
+      _playerData.NotifyOnHelperDeath = enabled;
+      AiSession.Instance.StartUpdateCounter();
+    }
+
     private void ShowHealthWhenFull_Clicked()
     {
       var enabled = !_playerData.ShowHealthWhenFull;
@@ -591,18 +636,33 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartUpdateCounter();
     }
 
-    internal void RecallBotsKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
+    internal void ResumeBotsKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
     {
       try
       {
         var tuple = MyTuple.Create(key, shift, ctrl, alt);
         var text = $"Resume All: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
-        AiSession.Instance.Input.AddKeybind(tuple, RecallBots_Used);
-        RecallBotsKeyBind.Text = text;
+        AiSession.Instance.Input.AddKeybind(tuple, ResumeAllBots_Used);
+        ResumeBotsKeyBind.Text = text;
       }
       catch (Exception e)
       {
-        AiSession.Instance.Logger.Log($"Exception in MapKeyBind_Submitted:\n{e.Message}\n\n{e.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Log($"Exception in ResumeBotsKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+      }
+    }
+
+    internal void RadioRecallKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
+    {
+      try
+      {
+        var tuple = MyTuple.Create(key, shift, ctrl, alt);
+        var text = $"Radio Recall: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
+        AiSession.Instance.Input.AddKeybind(tuple, RadioRecall_Used);
+        RadioRecallKeyBind.Text = text;
+      }
+      catch (Exception e)
+      {
+        AiSession.Instance.Logger.Log($"Exception in RadioRecallKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
       }
     }
 
@@ -710,18 +770,67 @@ namespace AiEnabled.Graphics
       }
     }
 
-    internal void RecallBots_Used()
+    internal void RadioRecall_Used()
     {
       var player = MyAPIGateway.Session.Player;
       if (player == null)
         return;
 
-      var pkt = new BotRecallPacket(player.IdentityId);
+      var pkt = new RadioRecallPacket(player.IdentityId);
+      AiSession.Instance.Network.SendToServer(pkt);
+    }
+
+    internal void ResumeAllBots_Used()
+    {
+      var player = MyAPIGateway.Session.Player;
+      if (player == null)
+        return;
+
+      var pkt = new BotResumePacket(player.IdentityId);
       AiSession.Instance.Network.SendToServer(pkt);
     }
     #endregion
 
     #region AdminOnly
+    private void AllowRepairLooting_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowRepairBotGathering;
+      data.AllowRepairBotGathering = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowRepairLooting.Text = $"Allow RepairBot to gather: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    private void AllowScavengerLooting_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowScavengerLooting;
+      data.AllowScavengerLooting = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerLooting.Text = $"Allow ScavengerBot to gather and loot: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    private void AllowScavengerDigging_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowScavengerDigging;
+      data.AllowScavengerDigging = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerDigging.Text = $"Allow ScavengerBot to dig and find: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
     internal void AllowIdleTransitions_Clicked()
     {
       var data = AiSession.Instance.ModSaveData;
@@ -957,7 +1066,7 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartSettingSyncCounter();
     }
 
-    internal void AlloCombatBot_Clicked()
+    internal void AllowCombatBot_Clicked()
     {
       var newValue = !AiSession.Instance.ModSaveData.AllowCombatBot;
       AiSession.Instance.ModSaveData.AllowCombatBot = newValue;

@@ -18,13 +18,13 @@ using VRageMath;
 namespace AiEnabled.Networking
 {
   [ProtoContract]
-  public class BotRecallPacket : PacketBase
+  public class BotResumePacket : PacketBase
   {
     [ProtoMember(1)] long _playerId;
 
-    public BotRecallPacket() { }
+    public BotResumePacket() { }
 
-    public BotRecallPacket(long playerId)
+    public BotResumePacket(long playerId)
     {
       _playerId = playerId;
     }

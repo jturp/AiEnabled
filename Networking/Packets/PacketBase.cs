@@ -28,7 +28,7 @@ namespace AiEnabled.Networking
   [ProtoInclude(1013, typeof(EquipWeaponPacket))]
   [ProtoInclude(1014, typeof(OverHeadIconPacket))]
   [ProtoInclude(1015, typeof(HealthBarPacket))]
-  [ProtoInclude(1016, typeof(BotRecallPacket))]
+  [ProtoInclude(1016, typeof(BotResumePacket))]
   [ProtoInclude(1017, typeof(ColorUpdatePacket))]
   [ProtoInclude(1018, typeof(FixBotPacket))]
   [ProtoInclude(1019, typeof(FactoryDismissPacket))]
@@ -46,6 +46,7 @@ namespace AiEnabled.Networking
   [ProtoInclude(1031, typeof(HelmetChangePacket))]
   [ProtoInclude(1032, typeof(PriorityUpdatePacket))]
   [ProtoInclude(1033, typeof(FactorySyncPacket))]
+  [ProtoInclude(1034, typeof(RadioRecallPacket))]
   [ProtoContract]
   public abstract class PacketBase
   {

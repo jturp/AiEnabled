@@ -131,7 +131,7 @@ namespace AiEnabled.Graphics
         Height: 1.25f,
         Blend: BlendTypeEnum.Standard);
 
-      MenuBackground.Options |= options;
+      MenuBackground.Options = options;
       MenuBackground.Visible = false;
 
       MenuBgBorder = new HudAPIv2.BillBoardHUDMessage(
@@ -142,7 +142,7 @@ namespace AiEnabled.Graphics
         Height: MenuBackground.Height,
         Blend: BlendTypeEnum.PostPP);
 
-      MenuBgBorder.Options |= options;
+      MenuBgBorder.Options = options;
       MenuBgBorder.Visible = false;
 
       var renameBB = new HudAPIv2.BillBoardHUDMessage(
@@ -151,11 +151,11 @@ namespace AiEnabled.Graphics
         BillBoardColor: _billboardColor,
         Blend: BlendTypeEnum.PostPP);
 
-      renameBB.Options |= options;
+      renameBB.Options = options;
       renameBB.Visible = false;
 
       var renameMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Rename ~"), renameBB.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
-      renameMsg.Options |= options;
+      renameMsg.Options = options;
       renameMsg.Visible = false;
 
       var length = renameMsg.GetTextLength();
@@ -175,11 +175,11 @@ namespace AiEnabled.Graphics
         BillBoardColor: _billboardColor,
         Blend: BlendTypeEnum.PostPP);
 
-      deleteBB.Options |= options;
+      deleteBB.Options = options;
       deleteBB.Visible = false;
 
       var deleteMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Delete ~"), deleteBB.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
-      deleteMsg.Options |= options;
+      deleteMsg.Options = options;
       deleteMsg.Visible = false;
 
       length = deleteMsg.GetTextLength();
@@ -196,11 +196,11 @@ namespace AiEnabled.Graphics
         BillBoardColor: _billboardColor,
         Blend: BlendTypeEnum.PostPP);
 
-      closeBB.Options |= options;
+      closeBB.Options = options;
       closeBB.Visible = false;
 
       var closeMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Close ~"), closeBB.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
-      closeMsg.Options |= options;
+      closeMsg.Options = options;
       closeMsg.Visible = false;
 
       length = closeMsg.GetTextLength();
@@ -217,11 +217,11 @@ namespace AiEnabled.Graphics
         BillBoardColor: _billboardColor,
         Blend: BlendTypeEnum.PostPP);
 
-      createBB.Options |= options;
+      createBB.Options = options;
       createBB.Visible = false;
 
       var createMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ New ~"), createBB.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
-      createMsg.Options |= options;
+      createMsg.Options = options;
       createMsg.Visible = false;
 
       length = createMsg.GetTextLength();
@@ -238,11 +238,11 @@ namespace AiEnabled.Graphics
         BillBoardColor: _billboardColor,
         Blend: BlendTypeEnum.PostPP);
 
-      selectBB.Options |= options;
+      selectBB.Options = options;
       selectBB.Visible = false;
 
       var selectMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Start ~"), selectBB.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
-      selectMsg.Options |= options;
+      selectMsg.Options = options;
       selectMsg.Visible = false;
 
       length = selectMsg.GetTextLength();
@@ -263,7 +263,7 @@ namespace AiEnabled.Graphics
         Height: logoSize,
         Blend: BlendTypeEnum.PostPP);
 
-      logoBg.Options |= options;
+      logoBg.Options = options;
       logoBg.Visible = false;
 
       var logoIcon = new HudAPIv2.BillBoardHUDMessage(
@@ -275,12 +275,12 @@ namespace AiEnabled.Graphics
         Height: logoSize,
         Blend: BlendTypeEnum.PostPP);
 
-      logoIcon.Options |= options;
+      logoIcon.Options = options;
       logoIcon.Visible = false;
 
       var logoMsg = new HudAPIv2.HUDMessage(new StringBuilder("~ Bot Patrol Manager ~"), logoBg.Origin, Scale: 0.9, Blend: BlendTypeEnum.PostPP);
       length = logoMsg.GetTextLength();
-      logoMsg.Options |= options;
+      logoMsg.Options = options;
       logoMsg.Visible = false;
       logoMsg.Offset = logoBg.Offset - new Vector2D(length.X * 0.5, logoBg.Height * 0.5 + length.Y * -0.5);
 
@@ -295,7 +295,7 @@ namespace AiEnabled.Graphics
         Height: MenuBackground.Height * 0.85f,
         Blend: BlendTypeEnum.Standard);
 
-      bg.Options |= options;
+      bg.Options = options;
       bg.Visible = false;
 
       var bdr = new HudAPIv2.BillBoardHUDMessage(
@@ -307,7 +307,7 @@ namespace AiEnabled.Graphics
         Height: bg.Height * 0.89f,
         Blend: BlendTypeEnum.PostPP);
 
-      bdr.Options |= options;
+      bdr.Options = options;
       bdr.Visible = false;
 
       RouteBox = new ListBox(bg, bdr, buttonColor, emitter, mouseOver, aspectRatio);

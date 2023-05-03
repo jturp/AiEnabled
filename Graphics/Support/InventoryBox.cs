@@ -66,7 +66,7 @@ namespace AiEnabled.Graphics.Support
         Height: bg.Height * 0.89f,
         Blend: BlendTypeEnum.PostPP);
 
-      Border.Options |= options;
+      Border.Options = options;
       Border.Visible = false;
 
       Header = new HudAPIv2.HUDMessage(
@@ -77,7 +77,7 @@ namespace AiEnabled.Graphics.Support
 
       var length = Header.GetTextLength();
       Header.Offset = new Vector2D(-Border.Width * aspectRatio * 0.25, Border.Height * 0.5) - new Vector2D(length.X * 0.5, length.Y * 1.25);
-      Header.Options |= options;
+      Header.Options = options;
       Header.Visible = false;
 
       Footer = new HudAPIv2.HUDMessage(
@@ -86,7 +86,7 @@ namespace AiEnabled.Graphics.Support
         Scale: 0.9,
         Blend: BlendTypeEnum.PostPP);
 
-      Footer.Options |= options;
+      Footer.Options = options;
       Footer.Visible = false;
 
       _size = new Vector2(Border.Width / 7) * 0.9f;
@@ -140,7 +140,7 @@ namespace AiEnabled.Graphics.Support
           Height: Border.Height,
           Blend: BlendTypeEnum.PostPP);
 
-      scrollBoxBg.Options |= options;
+      scrollBoxBg.Options = options;
       scrollBoxBg.Offset = new Vector2D(Border.Width - scrollBoxBg.Width, 0) * 0.5 * aspectRatio;
       var val = false;
 
@@ -155,7 +155,7 @@ namespace AiEnabled.Graphics.Support
           Height: scrollBoxBg.Height - 0.01f,
           Blend: BlendTypeEnum.PostPP);
 
-      scrollBarBg.Options |= options;
+      scrollBarBg.Options = options;
       scrollBarBg.Visible = false;
       scrollBarBg.uvEnabled = true;
 
@@ -169,7 +169,7 @@ namespace AiEnabled.Graphics.Support
           Height: (float)-length.Y,
           Blend: BlendTypeEnum.PostPP);
 
-      toolTipBB.Options |= options;
+      toolTipBB.Options = options;
       toolTipBB.Visible = false;
 
       var toolTipMsg = new HudAPIv2.HUDMessage(
@@ -178,7 +178,7 @@ namespace AiEnabled.Graphics.Support
           Scale: 0.7f,
           Blend: BlendTypeEnum.PostPP);
 
-      toolTipMsg.Options |= options;
+      toolTipMsg.Options = options;
       toolTipMsg.Visible = false;
       toolTipMsg.InitialColor = Color.Black;
 
@@ -422,7 +422,7 @@ namespace AiEnabled.Graphics.Support
           Height: (float)-length.Y,
           Blend: BlendTypeEnum.PostPP);
 
-        toolTipBB.Options |= options;
+        toolTipBB.Options = options;
         toolTipBB.Visible = false;
 
         var toolTipMsg = new HudAPIv2.HUDMessage(
@@ -431,7 +431,7 @@ namespace AiEnabled.Graphics.Support
             Scale: 0.7f,
             Blend: BlendTypeEnum.PostPP);
 
-        toolTipMsg.Options |= options;
+        toolTipMsg.Options = options;
         toolTipMsg.Visible = false;
         toolTipMsg.InitialColor = Color.Black;
 

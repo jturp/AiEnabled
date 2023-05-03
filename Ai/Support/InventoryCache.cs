@@ -382,7 +382,7 @@ namespace AiEnabled.Ai.Support
       return valid;
     }
 
-    bool ShouldKeepTool(MyInventoryItem item, List<MyInventoryItem> botItems)
+    public bool ShouldKeepTool(MyInventoryItem item, List<MyInventoryItem> botItems)
     {
       var subtype = item.Type.SubtypeId;
 
@@ -432,6 +432,53 @@ namespace AiEnabled.Ai.Support
       return priority;
     }
 
+    public bool ShouldSendToUnload(BotBase bot)
+    {
+      if (bot == null || bot.IsDead)
+        return false;
+
+      List<MyInventoryItem> invItems;
+      if (!_invItemListStack.TryPop(out invItems) || invItems == null)
+        invItems = new List<MyInventoryItem>();
+      else
+        invItems.Clear();
+
+      var rBot = bot as RepairBot;
+      var botInv = bot.Character.GetInventory();
+      botInv.GetItems(invItems);
+
+      var tool = bot.ToolDefinition?.PhysicalItemId.SubtypeName;
+      var grindMode = rBot == null || rBot.CurrentBuildMode == RepairBot.BuildMode.Grind;
+
+      bool sendToUnload = false;
+
+      for (int i = invItems.Count - 1; i >= 0; i--)
+      {
+        var item = invItems[i];
+
+        VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
+        if (!AiSession.Instance.ComponentInfoDict.TryGetValue(item.Type, out itemInfo))
+        {
+          itemInfo = VRage.Game.ModAPI.Ingame.MyPhysicalInventoryItemExtensions_ModAPI.GetItemInfo(item.Type);
+          AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
+        }
+
+        if (itemInfo.IsTool && rBot != null && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
+          continue;
+
+        if (grindMode || itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent)
+        {
+          sendToUnload = true;
+          break;
+        }
+      }
+
+      invItems.Clear();
+      _invItemListStack.Push(invItems);
+
+      return sendToUnload;
+    }
+
     void RemoveItemsInternal(WorkData workData)
     {
       var data = workData as RepairWorkData;
@@ -451,7 +498,7 @@ namespace AiEnabled.Ai.Support
       
       botInv.GetItems(invItems);
       var tool = data.Bot.ToolDefinition?.PhysicalItemId.SubtypeName;
-      var grindMode = rBot?.CurrentBuildMode == RepairBot.BuildMode.Grind;
+      var grindMode = rBot == null || rBot.CurrentBuildMode == RepairBot.BuildMode.Grind;
       _inventoryItemsToAddRemove.Clear();
 
       for (int i = invItems.Count - 1; i >= 0; i--)
@@ -465,7 +512,7 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
         }
 
-        if (itemInfo.IsTool && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
+        if (itemInfo.IsTool && rBot != null && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
           continue;
 
         if (grindMode || itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent)
@@ -800,6 +847,9 @@ namespace AiEnabled.Ai.Support
         if (!(terminal is IMyCargoContainer) && !(terminal is IMyShipConnector) && !(terminal is IMyShipToolBase) && !(terminal is IMyAssembler))
           continue;
 
+        if (terminal.CustomName.IndexOf("[AiExclude]", StringComparison.OrdinalIgnoreCase) >= 0 || terminal.CustomData.IndexOf("[AiExclude]", StringComparison.OrdinalIgnoreCase) >= 0)
+          continue;
+
         for (int j = 0; j < terminal.InventoryCount; j++)
         {
           var inv = terminal.GetInventory(j);
@@ -839,6 +889,8 @@ namespace AiEnabled.Ai.Support
 
           items.Clear();
           inv.GetItems(items);
+
+          // TODO: Why is this here? Remove??
         }
       }
 

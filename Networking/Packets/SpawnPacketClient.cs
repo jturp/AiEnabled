@@ -58,6 +58,11 @@ namespace AiEnabled.Networking
         AiSession.Instance.RemoveGPSForBot(BotEntityId);
         helperIds.Remove(BotEntityId);
         activeHelperIds.Remove(BotEntityId);
+
+        if (bot != null && bot.IsDead && AiSession.Instance.PlayerData?.NotifyOnHelperDeath == true)
+        {
+          AiSession.Instance.ShowMessage($"{bot.Name} has died.", timeToLive: 5000);
+        }
       }
       else
       {

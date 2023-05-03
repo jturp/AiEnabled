@@ -189,66 +189,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal void UpdatePatrolOBBCache()
     {
-      _patrolOBBs.Clear();
-      var radius = AiSession.Instance.PlayerToRepairRadius[Owner.IdentityId];
-      _lastRadius = radius;
-
-      for (int i = 0; i < _patrolList.Count; i++)
-      {
-        var curIdx = i;
-        var nexIdx = curIdx + 1;
-        if (nexIdx >= _patrolList.Count)
-          break;
-
-        var currPoint = _currentGraph.LocalToWorld(_patrolList[curIdx]);
-        var nextPoint = _currentGraph.LocalToWorld(_patrolList[nexIdx]);
-
-        var center = (currPoint + nextPoint) * 0.5;
-        var vector = nextPoint - currPoint;
-        var length = vector.Normalize() + radius;
-        var up = Vector3D.CalculatePerpendicularVector(vector);
-        var matrix = MatrixD.CreateWorld(center, vector, up);
-
-        var halfExt = new Vector3D(radius, radius, length) * 0.5;
-        var obb = new MyOrientedBoundingBoxD(center, halfExt, Quaternion.CreateFromRotationMatrix(matrix));
-
-        _patrolOBBs.Add(obb);
-      }
-    }
-
-    bool IsWithinSearchRadius(Vector3D worldPosition)
-    {
-      var radius = AiSession.Instance.PlayerToRepairRadius[Owner.IdentityId];
-
-      if (PatrolMode && _patrolList.Count > 0)
-      {
-        if (_patrolList.Count == 1)
-        {
-          var worldPoint = _currentGraph.LocalToWorld(_patrolList[0]);
-          var sphere = new BoundingSphereD(worldPoint, radius);
-          return sphere.Contains(worldPosition) == ContainmentType.Contains;
-        }
-        else
-        {
-          if (radius != _lastRadius)
-          {
-            UpdatePatrolOBBCache();
-          }
-
-          for (int i = 0; i < _patrolOBBs.Count; i++)
-          {
-            if (_patrolOBBs[i].Contains(ref worldPosition))
-              return true;
-          }
-
-          return false;
-        }
-      }
-      else
-      {
-        var sphere = new BoundingSphereD(BotInfo.CurrentBotPositionActual, radius);
-        return sphere.Contains(worldPosition) == ContainmentType.Contains;
-      }
+      UpdatePatrolOBBCache(ref _lastRadius, _patrolOBBs);
     }
 
     internal override void SetTargetInternal()
@@ -334,6 +275,8 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (returnNow)
         return;
+ 
+      var inv = Character.GetInventory() as MyInventory;
 
       if (tgt == null)
       {
@@ -347,12 +290,11 @@ namespace AiEnabled.Bots.Roles.Helpers
           graph.RemoveRepairTiles(_repairedBlocks);
         }
 
-        var inv = Character.GetInventory() as MyInventory;
         if (inv != null)
         {
           var invRatioOK = ((float)inv.CurrentVolume / (float)inv.MaxVolume) < 0.9f;
 
-          if (invRatioOK)
+          if (invRatioOK && AiSession.Instance.ModSaveData.AllowRepairBotGathering)
           {
             var floatingObj = Target.Entity as MyFloatingObject;
             if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null
@@ -386,10 +328,8 @@ namespace AiEnabled.Bots.Roles.Helpers
               if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floater.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
                 continue;
 
-              if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center))
-              {
+              if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center, ref _lastRadius, _patrolOBBs))
                 continue;
-              }
 
               if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
               {
@@ -399,6 +339,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
                 if (invBlock != null)
                 {
+                  tgt = invBlock;
                   Target.SetInventory(invBlock);
                   isInventory = true;
                 }
@@ -424,18 +365,20 @@ namespace AiEnabled.Bots.Roles.Helpers
               }
             }
           }
-          else if (isGridGraph)
-          {
-            // inv too full, send bot to drop off current stock
+        }
+      }
 
-            var botLocal = graph.WorldToLocal(botPosition);
-            var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
-            if (invBlock != null)
-            {
-              Target.SetInventory(invBlock);
-              isInventory = true;
-            }
-          }
+      if (tgt == null && isGridGraph && graph.InventoryCache.ShouldSendToUnload(this))
+      {
+        // send bot to drop off current stock
+
+        var botLocal = graph.WorldToLocal(botPosition);
+        var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
+        if (invBlock != null)
+        {
+          tgt = invBlock;
+          Target.SetInventory(invBlock);
+          isInventory = true;
         }
       }
 
@@ -588,7 +531,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-          if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+          if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld, ref _lastRadius, _patrolOBBs))
           {
             continue;
           }
@@ -720,7 +663,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
               var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-              if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+              if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld, ref _lastRadius, _patrolOBBs))
               {
                 continue;
               }
@@ -756,9 +699,7 @@ namespace AiEnabled.Bots.Roles.Helpers
               var slimGridId = slim.CubeGrid.EntityId;
 
               if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, node) || graph.IsTileBeingRepaired(slimGridId, node, botId))
-              {
                 continue;
-              }
 
               Vector3I _;
               if (_currentGraph.GetClosestValidNode(this, node, out _, isSlimBlock: true))
@@ -785,6 +726,9 @@ namespace AiEnabled.Bots.Roles.Helpers
                 }
               }
             }
+
+            if (tgt != null)
+              break;
           }
 
           _cubes.Clear();
@@ -843,7 +787,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
                     var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-                    if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+                    if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld, ref _lastRadius, _patrolOBBs))
                     {
                       continue;
                     }
@@ -931,7 +875,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
                     var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
-                    if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld))
+                    if (searchRadius > 0 && !IsWithinSearchRadius(slimWorld, ref _lastRadius, _patrolOBBs))
                     {
                       continue;
                     }

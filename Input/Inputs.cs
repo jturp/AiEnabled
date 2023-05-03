@@ -42,7 +42,8 @@ namespace AiEnabled.Input
 
       _stringToAction = new Dictionary<string, Action>()
       {
-        { "RecallBots_Used", _instance.PlayerMenu.RecallBots_Used }
+        { "ResumeAllBots_Used", _instance.PlayerMenu.ResumeAllBots_Used },
+        { "RadioRecall_Used", _instance.PlayerMenu.RadioRecall_Used}
       };
 
       Configure();
@@ -63,10 +64,15 @@ namespace AiEnabled.Input
         var name = bind.Action;
         if (_stringToAction.TryGetValue(name, out method))
         {
-          if (name.StartsWith("RecallBots"))
+          if (name.StartsWith("ResumeAllBots"))
           {
-            var text = $"Recall Bots: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
-            _instance.PlayerMenu.RecallBotsKeyBind.Text = text;
+            var text = $"Resume All: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
+            _instance.PlayerMenu.ResumeBotsKeyBind.Text = text;
+          }
+          else if (name.StartsWith("RadioRecall"))
+          {
+            var text = $"Radio Recall: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
+            _instance.PlayerMenu.RadioRecallKeyBind.Text = text;
           }
 
           _keybinds.Add(new Keybind(bind.Key, bind.Shift, bind.Ctrl, bind.Alt, method));

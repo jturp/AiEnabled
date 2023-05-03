@@ -298,6 +298,7 @@ namespace AiEnabled.Bots
 
           var worldHeadPos = ch.GetHeadMatrix(true).Translation;
 
+          hitList.Clear();
           if (!onPatrol)
             MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
 
@@ -1123,6 +1124,70 @@ namespace AiEnabled.Bots
       }
 
       return true;
+    }
+
+    internal bool IsWithinSearchRadius(Vector3D worldPosition, ref float lastRadius, List<MyOrientedBoundingBoxD> patrolOBBs)
+    {
+      var radius = AiSession.Instance.PlayerToRepairRadius[Owner.IdentityId];
+
+      if (PatrolMode && _patrolList.Count > 0)
+      {
+        if (_patrolList.Count == 1)
+        {
+          var worldPoint = _currentGraph.LocalToWorld(_patrolList[0]);
+          var sphere = new BoundingSphereD(worldPoint, radius);
+          return sphere.Contains(worldPosition) == ContainmentType.Contains;
+        }
+        else
+        {
+          if (radius != lastRadius)
+          {
+            UpdatePatrolOBBCache(ref lastRadius, patrolOBBs);
+          }
+
+          for (int i = 0; i < patrolOBBs.Count; i++)
+          {
+            if (patrolOBBs[i].Contains(ref worldPosition))
+              return true;
+          }
+
+          return false;
+        }
+      }
+      else
+      {
+        var sphere = new BoundingSphereD(BotInfo.CurrentBotPositionActual, radius);
+        return sphere.Contains(worldPosition) == ContainmentType.Contains;
+      }
+    }
+
+    internal void UpdatePatrolOBBCache(ref float lastRadius, List<MyOrientedBoundingBoxD> patrolOBBs)
+    {
+      patrolOBBs.Clear();
+      var radius = AiSession.Instance.PlayerToRepairRadius[Owner.IdentityId];
+      lastRadius = radius;
+
+      for (int i = 0; i < _patrolList.Count; i++)
+      {
+        var curIdx = i;
+        var nexIdx = curIdx + 1;
+        if (nexIdx >= _patrolList.Count)
+          break;
+
+        var currPoint = _currentGraph.LocalToWorld(_patrolList[curIdx]);
+        var nextPoint = _currentGraph.LocalToWorld(_patrolList[nexIdx]);
+
+        var center = (currPoint + nextPoint) * 0.5;
+        var vector = nextPoint - currPoint;
+        var length = vector.Normalize() + radius;
+        var up = Vector3D.CalculatePerpendicularVector(vector);
+        var matrix = MatrixD.CreateWorld(center, vector, up);
+
+        var halfExt = new Vector3D(radius, radius, length) * 0.5;
+        var obb = new MyOrientedBoundingBoxD(center, halfExt, Quaternion.CreateFromRotationMatrix(matrix));
+
+        patrolOBBs.Add(obb);
+      }
     }
   }
 }

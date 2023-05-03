@@ -65,6 +65,11 @@ namespace AiEnabled
       "PointLeft", "PointRight", "CheckWrist", "AssistCome"
     };
 
+    public List<string> HelperAnimations = new List<string>()
+    {
+      "Wave", "Victory", "Thumb-Up", "Stretching", "CheckWrist", "FacePalm"
+    };
+
     public List<string> BotFactionTags = new List<string>()
     {
       "BINC", "SCDS", "OTFI", "UNIT", "BLBT", "LEGN", "OBSD", "FLWR",

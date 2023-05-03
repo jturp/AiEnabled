@@ -915,7 +915,7 @@ namespace AiEnabled.Ai.Support
       if (SelectedRepairTiles.TryGetValue(gridEntityId, out repairDict))
       {
         long id;
-        return repairDict.TryGetValue(position, out id) && id == botId;
+        return repairDict.TryGetValue(position, out id) && id != botId;
       }
 
       return false;
