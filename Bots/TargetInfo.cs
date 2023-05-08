@@ -713,7 +713,9 @@ namespace AiEnabled.Bots
           else
             cellList.Clear();
 
-          for (int i = 5; i > 0; i--)
+          int numSpaces = _base._currentGraph?.IsGridGraph == true ? 3 : 5;
+
+          for (int i = numSpaces; i > 0; i--)
           {
             var testPoint = ownerPos + (ownerMatrix.Backward * i + ownerMatrix.Left * i) * cellSize;
             if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
@@ -758,7 +760,7 @@ namespace AiEnabled.Bots
 
           if (!foundPos)
           {
-            for (int i = 5; i > 0; i--)
+            for (int i = numSpaces; i > 0; i--)
             {
               var testPoint = ownerPos + (ownerMatrix.Forward * i + ownerMatrix.Left * i) * cellSize;
               if (_base._currentGraph.IsPositionUsable(_base, testPoint) && HasLineOfSight(ownerPos, testPoint, overlapList, cellList))
@@ -853,6 +855,7 @@ namespace AiEnabled.Bots
             return false;
         }
 
+        overlapList.Clear();
         MyGamePruningStructure.GetAllEntitiesInRay(ref line, overlapList);
 
         for (int i = 0; i < overlapList.Count; i++)

@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.5";
+    public const string VERSION = "v1.5.8";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -4461,6 +4461,7 @@ namespace AiEnabled
 
         Scheduler.UpdateAndExecuteJobs();
         Projectiles.UpdateProjectiles();
+        //CommandMenu?.CheckUpdates();
 
         for (int i = _weaponFireList.Count - 1; i >= 0; i--)
         {

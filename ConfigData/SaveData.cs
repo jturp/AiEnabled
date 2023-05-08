@@ -42,6 +42,7 @@ namespace AiEnabled.ConfigData
     [ProtoMember(28)] public bool AllowScavengerDigging = true;
     [ProtoMember(29)] public bool AllowScavengerLooting = true;
     [ProtoMember(30)] public bool AllowRepairBotGathering = true;
+    [ProtoMember(31)] public bool AllowNeutralsToOpenDoors = true;
 
     [XmlArrayItem("Subtype", typeof(string))]
     [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;

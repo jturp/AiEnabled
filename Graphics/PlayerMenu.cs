@@ -55,6 +55,7 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
     internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
+    internal MenuItem AllowNeutralsToOpenDoors;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
@@ -154,6 +155,7 @@ namespace AiEnabled.Graphics
       AllowIdleMovement = CreateMenuItemToggle(AdminMenu, data.AllowIdleMovement, "Allow idle bot movement", AllowIdleMovement_Clicked);
       AllowIdleTransitions = CreateMenuItemToggle(AdminMenu, data.AllowIdleMapTransitions, "Allow idle map transitions", AllowIdleTransitions_Clicked);
       AllowHelmetVisorChanges = CreateMenuItemToggle(AdminMenu, data.AllowHelmetVisorChanges, "Allow helmet visor changes", AllowVisorChanges_Clicked);
+      AllowNeutralsToOpenDoors = CreateMenuItemToggle(AdminMenu, data.AllowNeutralsToOpenDoors, "Allow neutral bots to open doors", AllowNeutralDoors_Clicked);
       EnforceGroundPathingFirst = CreateMenuItemToggle(AdminMenu, data.EnforceGroundPathingFirst, "Enforce ground pathing first", EnforceGroundPathing_Clicked);
       EnforceWalkingOnPatrol = CreateMenuItemToggle(AdminMenu, data.EnforceWalkingOnPatrol, "Enforce walking on patrol", EnforcePatrolWalking_Clicked);
       ObeyProjectionIntegrity = CreateMenuItemToggle(AdminMenu, data.ObeyProjectionIntegrityForRepairs, "Obey projection integrity for repairs", ObeyProjectionIntegrity_Clicked);
@@ -532,6 +534,14 @@ namespace AiEnabled.Graphics
           AllowScavengerLooting = null;
         }
 
+        if (AllowNeutralsToOpenDoors != null)
+        {
+          AllowNeutralsToOpenDoors.Text = null;
+          AllowNeutralsToOpenDoors.OnClick = null;
+          AllowNeutralsToOpenDoors.BackingObject = null;
+          AllowNeutralsToOpenDoors = null;
+        }
+
         _playerData = null;
       }
       catch (Exception ex)
@@ -792,6 +802,19 @@ namespace AiEnabled.Graphics
     #endregion
 
     #region AdminOnly
+    private void AllowNeutralDoors_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.AllowNeutralsToOpenDoors;
+      data.AllowNeutralsToOpenDoors = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowNeutralsToOpenDoors.Text = $"Allow neutral bots to open doors: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
     private void AllowRepairLooting_Clicked()
     {
       var data = AiSession.Instance.ModSaveData;

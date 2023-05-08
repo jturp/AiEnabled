@@ -397,7 +397,7 @@ namespace AiEnabled.GameLogic
       _nomadBotOnly = ini.Get("AiEnabled", "NomadBots Only").ToBoolean(false);
       _nomadColor = ini.Get("AiEnabled", "NomadBot Color").ToString(hexColor);
       _enforcerBotOnly = ini.Get("AiEnabled", "EnforcerBots Only").ToBoolean(false);
-      _enforcerColor = ini.Get("AiEnabled", "Enforcer Color").ToString(hexColor);
+      _enforcerColor = ini.Get("AiEnabled", "EnforcerBot Color").ToString(hexColor);
 
       if (_neutralBotOnly)
       {
@@ -934,12 +934,21 @@ namespace AiEnabled.GameLogic
                 default:
 
                   if (_nomadBotOnly)
+                  {
                     color = ColorExtensions.FromHtml(_nomadColor);
+                  }
                   else if (_enforcerBotOnly)
+                  {
                     color = ColorExtensions.FromHtml(_enforcerColor);
-                  else
-                    color = null;
-  
+                  }
+                  else if (_neutralBotOnly)
+                  {
+                    if (role == "NOMAD")
+                      color = ColorExtensions.FromHtml(_nomadColor);
+                    else
+                      color = ColorExtensions.FromHtml(_enforcerColor);
+                  }
+
                   break;
               }
             }

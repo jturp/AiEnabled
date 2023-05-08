@@ -23,6 +23,7 @@ using VRage.Game.Entity;
 using VRage;
 using VRage.Collections;
 using VRage.Game;
+using AiEnabled.Bots;
 
 namespace AiEnabled.Ai
 {
@@ -237,7 +238,7 @@ namespace AiEnabled.Ai
         costSoFar.TryGetValue(current, out currentCost);
         currentCost += currentNode.MovementCost;
 
-        bool checkDoors = true;
+        bool checkDoors = !(bot is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors;
         if (isGridGraph)
         {
           var addedCost = currentNode.AddedMovementCost;
@@ -264,6 +265,10 @@ namespace AiEnabled.Ai
                 {
                   isOpen = true;
                 }
+                else if (!checkDoors)
+                {
+                  continue;
+                }
                 else
                 {
                   currentCost += isHangar ? 9 : 2;
@@ -277,7 +282,7 @@ namespace AiEnabled.Ai
                   currentCost += isHangar ? 20 : 10;
                 }
 
-                checkDoors = relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self;
+                checkDoors &= (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self);
               }
               else if (collection.DeniedDoors.ContainsKey(current))
               {

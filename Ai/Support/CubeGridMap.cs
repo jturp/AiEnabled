@@ -8276,12 +8276,14 @@ namespace AiEnabled.Ai.Support
       if (_obstacleTask.Exceptions != null)
       {
         AiSession.Instance.Logger.ClearCached();
-        AiSession.Instance.Logger.AddLine($"Exceptions found during pathfinder task!\n");
+        AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
         foreach (var ex in _obstacleTask.Exceptions)
-          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+          AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
         AiSession.Instance.Logger.LogAll();
-        MyAPIGateway.Utilities.ShowNotification($"Exception during ObstacleTask!");
+
+        if (MyAPIGateway.Session.Player != null)
+          MyAPIGateway.Utilities.ShowNotification($"Exception during ObstacleTask!");
       }
 
       List<MyEntity> tempEntities;
@@ -8305,7 +8307,11 @@ namespace AiEnabled.Ai.Support
         if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.EntityId == MainGrid?.EntityId)
           continue;
 
-        ((IMyCubeGrid)grid).GetBlocks(blocks);
+        try
+        {
+          ((IMyCubeGrid)grid).GetBlocks(blocks);
+        }
+        catch { }
       }
 
       tempEntities.Clear();

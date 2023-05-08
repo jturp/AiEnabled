@@ -282,6 +282,26 @@ namespace AiEnabled.Support
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(colorInput);
       controls.Add(colorInput);
 
+      var buttonColorMatch = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnColorMatch");
+      buttonColorMatch.Enabled = CombineFunc.Create(buttonColorMatch.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonColorMatch.Visible = CombineFunc.Create(buttonColorMatch.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonColorMatch.SupportsMultipleBlocks = false;
+      buttonColorMatch.Title = MyStringId.GetOrCompute("Match Player's Color");
+      buttonColorMatch.Tooltip = MyStringId.GetOrCompute("Sets the color input to the player's suit color.");
+      buttonColorMatch.Action = MatchPlayerColor;
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonColorMatch);
+      controls.Add(buttonColorMatch);
+
+      var buttonColorRandom = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnColorRandom");
+      buttonColorRandom.Enabled = CombineFunc.Create(buttonColorRandom.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonColorRandom.Visible = CombineFunc.Create(buttonColorRandom.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonColorRandom.SupportsMultipleBlocks = false;
+      buttonColorRandom.Title = MyStringId.GetOrCompute("Randomize Color");
+      buttonColorRandom.Tooltip = MyStringId.GetOrCompute("Randomizes the color input.");
+      buttonColorRandom.Action = RandomizeColor;
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonColorRandom);
+      controls.Add(buttonColorRandom);
+
       var labelPrice = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblPrice");
       labelPrice.Enabled = CombineFunc.Create(labelPrice.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       labelPrice.Visible = CombineFunc.Create(labelPrice.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
@@ -352,6 +372,38 @@ namespace AiEnabled.Support
       buttonDismiss.Action = DismissHelper;
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonDismiss);
       controls.Add(buttonDismiss);
+    }
+
+    private static void RandomizeColor(IMyTerminalBlock block)
+    {
+      var gameLogic = block.GameLogic.GetAs<Factory>();
+      if (gameLogic == null)
+        return;
+
+      int x = MyUtils.GetRandomInt(256);
+      int y = MyUtils.GetRandomInt(256);
+      int z = MyUtils.GetRandomInt(256);
+
+      gameLogic.BotColor = new Color(x, y, z);
+      RefreshTerminalControls(block);
+    }
+
+    private static void MatchPlayerColor(IMyTerminalBlock block)
+    {
+      var gameLogic = block.GameLogic.GetAs<Factory>();
+      if (gameLogic == null)
+        return;
+
+      var playerChar = MyAPIGateway.Session?.Player?.Character;
+      if (playerChar != null)
+      {
+        var ob = playerChar.GetObjectBuilder() as MyObjectBuilder_Character;
+        var hsv = MyColorPickerConstants.HSVOffsetToHSV(ob.ColorMaskHSV);
+        var color = hsv.HSVtoColor();
+
+        gameLogic.BotColor = color;
+        RefreshTerminalControls(block);
+      }
     }
 
     private static bool TargetDamageToDisableBtn_Getter(IMyTerminalBlock block)

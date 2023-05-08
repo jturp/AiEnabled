@@ -2458,7 +2458,7 @@ namespace AiEnabled.Bots
         // if the current target is viable there's not reason to keep trying to switch targets
 
         bool allowReturn = ToolDefinition == null || ToolDefinition.WeaponType == MyItemWeaponType.None;
-        if (allowReturn || HasLineOfSight)
+        if (allowReturn && HasLineOfSight)
         { 
           var ent = Target.Entity as IMyEntity;
           var cube = Target.Entity as IMyCubeBlock;
@@ -2482,16 +2482,22 @@ namespace AiEnabled.Bots
               {
                 allowReturn = false;
               }
-              //else
-              //{
-              //  var slimLocal = _currentGraph.WorldToLocal(entCenter);
-              //  Vector3I _;
-              //  if (_currentGraph.InBounds(slimLocal) && !_currentGraph.GetClosestValidNode(this, slimLocal, out _, isSlimBlock: true, allowAirNodes: CanUseAirNodes))
-              //  {
-              //    _pathCollection?.AddBlockedObstacle(slim, slim.CubeGrid.GridIntegerToWorld(slim.Position));
-              //    allowReturn = false;
-              //  }
-              //}
+            }
+            else
+            {
+              var player = Target.Player ?? MyAPIGateway.Players.GetPlayerControllingEntity(ent as IMyCharacter);
+              if (player != null && player.IdentityId != Owner?.IdentityId)
+              {
+                MyAdminSettingsEnum adminSettings;
+                if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
+                {
+                  if ((adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+                  {
+                    allowReturn = false;
+                    Target.RemoveTarget();
+                  }
+                }
+              }
             }
 
             if (allowReturn)
@@ -2547,7 +2553,6 @@ namespace AiEnabled.Bots
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, queryType);
 
       object tgt = null;
-      var distance = double.MaxValue;
 
       _taskPrioritiesTemp.Clear();
       for (int i = 0; i < entList.Count; i++)
@@ -2797,26 +2802,6 @@ namespace AiEnabled.Bots
       }
 
       var tgtChar = tgt as IMyCharacter;
-      if (tgtChar != null)
-      {
-        List<BotBase> helpers;
-        if (!(tgtChar.Parent is IMyCockpit) && AiSession.Instance.PlayerToHelperDict.TryGetValue(tgtChar.ControllerInfo.ControllingIdentityId, out helpers))
-        {
-          foreach (var bot in helpers)
-          {
-            if (bot.IsDead)
-              continue;
-
-            var d = Vector3D.DistanceSquared(bot.BotInfo.CurrentBotPositionActual, botPosition);
-            if (d < distance * 0.6)
-            {
-              tgt = bot.Character;
-              distance = d;
-            }
-          }
-        }
-      }
-
       var parent = (tgtChar != null && tgtChar.Parent != null) ? tgtChar.Parent : tgt;
       if (ReferenceEquals(Target.Entity, parent))
         return;
@@ -5070,7 +5055,7 @@ namespace AiEnabled.Bots
 
         MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward * 3, hitlist, CollisionLayers.CharacterCollisionLayer);
 
-        //bool result = false;
+        bool canUseDoors = !(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors;
         bool foundTarget = false;
         IMyDoor door = null;
 
@@ -5095,7 +5080,7 @@ namespace AiEnabled.Bots
             break;
           }
 
-          if (!checkDoors)
+          if (!checkDoors || !canUseDoors)
             break;
 
           door = hitEnt as IMyDoor;

@@ -1147,8 +1147,15 @@ namespace AiEnabled.Graphics
           if (revert)
           {
             // revert to original position and return;
-            var box = _botInvBox.SelectedItem != null ? _botInvBox : _playerInvBox;
-            box.ResetButtonPosition(_moveButton, AspectRatio);
+            if (_botInvBox.SelectedItem != null)
+            {
+              _botInvBox.ResetButtonPosition(_moveButton, AspectRatio);
+            }
+            else if (_playerInvBox.SelectedItem != null)
+            {
+              _playerInvBox.ResetButtonPosition(_moveButton, AspectRatio);
+            }
+
             _moveButton = null;
             return;
           }
@@ -1427,11 +1434,40 @@ namespace AiEnabled.Graphics
           }
 
           _changesComplete = false;
+          _ticksSinceRequest = 0;
           _changesNeeded = (equip && itemDef.TypeId == typeof(MyObjectBuilder_ConsumableItem)) ? 3 : 2;
+          _lastFromInv = fromInv;
+          _lastToInv = toInv;
+
           fromInv.InventoryContentChanged += OnInventoryContentChanged;
           toInv.InventoryContentChanged += OnInventoryContentChanged;
           var pkt = new InventoryUpdatePacket(fromInv.Owner.EntityId, toInv.Owner.EntityId, (double)amount, invItem.ItemId, equip);
           AiSession.Instance.Network.SendToServer(pkt);
+        }
+      }
+    }
+
+    MyInventory _lastFromInv, _lastToInv;
+
+    public void CheckUpdates()
+    {
+      if (!_changesComplete)
+      {
+        ++_ticksSinceRequest;
+
+        if (_ticksSinceRequest >= 60)
+        {
+          if (_lastFromInv != null)
+            _lastFromInv.InventoryContentChanged -= OnInventoryContentChanged;
+  
+          if (_lastToInv != null)
+            _lastToInv.InventoryContentChanged -= OnInventoryContentChanged;
+
+          _lastFromInv = null;
+          _lastToInv = null;
+          _ticksSinceRequest = 0;
+
+          ResetChanges();
         }
       }
     }
@@ -1445,19 +1481,22 @@ namespace AiEnabled.Graphics
     }
 
     bool _changesComplete = true;
-    int _changesReceived, _changesNeeded = 2;
+    int _changesReceived, _changesNeeded = 2, _ticksSinceRequest;
     internal void OnInventoryContentChanged(MyInventoryBase inventory, MyPhysicalInventoryItem item, MyFixedPoint amount)
     {
       var inventoryOwner = inventory?.Entity;
-      if (_changesNeeded == 2 || _changesReceived == 2 || inventoryOwner == null || inventoryOwner.EntityId != ActiveBot?.EntityId)
+      if (_changesComplete || _changesNeeded == 2 || _changesReceived == 2 || inventoryOwner == null || inventoryOwner.EntityId != ActiveBot?.EntityId)
         inventory.InventoryContentChanged -= OnInventoryContentChanged;
 
-      ++_changesReceived;
-      if (_changesReceived >= _changesNeeded)
+      if (!_changesComplete)
       {
-        _changesReceived = 0;
-        _changesComplete = true;
-        _invRetrieved = false;
+        ++_changesReceived;
+        if (_changesReceived >= _changesNeeded)
+        {
+          _changesReceived = 0;
+          _changesComplete = true;
+          _invRetrieved = false;
+        }
       }
     }
 

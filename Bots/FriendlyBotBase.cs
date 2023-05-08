@@ -133,7 +133,25 @@ namespace AiEnabled.Bots
         // if the current target is viable there's not reason to keep trying to switch targets
 
         bool allowReturn = ToolDefinition == null || ToolDefinition.WeaponType == MyItemWeaponType.None;
-        if (allowReturn || HasLineOfSight)
+
+        if (allowReturn)
+        {
+          var player = Target.Player ?? MyAPIGateway.Players.GetPlayerControllingEntity(Target.Entity as IMyCharacter);
+          if (player != null && player.IdentityId != Owner?.IdentityId)
+          {
+            MyAdminSettingsEnum adminSettings;
+            if (MyAPIGateway.Session.TryGetAdminSettings(player.SteamUserId, out adminSettings))
+            {
+              if ((adminSettings & MyAdminSettingsEnum.Untargetable) != 0)
+              {
+                allowReturn = false;
+                Target.RemoveTarget();
+              }
+            }
+          }
+        }
+
+        if (allowReturn && HasLineOfSight)
         {
           var ent = Target.Entity as IMyEntity;
           var cube = Target.Entity as IMyCubeBlock;
