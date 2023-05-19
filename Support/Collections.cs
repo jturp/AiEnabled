@@ -738,6 +738,7 @@ namespace AiEnabled
     public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
     public Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>> NpcSafeCoreWeaponMagazines = new Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>>(MyDefinitionId.Comparer);
 
+    public ConcurrentDictionary<long, float> PlayerFollowDistanceDict = new ConcurrentDictionary<long, float>(); // player ident to follow distance
     public ConcurrentDictionary<MyItemType, MyObjectBuilder_PhysicalObject> ItemOBDict = new ConcurrentDictionary<MyItemType, MyObjectBuilder_PhysicalObject>();
     public ConcurrentDictionary<MyItemType, MyItemInfo> ComponentInfoDict = new ConcurrentDictionary<MyItemType, MyItemInfo>();
     public ConcurrentDictionary<MyDefinitionId, List<MyItemType>> AcceptedItemDict = new ConcurrentDictionary<MyDefinitionId, List<MyItemType>>(MyDefinitionId.Comparer);

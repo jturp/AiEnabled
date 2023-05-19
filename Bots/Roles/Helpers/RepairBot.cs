@@ -484,8 +484,10 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (invBlock != null)
           {
             Target.SetInventory(invBlock);
+
+            tgt = invBlock;
             isInventory = true;
-            return null;
+            return tgt;
           }
         }
 
@@ -522,7 +524,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         for (int j = 0; j < _cubes.Count; j++)
         {
           var slim = _cubes[j];
-          if (slim?.CubeGrid == null || slim.IsDestroyed)
+          if (slim?.CubeGrid == null || (slim.IsDestroyed && slim.StockpileEmpty))
             continue;
 
           var color = MyColorPickerConstants.HSVOffsetToHSV(slim.ColorMaskHSV) * colorVec;
@@ -1214,6 +1216,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
               grid.InventoryCache.RemoveItemsFor(Target.Entity as IMySlimBlock, this);
               Target.RemoveInventory();
+              Target.RemoveTarget();
             }
 
             return;
@@ -1325,7 +1328,8 @@ namespace AiEnabled.Bots.Roles.Helpers
       else if (_particlePacketSent)
       {
         _particlePacketSent = false;
-        var packet = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Weld, remove: true);
+        var pType = CurrentBuildMode == BuildMode.Grind ? ParticleInfoBase.ParticleType.Grind : ParticleInfoBase.ParticleType.Weld;
+        var packet = new ParticlePacket(Character.EntityId, pType, remove: true);
 
         if (MyAPIGateway.Session.Player != null)
           packet.Received(AiSession.Instance.Network);

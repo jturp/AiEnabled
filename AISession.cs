@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.8";
+    public const string VERSION = "v1.5.12";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -562,6 +562,7 @@ namespace AiEnabled
       ColorDictionary?.Clear();
       CubeGridHitInfo?.Reset();
       HelperAnimations?.Clear();
+      PlayerFollowDistanceDict?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -708,6 +709,7 @@ namespace AiEnabled
       ColorDictionary = null;
       CubeGridHitInfo = null;
       HelperAnimations = null;
+      PlayerFollowDistanceDict = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -906,8 +908,11 @@ namespace AiEnabled
             charDef.HeadServerOffset = -0.15f;
           }
           else if (subtype.String.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0
-            || subtype.String.IndexOf("cyberhound", StringComparison.OrdinalIgnoreCase) >= 0)
+            || subtype.String.IndexOf("hound", StringComparison.OrdinalIgnoreCase) >= 0)
           {
+            charDef.MaxCrouchWalkSpeed = 1;
+            charDef.MaxWalkSpeed = 1;
+            charDef.MaxWalkStrafingSpeed = 1;
             charDef.HeadServerOffset = 0.15f;
           }
           else if (subtype.String.IndexOf("space_spider", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -1177,6 +1182,27 @@ namespace AiEnabled
             {
               if (charDef != null)
                 ModSaveData.AllowedBotSubtypes.Add(charDef.Name ?? charDef.Id.SubtypeName);
+            }
+          }
+
+          if (ModSaveData.AllHumanSubtypes == null)
+            ModSaveData.AllHumanSubtypes = new List<string>();
+          else
+            ModSaveData.AllHumanSubtypes.Clear();
+
+          if (ModSaveData.AllNonHumanSubtypes == null)
+            ModSaveData.AllNonHumanSubtypes = new List<string>();
+          else
+            ModSaveData.AllNonHumanSubtypes.Clear();
+
+          foreach (var charDef in MyDefinitionManager.Static.Characters)
+          {
+            if (charDef != null)
+            {
+              if (charDef.Skeleton == "Humanoid")
+                ModSaveData.AllHumanSubtypes.Add(charDef.Name ?? charDef.Id.SubtypeName);
+              else
+                ModSaveData.AllNonHumanSubtypes.Add(charDef.Name ?? charDef.Id.SubtypeName);
             }
           }
 
@@ -1834,6 +1860,7 @@ namespace AiEnabled
 
         Config.WriteFileToLocalStorage($"AiEnabledPlayerConfig.cfg", typeof(PlayerData), PlayerData, Logger);
 
+        PlayerMenu.ResetKeyPresses();
         _updateCounter = 0;
         _needsUpdate = false;
       }
@@ -2426,6 +2453,9 @@ namespace AiEnabled
 
             if (bot.UseAPITargets || bot.PatrolMode || bot.Character.Parent is IMyCockpit)
               continue;
+
+            if (bot.BotInfo.IsOnLadder)
+              bot.Character.Use();
 
             gridSeats.ShellSort(botPosition, reverse: true);
 
@@ -3622,7 +3652,8 @@ namespace AiEnabled
           .Append('~', 15)
           .Append('\n')
           .Append("NOTE: Debug and Debug 2 are only available offline\n\n")
-          .Append("DrawObstacles - toggles displaying obstacle nodes when debug mode is active.\n\n")
+          .Append("DrawObstacles - toggles displaying obstacle nodes when debug mode\n")
+          .Append("          is active.\n\n")
           .Append("Debug - toggles debug mode on / off, which shows active bots' pathing\n")
           .Append("          info on screen. This will toggle debug 2 off, but not on.\n\n")
           .Append("Debug 2 - toggles tier 2 debug info, which includes map nodes near any\n")

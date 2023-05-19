@@ -47,20 +47,21 @@ namespace AiEnabled.Graphics
   {
     internal MenuRootCategory Menu, AdminMenu;
     internal MenuSliderInput MouseSensitivity;
-    internal MenuKeybindInput ResumeBotsKeyBind, RadioRecallKeyBind;
+    internal MenuKeybindInput ResumeBotsKeyBind, RadioRecallKeyBind, SpreadOutKeyBind, ComeCloserKeyBind;
     internal MenuItem ShowHealthBars, ShowHelperGPS, ObeyProjectionIntegrity, DisableCollisionOnDeath;
     internal MenuItem AllowRepairBot, AllowCombatBot, AllowScavengerBot, AllowCrewBot, AllowBotMusic;
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
-    internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
+    internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;            // TODO: Add the new Admin settings to the sync section at bottom of page!
     internal MenuItem AllowNeutralsToOpenDoors;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
     internal MenuTextInput RepairBotSearchRadius, HelperGpsColorInput;
     PlayerData _playerData;
+    float _lastSpreadKeyPressed, _lastCloserKeyPressed;
 
     public PlayerMenu(PlayerData playerData)
     {
@@ -119,6 +120,8 @@ namespace AiEnabled.Graphics
       var keyBindMenu = new MenuSubCategory("Key Bindings                <color=cyan>==>", Menu, "Key Bindings");
       ResumeBotsKeyBind = new MenuKeybindInput($"Resume All: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", ResumeBotsKeyBind_Submitted);
       RadioRecallKeyBind = new MenuKeybindInput($"Radio Recall: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RadioRecallKeyBind_Submitted);
+      SpreadOutKeyBind = new MenuKeybindInput($"Increase Follow Distance: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", SpreadOutKeyBind_Submitted);
+      ComeCloserKeyBind = new MenuKeybindInput($"Decrease Follow Distance: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", ComeCloserKeyBind_Submitted);
 
       var data = AiSession.Instance.ModSaveData;
       AdminMenu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.AdminMenu, "Admin Settings");
@@ -161,6 +164,16 @@ namespace AiEnabled.Graphics
       ObeyProjectionIntegrity = CreateMenuItemToggle(AdminMenu, data.ObeyProjectionIntegrityForRepairs, "Obey projection integrity for repairs", ObeyProjectionIntegrity_Clicked);
       IgnoreArmorDeformation = CreateMenuItemToggle(AdminMenu, data.IgnoreArmorDeformation, "Ignore armor deformation for repairs", IgnoreArmorDeformation_Clicked);
       DisableCollisionOnDeath = CreateMenuItemToggle(AdminMenu, data.DisableCharacterCollisionOnBotDeath, "Disable character collision on bot death", DisableCollisions_Clicked);
+
+      var followDistance = MathHelper.Clamp(_playerData.FollowDistance, 2.5f, 25f);
+      var pkt = new FollowDistancePacket(followDistance);
+      AiSession.Instance.Network.SendToServer(pkt);
+
+      if (followDistance != _playerData.FollowDistance)
+      {
+        _playerData.FollowDistance = followDistance;
+        AiSession.Instance.StartUpdateCounter();
+      }
     }
 
     public void Close()
@@ -212,6 +225,24 @@ namespace AiEnabled.Graphics
           RadioRecallKeyBind.Text = null;
           RadioRecallKeyBind.BackingObject = null;
           RadioRecallKeyBind = null;
+        }
+
+        if (SpreadOutKeyBind != null)
+        {
+          SpreadOutKeyBind.OnSubmitAction = null;
+          SpreadOutKeyBind.InputDialogTitle = null;
+          SpreadOutKeyBind.Text = null;
+          SpreadOutKeyBind.BackingObject = null;
+          SpreadOutKeyBind = null;
+        }
+
+        if (ComeCloserKeyBind != null)
+        {
+          ComeCloserKeyBind.OnSubmitAction = null;
+          ComeCloserKeyBind.InputDialogTitle = null;
+          ComeCloserKeyBind.Text = null;
+          ComeCloserKeyBind.BackingObject = null;
+          ComeCloserKeyBind = null;
         }
 
         if (RepairBotIgnoreColorInput != null)
@@ -553,6 +584,12 @@ namespace AiEnabled.Graphics
       }
     }
 
+    public void ResetKeyPresses()
+    {
+      _lastCloserKeyPressed = 0;
+      _lastCloserKeyPressed = 0;
+    }
+
     MenuItem CreateMenuItemToggle(MenuCategoryBase category, bool toggleItem, string title, Action onClick, bool interactable = true)
     {
       var color = toggleItem ? "<color=orange>" : "<color=yellow>";
@@ -676,6 +713,36 @@ namespace AiEnabled.Graphics
       }
     }
 
+    internal void ComeCloserKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
+    {
+      try
+      {
+        var tuple = MyTuple.Create(key, shift, ctrl, alt);
+        var text = $"Decrease Follow Distance: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
+        AiSession.Instance.Input.AddKeybind(tuple, ComeCloser_Used);
+        ComeCloserKeyBind.Text = text;
+      }
+      catch (Exception e)
+      {
+        AiSession.Instance.Logger.Log($"Exception in ComeCloserKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+      }
+    }
+
+    internal void SpreadOutKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
+    {
+      try
+      {
+        var tuple = MyTuple.Create(key, shift, ctrl, alt);
+        var text = $"Increase Follow Distance: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
+        AiSession.Instance.Input.AddKeybind(tuple, SpreadOut_Used);
+        SpreadOutKeyBind.Text = text;
+      }
+      catch (Exception e)
+      {
+        AiSession.Instance.Logger.Log($"Exception in SpreadOutKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+      }
+    }
+
     internal void RepairBotSearchRadius_Submitted(string text)
     {
       float radius;
@@ -777,6 +844,48 @@ namespace AiEnabled.Graphics
       else
       {
         AiSession.Instance.ShowMessage("RGB was in improper format. Use format: R,G,B", timeToLive: 5000);
+      }
+    }
+
+    internal void SpreadOut_Used()
+    {
+      _lastSpreadKeyPressed += 2.5f;
+      _lastCloserKeyPressed = 0;
+
+      var newDistance = Math.Min(25, _playerData.FollowDistance + _lastSpreadKeyPressed);
+      if (newDistance > _playerData.FollowDistance)
+      {
+        _playerData.FollowDistance = newDistance;
+        AiSession.Instance.ShowMessage($"Helper Follow Distance increased to [{newDistance} meters].", "White");
+
+        var pkt = new FollowDistancePacket(newDistance);
+        AiSession.Instance.Network.SendToServer(pkt);
+        AiSession.Instance.StartUpdateCounter();
+      }
+      else
+      {
+        AiSession.Instance.ShowMessage($"Helper Follow Distance is already maxed at [25 meters]!", "White");
+      }
+    }
+
+    internal void ComeCloser_Used()
+    {
+      _lastCloserKeyPressed += 2.5f;
+      _lastSpreadKeyPressed = 0;
+
+      var newDistance = Math.Max(2.5f, _playerData.FollowDistance - _lastCloserKeyPressed);
+      if (newDistance < _playerData.FollowDistance)
+      {
+        _playerData.FollowDistance = newDistance;
+        AiSession.Instance.ShowMessage($"Helper Follow Distance decreased to [{newDistance} meters].", "White");
+
+        var pkt = new FollowDistancePacket(newDistance);
+        AiSession.Instance.Network.SendToServer(pkt);
+        AiSession.Instance.StartUpdateCounter();
+      }
+      else
+      {
+        AiSession.Instance.ShowMessage($"Helper Follow Distance is already at minimum of [2.5 meters]!", "White");
       }
     }
 

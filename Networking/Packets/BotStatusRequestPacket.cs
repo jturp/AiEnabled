@@ -15,6 +15,9 @@ namespace AiEnabled.Networking.Packets
   [ProtoContract]
   public class BotStatusRequestPacket : PacketBase
   {
+    public BotStatusRequestPacket() { }
+
+
     public override bool Received(NetworkHandler netHandler)
     {
       if (AiSession.Instance != null && AiSession.Instance.Registered && SenderId != 0)

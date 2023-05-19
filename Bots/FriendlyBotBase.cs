@@ -421,7 +421,7 @@ namespace AiEnabled.Bots
               foreach (var cpit in myGrid.OccupiedBlocks)
               {
                 if (cpit.Pilot != null)
-                  entities.Add(cpit);
+                  entities.Add(cpit.Pilot);
               }
 
               checkedGridIDs.Add(g.EntityId);

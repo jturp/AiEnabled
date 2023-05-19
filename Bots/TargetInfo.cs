@@ -151,6 +151,36 @@ namespace AiEnabled.Bots
           return controllingPlayer.IdentityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
+        var cpit = ent as IMyShipController;
+        if (cpit?.Pilot != null)
+        {
+          var pilot = cpit.Pilot;
+          long identityId = pilot.ControllerInfo.ControllingIdentityId;
+
+          BotBase bot;
+          if (AiSession.Instance.Bots.TryGetValue(pilot.EntityId, out bot))
+          {
+            identityId = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+          }
+          else
+          {
+            foreach (var kvp in AiSession.Instance.Players)
+            {
+              var player = kvp.Value;
+              if (player?.Character?.EntityId == pilot.EntityId)
+              {
+                identityId = player.IdentityId;
+              }
+            }
+          }
+
+          if (identityId == _base.Owner.IdentityId)
+            return true;
+
+          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, identityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          return identityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
+        }
+
         var ch = ent as IMyCharacter;
         if (ch != null)
         {
@@ -175,7 +205,7 @@ namespace AiEnabled.Bots
           return ownerIdentityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
-        var grid = ent as IMyCubeGrid;
+        var grid = ent?.GetTopMostParent() as IMyCubeGrid;
         if (grid != null)
         {
           if (grid.BigOwners?.Count > 0 || grid.SmallOwners?.Count > 0)
@@ -713,7 +743,8 @@ namespace AiEnabled.Bots
           else
             cellList.Clear();
 
-          int numSpaces = _base._currentGraph?.IsGridGraph == true ? 3 : 5;
+          var followDistance = AiSession.Instance.PlayerFollowDistanceDict.GetValueOrDefault(_base.Owner.IdentityId, 7.5f);
+          int numSpaces = (int)Math.Round(followDistance / _base._currentGraph.CellSize);
 
           for (int i = numSpaces; i > 0; i--)
           {

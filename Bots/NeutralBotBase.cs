@@ -33,8 +33,6 @@ namespace AiEnabled.Bots
 {
   public class NeutralBotBase : BotBase
   {
-    internal uint _performanceTimer = 500;
-    internal uint _performanceTimerTarget = 500;
     internal bool _shouldMove = true;
     internal bool _allowedToSwitchWalk;
     internal bool _moveFromLadder;

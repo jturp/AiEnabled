@@ -1201,8 +1201,14 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null, bool adminSpawned = false, long? factionId = null)
     {
-      if (!adminSpawned && !string.IsNullOrEmpty(role) && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant()))
+      bool invalidRole = !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant());
+      if (!adminSpawned && !string.IsNullOrEmpty(role) && invalidRole)
+      {
+        if (invalidRole)
+          AiSession.Instance.Logger.Log($"Something attempted to spawn a {role} helper which is not in AllowedBotRoles.", MessageType.WARNING);
+
         return null;
+      }
 
       bool needsName = string.IsNullOrWhiteSpace(displayName);
       if (adminSpawned && !needsName)
@@ -1251,6 +1257,9 @@ namespace AiEnabled.Bots
 
         if (!adminSpawned && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(botRole.ToString()))
         {
+          if (invalidRole)
+            AiSession.Instance.Logger.Log($"Something attempted to spawn a {botRole} helper which is not in AllowedBotRoles.", MessageType.WARNING);
+
           bot.Close();
           return null;
         }
@@ -1330,8 +1339,15 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, long? ownerId = null, bool adminSpawned = false)
     {
-      if (!adminSpawned && !string.IsNullOrEmpty(role) && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant()))
+      bool nullRole = string.IsNullOrEmpty(role);
+      bool invalidRole = !nullRole && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant());
+      if (!adminSpawned && invalidRole)
+      {
+        if (invalidRole)
+          AiSession.Instance.Logger.Log($"Something attempted to spawn a {role} helper which is not in AllowedBotRoles.", MessageType.WARNING);
+
         return null;
+      }
 
       var tuple = CreateBotObject(subType, displayName, positionAndOrientation, null, color, adminSpawn: adminSpawned);
       var bot = tuple.Item1;
@@ -1508,6 +1524,9 @@ namespace AiEnabled.Bots
 
           if (!adminSpawned && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(botRole.ToString()))
           {
+            if (invalidRole)
+              AiSession.Instance.Logger.Log($"Something attempted to spawn a {botRole} helper which is not in AllowedBotRoles.", MessageType.WARNING);
+
             bot.Close();
             return null;
           }
@@ -1577,8 +1596,14 @@ namespace AiEnabled.Bots
         if (string.IsNullOrEmpty(subType))
           subType = "Default_Astronaut";
 
-        if (AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn || (!adminSpawn && !AiSession.Instance.ModSaveData.AllowedBotSubtypes.Contains(subType)))
+        bool invalidSubtype = (!adminSpawn && !AiSession.Instance.ModSaveData.AllowedBotSubtypes.Contains(subType));
+        if (AiSession.Instance?.Registered != true || !AiSession.Instance.CanSpawn || invalidSubtype)
+        {
+          if (invalidSubtype)
+            AiSession.Instance.Logger.Log($"Something attempted to spawn '{subType}' which is not included in the AllowedBotSubtypes. Spawn aborted.", MessageType.WARNING);
+
           return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
+        }
 
         var info = AiSession.Instance.GetBotIdentity();
         if (info == null)

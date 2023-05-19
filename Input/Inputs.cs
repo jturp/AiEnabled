@@ -43,7 +43,9 @@ namespace AiEnabled.Input
       _stringToAction = new Dictionary<string, Action>()
       {
         { "ResumeAllBots_Used", _instance.PlayerMenu.ResumeAllBots_Used },
-        { "RadioRecall_Used", _instance.PlayerMenu.RadioRecall_Used}
+        { "RadioRecall_Used", _instance.PlayerMenu.RadioRecall_Used},
+        { "SpreadOut_Used", _instance.PlayerMenu.SpreadOut_Used},
+        { "ComeCloser_Used", _instance.PlayerMenu.ComeCloser_Used},
       };
 
       Configure();
@@ -73,6 +75,16 @@ namespace AiEnabled.Input
           {
             var text = $"Radio Recall: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
             _instance.PlayerMenu.RadioRecallKeyBind.Text = text;
+          }
+          else if (name.StartsWith("SpreadOut"))
+          {
+            var text = $"Increase Follow Distance: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
+            _instance.PlayerMenu.SpreadOutKeyBind.Text = text;
+          }
+          else if (name.StartsWith("ComeCloser"))
+          {
+            var text = $"Decrease Follow Distanec: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
+            _instance.PlayerMenu.ComeCloserKeyBind.Text = text;
           }
 
           _keybinds.Add(new Keybind(bind.Key, bind.Shift, bind.Ctrl, bind.Alt, method));

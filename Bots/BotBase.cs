@@ -850,6 +850,7 @@ namespace AiEnabled.Bots
     internal int? _wcWeaponAmmoCount, _wcWeaponMagsLeft;
     internal int _stuckCounter, _stuckTimer, _stuckTimerReset, _teleportCounter, _floaterCounter;
     internal int _tickCount, _xMoveTimer, _noPathCounter, _doorTgtCounter, _grenadeCounter, _grenadeChanceOffset = 25;
+    internal uint _performanceTimer = 500, _performanceTimerTarget = 500;
     internal uint _pathTimer, _idleTimer, _idlePathTimer, _lowHealthTimer = 1800;
     internal uint _ticksSinceFoundTarget, _damageTicks, _despawnTicks = 25000;
     internal uint _ticksBeforeDamage = 35;
@@ -952,7 +953,7 @@ namespace AiEnabled.Bots
       _targetAction = new Action(SetTargetInternal);
 
       var subtype = bot.Definition.Id.SubtypeName;
-      bool wolfBot = subtype.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0;
+      bool wolfBot = subtype.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0 || subtype.IndexOf("hound", StringComparison.OrdinalIgnoreCase) >= 0;
       bool smallSpider = !wolfBot && subtype.IndexOf("smallspider", StringComparison.OrdinalIgnoreCase) >= 0;
       bool largeSpider = !wolfBot && !smallSpider && subtype.IndexOf("spider", StringComparison.OrdinalIgnoreCase) >= 0;
       IsWolf = wolfBot;
@@ -1657,6 +1658,9 @@ namespace AiEnabled.Bots
 
     internal virtual bool Update()
     {
+      if (Character == null || Character.MarkedForClose)
+        return false;
+
       ++_tickCount;
       ++_ticksSinceLastAttack;
       ++_xMoveTimer;
@@ -1665,6 +1669,7 @@ namespace AiEnabled.Bots
       ++_ticksSinceLastDismount;
       ++_lowHealthTimer;
       ++_idlePathTimer;
+      ++_performanceTimer;
 
       _walkSwitched = false;
 
@@ -1754,7 +1759,7 @@ namespace AiEnabled.Bots
       }
 
       Behavior?.Update();
-      BotInfo.UpdateBotState();
+      BotInfo?.UpdateBotState();
 
       if (Target != null)
       {
@@ -1815,8 +1820,12 @@ namespace AiEnabled.Bots
 
         if (HasWeaponOrTool && !inSeat && !GrenadeThrown && AllowEquipWeapon)
         {
+          bool canEquip = true;
+          if (Target.Entity != null && Target.Entity == Owner?.Character)
+            canEquip = _performanceTimer > _performanceTimerTarget;
+
           var tool = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
-          if (tool == null)
+          if (canEquip && tool == null)
           {
             var charController = Character as Sandbox.Game.Entities.IMyControllableEntity;
             if (charController?.CanSwitchToWeapon(ToolDefinition.PhysicalItemId) == true)
@@ -3188,12 +3197,19 @@ namespace AiEnabled.Bots
       return result;
     }
 
-    internal bool CheckIfCloseEnoughToAct(ref Vector3D targetPosition, out bool shouldReturn)
+    internal bool CheckIfCloseEnoughToAct(ref Vector3D targetPosition, ref Vector3D goToPosition, out bool shouldReturn)
     {
       shouldReturn = false;
       var botPos = BotInfo.CurrentBotPositionAdjusted;
       var localBot = _currentGraph.WorldToLocal(botPos);
-      var localTgt = _currentGraph.WorldToLocal(targetPosition);
+
+      Vector3I localTgt;
+      var character = Target.Entity as IMyCharacter;
+      if (character != null && character.EntityId == Owner?.Character?.EntityId)
+        localTgt = _currentGraph.WorldToLocal(goToPosition);
+      else
+        localTgt = _currentGraph.WorldToLocal(targetPosition);
+      
       var manhattanDist = Vector3I.DistanceManhattan(localTgt, localBot);
 
       if (targetPosition == Target.Override)
@@ -4246,11 +4262,13 @@ namespace AiEnabled.Bots
 
         if (CheckIfShouldWait())
         {
+          _stuckTimer = 0;
+          _stuckCounter = 0;
           return;
         }
 
         bool returnNow;
-        if (CheckIfCloseEnoughToAct(ref actualPosition, out returnNow))
+        if (CheckIfCloseEnoughToAct(ref actualPosition, ref gotoPosition, out returnNow))
         {
           _pathCollection.CleanUp(true);
 
@@ -4552,17 +4570,21 @@ namespace AiEnabled.Bots
       Vector3I start = _currentGraph.WorldToLocal(botPosition);
       if (!_currentGraph.GetClosestValidNode(this, start, out start))
       {
+        _pathCollection?.CleanUp(true);
+
         if (!BotInfo.IsJumping && ++_teleportCounter > 3)
         {
           _teleportCounter = 0;
 
-          if (BotInfo.IsFalling && (BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 || BotInfo.CurrentGravityAtBotPosition_Art.LengthSquared() > 0))
-            _pathCollection?.CleanUp(true);
-          else
+          if (!ConfineToMap && !_currentGraph.IsPositionValid(botPosition))
+          {
+            StartCheckGraph(ref botPosition, true);
+          }
+          else if (!BotInfo.IsFalling || (BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() <= 0 && BotInfo.CurrentGravityAtBotPosition_Art.LengthSquared() <= 0))
+          {
             _currentGraph.TeleportNearby(this);
+          }
         }
-        else
-          _pathCollection?.CleanUp(true);
 
         return;
       }
@@ -6007,7 +6029,7 @@ namespace AiEnabled.Bots
       block.DecreaseMountLevel(toolInfo.GrindAmount, inv);
       block.MoveItemsFromConstructionStockpile(inv);
 
-      if (block.IsDestroyed)
+      if (block.IsDestroyed && (block.StockpileEmpty || Owner == null))
       {
         block.SpawnConstructionStockpile();
         block.CubeGrid.RazeBlock(block.Min);
@@ -6210,7 +6232,10 @@ namespace AiEnabled.Bots
         _waiting = true;
 
         var rand = MyUtils.GetRandomInt(AiSession.Instance.HelperAnimations.Count);
-        Behavior.Perform(AiSession.Instance.HelperAnimations[rand]);
+        var action = AiSession.Instance.HelperAnimations[rand];
+        Behavior.Perform(action);
+        _performanceTimer = 0;
+        _performanceTimerTarget = action == "CheckWrist" ? 600u : action == "Stretching" ? 500u : 300u;
       }
 
       var projUp = AiUtils.Project(vector, Character.WorldMatrix.Up);

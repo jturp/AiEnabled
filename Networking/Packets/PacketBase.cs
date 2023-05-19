@@ -47,6 +47,7 @@ namespace AiEnabled.Networking
   [ProtoInclude(1032, typeof(PriorityUpdatePacket))]
   [ProtoInclude(1033, typeof(FactorySyncPacket))]
   [ProtoInclude(1034, typeof(RadioRecallPacket))]
+  [ProtoInclude(1035, typeof(FollowDistancePacket))]
   [ProtoContract]
   public abstract class PacketBase
   {
