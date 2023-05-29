@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.12";
+    public const string VERSION = "v1.5.13";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -2245,7 +2245,7 @@ namespace AiEnabled
             }
 
             bot.Target.RemoveTarget();
-            bot._pathCollection?.CleanUp(true);
+            bot.CleanPath();
 
             if (!bot.UseAPITargets)
             {
@@ -2260,7 +2260,24 @@ namespace AiEnabled
 
             Vector3D relPosition;
             BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition);
-            var position = seat.GetPosition() + Vector3D.Rotate(relPosition, seat.WorldMatrix) + botMatrix.Down;
+            var rotatedPosition = Vector3D.Rotate(relPosition, seat.WorldMatrix) + botMatrix.Down;
+            var testPosition = seat.GetPosition() + rotatedPosition;
+            var position = testPosition;
+
+            MyVoxelBase voxel;
+            var up = botMatrix.Up;
+            if (GridBase.GetClosestPointAboveGround(ref testPosition, ref up, out voxel))
+            {
+              position = testPosition;
+            }
+            else
+            {
+              testPosition = seat.GetPosition() - rotatedPosition;
+              if (GridBase.GetClosestPointAboveGround(ref testPosition, ref up, out voxel))
+              {
+                position = testPosition;
+              }
+            }
 
             var voxelGraph = bot._currentGraph as VoxelGridMap;
             var gridGraph = bot._currentGraph as CubeGridMap;
@@ -2268,22 +2285,15 @@ namespace AiEnabled
 
             if (voxelGraph != null)
             {
-              Vector3D up = botMatrix.Up;
-
-              float interference;
-              var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
-              if (gravity.LengthSquared() == 0)
-                gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
-
-              if (gravity.LengthSquared() > 0)
-                up = Vector3D.Normalize(-gravity);
-
               if (relPosition.LengthSquared() < 2)
+              {
                 position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
 
-              var surfacePoint = voxelGraph.GetClosestSurfacePointFast(bot, position, up);
-              if (surfacePoint.HasValue)
-                position = surfacePoint.Value + up;
+                while (GridBase.PointInsideVoxel(position, voxel))
+                {
+                  position += up * 2;
+                }
+              }
 
               if (botMatrix.Up.Dot(up) < 0)
               {
@@ -2297,7 +2307,12 @@ namespace AiEnabled
               Vector3I openNode;
               if (gridGraph.GetClosestValidNode(bot, local, out openNode, seat.WorldMatrix.Up))
               {
-                position = gridGraph.LocalToWorld(openNode) + botMatrix.Down;
+                position = gridGraph.LocalToWorld(openNode);
+
+                while (GridBase.PointInsideVoxel(position, voxel))
+                {
+                  position += up * 2;
+                }
               }
               else
               {
@@ -2306,23 +2321,12 @@ namespace AiEnabled
             }
             else if (relPosition.LengthSquared() < 2)
             {
-              Vector3D up = botMatrix.Up;
-              MyPlanet planet = null;
-
-              float interference;
-              var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(position, out interference);
-              if (gravity.LengthSquared() == 0)
-                gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(position, interference);
-              else
-                planet = MyGamePruningStructure.GetClosestPlanet(position);
-
-              if (gravity.LengthSquared() > 0)
-                up = Vector3D.Normalize(-gravity);
-
               position += Vector3D.CalculatePerpendicularVector(up) * (seat.CubeGrid.WorldAABB.HalfExtents.AbsMax() + 5);
 
-              if (planet != null)
-                position = planet.GetClosestSurfacePointGlobal(position) + up * 5;
+              while (GridBase.PointInsideVoxel(position, voxel))
+              {
+                position += up * 2;
+              }
             }
 
             if (newMatrix.HasValue)
@@ -2514,7 +2518,7 @@ namespace AiEnabled
                   BotToSeatShareMode[bot.Character.EntityId] = shareMode;
                 }
 
-                bot._pathCollection?.CleanUp(true);
+                bot.CleanPath();
                 bot.Target?.RemoveTarget();
 
                 gridSeats.RemoveAtFast(j);
@@ -2605,8 +2609,9 @@ namespace AiEnabled
           targetIsPlayer = true;
         }
         else if (string.IsNullOrWhiteSpace(character.DisplayName) 
-          || character.Definition.Id.SubtypeName.StartsWith("space_spider", StringComparison.OrdinalIgnoreCase)
-          || character.Definition.Id.SubtypeName.StartsWith("space_wolf", StringComparison.OrdinalIgnoreCase))
+          || character.Definition.Id.SubtypeName.IndexOf("spider", StringComparison.OrdinalIgnoreCase) >= 0
+          || character.Definition.Id.SubtypeName.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0
+          || character.Definition.Id.SubtypeName.IndexOf("hound", StringComparison.OrdinalIgnoreCase) >= 0)
         {
           targetisWildLife = true;
         }
@@ -4853,9 +4858,15 @@ namespace AiEnabled
         if (graph.NeedsGridUpdate)
           graph.UpdateGridCollection();
 
-        if (graph.Dirty)
+        if (graph.Remake)
         {
           graph.Refresh();
+
+          graph.InventoryCache._needsUpdate = true;
+          updateInventory = true;
+        }
+        else if (graph.Dirty)
+        {  
           graph.InventoryCache._needsUpdate = true;
           updateInventory = true;
         }
@@ -4906,7 +4917,7 @@ namespace AiEnabled
           }
         }
 
-        if (graph.Dirty)
+        if (graph.Remake)
         {
           graph.Refresh();
         }

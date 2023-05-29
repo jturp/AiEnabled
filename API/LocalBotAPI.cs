@@ -639,7 +639,7 @@ namespace AiEnabled.API
 
       bot.UseAPITargets = true;
       bot.Target.SetOverride(goTo);
-      bot._pathCollection?.CleanUp(true);
+      bot.CleanPath();
       return true;
     }
 
@@ -791,7 +791,7 @@ namespace AiEnabled.API
 
       bot.UseAPITargets = true;
       bot.Target.SetTarget(bot.Owner, target);
-      bot._pathCollection?.CleanUp(true);
+      bot.CleanPath();
       return true;
     }
 
@@ -813,7 +813,7 @@ namespace AiEnabled.API
       bot.UseAPITargets = false;
       bot.Target.RemoveTarget();
       bot.Target.RemoveOverride(false);
-      bot._pathCollection?.CleanUp(true);
+      bot.CleanPath();
       return true;
     }
 

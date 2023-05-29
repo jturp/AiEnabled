@@ -69,12 +69,11 @@ namespace AiEnabled.Networking
           bot.SetPosition(botPos);
 
           helper.UseAPITargets = false;
-          helper.NeedsTransition = false;
-          helper._transitionPoint = null;
           helper.PatrolMode = false;
           helper.FollowMode = false;
           helper._patrolList?.Clear();
-          helper._pathCollection?.CleanUp(true);
+          helper.CleanPath();
+
 
           if (helper.Target != null)
           {

@@ -677,7 +677,7 @@ namespace AiEnabled.Bots
           if (changeBack)
             seatCube.IDModule.ShareMode = shareMode;
 
-          bot._pathCollection?.CleanUp(true);
+          bot.CleanPath();
           bot.Target.RemoveTarget();
           seats.Clear();
           return true;
@@ -759,7 +759,7 @@ namespace AiEnabled.Bots
           if (changeBack)
             AiSession.Instance.BotToSeatShareMode[bot.Character.EntityId] = shareMode;
 
-          bot._pathCollection?.CleanUp(true);
+          bot.CleanPath();
           bot.Target.RemoveTarget();
           return true;
         }
@@ -835,7 +835,7 @@ namespace AiEnabled.Bots
             bot._previousGraph = null;
             bot._currentGraph = map;
             bot._nextGraph = null;
-            bot._pathCollection?.CleanUp(true);
+            bot.CleanPath();
           }
 
           if (checkTarget)
@@ -939,6 +939,10 @@ namespace AiEnabled.Bots
             if (freePlace.HasValue)
               position = freePlace.Value;
           }
+
+          MyVoxelBase _;
+          var up = bot.WorldMatrix.Up;
+          GridBase.GetClosestPointAboveGround(ref position, ref up, out _, 100);
 
           var matrix = seat.WorldMatrix;
           matrix.Translation = position + matrix.Down;

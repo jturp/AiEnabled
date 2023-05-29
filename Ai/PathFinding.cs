@@ -42,7 +42,7 @@ namespace AiEnabled.Ai
 
         var graph = collection.Graph;
         var bot = collection.Bot;
-        if (graph == null || bot == null || !graph.Ready || bot.IsDead)
+        if (graph == null || bot == null || !graph.Ready || graph.Dirty || graph.Remake || bot.IsDead)
         {
           collection.Locked = false;
           return;
@@ -106,13 +106,13 @@ namespace AiEnabled.Ai
             {
               if (!graph.TempBlockedNodes.ContainsKey(goal))
               {
-                //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to temp obstacles from Pathfinding");
+                //AiSession.Instance.Logger.Log($"{graph}: adding {goal} to temp obstacles from Pathfinding");
                 graph.TempBlockedNodes[goal] = new byte();
               }
             }
             else if (!collection.Obstacles.ContainsKey(goal))
             {
-              //AiSession.Instance.Logger.Log($"{graph.ToString()}: adding {goal} to permanent obstacles from Pathfinding");
+              //AiSession.Instance.Logger.Log($"{graph}: adding {goal} to permanent obstacles from Pathfinding");
               collection.Obstacles[goal] = new byte();
             }
 
@@ -159,7 +159,7 @@ namespace AiEnabled.Ai
           }
 
           collection.Locked = false;
-          collection.CleanUp(true);
+          collection.Bot.CleanPath();
         }
       }
     }
@@ -569,7 +569,7 @@ namespace AiEnabled.Ai
                     && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(blockBelowDef))
                   {
                     // railing over stair / slope, can skip
-                    // can't skip over half stair / slope bc of how alignment is ajusted
+                    // can't skip over half stair / slope bc of how alignment is adjusted
                     continue;
                   }
                 }
@@ -614,7 +614,29 @@ namespace AiEnabled.Ai
             thisBlock = n.Block;
           }
 
-          if (thisBlock != null)
+          bool thisBlockNull = thisBlock == null || !((MyCubeBlockDefinition)thisBlock.BlockDefinition).HasPhysics;
+          bool thisBlockValid = thisBlock != null && ((MyCubeBlockDefinition)thisBlock.BlockDefinition).HasPhysics;
+
+          Node thisNode;
+          if (thisBlockValid && gridGraph.TryGetNodeForPosition(gridLocalVector, out thisNode) && thisNode?.IsGroundNode == true)
+          {
+            var positionBelow = localVec + intVecDown;
+            if (gridGraph.TryGetNodeForPosition(positionBelow, out n) && n?.Block != null && AiSession.Instance.SlopeBlockDefinitions.Contains(n.Block.BlockDefinition.Id))
+            {
+              if (CanIgnoreBlock(thisBlock, gridGraph))
+              {
+                thisBlockNull = true;
+                thisBlockValid = false;
+              }
+            }
+          }
+
+          bool nextBlockNull = true;
+          bool afterNextBlockNull = true;
+          bool nextBlockValid = false;
+          bool afterNextBlockValid = false;
+
+          if (thisBlockValid)
           {
             var thisDef = thisBlock.BlockDefinition.Id;
             thisIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(thisDef);
@@ -634,7 +656,10 @@ namespace AiEnabled.Ai
               nextBlock = n.Block;
             }
 
-            if (nextBlock != null)
+            nextBlockNull = nextBlock == null || !((MyCubeBlockDefinition)nextBlock.BlockDefinition).HasPhysics;
+            nextBlockValid = nextBlock != null && ((MyCubeBlockDefinition)nextBlock.BlockDefinition).HasPhysics;
+
+            if (nextBlockValid)
             {
               var nextDef = nextBlock.BlockDefinition.Id;
               nextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(nextDef);
@@ -658,7 +683,10 @@ namespace AiEnabled.Ai
                 afterNextBlock = n.Block;
               }
 
-              if (afterNextBlock != null)
+              afterNextBlockNull = afterNextBlock == null || !((MyCubeBlockDefinition)afterNextBlock.BlockDefinition).HasPhysics;
+              afterNextBlockValid = afterNextBlock != null && ((MyCubeBlockDefinition)afterNextBlock.BlockDefinition).HasPhysics;
+
+              if (afterNextBlockValid)
               {
                 var afterNextDef = afterNextBlock.BlockDefinition.Id;
                 afterNextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(afterNextDef);
@@ -689,7 +717,7 @@ namespace AiEnabled.Ai
             }
           }
 
-          if (!thisIsHalfStair && !thisisHalfPanelSlope && thisBlock != null)
+          if (!thisIsHalfStair && !thisisHalfPanelSlope && thisBlockValid)
           {
             var cubeBlockDef = thisBlock.BlockDefinition as MyCubeBlockDefinition;
             var cubeDef = cubeBlockDef.Id;
@@ -1368,7 +1396,7 @@ namespace AiEnabled.Ai
               }
             }
           }
-          else if (thisBlock == null)
+          else if (thisBlockNull)
           {
             var positionBelow = localVec + intVecDown;
             var blockBelowThis = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
@@ -1586,7 +1614,7 @@ namespace AiEnabled.Ai
             }
           }
 
-          if (nextBlock != null)
+          if (nextBlockValid)
           {
             var nextDef = nextBlock.BlockDefinition.Id;
 
@@ -2209,6 +2237,47 @@ namespace AiEnabled.Ai
       }
 
       cache.Clear();
+    }
+
+    static bool CanIgnoreBlock(IMySlimBlock block, CubeGridMap gridGraph)
+    {
+      if (gridGraph?.MainGrid == null || block == null || !((MyCubeBlockDefinition)block.BlockDefinition).HasPhysics)
+        return true;
+
+      var cubeDef = block.BlockDefinition;
+      var upDir = gridGraph.MainGrid.WorldMatrix.GetClosestDirection(gridGraph.WorldMatrix.Up);
+      var upVec = Base6Directions.GetIntVector(upDir);
+
+      if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeDef.Id))
+      {
+        return Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref upVec) <= 0;
+      }
+      else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id))
+      {
+        Base6Directions.Direction sideWithPane;
+        if (cubeDef.Id.SubtypeName == "LargeWindowSquare")
+          sideWithPane = block.Orientation.Forward;
+        else
+          sideWithPane = Base6Directions.GetOppositeDirection(block.Orientation.Left);
+
+        return Base6Directions.GetIntVector(sideWithPane).Dot(ref upVec) >= 0;
+      }
+      else if (AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(cubeDef.Id)
+        || AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(cubeDef.Id))
+      {
+        return Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) <= 0;
+      }
+      else if (block.FatBlock is IMyTextPanel
+        || (block.FatBlock is IMyLightingBlock && cubeDef.Id.SubtypeName == "LargeLightPanel"))
+      {
+        return Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref upVec) >= 0;
+      }
+      else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeDef.Id))
+      {
+        return !gridGraph.CheckCatwalkForRails(block, -upVec);
+      }
+
+      return false;
     }
 
     static bool AreStairsOnLeftSide(IMySlimBlock stairBlock)

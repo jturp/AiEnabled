@@ -1230,7 +1230,7 @@ namespace AiEnabled.Bots
       if (_pathCollection != null)
       {
         _pathCollection.OnGridBaseClosing();
-        _pathCollection.ClearObstacles(null);
+        _pathCollection.ClearObstacles(true);
         AiSession.Instance.ReturnCollection(_pathCollection);
       }
 
@@ -1641,8 +1641,8 @@ namespace AiEnabled.Bots
 
         lock (_pathCollection.PathToTarget)
         {
-          _pathCollection.CleanUp(true);
-          
+          CleanPath();
+
           if (pn != null)
             _pathCollection.PathToTarget.Enqueue(pn);
         }
@@ -1655,6 +1655,15 @@ namespace AiEnabled.Bots
     internal virtual void ReturnHome() { }
     internal abstract void MoveToTarget();
     internal abstract void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1);
+
+    internal virtual void CleanPath()
+    {
+      _pathCollection?.CleanUp(true);
+      _transitionPoint = null;
+      _stuckCounter = 0;
+      _stuckTimer = 0;
+      NeedsTransition = false;
+    }
 
     internal virtual bool Update()
     {
@@ -2840,7 +2849,7 @@ namespace AiEnabled.Bots
       }
 
       Target.SetTarget(null, parent);
-      _pathCollection?.CleanUp(true);
+      CleanPath();
 
       var seat = Character.Parent as IMyCockpit;
       if (seat != null && Owner == null && Target.Entity != null)
@@ -3600,13 +3609,13 @@ namespace AiEnabled.Bots
           _teleportCounter = 0;
 
           if (BotInfo.IsFalling && (BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 || BotInfo.CurrentGravityAtBotPosition_Art.LengthSquared() > 0))
-            _pathCollection?.CleanUp(true);
+            CleanPath();
           else
             _currentGraph.TeleportNearby(this);
         }
         else
-          _pathCollection?.CleanUp(true);
-  
+          CleanPath();
+
         _idlePathTimer = 0;
         return;
       }
@@ -3621,7 +3630,7 @@ namespace AiEnabled.Bots
       }
 
       _lastEnd = moveTo;
-      _pathCollection.CleanUp(true);
+      CleanPath();
 
       _pathWorkData.PathStart = start;
       _pathWorkData.PathEnd = goal;
@@ -3957,8 +3966,8 @@ namespace AiEnabled.Bots
             if (_pathCollection != null)
             {
               _currentGraph.HookEventsForPathCollection(_pathCollection);
-              _pathCollection.ClearObstacles(null);
-              _pathCollection.CleanUp(true);
+              _pathCollection.ClearObstacles();
+              CleanPath();
             }
           }
         }
@@ -4037,10 +4046,8 @@ namespace AiEnabled.Bots
 
               if (tgtPoint == null || !NeedsTransition)
               {
+                CleanPath();
                 _nextGraph = null;
-                _pathCollection?.CleanUp(true);
-                _transitionPoint = null;
-                NeedsTransition = false;
               }
               else
               {
@@ -4119,8 +4126,7 @@ namespace AiEnabled.Bots
               if (tgtPoint == null || !NeedsTransition)
               {
                 _nextGraph = null;
-                _pathCollection?.CleanUp(true);
-                NeedsTransition = false;
+                CleanPath();
               }
               else
               {
@@ -4153,8 +4159,8 @@ namespace AiEnabled.Bots
           if (_pathCollection != null)
           {
             _currentGraph.HookEventsForPathCollection(_pathCollection);
-            _pathCollection.ClearObstacles(null);
-            _pathCollection.CleanUp(true);
+            _pathCollection.ClearObstacles();
+            CleanPath();
           }
         }
       }
@@ -4216,8 +4222,8 @@ namespace AiEnabled.Bots
 
             if (_pathCollection != null)
             {
-              _pathCollection.ClearObstacles(null);
-              _pathCollection.CleanUp(true);
+              CleanPath();
+              _pathCollection.ClearObstacles();
               _currentGraph?.HookEventsForPathCollection(_pathCollection);
             }
           }
@@ -4229,6 +4235,7 @@ namespace AiEnabled.Bots
         {
           _pathCollection = AiSession.Instance.GetCollection();
           _pathCollection.Bot = this;
+          _currentGraph.HookEventsForPathCollection(_pathCollection);
         }
 
         #region debugOnly
@@ -4244,8 +4251,7 @@ namespace AiEnabled.Bots
 
         if (_currentGraph.Dirty)
         {
-          _pathCollection.ClearObstacles(null);
-          _pathCollection.CleanUp(true);
+          CleanPath();
           return;
         }
 
@@ -4270,7 +4276,7 @@ namespace AiEnabled.Bots
         bool returnNow;
         if (CheckIfCloseEnoughToAct(ref actualPosition, ref gotoPosition, out returnNow))
         {
-          _pathCollection.CleanUp(true);
+          CleanPath();
 
           if (Target.Override.HasValue)
           {
@@ -4343,7 +4349,7 @@ namespace AiEnabled.Bots
 
         if (_pathCollection.Dirty && !_pathCollection.Locked)
         {
-          _pathCollection.CleanUp(true);
+          CleanPath();
         }
 
         if (_pathCollection.HasNode)
@@ -4382,12 +4388,11 @@ namespace AiEnabled.Bots
           }
           else if (BotInfo.WasOnLadder && BotInfo.IsFalling)
           {
+            _stuckTimerReset = 0;
             NextIsLadder = false;
             AfterNextIsLadder = false;
-            _stuckCounter = 0;
-            _stuckTimerReset = 0;
             WaitForStuckTimer = false;
-            _pathCollection.CleanUp(true);
+            CleanPath();
           }
         }
 
@@ -4570,7 +4575,7 @@ namespace AiEnabled.Bots
       Vector3I start = _currentGraph.WorldToLocal(botPosition);
       if (!_currentGraph.GetClosestValidNode(this, start, out start))
       {
-        _pathCollection?.CleanUp(true);
+        CleanPath();
 
         if (!BotInfo.IsJumping && ++_teleportCounter > 3)
         {
@@ -4654,9 +4659,12 @@ namespace AiEnabled.Bots
             Target.RemoveOverride(false);
 
           bool markObstacle = false;
+          bool allowObstacle = !_currentGraph.Dirty && !_currentGraph.Remake && !_currentGraph.NeedsBlockUpdate && !_currentGraph.NeedsVoxelUpdate;
           if (NeedsTransition)
           {
-            markObstacle = true;
+            if (allowObstacle)
+              markObstacle = true;
+
             NeedsTransition = false;
             _transitionPoint = null;
           }
@@ -4690,7 +4698,8 @@ namespace AiEnabled.Bots
               }
             }
 
-            markObstacle = true;
+            if (allowObstacle)  
+              markObstacle = true;
           }
 
           if (markObstacle)
@@ -4712,7 +4721,7 @@ namespace AiEnabled.Bots
       {
         if (isSlimTarget || isInventory || isFloater)
         {
-          _pathCollection.CleanUp(true);
+          CleanPath();
 
           Vector3I position;
           Vector3 offset;
@@ -4877,7 +4886,7 @@ namespace AiEnabled.Bots
 
             if (BotInfo.IsFalling)
             {
-              _pathCollection.CleanUp(true);
+              CleanPath();
               return true;
             }
 
@@ -5217,8 +5226,7 @@ namespace AiEnabled.Bots
             if (Target.Entity == null || !ReferenceEquals(Target.Entity, door))
             {
               _doorTgtCounter = 0;
-              _pathCollection.CleanUp(true);
-
+              CleanPath();
               Target.SetTarget(door);
             }
           }
@@ -5266,7 +5274,7 @@ namespace AiEnabled.Bots
 
           lock (_pathCollection.PathToTarget)
           {
-            _pathCollection.CleanUp(true);
+            CleanPath();
 
             var node = gridGraph.OpenTileDict[localPoint];
             _pathCollection.PathToTarget.Enqueue(node);
@@ -5528,7 +5536,7 @@ namespace AiEnabled.Bots
             if (addTo && _currentGraph.AddToObstacles(last, current, next))
             {
               _pathCollection.Obstacles[next] = new byte();
-              _pathCollection.CleanUp(true);
+              CleanPath();
             }
 
             return;
@@ -5652,7 +5660,7 @@ namespace AiEnabled.Bots
             {
               _moveTo = null;
               _moveToNode = null;
-              _pathCollection?.CleanUp(true);
+              CleanPath();
             }
           }
         }
@@ -5682,7 +5690,7 @@ namespace AiEnabled.Bots
           var pos = Owner.Character.WorldAABB.Center;
           if (Vector3D.DistanceSquared(botPosition, pos) <= 25)
           {
-            _pathCollection?.CleanUp(true);
+            CleanPath();
 
             if (Target.PositionsValid)
             {

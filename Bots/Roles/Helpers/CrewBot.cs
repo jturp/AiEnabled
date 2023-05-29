@@ -271,7 +271,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (currentEnt?.EntityId != ownerParent.EntityId)
           {
             Target.SetTarget(ownerParent);
-            _pathCollection?.CleanUp(true);
+            CleanPath();
           }
 
           return;

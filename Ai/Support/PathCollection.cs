@@ -222,7 +222,7 @@ namespace AiEnabled.Ai.Support
 
     public void AddBlockedObstacle(IMySlimBlock slim, Vector3D? slimWorld = null)
     {
-      if (BlockObstacles == null)
+      if (BlockObstacles == null || Graph == null || Graph.Dirty || Graph.Remake)
         return;
 
       List<KeyValuePair<IMySlimBlock, Vector3D>> kvpList;
@@ -250,7 +250,7 @@ namespace AiEnabled.Ai.Support
           if (!Vector3D.IsZero(kvp.Value - slimWorld.Value, 1))
           {
             kvpList[i] = new KeyValuePair<IMySlimBlock, Vector3D>(kvp.Key, slimWorld.Value);
-            AiSession.Instance.Logger.Log($"Updated block obstacle for {slim.BlockDefinition.DisplayNameText} [{slim.Position}]");
+            //AiSession.Instance.Logger.Log($"Updated block obstacle for {slim.BlockDefinition.DisplayNameText} [{slim.Position}]");
           }
 
           break;
@@ -259,28 +259,17 @@ namespace AiEnabled.Ai.Support
 
       if (!found)
       {
-        AiSession.Instance.Logger.Log($"Added block obstacle for {slim.BlockDefinition.DisplayNameText} [{slim.Position}]");
+        //AiSession.Instance.Logger.Log($"Added block obstacle for {slim.BlockDefinition.DisplayNameText} [{slim.Position}]");
         kvpList.Add(new KeyValuePair<IMySlimBlock, Vector3D>(slim, slimWorld.Value));
       }
     }
 
-    public void ClearObstacles(HashSet<Vector3I> positionsToClear, bool includeBlocks = false)
+    public void ClearObstacles(bool includeBlocks = false)
     {
-      if (positionsToClear == null)
-      {
-        Obstacles?.Clear();
+      Obstacles?.Clear();
 
-        if (includeBlocks)
-          BlockObstacles?.Clear();
-      }
-      else
-      {
-        foreach (var point in positionsToClear)
-        {
-          byte _;
-          Obstacles.TryRemove(point, out _);
-        }
-      }
+      if (includeBlocks)
+        BlockObstacles?.Clear();
     }
 
     public void OnGridBaseClosing()
@@ -1067,6 +1056,7 @@ namespace AiEnabled.Ai.Support
         Queue.Clear();
         Cache.Clear();
         DeniedDoors.Clear();
+        Obstacles?.Clear();
 
         if (includePath)
         {
@@ -1099,7 +1089,7 @@ namespace AiEnabled.Ai.Support
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in {GetType().FullName}: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Log($"Exception in {GetType().FullName}: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
     }
 
@@ -1107,7 +1097,7 @@ namespace AiEnabled.Ai.Support
     {
       Locked = false;
 
-      ClearObstacles(null);
+      ClearObstacles();
       OnGridBaseClosing();
       CleanUp(true);
       

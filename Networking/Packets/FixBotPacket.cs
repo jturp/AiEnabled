@@ -76,8 +76,7 @@ namespace AiEnabled.Networking
           bot.SetPosition(botPos);
 
           helper.UseAPITargets = false;
-          helper.NeedsTransition = false;
-          helper._pathCollection?.CleanUp(true);
+          helper.CleanPath();
 
           if (helper.Target != null)
           {

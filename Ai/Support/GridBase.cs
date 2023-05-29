@@ -97,9 +97,19 @@ namespace AiEnabled.Ai.Support
     public bool Dirty { get; protected set; }
 
     /// <summary>
+    /// This is true if the graph needs to be remade entirely (vs just Dirty)
+    /// </summary>
+    public bool Remake { get; protected set; }
+
+    /// <summary>
     /// Whether or not any voxel changes have occurred
     /// </summary>
     public bool NeedsVoxelUpdate;
+
+    /// <summary>
+    /// If true, blocks have been added or removed the main grid
+    /// </summary>
+    public bool NeedsBlockUpdate;
 
     /// <summary>
     /// Determines whether the given position is still within this graph's limits
@@ -629,9 +639,7 @@ namespace AiEnabled.Ai.Support
             bot._previousGraph = bot._currentGraph;
             bot._currentGraph = map;
             bot._nextGraph = null;
-            bot._transitionPoint = null;
-            bot._pathCollection?.CleanUp(true);
-            bot.NeedsTransition = false;
+            bot.CleanPath();
           }
         }
 
@@ -769,7 +777,7 @@ namespace AiEnabled.Ai.Support
 
         bot.Character.SetWorldMatrix(matrix);
         bot.Character.Physics.SetSpeeds(velocity, Vector3.Zero);
-        bot._pathCollection?.CleanUp(true);
+        bot.CleanPath();
       }
       else
       {
@@ -1089,6 +1097,60 @@ namespace AiEnabled.Ai.Support
       return pointAbove;
     }
 
+    public static bool GetClosestPointAboveGround(ref Vector3D worldPosition, ref Vector3D up, out MyVoxelBase voxel, int testPoints = 20)
+    {
+      List<MyVoxelBase> vList;
+      if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
+        vList = new List<MyVoxelBase>();
+      else
+        vList.Clear();
+
+      var sphere = new BoundingSphereD(worldPosition, 1);
+      MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
+
+      voxel = null;
+      var distance = double.MaxValue;
+
+      for (int j = 0; j < vList.Count; j++)
+      {
+        var vb = vList[j];
+        if (vb == vb.RootVoxel)
+        {
+          var dist = Vector3D.DistanceSquared(vb.PositionComp.GetPosition(), worldPosition);
+          if (dist < distance)
+          {
+            voxel = vb;
+            distance = dist;
+          }
+        }
+      }
+
+      vList.Clear();
+      AiSession.Instance.VoxelMapListStack.Push(vList);
+
+      float interference;
+      var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out interference);
+      if (gravity.LengthSquared() == 0)
+        gravity = MyAPIGateway.Physics.CalculateArtificialGravityAt(worldPosition, interference);
+
+      if (gravity.LengthSquared() > 0)
+        up = Vector3D.Normalize(-gravity);
+
+      if (up != Vector3D.Zero)
+      {
+        int num = 0;
+        while (num < testPoints && PointInsideVoxel(worldPosition, voxel))
+        {
+          num++;
+          worldPosition += up * 2;
+        }
+
+        return num < testPoints;
+      }
+
+      return false;
+    }
+
     public static bool PointInsideVoxel(Vector3D pos, MyVoxelBase voxel)
     {
       if (voxel == null || voxel.MarkedForClose)
@@ -1242,7 +1304,7 @@ namespace AiEnabled.Ai.Support
       try
       {
         IsValid = false;
-        OnPositionsRemoved?.Invoke(null, true);
+        OnPositionsRemoved?.Invoke(true);
         OnGridBaseClosing?.Invoke();
 
         ObstacleNodes?.Clear();
@@ -1259,10 +1321,16 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    public event Action<HashSet<Vector3I>, bool> OnPositionsRemoved;
+    public event Action<bool> OnPositionsRemoved;
     public event Action OnGridBaseClosing;
 
-    internal void InvokePositionsRemoved(HashSet<Vector3I> positions, bool includeBlocks) => OnPositionsRemoved?.Invoke(positions, includeBlocks);
+    internal void InvokePositionsRemoved(bool includeBlocks)
+    {
+      ObstacleNodes?.Clear();
+      ObstacleNodesTemp?.Clear();
+      TempBlockedNodes?.Clear();
+      OnPositionsRemoved?.Invoke(includeBlocks);
+    }
 
     public void HookEventsForPathCollection(PathCollection pc)
     {

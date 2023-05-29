@@ -72,9 +72,9 @@ namespace AiEnabled.Networking
       if (!AiSession.Instance.Bots.TryGetValue(BotEntityId, out bot) || bot?.Character == null || bot.Character.MarkedForClose || bot.Character.IsDead)
         return false;
 
+      bot.CleanPath();
       var crewBot = bot as CrewBot;
       var isCrew = crewBot != null;
-      bot._pathCollection?.CleanUp(true);
       MyCubeBlock cube = null;
 
       if (GoTo.HasValue)

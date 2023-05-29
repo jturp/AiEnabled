@@ -72,11 +72,6 @@ namespace AiEnabled.Ai.Support
     public bool NeedsGridUpdate { get; private set; }
 
     /// <summary>
-    /// If true, blocks have been added or removed the main grid
-    /// </summary>
-    public bool NeedsBlockUpdate { get; private set; }
-
-    /// <summary>
     /// If true, need to recheck for interior nodes (blocks added or removed)
     /// </summary>
     public bool NeedsInteriorNodesUpdate { get; private set; }
@@ -430,6 +425,7 @@ namespace AiEnabled.Ai.Support
         if (grid != null && !grid.IsSameConstructAs(MainGrid))
           return;
 
+        Remake = true;
         Dirty = true;
         Ready = false;
 
@@ -456,6 +452,7 @@ namespace AiEnabled.Ai.Support
         if (grid == null || !grid.IsSameConstructAs(MainGrid))
           return;
 
+        Remake = true;
         Dirty = true;
         Ready = false;
 
@@ -479,6 +476,7 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        Remake = true;
         Dirty = true;
         Ready = false;
 
@@ -529,6 +527,7 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
+        Remake = true;
         Dirty = true;
         Ready = false;
         NeedsGridUpdate = false;
@@ -703,8 +702,8 @@ namespace AiEnabled.Ai.Support
         _blockBoxList?.Clear();
         _blockBoxList = null;
 
-        _positionsToRemove?.Clear();
-        _positionsToRemove = null;
+        //_positionsToRemove?.Clear();
+        //_positionsToRemove = null;
 
         _tempKVPList?.Clear();
         _tempKVPList = null;
@@ -814,6 +813,7 @@ namespace AiEnabled.Ai.Support
             {
               WorldMatrix = newMatrix;
               Dirty = true;
+              Remake = true;
             }
           }
         }
@@ -848,6 +848,7 @@ namespace AiEnabled.Ai.Support
       {
         Ready = false;
         Dirty = true;
+        Remake = true;
 
         var lastMainGrid = MainGrid;
 
@@ -1010,7 +1011,7 @@ namespace AiEnabled.Ai.Support
           myGrid.OnClose -= CloseGrid;
           myGrid.PositionComp.OnPositionChanged -= OnGridPositionChanged;
 
-          InvokePositionsRemoved(null, true);
+          InvokePositionsRemoved(true);
         }
       }
       catch(Exception ex)
@@ -1054,7 +1055,7 @@ namespace AiEnabled.Ai.Support
 
         while (iter.IsValid())
         {
-          if (Dirty)
+          if (Dirty || Remake)
             return;
 
           var localPoint = iter.Current;
@@ -1095,6 +1096,7 @@ namespace AiEnabled.Ai.Support
 
       if (MainGrid == null || MainGrid.MarkedForClose)
       {
+        Remake = true;
         Dirty = true;
       }
       else if (grid != null && !grid.MarkedForClose && !grid.IsPreview && grid.EntityId == MainGrid.EntityId)
@@ -1114,6 +1116,7 @@ namespace AiEnabled.Ai.Support
         || originalGrid?.EntityId == MainGrid.EntityId
         || newGrid?.EntityId == MainGrid.EntityId)
       {
+        Remake = true;
         Dirty = true;
       }
     }
@@ -1139,13 +1142,14 @@ namespace AiEnabled.Ai.Support
       InteriorNodesReady = false;
       Ready = false;
       Dirty = false;
+      Remake = false;
       ObstacleNodes.Clear();
       AllDoors.Clear();
       BlockedDoors.Clear();
       ExemptNodesUpper.Clear();
       ExemptNodesSide.Clear();
       WeaponPositions.Clear();
-      InvokePositionsRemoved(null, false);
+      InvokePositionsRemoved(true);
 
       if (AiSession.Instance?.NodeStack != null)
       {
@@ -1894,7 +1898,7 @@ namespace AiEnabled.Ai.Support
 
         foreach (var block in blocks)
         {
-          if (Dirty)
+          if (Dirty || Remake)
             break;
 
           if (block == null || block.IsDestroyed)
@@ -1913,7 +1917,7 @@ namespace AiEnabled.Ai.Support
         blocks.Clear();
         AiSession.Instance.SlimListStack.Push(blocks);
 
-        if (Dirty)
+        if (Dirty || Remake)
           return;
 
         var worldCenter = LocalToWorld(BoundingBox.Center);
@@ -2025,7 +2029,7 @@ namespace AiEnabled.Ai.Support
 
         foreach (var kvp in OpenTileDict)
         {
-          if (Dirty)
+          if (Dirty || Remake)
             return;
 
           var tile = kvp.Value;
@@ -2646,6 +2650,34 @@ namespace AiEnabled.Ai.Support
               else if (AiSession.Instance.RampBlockDefinitions.Contains(cubeAboveDef))
               {
                 // TODO: Is this needed?
+              }
+              else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAboveDef))
+              {
+                addThis = Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref upVec) <= 0;
+                includeAbove = addThis;
+              }
+              else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeAboveDef))
+              {
+                Base6Directions.Direction sideWithPane;
+                if (cubeDef.Id.SubtypeName == "LargeWindowSquare")
+                  sideWithPane = cubeAbove.Orientation.Forward;
+                else
+                  sideWithPane = Base6Directions.GetOppositeDirection(cubeAbove.Orientation.Left);
+
+                addThis = Base6Directions.GetIntVector(sideWithPane).Dot(ref upVec) >= 0;
+                includeAbove = addThis;
+              }
+              else if (AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(cubeAboveDef)
+                || AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(cubeAboveDef))
+              {
+                addThis = Base6Directions.GetIntVector(cubeAbove.Orientation.Left).Dot(ref upVec) <= 0;
+                includeAbove = addThis;
+              }
+              else if (cubeAbove.FatBlock is IMyTextPanel 
+                || (cubeAbove.FatBlock is IMyLightingBlock && cubeAboveDef.SubtypeName == "LargeLightPanel"))
+              {
+                addThis = Base6Directions.GetIntVector(cubeAbove.Orientation.Forward).Dot(ref upVec) >= 0;
+                includeAbove = addThis;
               }
               else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef))
               {
@@ -3406,7 +3438,6 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    HashSet<Vector3I> _positionsToRemove = new HashSet<Vector3I>();
     void ApplyBlockChanges()
     {
       try
@@ -3414,7 +3445,6 @@ namespace AiEnabled.Ai.Support
         //AiSession.Instance.Logger.Log($"{this}.ApplyBlockChanges: Start");
 
         _blockBoxList.Clear();
-        _positionsToRemove.Clear();
         var dirArray = AiSession.Instance.CardinalDirections;
 
         foreach (var pos in _blockApplyHash)
@@ -3429,14 +3459,14 @@ namespace AiEnabled.Ai.Support
 
           box.Inflate(1);
 
-          var iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
-          while (iter.IsValid())
-          {
-            var current = iter.Current;
-            iter.MoveNext();
+          //var iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+          //while (iter.IsValid())
+          //{
+          //  var current = iter.Current;
+          //  iter.MoveNext();
 
-            _positionsToRemove.Add(current);
-          }
+          //  _positionsToRemove.Add(current);
+          //}
 
           bool found = false;
           for (int i = 0; i < _blockBoxList.Count; i++)
@@ -3458,7 +3488,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        InvokePositionsRemoved(_positionsToRemove, false);
+        InvokePositionsRemoved(true);
 
         var newBox = GetMapBoundingBoxLocal();
         newBox.Inflate(_boxExpansion);
@@ -3470,6 +3500,7 @@ namespace AiEnabled.Ai.Support
 
         if (newOBB.HalfExtent.LengthSquared() > OBB.HalfExtent.LengthSquared())
         {
+          Remake = true;
           Dirty = true;
           return;
         }
@@ -3530,8 +3561,6 @@ namespace AiEnabled.Ai.Support
               OpenTileDict.Remove(pos);
               AiSession.Instance.NodeStack.Push(n);
             }
-
-            _positionsToRemove.Add(pos);
           }
 
           iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
@@ -3550,8 +3579,15 @@ namespace AiEnabled.Ai.Support
           }
 
           CheckForPlanetTiles(ref box, ref gravityNorm, ref upVecPlanet);
+        }
 
-          iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
+        for (int i = 0; i < _blockBoxList.Count; i++)
+        {
+          var box = _blockBoxList[i];
+          box.Min = Vector3I.Max(box.Min, BoundingBox.Min);
+          box.Max = Vector3I.Min(box.Max, BoundingBox.Max);
+
+          var iter = new Vector3I_RangeIterator(ref box.Min, ref box.Max);
 
           while (iter.IsValid())
           {
@@ -3578,6 +3614,7 @@ namespace AiEnabled.Ai.Support
               GetBlockedNodeEdges(n);
             }
           }
+
         }
 
         _blockApplyHash.Clear();
@@ -3830,12 +3867,12 @@ namespace AiEnabled.Ai.Support
       int maxMS = MyUtils.GetRandomInt(1000, 2000);
       while (addMaps.Count > 0)
       {
-        if (Dirty)
+        if (Dirty || Remake)
           return;
 
         for (int i = addMaps.Count - 1; i >= 0; i--)
         {
-          if (Dirty)
+          if (Dirty || Remake)
             return;
 
           var map = addMaps[i];
@@ -3918,7 +3955,7 @@ namespace AiEnabled.Ai.Support
 
       while (iter.IsValid())
       {
-        if (Dirty)
+        if (Dirty || Remake)
         {
           return;
         }
@@ -4073,7 +4110,7 @@ namespace AiEnabled.Ai.Support
         bool add = true;
         for (int i = _additionalMaps2.Count - 1; i >= 0; i--)
         {
-          if (Dirty)
+          if (Dirty || Remake)
           {
             return;
           }
@@ -4143,7 +4180,6 @@ namespace AiEnabled.Ai.Support
                 break;
               }
             }
-
             else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(slim.BlockDefinition.Id))
             {
               if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(slim.BlockDefinition.Id)
@@ -4153,7 +4189,8 @@ namespace AiEnabled.Ai.Support
                 break;
               }
             }
-            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slim.BlockDefinition.Id))
+            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slim.BlockDefinition.Id)
+              && !AiSession.Instance.CatwalkBlockDefinitions.Contains(slim.BlockDefinition.Id))
             {
               add = false;
               break;
@@ -4190,13 +4227,14 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          if (Dirty)
+          if (Dirty || Remake)
           {
             return;
           }
 
           var block = GetBlockAtPosition(localPoint);
-          if (block != null && block.CubeGrid.EntityId == MainGrid.EntityId && !(block.FatBlock is IMyLightingBlock))
+          bool blockValid = block != null && ((MyCubeBlockDefinition)block.BlockDefinition).HasPhysics;
+          if (blockValid && block.CubeGrid.EntityId == MainGrid.EntityId && !(block.FatBlock is IMyLightingBlock))
           {
             if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(block.BlockDefinition.Id))
             {
@@ -4230,15 +4268,19 @@ namespace AiEnabled.Ai.Support
                 add = false;
               }
             }
-            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id))
+            else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(block.BlockDefinition.Id)
+              && !AiSession.Instance.CatwalkBlockDefinitions.Contains(block.BlockDefinition.Id))
+            {
               add = false;
+            }
           }
           
           if (add && isGroundNode)
           {
             var localAbove = localPoint + upVec;
             var slim = GetBlockAtPosition(localAbove);
-            if (slim != null && slim.CubeGrid.EntityId == MainGrid.EntityId && !(slim.FatBlock is IMyLightingBlock))
+            var slimValid = slim != null && ((MyCubeBlockDefinition)slim.BlockDefinition).HasPhysics;
+            if (slimValid && slim.CubeGrid.EntityId == MainGrid.EntityId && !(slim.FatBlock is IMyLightingBlock))
             {
               if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(slim.BlockDefinition.Id))
               {
@@ -4287,7 +4329,7 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          if (Dirty)
+          if (Dirty || Remake)
           {
             return;
           }
@@ -4453,7 +4495,7 @@ namespace AiEnabled.Ai.Support
       {
         //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Start");
 
-        _positionsToRemove.Clear();
+        //_positionsToRemove.Clear();
         while (_voxelUpdatesQueue.Count > 0)
         {
           var updateItem = _voxelUpdatesQueue.Dequeue();
@@ -4479,7 +4521,7 @@ namespace AiEnabled.Ai.Support
 
           while (iter.IsValid())
           {
-            if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
+            if (Dirty || Remake || RootVoxel == null || RootVoxel.MarkedForClose)
             {
               AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
               return;
@@ -4499,10 +4541,10 @@ namespace AiEnabled.Ai.Support
               PlanetTileDictionary.Remove(current);
             }
 
-            _positionsToRemove.Add(current);
+            //_positionsToRemove.Add(current);
           }
 
-          InvokePositionsRemoved(_positionsToRemove, false);
+          InvokePositionsRemoved(true);
 
           float _;
           var gravityNorm = MyAPIGateway.Physics.CalculateNaturalGravityAt(OBB.Center, out _);
@@ -4518,7 +4560,7 @@ namespace AiEnabled.Ai.Support
 
           while (iter.IsValid())
           {
-            if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
+            if (Dirty || Remake || RootVoxel == null || RootVoxel.MarkedForClose)
             {
               AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
               return;
@@ -6154,7 +6196,65 @@ namespace AiEnabled.Ai.Support
                 }
                 else if (!nextBlockEmpty)
                 {
-                  if (nextBlock?.FatBlock is IMyTextPanel)
+                  if (nextIsDoor)
+                  {
+                    var door = nextBlock.FatBlock as IMyDoor;
+                    if (door is IMyAirtightHangarDoor)
+                    {
+                      var doorPosition = door.Position;
+                      if (door.CubeGrid.EntityId != MainGrid.EntityId)
+                        doorPosition = MainGrid.WorldToGridInteger(door.CubeGrid.GridIntegerToWorld(doorPosition));
+
+                      if (next == doorPosition)
+                      {
+                        node.SetBlocked(dirVec);
+                        continue;
+                      }
+                    }
+                    else if (door.BlockDefinition.SubtypeName.StartsWith("SlidingHatchDoor"))
+                    {
+                      if (dir != door.Orientation.Up && oppositeDir != door.Orientation.Up)
+                      {
+                        node.SetBlocked(dirVec);
+                        continue;
+                      }
+                    }
+                    else if (door.BlockDefinition.SubtypeName == "RotaryAirlockCorner")
+                    {
+                      if (oppositeDir != door.Orientation.Left && dir != door.Orientation.Forward)
+                      {
+                        node.SetBlocked(dirVec);
+                        continue;
+                      }
+                    }
+                    else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
+                    {
+                      // Large DLC gate
+                      var center = door.WorldAABB.Center;
+                      var nextPos = MainGrid.GridIntegerToWorld(nextNode.Position);
+                      var vector = nextPos - center;
+
+                      if (vector.LengthSquared() > 8)
+                      {
+                        node.SetBlocked(dirVec);
+                        continue;
+                      }
+
+                      var doorMatrix = MatrixD.Transpose(door.WorldMatrix);
+                      Vector3D.Rotate(ref vector, ref doorMatrix, out vector);
+                      if (vector.Y > 2 || vector.X > 3)
+                      {
+                        node.SetBlocked(dirVec);
+                        continue;
+                      }
+                    }
+                    else if (dir != nextBlock.Orientation.Forward && oppositeDir != nextBlock.Orientation.Forward)
+                    {
+                      node.SetBlocked(dirVec);
+                      continue;
+                    }
+                  }
+                  else if (nextBlock?.FatBlock is IMyTextPanel)
                   {
                     if (oppositeDir == nextBlock.Orientation.Forward && nextBlock.BlockDefinition.Id.SubtypeName.IndexOf("corner") < 0)
                     {
@@ -6920,6 +7020,22 @@ namespace AiEnabled.Ai.Support
             if (dir == blockBelowThis.Orientation.Left || oppositeDir == blockBelowThis.Orientation.Left)
             {
               node.SetBlocked(dirVec); 
+              continue;
+            }
+
+            if (blockBelowThis.Orientation.Up == upDir)
+            {
+              if (dirVec == -Base6Directions.GetIntVector(blockBelowThis.Orientation.Forward))
+              {
+                // block this direction in case there is a flat block so pathing doesn't think it can double back mid-air
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (blockBelowThis.Orientation.Forward == upDir && dirVec == Base6Directions.GetIntVector(blockBelowThis.Orientation.Up))
+            {
+              // block this direction in case there is a flat block so pathing doesn't think it can double back mid-air
+              node.SetBlocked(dirVec);
               continue;
             }
           }
@@ -8046,7 +8162,7 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    bool CheckCatwalkForRails(IMySlimBlock block, Vector3I side)
+    public bool CheckCatwalkForRails(IMySlimBlock block, Vector3I side)
     {
       var def = block.BlockDefinition.Id;
       Base6Directions.Direction[] railArray;
@@ -8567,6 +8683,7 @@ namespace AiEnabled.Ai.Support
 
       if (newOBB.HalfExtent.LengthSquared() > OBB.HalfExtent.LengthSquared())
       {
+        Remake = true;
         Dirty = true;
       }
       else

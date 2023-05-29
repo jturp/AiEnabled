@@ -209,7 +209,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         if (currentEnt?.EntityId != ownerParent.EntityId)
         {
           Target.SetTarget(ownerParent);
-          _pathCollection?.CleanUp(true);
+          CleanPath();
         }
 
         return;
@@ -219,6 +219,9 @@ namespace AiEnabled.Bots.Roles.Helpers
       {
         return;
       }
+
+      var inv = Character.GetInventory() as MyInventory;
+      var invRatioOK = inv != null && ((float)inv.CurrentVolume / (float)inv.MaxVolume) < 0.9f;
 
       if (Target.IsSlimBlock && CurrentBuildMode != BuildMode.None)
       {
@@ -234,8 +237,9 @@ namespace AiEnabled.Bots.Roles.Helpers
                 return;
             }
           }
-          else if (!slim.IsDestroyed)
+          else if (!slim.IsDestroyed && invRatioOK)
           {
+
             Vector3? grindColor = null;
             var modData = AiSession.Instance.ModSaveData.PlayerHelperData;
             for (int i = 0; i < modData.Count; i++)
@@ -270,14 +274,12 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (CurrentBuildMode == BuildMode.Weld)
         tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
-      else if (CurrentBuildMode == BuildMode.Grind)
+      else if (CurrentBuildMode == BuildMode.Grind && invRatioOK)
         tgt = GetGrindTarget(_currentGraph, ref botPosition, out isInventory, out returnNow);
 
       if (returnNow)
         return;
  
-      var inv = Character.GetInventory() as MyInventory;
-
       if (tgt == null)
       {
         if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
@@ -290,78 +292,73 @@ namespace AiEnabled.Bots.Roles.Helpers
           graph.RemoveRepairTiles(_repairedBlocks);
         }
 
-        if (inv != null)
+        if (invRatioOK && AiSession.Instance.ModSaveData.AllowRepairBotGathering)
         {
-          var invRatioOK = ((float)inv.CurrentVolume / (float)inv.MaxVolume) < 0.9f;
-
-          if (invRatioOK && AiSession.Instance.ModSaveData.AllowRepairBotGathering)
+          var floatingObj = Target.Entity as MyFloatingObject;
+          if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null
+            && !GridBase.PointInsideVoxel(floatingObj.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
           {
-            var floatingObj = Target.Entity as MyFloatingObject;
-            if (floatingObj != null && !floatingObj.MarkedForClose && floatingObj.Item.Content != null
-              && !GridBase.PointInsideVoxel(floatingObj.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
+            return;
+          }
+
+          var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
+          _threadOnlyEntList.Clear();
+          MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _threadOnlyEntList);
+
+          _threadOnlyEntList.ShellSort(botPosition, true);
+
+          var gravity = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
+          if (gravity.LengthSquared() > 0)
+            gravity.Normalize();
+
+          for (int i = _threadOnlyEntList.Count - 1; i >= 0; i--)
+          {
+            if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
             {
-              return;
+              break;
             }
 
-            var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
-            _threadOnlyEntList.Clear();
-            MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _threadOnlyEntList);
+            var ent = _threadOnlyEntList[i];
+            if (ent == null || ent.MarkedForClose)
+              continue;
 
-            _threadOnlyEntList.ShellSort(botPosition, true);
+            var floater = ent as MyFloatingObject;
+            if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floater.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
+              continue;
 
-            var gravity = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
-            if (gravity.LengthSquared() > 0)
-              gravity.Normalize();
+            if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center, ref _lastRadius, _patrolOBBs))
+              continue;
 
-            for (int i = _threadOnlyEntList.Count - 1; i >= 0; i--)
+            if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
             {
-              if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
+              // inv too full, send bot to drop off current stock
+
+              var botLocal = graph.WorldToLocal(botPosition);
+              var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
+              if (invBlock != null)
               {
+                tgt = invBlock;
+                Target.SetInventory(invBlock);
+                isInventory = true;
+              }
+
+              break;
+            }
+
+            var floaterPos = floater.PositionComp.GetPosition();
+            if (gravity.LengthSquared() > 0)
+            {
+              floaterPos -= gravity;
+            }
+
+            if (_currentGraph.IsPositionValid(floaterPos))
+            {
+              Vector3I _;
+              var node = _currentGraph.WorldToLocal(floaterPos);
+              if (_currentGraph.GetClosestValidNode(this, node, out _)) //, WorldMatrix.Up))
+              {
+                tgt = ent;
                 break;
-              }
-
-              var ent = _threadOnlyEntList[i];
-              if (ent == null || ent.MarkedForClose)
-                continue;
-
-              var floater = ent as MyFloatingObject;
-              if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floater.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
-                continue;
-
-              if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center, ref _lastRadius, _patrolOBBs))
-                continue;
-
-              if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
-              {
-                // inv too full, send bot to drop off current stock
-
-                var botLocal = graph.WorldToLocal(botPosition);
-                var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
-                if (invBlock != null)
-                {
-                  tgt = invBlock;
-                  Target.SetInventory(invBlock);
-                  isInventory = true;
-                }
-
-                break;
-              }
-
-              var floaterPos = floater.PositionComp.GetPosition();
-              if (gravity.LengthSquared() > 0)
-              {
-                floaterPos -= gravity;
-              }
-
-              if (_currentGraph.IsPositionValid(floaterPos))
-              {
-                Vector3I _;
-                var node = _currentGraph.WorldToLocal(floaterPos);
-                if (_currentGraph.GetClosestValidNode(this, node, out _)) //, WorldMatrix.Up))
-                {
-                  tgt = ent;
-                  break;
-                }
               }
             }
           }
@@ -438,11 +435,11 @@ namespace AiEnabled.Bots.Roles.Helpers
           AiSession.Instance.Network.RelayToClients(packet);
       }
 
-      if (MyUtils.GetRandomInt(0, 10) > 6 && ReferenceEquals(tgt, character))
+      if (MyUtils.GetRandomInt(0, 100) > 80 && ReferenceEquals(tgt, character))
         Behavior.Speak("HelloHumanoid");
 
       Target.SetTarget(Owner, tgt, isInventory);
-      _pathCollection?.CleanUp(true);
+      CleanPath();
     }
 
     object GetGrindTarget(GridBase graph, ref Vector3D botPosition, out bool isInventory, out bool returnNow)
@@ -474,7 +471,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
         var gridGraph = graph as CubeGridMap;
 
-        if (((float)inv.CurrentVolume / (float)inv.MaxVolume) > 0.8f)
+        if (((float)inv.CurrentVolume / (float)inv.MaxVolume) >= 0.9f)
         {
           // inv too full, try to send bot to drop off current stock
           // if no inventory available, we'll let the block comps be spawned on the ground
@@ -487,8 +484,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             tgt = invBlock;
             isInventory = true;
-            return tgt;
           }
+
+          return tgt;
         }
 
         var colorVec = new Vector3(360, 100, 100);

@@ -724,14 +724,14 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    HashSet<Vector3I> _positionsRemoved = new HashSet<Vector3I>();
     void ApplyVoxelChanges()
     {
       try
       {
-        //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Start");
+        AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Start");
 
-        _positionsRemoved.Clear();
+        InvokePositionsRemoved(true);
+
         while (_voxelUpdatesQueue.Count > 0)
         {
           var updateItem = _voxelUpdatesQueue.Dequeue();
@@ -779,16 +779,13 @@ namespace AiEnabled.Ai.Support
 
             KeyValuePair<IMyCubeGrid, bool> kvp;
             ObstacleNodes.TryRemove(current, out kvp);
-            _positionsRemoved.Add(current);
           }
 
           CheckForPlanetTiles(ref mapMin, ref mapMax);
           AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
         }
 
-        InvokePositionsRemoved(_positionsRemoved, false);
-
-        //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
+        AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
       }
       catch (Exception ex)
       {
@@ -815,7 +812,7 @@ namespace AiEnabled.Ai.Support
       Dirty = false;
       OpenTileDict.Clear();
       ObstacleNodes.Clear();
-      InvokePositionsRemoved(null, false);
+      InvokePositionsRemoved(true);
       MyAPIGateway.Parallel.StartBackground(InitGridArea, SetReady);
 
       // Testing only
@@ -1237,8 +1234,8 @@ namespace AiEnabled.Ai.Support
         OpenTileDict?.Clear();
         OpenTileDict = null;
 
-        _positionsRemoved?.Clear();
-        _positionsRemoved = null;
+        //_positionsRemoved?.Clear();
+        //_positionsRemoved = null;
 
         _tempKVPList?.Clear();
         _tempKVPList = null;

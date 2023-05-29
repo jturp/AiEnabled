@@ -117,7 +117,7 @@ namespace AiEnabled.Bots
         if (currentEnt?.EntityId != ownerParent.EntityId)
         {
           Target.SetTarget(ownerParent);
-          _pathCollection?.CleanUp(true);
+          CleanPath();
         }
 
         return;
@@ -558,7 +558,7 @@ namespace AiEnabled.Bots
         return;
 
       Target.SetTarget(null, parent);
-      _pathCollection?.CleanUp(true);
+      CleanPath();
     }
 
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
