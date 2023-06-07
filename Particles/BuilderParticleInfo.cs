@@ -28,7 +28,7 @@ namespace AiEnabled.Particles
     {
       Bot = bot;
       Block = block;
-      ParticleName = isWelder ? MyParticleEffectsNameEnum.WelderContactPoint : MyParticleEffectsNameEnum.AngleGrinder;
+      ParticleName = isWelder ? MyParticleEffectsNameEnum.WelderContactPoint : "AiEnabled_AngleGrinder";
 
       var sound = isWelder ? "ToolPlayWeldMetal" : "ToolPlayGrindMetal";
       if (!AiSession.Instance.SoundPairDict.TryGetValue(sound, out SoundPair))

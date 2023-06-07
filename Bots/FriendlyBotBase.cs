@@ -19,8 +19,10 @@ using System.Text;
 using System.Threading.Tasks;
 
 using VRage.Game;
+using VRage.Game.Components;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
+using VRage.Game.Models;
 using VRage.ModAPI;
 using VRage.Utils;
 
@@ -216,6 +218,18 @@ namespace AiEnabled.Bots
       else
         blockList.Clear();
 
+      List<MyLineSegmentOverlapResult<MyEntity>> resultList;
+      if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
+        resultList = new List<MyLineSegmentOverlapResult<MyEntity>>();
+      else
+        resultList.Clear();
+
+      List<Vector3I> cellList;
+      if (!AiSession.Instance.LineListStack.TryPop(out cellList))
+        cellList = new List<Vector3I>();
+      else
+        cellList.Clear();
+
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var ownerPos = ownerCharacter.WorldAABB.Center;
       var ownerHeadPos = ownerCharacter.GetHeadMatrix(true).Translation;
@@ -246,11 +260,18 @@ namespace AiEnabled.Bots
       List<BotBase> helpers;
       AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
       var ownerId = Owner?.IdentityId ?? BotIdentityId;
+      var botMatrix = WorldMatrix;
+      var muzzlePosition = botPosition + botMatrix.Up * 0.4; // close to the muzzle height
 
       _taskPrioritiesTemp.Clear();
       for (int i = 0; i < entities.Count; i++)
       {
         var ent = entities[i];
+        if (ent == null || ent.MarkedForClose)
+          continue;
+
+        var tgtPosition = ent.PositionComp.WorldAABB.Center;
+
         var ch = ent as IMyCharacter;
         if (ch != null)
         {
@@ -314,95 +335,29 @@ namespace AiEnabled.Bots
             continue;
           }
 
-          var worldHeadPos = ch.GetHeadMatrix(true).Translation;
-
-          hitList.Clear();
-          if (!onPatrol)
-            MyAPIGateway.Physics.CastRay(ownerHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
-
-          if (onPatrol || hitList.Count > 0)
+          if (onPatrol)
           {
-            bool valid = true;
-            foreach (var hit in hitList)
-            {
-              var hitEnt = hit.HitEntity as IMyCharacter;
-              if (hitEnt != null)
-              {
-                if (hitEnt.EntityId == ownerCharacter.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
-                  continue;
-
-                if (helpers != null)
-                {
-                  bool found = false;
-                  foreach (var otherBot in helpers)
-                  {
-                    if (hitEnt.EntityId == otherBot.Character?.EntityId)
-                    {
-                      found = true;
-                      break;
-                    }
-                  }
-
-                  if (found)
-                    continue;
-                }
-
-                valid = false;
-                break;
-              }
-              else
-              {
-                valid = false;
-                break;
-              }
-            }
-
-            if (!valid)
-            {
-              hitList.Clear();
-              MyAPIGateway.Physics.CastRay(botHeadPos, worldHeadPos, hitList, CollisionLayers.CharacterCollisionLayer);
-
-              valid = true;
-              foreach (var hit in hitList)
-              {
-                var hitEnt = hit.HitEntity as IMyCharacter;
-                if (hitEnt != null)
-                {
-                  if (hitEnt.EntityId == ownerCharacter.EntityId || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == ch.EntityId)
-                    continue;
-
-                  if (helpers != null)
-                  {
-                    bool found = false;
-                    foreach (var otherBot in helpers)
-                    {
-                      if (hitEnt.EntityId == otherBot.Character?.EntityId)
-                      {
-                        found = true;
-                        break;
-                      }
-                    }
-
-                    if (found)
-                      continue;
-                  }
-
-                  valid = false;
-                  break;
-                }
-                else
-                {
-                  valid = false;
-                  break;
-                }
-              }
-
-              if (!valid)
-                continue;
-            }
+            _taskPrioritiesTemp.Add(ent);
           }
+          else
+          {
+            var ignoreEnts = new MyEntity[helpers?.Count + 1 ?? 2];
+            ignoreEnts[0] = ent;
 
-          _taskPrioritiesTemp.Add(ent);
+            if (helpers?.Count > 0)
+            {
+              for (int h = 0; h < helpers.Count; h++)
+                ignoreEnts[h + 1] = (MyEntity)helpers[h].Character;
+            }
+            else
+            {
+              ignoreEnts[1] = (MyEntity)Character;
+            }
+
+            tgtPosition = ch.GetHeadMatrix(true).Translation;
+            if (AiUtils.CheckLineOfSight(ref muzzlePosition, ref tgtPosition, cellList, resultList, _currentGraph?.RootVoxel, ignoreEnts))
+              _taskPrioritiesTemp.Add(ent);
+          }
         }
         else if (allowGridCheck)
         {
@@ -445,6 +400,68 @@ namespace AiEnabled.Bots
               blockList.Clear();
               g.GetBlocks(blockList);
 
+              for (int k = blockList.Count - 1; k >= 0; k--)
+              {
+                var block = blockList[k];
+                if (block?.CubeGrid == null || block.IsDestroyed || block.CubeGrid.EntityId != g.EntityId)
+                {
+                  blockList.RemoveAtFast(k);
+                  continue;
+                }
+
+                var fat = block.FatBlock;
+                if (fat != null)
+                {
+                  tgtPosition = block.FatBlock.WorldAABB.Center;
+
+                  if (fat is IMyAirtightHangarDoor)
+                    tgtPosition += fat.WorldMatrix.Down * g.GridSize;
+                }
+                else
+                {
+                  block.ComputeWorldCenter(out tgtPosition);
+                }
+
+                cellList.Clear();
+                g.RayCastCells(muzzlePosition, tgtPosition, cellList);
+
+                var localEnd = g.WorldToGridInteger(tgtPosition);
+                var endBlock = g.GetCubeBlock(localEnd);
+                var allowedDistance = g.GridSizeEnum == MyCubeSize.Large ? 5 : 10;
+                var line = new LineD(muzzlePosition, tgtPosition);
+                bool add = true;
+
+                foreach (var cell in cellList)
+                {
+                  var otherBlock = g.GetCubeBlock(cell);
+                  if (otherBlock != null && cell != localEnd && otherBlock != endBlock)
+                  {
+                    var otherFat = otherBlock.FatBlock;
+                    if (otherFat != null)
+                    {
+                      MyIntersectionResultLineTriangleEx? hit;
+                      if (otherFat.GetIntersectionWithLine(ref line, out hit, IntersectionFlags.ALL_TRIANGLES) && hit.HasValue)
+                      {
+                        if (!hasWeapon || Vector3D.DistanceSquared(hit.Value.IntersectionPointInWorldSpace, tgtPosition) > allowedDistance * allowedDistance)
+                        {
+                          add = false;
+                          break;
+                        }
+                      }
+                    }
+                    else if (!hasWeapon || Vector3D.DistanceSquared(grid.GridIntegerToWorld(cell), tgtPosition) > allowedDistance * allowedDistance)
+                    {
+                      add = false;
+                      break;
+                    }
+                  }
+                }
+
+                if (!add)
+                  blockList.RemoveAtFast(k);
+              }
+
+              blockList.ShellSort(botPosition);
               _taskPrioritiesTemp.AddRange(blockList);
             }
           }
@@ -478,7 +495,9 @@ namespace AiEnabled.Bots
             if (slim != null && !slim.IsDestroyed)
             {
               var funcBlock = slim.FatBlock as IMyFunctionalBlock;
-              if (damageToDisable && funcBlock != null && (!funcBlock.IsFunctional || slim.IsBlockUnbuilt()))
+              if (damageToDisable && funcBlock != null && !funcBlock.IsFunctional)
+                continue;
+              else if (slim.FatBlock is IMyDoor && slim.IsBlockUnbuilt())
                 continue;
 
               Vector3D slimWorld;
@@ -508,12 +527,16 @@ namespace AiEnabled.Bots
       blockTargets.Clear();
       gridGroups.Clear();
       checkedGridIDs.Clear();
+      resultList.Clear();
+      cellList.Clear();
 
       AiSession.Instance.HitListStack.Push(hitList);
       AiSession.Instance.EntListStack.Push(entities);
       AiSession.Instance.EntListStack.Push(blockTargets);
       AiSession.Instance.GridGroupListStack.Push(gridGroups);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
+      AiSession.Instance.OverlapResultListStack.Push(resultList);
+      AiSession.Instance.LineListStack.Push(cellList);
 
       if (tgt == null)
       {

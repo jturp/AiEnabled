@@ -728,7 +728,7 @@ namespace AiEnabled.Ai.Support
     {
       try
       {
-        AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Start");
+        //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Start");
 
         InvokePositionsRemoved(true);
 
@@ -785,7 +785,7 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.VoxelUpdateItemStack.Push(updateItem);
         }
 
-        AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
+        //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
       }
       catch (Exception ex)
       {

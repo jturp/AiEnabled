@@ -87,6 +87,8 @@ namespace AiEnabled.Bots
         if (Entity == null)
           return false;
 
+        var damageToDisable = _base.TargetPriorities?.DamageToDisable == true;
+
         var cube = Entity as IMyCubeBlock;
         if (cube != null)
         {
@@ -94,13 +96,17 @@ namespace AiEnabled.Bots
             return true;
 
           var door = cube as IMyDoor;
-          if (door != null || _base.TargetPriorities?.DamageToDisable == true)
+          if (door != null || damageToDisable)
           {
+            if (damageToDisable)
+            {
+              var funcBlock = cube as IMyFunctionalBlock;
+              if (funcBlock != null && !funcBlock.IsFunctional)
+                return true;
+            }
+
             var isUnbuilt = cube.SlimBlock?.IsBlockUnbuilt() == true;
             if (isUnbuilt)
-              return true;
-
-            if (door == null && !cube.IsFunctional)
               return true;
           }
 
@@ -114,9 +120,13 @@ namespace AiEnabled.Bots
           if (slim.IsDestroyed)
             return true;
 
-          if (_base.TargetPriorities?.DamageToDisable == true && slim.FatBlock != null)
+          if (damageToDisable && slim.FatBlock != null)
           {
-            if (!slim.FatBlock.IsFunctional || slim.IsBlockUnbuilt())
+            var funcBlock = slim.FatBlock as IMyFunctionalBlock;
+            if ((funcBlock != null && !funcBlock.IsFunctional))
+              return true;
+
+            if (slim.IsDestroyed)
               return true;
           }
 

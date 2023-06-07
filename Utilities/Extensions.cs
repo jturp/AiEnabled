@@ -392,7 +392,10 @@ namespace AiEnabled.Utilities
             var tgtPriorities = priorities as RemoteBotAPI.TargetPriorities;
             if (tgtPriorities?.DamageToDisable == true && block.FatBlock != null)
             {
-              if (!block.FatBlock.IsFunctional || block.IsBlockUnbuilt())
+              var funcBlock = block.FatBlock as IMyFunctionalBlock;
+              if (funcBlock != null && !funcBlock.IsFunctional)
+                continue;
+              else if (block.FatBlock is IMyDoor && block.IsBlockUnbuilt())
                 continue;
             }
           }

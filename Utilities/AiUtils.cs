@@ -9,6 +9,11 @@ using VRage.Utils;
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 
 using VRageMath;
+using VRage.Game.Entity;
+using Sandbox.Game.Entities;
+using VRage.Game.ModAPI;
+using VRage.Game.Models;
+using VRage.Game.Components;
 
 namespace AiEnabled.Utilities
 {
@@ -95,6 +100,122 @@ namespace AiEnabled.Utilities
       q0 = q1 * QuaternionD.Conjugate(q2);
 
       return MatrixD.CreateFromQuaternion(q0);
+    }
+
+    public static bool CheckLineOfSight(ref Vector3D start, ref Vector3D end, 
+      List<Vector3I> cellList = null, List<MyLineSegmentOverlapResult<MyEntity>> resultList = null, MyVoxelBase voxel = null, params MyEntity[] ignoreEnts)
+    {
+      var line = new LineD(start, end);
+
+      if (voxel != null)
+      {
+        using (voxel.Pin())
+        {
+          Vector3D? _;
+          if (voxel?.GetIntersectionWithLine(ref line, out _) == true)
+            return false;
+        }
+      }
+
+      bool returnResultList = resultList == null;
+      bool returnCellList = cellList == null;
+
+      if (returnResultList)
+      {
+        if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
+          resultList = new List<MyLineSegmentOverlapResult<MyEntity>>();
+      }
+
+      if (returnCellList)
+      {
+        if (!AiSession.Instance.LineListStack.TryPop(out cellList))
+          cellList = new List<Vector3I>();
+      }
+
+      resultList.Clear();
+      MyGamePruningStructure.GetTopmostEntitiesOverlappingRay(ref line, resultList);
+
+      bool result = true;
+
+      for (int i = 0; i < resultList.Count; i++)
+      {
+        var hit = resultList[i];
+        var ent = hit.Element;
+
+        if (ent != null)
+        {
+          bool ignore = false;
+          foreach (var ie in ignoreEnts)
+          {
+            if (ent.EntityId == ie.EntityId)
+            {
+              ignore = true;
+              break;
+            }
+          }
+
+          if (ignore)
+            continue;
+
+          var grid = ent as IMyCubeGrid;
+          if (grid != null)
+          {
+            cellList.Clear();
+            grid.RayCastCells(start, end, cellList);
+            var localEnd = grid.WorldToGridInteger(end);
+            var endBlock = grid.GetCubeBlock(localEnd);
+
+            foreach (var cell in cellList)
+            {
+              var otherBlock = grid.GetCubeBlock(cell);
+              if (otherBlock != null && cell != localEnd && otherBlock != endBlock)
+              {
+                var otherFat = otherBlock.FatBlock;
+                if (otherFat != null)
+                {
+                  MyIntersectionResultLineTriangleEx? _;
+                  if (otherFat.GetIntersectionWithLine(ref line, out _, IntersectionFlags.ALL_TRIANGLES))
+                  {
+                    result = false;
+                    break;
+                  }
+                }
+                else
+                {
+                  result = false;
+                  break;
+                }
+              }
+            }
+
+            if (!result)
+              break;
+          }
+          else
+          {
+            Vector3D? _;
+            if (ent.GetIntersectionWithLine(ref line, out _))
+            {
+              result = false;
+              break;
+            }
+          }
+        }
+      }
+
+      if (returnResultList)
+      {
+        resultList.Clear();
+        AiSession.Instance.OverlapResultListStack.Push(resultList);
+      }
+
+      if (returnCellList)
+      {
+        cellList.Clear();
+        AiSession.Instance.LineListStack.Push(cellList);
+      }
+
+      return result;
     }
 
     public static double GetAngleBetween(Vector3D a, Vector3D b)

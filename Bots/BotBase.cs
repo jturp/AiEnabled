@@ -46,6 +46,7 @@ using AiEnabled.Projectiles;
 using SpaceEngineers.Game.ModAPI;
 using AiEnabled.Networking.Packets;
 using AiEnabled.Particles;
+using VRage.Game.Models;
 
 namespace AiEnabled.Bots
 {
@@ -838,7 +839,7 @@ namespace AiEnabled.Bots
     internal float _minDamage, _maxDamage, _followDistanceSqd = 10;
     internal float _blockDamagePerAttack, _blockDamagePerSecond = 100;
     internal float _shotAngleDeviationTan = 0;
-    internal Vector3D? _prevMoveTo, _moveTo, _sideNode;
+    internal Vector3D? _prevMoveTo, _moveTo, _sideNode, _particleLocation;
     internal GridBase _currentGraph, _nextGraph, _previousGraph;
     internal PathCollection _pathCollection;
     internal Node _transitionPoint, _moveToNode;
@@ -2562,10 +2563,31 @@ namespace AiEnabled.Bots
       else
         checkedGridIDs.Clear();
 
+      List<MyLineSegmentOverlapResult<MyEntity>> resultList;
+      if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
+        resultList = new List<MyLineSegmentOverlapResult<MyEntity>>();
+      else
+        resultList.Clear();
+
+      List<Vector3I> cellList;
+      if (!AiSession.Instance.LineListStack.TryPop(out cellList))
+        cellList = new List<Vector3I>();
+      else
+        cellList.Clear();
+
+      var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var huntingDistance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy;
       var sphere = new BoundingSphereD(botPosition, huntingDistance);
       var blockDestroEnabled = MyAPIGateway.Session.SessionSettings.DestructibleBlocks;
       var allowGridCheck = blockDestroEnabled && CanDamageGrid;
+
+      List<BotBase> helpers = null;
+      if (Owner != null)
+        AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);  
+
+      var botMatrix = WorldMatrix;
+      var muzzlePosition = botPosition + botMatrix.Up * 0.4; // close to the muzzle height
+      bool hasWeapon = HasWeaponOrTool == true && ToolDefinition.WeaponType != MyItemWeaponType.None;
 
       var queryType = blockDestroEnabled ? MyEntityQueryType.Both : MyEntityQueryType.Dynamic;
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, queryType);
@@ -2576,6 +2598,11 @@ namespace AiEnabled.Bots
       for (int i = 0; i < entList.Count; i++)
       {
         var ent = entList[i];
+        if (ent == null || ent.MarkedForClose)
+          continue;
+
+        var tgtPosition = ent.PositionComp.WorldAABB.Center;
+
         var ch = ent as IMyCharacter;
         if (ch != null)
         {
@@ -2622,7 +2649,30 @@ namespace AiEnabled.Bots
           else if (relation == MyRelationsBetweenPlayers.Neutral && !AiSession.Instance.ModSaveData.AllowNeutralTargets)
             continue;
 
-          _taskPrioritiesTemp.Add(ent);
+          if (onPatrol)
+          {
+            _taskPrioritiesTemp.Add(ent);
+          }
+          else
+          {
+            var ignoreEnts = new MyEntity[helpers?.Count + 1 ?? 2];
+            ignoreEnts[0] = ent;
+
+            if (helpers?.Count > 0)
+            {
+              for (int h = 0; h < helpers.Count; h++)
+                ignoreEnts[h + 1] = (MyEntity)helpers[h].Character;
+            }
+            else
+            {
+              ignoreEnts[1] = (MyEntity)Character;
+            }
+
+            tgtPosition = ch.GetHeadMatrix(true).Translation;
+
+            if (AiUtils.CheckLineOfSight(ref muzzlePosition, ref tgtPosition, cellList, resultList, _currentGraph?.RootVoxel, ignoreEnts))
+              _taskPrioritiesTemp.Add(ent);
+          }
         }
         else if (allowGridCheck)
         {
@@ -2662,7 +2712,70 @@ namespace AiEnabled.Bots
                 continue;
 
               blockList.Clear();
-              g.GetBlocks(blockList, b => b?.CubeGrid?.EntityId == g.EntityId);
+              g.GetBlocks(blockList);
+
+              for (int k = blockList.Count - 1; k >= 0; k--)
+              {
+                var block = blockList[k];
+                if (block?.CubeGrid == null || block.IsDestroyed || block.CubeGrid.EntityId != g.EntityId)
+                {
+                  blockList.RemoveAtFast(k);
+                  continue;
+                }
+
+                var fat = block.FatBlock;
+                if (fat != null)
+                {
+                  tgtPosition = block.FatBlock.WorldAABB.Center;
+
+                  if (fat is IMyAirtightHangarDoor)
+                    tgtPosition += fat.WorldMatrix.Down * g.GridSize;
+                }
+                else
+                {
+                  block.ComputeWorldCenter(out tgtPosition);
+                }
+
+                cellList.Clear();
+                g.RayCastCells(muzzlePosition, tgtPosition, cellList);
+
+                var localEnd = g.WorldToGridInteger(tgtPosition);
+                var endBlock = g.GetCubeBlock(localEnd);
+                var allowedDistance = g.GridSizeEnum == MyCubeSize.Large ? 5 : 10;
+                var line = new LineD(muzzlePosition, tgtPosition);
+                bool add = true;
+
+                foreach (var cell in cellList)
+                {
+                  var otherBlock = g.GetCubeBlock(cell);
+                  if (otherBlock != null && cell != localEnd && otherBlock != endBlock)
+                  {
+                    var otherFat = otherBlock.FatBlock;
+                    if (otherFat != null)
+                    {
+                      MyIntersectionResultLineTriangleEx? hit;
+                      if (otherFat.GetIntersectionWithLine(ref line, out hit, IntersectionFlags.ALL_TRIANGLES) && hit.HasValue)
+                      {
+                        if (!hasWeapon || Vector3D.DistanceSquared(hit.Value.IntersectionPointInWorldSpace, tgtPosition) > allowedDistance * allowedDistance)
+                        {
+                          add = false;
+                          break;
+                        }
+                      }
+                    }
+                    else if (!hasWeapon || Vector3D.DistanceSquared(grid.GridIntegerToWorld(cell), tgtPosition) > allowedDistance * allowedDistance)
+                    {
+                      add = false;
+                      break;
+                    }
+                  }
+                }
+
+                if (!add)
+                {
+                  blockList.RemoveAtFast(k);
+                }
+              }
 
               blockList.ShellSort(botPosition);
               _taskPrioritiesTemp.AddRange(blockList);
@@ -2685,7 +2798,7 @@ namespace AiEnabled.Bots
 
       bool useCurrent = false;
       int currentPriority = int.MaxValue;
-      if (Target.Entity != null && TargetPriorities != null)
+      if (Target.Entity != null && TargetPriorities != null && HasLineOfSight)
         currentPriority = TargetPriorities.GetBlockPriority(Target.Entity);
 
       foreach (var priKvp in _taskPriorities)
@@ -2720,7 +2833,9 @@ namespace AiEnabled.Bots
               if (damageToDisable)
               {
                 var funcBlock = slim.FatBlock as IMyFunctionalBlock;
-                if (funcBlock != null && (!funcBlock.IsFunctional || slim.IsBlockUnbuilt()))
+                if (funcBlock != null && !funcBlock.IsFunctional)
+                  continue;
+                else if (slim.FatBlock is IMyDoor && slim.IsBlockUnbuilt())
                   continue;
               }
 
@@ -2788,16 +2903,18 @@ namespace AiEnabled.Bots
       gridGroups.Clear();
       entList.Clear();
       checkedGridIDs.Clear();
+      resultList.Clear();
+      cellList.Clear();
 
       AiSession.Instance.EntListStack.Push(blockTargets);
       AiSession.Instance.GridGroupListStack.Push(gridGroups);
       AiSession.Instance.EntListStack.Push(entList);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
+      AiSession.Instance.OverlapResultListStack.Push(resultList);
+      AiSession.Instance.LineListStack.Push(cellList);
 
       if (useCurrent)
         return;
-
-      var onPatrol = PatrolMode && _patrolList?.Count > 0;
 
       if (tgt == null)
       {
@@ -5617,6 +5734,9 @@ namespace AiEnabled.Bots
       if (PatrolMode || FollowMode || !AllowIdleMovement)
         return;
 
+      if (Target != null && Target.HasTarget && _pathCollection != null && (_pathCollection.HasNode || _pathCollection.HasPath))
+        return;
+
       _sideNode = null;
 
       var botPosition = BotInfo.CurrentBotPositionActual;
@@ -6058,6 +6178,7 @@ namespace AiEnabled.Bots
 
         var botPosition = BotInfo.CurrentBotPositionAdjusted;
         var actualPosition = Target.CurrentActualPosition;
+        var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
 
         var cube = Target.Entity as IMyCubeBlock;
         var slim = cube?.SlimBlock;
@@ -6096,7 +6217,6 @@ namespace AiEnabled.Bots
                 distanceCheck = 10;
               }
 
-              var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
               if (distance <= distanceCheck)
               {
                 movement.Y = 0;
@@ -6128,9 +6248,8 @@ namespace AiEnabled.Bots
         }
         else if (movement.Z != 0 || movement.Y != 0)
         {
-          var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
-          var checkDistance = 10;
-          if (distance <= checkDistance)
+          distanceCheck = 10;
+          if (distance <= distanceCheck)
           {
             movement.Y = 0;
             movement.Z = 0;
@@ -6140,7 +6259,7 @@ namespace AiEnabled.Bots
         var notMoving = Vector3.IsZero(ref movement);
         var notRotating = ignoreRotation || Vector2.IsZero(ref rotation);
 
-        if (notMoving && notRotating)
+        if (notMoving && notRotating && distance <= distanceCheck)
         {
           shouldAttack = false;
 
@@ -6148,11 +6267,30 @@ namespace AiEnabled.Bots
           {
             if (((byte)MySessionComponentSafeZones.AllowedActions & 16) != 0)
             {
+              if (_particleLocation.HasValue)
+              {
+                var localParticle = slim.CubeGrid.WorldToGridInteger(_particleLocation.Value);
+                if (localParticle != slim.Position)
+                {
+                  _particleLocation = null;
+                  _particlePacketSent = false;
+                  var pType = CurrentBuildMode == BuildMode.Weld ? ParticleInfoBase.ParticleType.Weld : ParticleInfoBase.ParticleType.Grind;
+                  var packet = new ParticlePacket(Character.EntityId, pType, remove: true);
+
+                  if (MyAPIGateway.Session.Player != null)
+                    packet.Received(AiSession.Instance.Network);
+
+                  if (AiSession.Instance.IsServer && MyAPIGateway.Multiplayer.MultiplayerActive)
+                    AiSession.Instance.Network.RelayToClients(packet);
+                }
+              }
+
               if (GrindBlockManually(slim, _toolInfo))
               {
                 ParticlePacket pkt;
                 if (!_particlePacketSent && !BugZapped)
                 {
+                  _particleLocation = slim.CubeGrid.GridIntegerToWorld(slim.Position);
                   _particlePacketSent = true;
                   var terminal = slim?.FatBlock as IMyTerminalBlock;
                   pkt = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Grind, terminal?.EntityId ?? 0L, slim.CubeGrid.EntityId, slim.Position, true);
@@ -6176,6 +6314,7 @@ namespace AiEnabled.Bots
 
           if (!notMoving && _particlePacketSent)
           {
+            _particleLocation = null;
             _particlePacketSent = false;
             var pType = CurrentBuildMode == BuildMode.Weld ? ParticleInfoBase.ParticleType.Weld : ParticleInfoBase.ParticleType.Grind;
             var packet = new ParticlePacket(Character.EntityId, pType, remove: true);
@@ -6190,6 +6329,7 @@ namespace AiEnabled.Bots
       }
       else if (_particlePacketSent)
       {
+        _particleLocation = null;
         _particlePacketSent = false;
         var packet = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Weld, remove: true);
 
