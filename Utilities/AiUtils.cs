@@ -14,6 +14,7 @@ using Sandbox.Game.Entities;
 using VRage.Game.ModAPI;
 using VRage.Game.Models;
 using VRage.Game.Components;
+using AiEnabled.Ai.Support;
 
 namespace AiEnabled.Utilities
 {
@@ -107,15 +108,8 @@ namespace AiEnabled.Utilities
     {
       var line = new LineD(start, end);
 
-      if (voxel != null)
-      {
-        using (voxel.Pin())
-        {
-          Vector3D? _;
-          if (voxel?.GetIntersectionWithLine(ref line, out _) == true)
-            return false;
-        }
-      }
+      if (voxel != null && GridBase.LineIntersectsVoxel(ref start, ref end, voxel))
+        return false;
 
       bool returnResultList = resultList == null;
       bool returnCellList = cellList == null;
@@ -190,6 +184,15 @@ namespace AiEnabled.Utilities
 
             if (!result)
               break;
+          }
+          else if (ent is MyVoxelBase)
+          {
+            voxel = ent as MyVoxelBase;
+            if (GridBase.LineIntersectsVoxel(ref start, ref end, voxel))
+            {
+              result = false;
+              break;
+            }
           }
           else
           {

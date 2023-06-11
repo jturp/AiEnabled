@@ -1204,7 +1204,7 @@ namespace AiEnabled.Ai.Support
       return num13 + (num14 - num13) * r.Z >= sbyte.MaxValue;
     }
 
-    public bool LineIntersectsVoxel(ref Vector3D from, ref Vector3D to, MyVoxelBase voxel)
+    public static bool LineIntersectsVoxel(ref Vector3D from, ref Vector3D to, MyVoxelBase voxel)
     {
       if (voxel == null || voxel.MarkedForClose)
         return false;
