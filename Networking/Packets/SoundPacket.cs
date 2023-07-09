@@ -46,7 +46,7 @@ namespace AiEnabled.Networking
         if (EntityId > 0)
           AiSession.Instance.PlaySoundForEntity(EntityId, SoundName, Stop, IncludeIcon);
         else if (Position.HasValue)
-          AiSession.Instance.PlayeSoundAtPosition(Position.Value, SoundName, Stop);
+          AiSession.Instance.PlaySoundAtPosition(Position.Value, SoundName, Stop);
       }
       catch (Exception ex)
       {

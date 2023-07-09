@@ -100,6 +100,8 @@ namespace AiEnabled.Bots
       CanTransitionMaps = 0x20000000000,
       AllowIdleMovement = 0x40000000000,
       AllowEquipWeapon = 0x80000000000,
+      GrenadeThrown = 0x100000000000,
+      IsDead = 0x200000000000,
     }
 
     public IMyPlayer Owner;
@@ -113,9 +115,41 @@ namespace AiEnabled.Bots
     public AiSession.ControlInfo BotControlInfo;
     public RemoteBotAPI.RepairPriorities RepairPriorities;
     public RemoteBotAPI.TargetPriorities TargetPriorities;
-    public bool GrenadeThrown;
+
     public enum BuildMode { None, Weld, Grind }
     public BuildMode CurrentBuildMode = BuildMode.Weld;
+
+    public bool IsDead
+    {
+      get { return (_botInfo & BotInfoEnum.IsDead) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfoEnum.IsDead;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.IsDead;
+        }
+      }
+    }
+
+    public bool GrenadeThrown
+    {
+      get { return (_botInfo & BotInfoEnum.GrenadeThrown) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfoEnum.GrenadeThrown;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.GrenadeThrown;
+        }
+      }
+    }
 
     public bool AllowEquipWeapon
     {
@@ -1415,11 +1449,9 @@ namespace AiEnabled.Bots
 
       if (MyAPIGateway.Session.Player != null)
       {
-        AiSession.Instance.PlayeSoundAtPosition(position, sound, stop);
+        AiSession.Instance.PlaySoundAtPosition(position, sound, stop);
       }
     }
-
-    public bool IsDead { get; private set; }
 
     public Vector3D GetPosition()
     {
@@ -2460,6 +2492,7 @@ namespace AiEnabled.Bots
       }
 
       var botPosition = BotInfo.CurrentBotPositionActual;
+      var curCharTgt = Target.Entity as IMyCharacter;
       if (Target.IsDestroyed())
       {
         Target.RemoveTarget();
@@ -2470,6 +2503,7 @@ namespace AiEnabled.Bots
         if (_doorTgtCounter <= 8)
           return;
 
+        _doorTgtCounter = 0;
         Target.RemoveTarget();
       }
       else if (Target.Entity != null)
@@ -2593,6 +2627,7 @@ namespace AiEnabled.Bots
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, queryType);
 
       object tgt = null;
+      double distanceToLastResortTarget = curCharTgt == null ? double.MaxValue : Vector3D.DistanceSquared(curCharTgt.WorldAABB.Center, botPosition);
 
       _taskPrioritiesTemp.Clear();
       for (int i = 0; i < entList.Count; i++)
@@ -2671,7 +2706,15 @@ namespace AiEnabled.Bots
             tgtPosition = ch.GetHeadMatrix(true).Translation;
 
             if (AiUtils.CheckLineOfSight(ref muzzlePosition, ref tgtPosition, cellList, resultList, _currentGraph?.RootVoxel, ignoreEnts))
+            {
               _taskPrioritiesTemp.Add(ent);
+            }
+            else
+            {
+              var dist = Vector3D.DistanceSquared(tgtPosition, botPosition);
+              if (dist < distanceToLastResortTarget && dist < huntingDistance * huntingDistance)
+                curCharTgt = ch;
+            }
           }
         }
         else if (allowGridCheck)
@@ -2927,7 +2970,14 @@ namespace AiEnabled.Bots
           Target.RemoveTarget();
         }
 
-        return;
+        if (curCharTgt != null && Vector3D.DistanceSquared(curCharTgt.WorldAABB.Center, botPosition) < huntingDistance * huntingDistance)
+        {
+          tgt = curCharTgt;
+        }
+        else
+        {
+          return;
+        }
       }
 
       if (onPatrol && Target.Override.HasValue)
@@ -3318,7 +3368,14 @@ namespace AiEnabled.Bots
         }
       }
       else if (positionValid)
+      {
         result = true;
+      }
+      else if (newGrid == null && getNewGraph && _currentGraph != null)
+      {
+        if (_currentGraph.IsInBufferZone(botPosition))
+          botInNewBox = true;
+      }
 
       return result;
     }
@@ -3412,7 +3469,7 @@ namespace AiEnabled.Bots
                   var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
                   AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
 
-                  cPit.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(cPit.Pilot, Character));
+                  seat.AttachPilot(this.Character);
                 }
 
                 if (changeBack)

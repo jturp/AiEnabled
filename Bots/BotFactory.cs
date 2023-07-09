@@ -671,7 +671,7 @@ namespace AiEnabled.Bots
 
             var mapGrid = GridBase.GetLargestGridForMap(seat.CubeGrid) as MyCubeGrid;
             bot._currentGraph = AiSession.Instance.GetNewGraph(mapGrid, bot.BotInfo.CurrentBotPositionActual, bot.WorldMatrix);
-            myCpit.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(myCpit.Pilot, bot.Character));
+            seat.AttachPilot(bot.Character);
           }
 
           if (changeBack)
@@ -779,7 +779,8 @@ namespace AiEnabled.Bots
       {
         if (seat?.CubeGrid != null && !seat.CubeGrid.MarkedForClose && botChar != null && !botChar.MarkedForClose)
         {
-          seat.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(seat.Pilot, botChar));
+          var cpit = seat as IMyCockpit;
+          cpit.AttachPilot(botChar);
         }
       }
       catch (Exception ex)

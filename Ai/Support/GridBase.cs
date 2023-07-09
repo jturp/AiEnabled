@@ -151,6 +151,17 @@ namespace AiEnabled.Ai.Support
     }
 
     /// <summary>
+    /// Determines if a position is within the transition area for a map
+    /// </summary>
+    /// <param name="position">The position to check</param>
+    /// <returns>true if position is close to the edge of a map, otherwise false</returns>
+    public virtual bool IsInBufferZone(Vector3D position)
+    {
+      var excludeOBB = new MyOrientedBoundingBoxD(OBB.Center, OBB.HalfExtent - 3, OBB.Orientation);
+      return OBB.Contains(ref position) && !excludeOBB.Contains(ref position);
+    }
+
+    /// <summary>
     /// Determines if something is in the temporary blocked nodes collection
     /// </summary>
     /// <param name="position">the grid local position to test for</param>
@@ -1406,8 +1417,10 @@ namespace AiEnabled.Ai.Support
         Vector4 color = Color.Purple;
         var rotation = Quaternion.CreateFromRotationMatrix(WorldMatrix);
         var playerLocation = WorldToLocal(player.WorldAABB.Center);
+        var camerLocationWorld = MyAPIGateway.Session?.Camera?.WorldMatrix.Translation ?? player.WorldAABB.Center;
+        var cameraLocation = WorldToLocal(camerLocationWorld);
 
-        MyAPIGateway.Utilities.ShowNotification($"{this}: ObstacleNodes = {ObstacleNodes.Count}, TempBlocked = {TempBlockedNodes.Count}, PlayerLoc = {playerLocation}", 16);
+        MyAPIGateway.Utilities.ShowNotification($"{this}: ObstacleNodes = {ObstacleNodes.Count}, TempBlocked = {TempBlockedNodes.Count}, PlayerLoc = {playerLocation}, CameraLoc = {cameraLocation}", 16);
 
         if (AiSession.Instance.DrawObstacles)
         {

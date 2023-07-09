@@ -423,7 +423,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      if (Target.IsSlimBlock && _particlePacketSent && !BugZapped)
+      if ((isInventory || Target.IsSlimBlock) && _particlePacketSent && !BugZapped)
       {
         _particlePacketSent = false;
         var packet = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Weld, remove: true);

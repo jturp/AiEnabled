@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.15";
+    public const string VERSION = "v1.5.17";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -1776,7 +1776,6 @@ namespace AiEnabled
         MyVisualScriptLogicProvider.PlayerEnteredCockpit += PlayerEnteredCockpit;
         MyVisualScriptLogicProvider.PlayerLeftCockpit += PlayerLeftCockpit;
         MyVisualScriptLogicProvider.PlayerSpawned += PlayerSpawned;
-        MyVisualScriptLogicProvider.PlayerRespawnRequest += PlayerRespawned;
         MyVisualScriptLogicProvider.PlayerDied += PlayerDied;
         MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(int.MaxValue, BeforeDamageHandler);
 
@@ -2127,11 +2126,6 @@ namespace AiEnabled
       //      botIDs.Add(botId);
       //  }
       //}
-    }
-
-    private void PlayerRespawned(long playerId)
-    {
-      //Logger.Log($"PlayerRespawned: Id = {playerId}");
     }
 
     private void PlayerSpawned(long playerId)
@@ -2510,7 +2504,7 @@ namespace AiEnabled
 
                 if (seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
                 {
-                  cpit.RequestUse(UseActionEnum.Manipulate, AiUtils.CastHax(cpit.Pilot, bot.Character));
+                  seat.AttachPilot(bot.Character);
                 }
 
                 if (changeBack)
@@ -3130,7 +3124,7 @@ namespace AiEnabled
         return;
       }
 
-      var soundComp = bot.Components?.Get<MyCharacterSoundComponent>();
+      //var soundComp = bot.Components?.Get<MyCharacterSoundComponent>();
 
       if (stop)
       {
@@ -3150,7 +3144,8 @@ namespace AiEnabled
           SoundPairDict[sound] = sp;
         }
 
-        soundComp?.PlayActionSound(sp);
+        //soundComp?.PlayActionSound(sp);
+        PlaySoundAtPosition(bot.WorldAABB.Center, sp, false);
 
         if (includeIcon && !_botSpeakers.ContainsKey(entityId))
         {
@@ -3162,8 +3157,28 @@ namespace AiEnabled
       }
     }
 
-    public void PlayeSoundAtPosition(Vector3D position, string sound, bool stop)
+    public void PlaySoundAtPosition(Vector3D position, MySoundPair soundPair, bool stop)
     {
+      if (PlayerData != null && PlayerData.BotVolumeModifier == 0)
+        return;
+
+      var emitter = GetEmitter();
+      emitter.SetPosition(position);
+
+      var volMulti = emitter.VolumeMultiplier;
+      emitter.VolumeMultiplier = PlayerData?.BotVolumeModifier ?? volMulti;
+      emitter.PlaySoundWithDistance(soundPair.SoundId);
+      //emitter.PlaySound(soundPair);
+
+      emitter.VolumeMultiplier = volMulti;
+      ReturnEmitter(emitter);
+    }
+
+    public void PlaySoundAtPosition(Vector3D position, string sound, bool stop)
+    {
+      if (PlayerData != null && PlayerData.BotVolumeModifier == 0)
+        return;
+
       var emitter = GetEmitter();
       emitter.SetPosition(position);
 
@@ -3174,12 +3189,20 @@ namespace AiEnabled
         SoundPairDict[sound] = soundPair;
       }
 
-      emitter.PlaySound(soundPair);
+      var volMulti = emitter.VolumeMultiplier;
+      emitter.VolumeMultiplier = PlayerData?.BotVolumeModifier ?? volMulti;
+      emitter.PlaySoundWithDistance(soundPair.SoundId);
+      //emitter.PlaySound(soundPair);
+
+      emitter.VolumeMultiplier = volMulti;
       ReturnEmitter(emitter);
     }
 
     void PlaySoundForEntity(MyEntity entity, string sound, bool stop)
     {
+      if (PlayerData != null && PlayerData.BotVolumeModifier == 0)
+        return;
+
       var emitter = GetEmitter();
       emitter.SetPosition(entity.PositionComp.WorldAABB.Center);
 
@@ -3190,7 +3213,12 @@ namespace AiEnabled
         SoundPairDict[sound] = soundPair;
       }
 
-      emitter.PlaySound(soundPair);
+      var volMulti = emitter.VolumeMultiplier;
+      emitter.VolumeMultiplier = PlayerData?.BotVolumeModifier ?? volMulti;
+      emitter.PlaySoundWithDistance(soundPair.SoundId);
+      //emitter.PlaySound(soundPair);
+
+      emitter.VolumeMultiplier = volMulti;
       ReturnEmitter(emitter);
     }
 

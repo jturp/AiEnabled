@@ -1121,7 +1121,7 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    public bool IsInBufferZone(Vector3D botPosition)
+    public override bool IsInBufferZone(Vector3D botPosition)
     {
       var allExt = OBB.HalfExtent;
       var ext = UnbufferedOBB.HalfExtent;
@@ -4689,12 +4689,12 @@ namespace AiEnabled.Ai.Support
         var mainGridPosition = needsPositionAdjusted ? MainGrid.WorldToGridInteger(grid.GridIntegerToWorld(positionAbove)) : positionAbove;
         var cubeAbove = GetBlockAtPosition(positionAbove);
         var cubeAboveDef = cubeAbove?.BlockDefinition as MyCubeBlockDefinition;
-        bool cubeAboveEmpty = cubeAbove == null || !cubeAboveDef.HasPhysics;
+        bool cubeAboveEmpty = cubeAbove == null || !cubeAboveDef.HasPhysics || cubeAboveDef.Id.SubtypeName.StartsWith("LargeWarningSign");
         bool aboveisScaffold = cubeAboveDef != null && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeAboveDef.Id);
         bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
         bool aboveIsConveyorCap = cubeAbove != null && AiSession.Instance.ConveyorEndCapDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
         bool aboveisAutomatonsFlat = cubeAbove != null && AiSession.Instance.AutomatonsFlatBlockDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
-        bool checkAbove = !exclude && (airTight /*|| allowConn*/ || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor || (kvp.Value?.Contains(side) ?? false));
+        bool checkAbove = !exclude && (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor || (kvp.Value?.Contains(side) ?? false));
 
         if (cubeAboveEmpty)
         {
@@ -8921,6 +8921,13 @@ namespace AiEnabled.Ai.Support
     public override IMySlimBlock GetBlockAtPosition(Vector3I mainGridPosition)
     {
       var block = MainGrid?.GetCubeBlock(mainGridPosition) as IMySlimBlock;
+
+      if (block != null)
+      {
+        var def = block.BlockDefinition as MyCubeBlockDefinition;
+        if (def == null || !def.HasPhysics || def.Id.SubtypeName.StartsWith("LargeWarningSign"))
+          block = null;
+      }
 
       //if (block == null)
       //{

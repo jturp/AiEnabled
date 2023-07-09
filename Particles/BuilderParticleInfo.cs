@@ -37,8 +37,13 @@ namespace AiEnabled.Particles
         AiSession.Instance.SoundPairDict[sound] = SoundPair;
       }
 
-      SoundEmitter = AiSession.Instance.GetEmitter(bot as MyEntity);
-      SoundEmitter.PlaySound(SoundPair);
+      if (AiSession.Instance.PlayerData == null || AiSession.Instance.PlayerData.BotVolumeModifier > 0)
+      {
+        var volMulti = AiSession.Instance.PlayerData?.BotVolumeModifier ?? 1f;
+        SoundEmitter = AiSession.Instance.GetEmitter(bot as MyEntity);
+        SoundEmitter.VolumeMultiplier = volMulti;
+        SoundEmitter.PlaySound(SoundPair);
+      }
     }
 
     public Vector3D Position
@@ -65,8 +70,13 @@ namespace AiEnabled.Particles
     public override void Close()
     {
       base.Close();
-      SoundEmitter?.Cleanup();
-      AiSession.Instance.ReturnEmitter(SoundEmitter);
+
+      if (SoundEmitter != null)
+      {
+        SoundEmitter.VolumeMultiplier = 1f;
+        SoundEmitter.Cleanup();
+        AiSession.Instance.ReturnEmitter(SoundEmitter);
+      }
     }
 
     public override void Stop()
@@ -80,8 +90,12 @@ namespace AiEnabled.Particles
       Stop();
       Block = block;
 
-      //MyLog.Default.WriteLine($"Playing sound: {SoundPair.SoundId}");
-      SoundEmitter?.PlaySound(SoundPair);
+      if (SoundEmitter != null && (AiSession.Instance.PlayerData == null || AiSession.Instance.PlayerData.BotVolumeModifier > 0))
+      {
+        var volMulti = AiSession.Instance.PlayerData?.BotVolumeModifier ?? 1f;
+        SoundEmitter.VolumeMultiplier = volMulti;
+        SoundEmitter.PlaySound(SoundPair);
+      }
     }
 
     public override void Set(IMyCharacter bot)

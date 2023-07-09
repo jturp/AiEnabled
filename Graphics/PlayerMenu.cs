@@ -54,12 +54,12 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowIdleMovement, AllowIdleTransitions, EnforceWalkingOnPatrol, EnforceGroundPathingFirst;
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
-    internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;            // TODO: Add the new Admin settings to the sync section at bottom of page!
+    internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
     internal MenuItem AllowNeutralsToOpenDoors;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
-    internal MenuTextInput RepairBotSearchRadius, HelperGpsColorInput;
+    internal MenuTextInput RepairBotSearchRadius, HelperGpsColorInput, BotVolumeModifier;
     PlayerData _playerData;
     float _lastSpreadKeyPressed, _lastCloserKeyPressed;
 
@@ -78,6 +78,7 @@ namespace AiEnabled.Graphics
       bool notifyOnDeath = _playerData.NotifyOnHelperDeath;
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
       float searchRadius = _playerData.RepairBotSearchRadius;
+      float volumeModifier = _playerData.BotVolumeModifier;
 
       Menu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.PlayerMenu, "Settings");
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);
@@ -88,6 +89,8 @@ namespace AiEnabled.Graphics
       ShowMapIconOther = CreateMenuItemToggle(Menu, mapOther, "Show Map Icon for Non-Helpers", ShowMapIconOther_Clicked);
       NotifyOnDeath = CreateMenuItemToggle(Menu, notifyOnDeath, "Show Notification on Death", NotifyOnHelperDeath_Clicked);
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
+
+      BotVolumeModifier = new MenuTextInput($"Bot volume modifier: <color=orange>{volumeModifier}", Menu, "Set Bot volume modifier (1 = default volume)", BotVolumeMod_Submitted);
 
       var color = (searchRadius == 0) ? "<color=yellow>" : "<color=orange>";
       RepairBotSearchRadius = new MenuTextInput($"Repair bot search radius: {color}{searchRadius}", Menu, "Enter new radius value (meters), 0 to disable", RepairBotSearchRadius_Submitted);
@@ -573,6 +576,14 @@ namespace AiEnabled.Graphics
           AllowNeutralsToOpenDoors = null;
         }
 
+        if (BotVolumeModifier != null)
+        {
+          BotVolumeModifier.Text = null;
+          BotVolumeModifier.BackingObject = null;
+          BotVolumeModifier.OnSubmitAction = null;
+          BotVolumeModifier = null;
+        }
+
         _playerData = null;
       }
       catch (Exception ex)
@@ -678,9 +689,24 @@ namespace AiEnabled.Graphics
     {
       num = (float)MathHelper.Clamp(Math.Round(num * 2, 2), 0.1, 2);
       _playerData.MouseSensitivityModifier = num;
-      MouseSensitivity.Text = $"Mouse sensitivity: {num}";
+      MouseSensitivity.Text = $"Mouse sensitivity: <color=orange>{num}";
       MouseSensitivity.InitialPercent = num;
       AiSession.Instance.StartUpdateCounter();
+    }
+
+    internal void BotVolumeMod_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = Math.Max(0, num);
+        if (_playerData.BotVolumeModifier != newValue)
+        {
+          BotVolumeModifier.Text = $"Bot volume modifier: <color=orange>{newValue}";
+          _playerData.BotVolumeModifier = newValue;
+          AiSession.Instance.StartUpdateCounter();
+        }
+      }
     }
 
     internal void ResumeBotsKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
@@ -1353,7 +1379,7 @@ namespace AiEnabled.Graphics
           MaxBots.Text = $"Max bots allowed in world: <color=orange>{newAmount}";
           AiSession.Instance.ModSaveData.MaxBotsInWorld = newAmount;
           AiSession.Instance.StartAdminUpdateCounter();
-          AiSession.Instance.UpdateAdminSettingSync(true);
+          AiSession.Instance.UpdateAdminSettingSync();
         }
       }
     }
@@ -1451,6 +1477,18 @@ namespace AiEnabled.Graphics
       newValue = data.IgnoreArmorDeformation;
       color = newValue ? "<color=orange>" : "<color=yellow>";
       IgnoreArmorDeformation.Text = $"Ignore armor deformation for repairs: {color}{newValue}";
+
+      newValue = data.AllowScavengerDigging;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerDigging.Text = $"Allow ScavengerBot to dig and find: {color}{newValue}";
+
+      newValue = data.AllowScavengerLooting;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowScavengerLooting.Text = $"Allow ScavengerBot to gather and loot: {color}{newValue}";
+
+      newValue = data.AllowRepairBotGathering;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      AllowRepairLooting.Text = $"Allow RepairBot to gather: {color}{newValue}";
 
       MaxBotProjectileDistance.Text = $"Max projectile distance: <color=orange>{data.MaxBotProjectileDistance}";
       MaxFriendlyHuntRadius.Text = $"Max friendly hunting radius: <color=orange>{data.MaxBotHuntingDistanceFriendly}";
