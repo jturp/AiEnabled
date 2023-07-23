@@ -305,7 +305,7 @@ namespace AiEnabled.Bots
         _sideNode = null;
       }
 
-      if (_currentGraph?.Ready == true)
+      if (_currentGraph != null && _currentGraph.Ready)
       {
         var localPos = _currentGraph.WorldToLocal(botPosition);
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
@@ -479,6 +479,9 @@ namespace AiEnabled.Bots
       {
         _tooCloseUseSideNode = false;
 
+        if (PatrolMode && _pathCollection != null && !_pathCollection.HasPath && _pathCollection.HasNode) // if this is the final waypoint
+          flatDistanceCheck = 0.25f;
+
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
           if (_currentGraph.IsGridGraph)
@@ -525,7 +528,9 @@ namespace AiEnabled.Bots
           movement = _moveFromLadder ? Vector3.Zero : Vector3.Forward;
         }
         else
+        {
           movement = Vector3.Zero;
+        }
       }
       else if (hasWeapon && WaitForLOSTimer)
       {

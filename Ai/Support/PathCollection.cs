@@ -805,8 +805,9 @@ namespace AiEnabled.Ai.Support
         _temp.Clear();
         MyCubeGrid.RayCastStaticCells(startTransformed, endTransformed, _temp, voxelGrid.CellSize, voxelGrid.BoundingBox.HalfExtents);
         bool goDirectToTarget = true;
-        foreach (var point in _temp)
+        for (int p = 0; p < _temp.Count; p++)
         {
+          var point = _temp[p];
           if (!Obstacles.ContainsKey(point) && voxelGrid.IsOpenTile(point) && !voxelGrid.TempBlockedNodes.ContainsKey(point) && !voxelGrid.ObstacleNodes.ContainsKey(point))
             continue;
 
@@ -898,8 +899,9 @@ namespace AiEnabled.Ai.Support
         MyCubeGrid.RayCastStaticCells(startTransformed, nextTransformed, _temp, voxelGrid.CellSize, voxelGrid.BoundingBox.HalfExtents);
 
         bool keepGoing = true;
-        foreach (var point in _temp)
+        for (int p = 0; p < _temp.Count; p++)
         {
+          var point = _temp[p];
           if (!Obstacles.ContainsKey(point) && voxelGrid.IsOpenTile(point) && !voxelGrid.TempBlockedNodes.ContainsKey(point) && !voxelGrid.ObstacleNodes.ContainsKey(point))
             continue;
 
@@ -1049,7 +1051,6 @@ namespace AiEnabled.Ai.Support
         }
 
         _useObjList.Clear();
-        _temp.Clear();
         IntermediatePoints.Clear();
         CameFrom.Clear();
         CostSoFar.Clear();

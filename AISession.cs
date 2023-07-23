@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.17";
+    public const string VERSION = "v1.5.18";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -2256,21 +2256,55 @@ namespace AiEnabled
             BotToSeatRelativePosition.TryGetValue(bot.Character.EntityId, out relPosition);
             var rotatedPosition = Vector3D.Rotate(relPosition, seat.WorldMatrix) + botMatrix.Down;
             var testPosition = seat.GetPosition() + rotatedPosition;
-            var position = testPosition;
+            Vector3D? goodPosition = null;
 
             MyVoxelBase voxel;
             var up = botMatrix.Up;
             if (GridBase.GetClosestPointAboveGround(ref testPosition, ref up, out voxel))
             {
-              position = testPosition;
+              if (!bot.CanUseAirNodes && voxel != null)
+              {
+                bool onGround;
+                var surfacePoint = GridBase.GetClosestSurfacePointFast(testPosition, up, voxel, out onGround);
+
+                if (Vector3D.DistanceSquared(surfacePoint, testPosition) < 250)
+                  goodPosition = testPosition;
+              }
+              else
+              {
+                goodPosition = testPosition;
+              }
             }
-            else
+
+            if (!goodPosition.HasValue)
             {
               testPosition = seat.GetPosition() - rotatedPosition;
               if (GridBase.GetClosestPointAboveGround(ref testPosition, ref up, out voxel))
               {
-                position = testPosition;
+                if (!bot.CanUseAirNodes && voxel != null)
+                {
+                  bool onGround;
+                  var surfacePoint = GridBase.GetClosestSurfacePointFast(testPosition, up, voxel, out onGround);
+
+                  if (Vector3D.DistanceSquared(surfacePoint, testPosition) < 250)
+                    goodPosition = testPosition;
+                }
+                else
+                {
+                  goodPosition = testPosition;
+                }
               }
+            }
+
+            Vector3D position;
+            if (goodPosition.HasValue)
+            {
+              position = goodPosition.Value;
+            }
+            else
+            {
+              position = seat.GetPosition() + seat.WorldMatrix.Up;
+              relPosition = seat.WorldMatrix.Up;
             }
 
             var voxelGraph = bot._currentGraph as VoxelGridMap;

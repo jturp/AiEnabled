@@ -3407,7 +3407,13 @@ namespace AiEnabled.Bots
           if (PatrolMode)
           {
             Node node;
-            if (gridGraph.TryGetNodeForPosition(localTarget, out node))
+
+            if (_pathCollection?.NextNode != null && _pathCollection.NextNode.Position == localTarget)
+              node = _pathCollection.NextNode;
+            else
+              gridGraph.TryGetNodeForPosition(localTarget, out node);
+
+            if (node != null)
             {
               var checkPosition = _currentGraph.LocalToWorld(node.Position) + node.Offset;
               var relVector = Vector3D.TransformNormal(checkPosition - botPos, MatrixD.Transpose(WorldMatrix));

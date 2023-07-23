@@ -299,7 +299,7 @@ namespace AiEnabled.Bots
         _sideNode = null;
       }
 
-      if (_currentGraph?.Ready == true)
+      if (_currentGraph != null && _currentGraph.Ready)
       {
         var localPos = _currentGraph.WorldToLocal(botPosition);
         var worldPosAligned = _currentGraph.LocalToWorld(localPos);
@@ -489,12 +489,17 @@ namespace AiEnabled.Bots
       else if (PathFinderActive)
       {
         _tooCloseUseSideNode = false;
-        if (flattenedLengthSquared > distanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
+        double flatDistanceCheck = distanceCheck;
+
+        if (PatrolMode && _pathCollection != null && !_pathCollection.HasPath && _pathCollection.HasNode) // if this is the final waypoint
+          flatDistanceCheck = 0.25;
+
+        if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
           if (_currentGraph.IsGridGraph)
           {
             MyCubeBlock ladder;
-            if (flattenedLengthSquared <= distanceCheck && relVectorBot.Y > 0 && Target.IsOnLadder(out ladder))
+            if (flattenedLengthSquared <= flatDistanceCheck && relVectorBot.Y > 0 && Target.IsOnLadder(out ladder))
             {
               var gridGraph = _currentGraph as CubeGridMap;
               _sideNode = gridGraph.GetLastValidNodeOnLine(ladder.PositionComp.WorldAABB.Center, ladder.WorldMatrix.Forward, 20);

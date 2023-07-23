@@ -883,6 +883,9 @@ namespace AiEnabled.Bots
       {
         _tooCloseUseSideNode = false;
 
+        if (PatrolMode && _pathCollection != null && !_pathCollection.HasPath && _pathCollection.HasNode) // if this is the final waypoint
+          flatDistanceCheck = 0.25;
+
         if (flattenedLengthSquared > flatDistanceCheck || Math.Abs(relVectorBot.Y) > distanceCheck)
         {
           if (_currentGraph.IsGridGraph)
