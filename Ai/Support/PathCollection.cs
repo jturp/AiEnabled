@@ -267,6 +267,7 @@ namespace AiEnabled.Ai.Support
     public void ClearObstacles(bool includeBlocks = false)
     {
       Obstacles?.Clear();
+      DeniedDoors?.Clear();
 
       if (includeBlocks)
         BlockObstacles?.Clear();
@@ -1040,7 +1041,7 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// Clears all collections
     /// </summary>
-    public void CleanUp(bool includePath = false)
+    public void CleanUp(bool includePath = false, bool includeObstacles = false)
     {
       try
       {
@@ -1056,8 +1057,12 @@ namespace AiEnabled.Ai.Support
         CostSoFar.Clear();
         Queue.Clear();
         Cache.Clear();
-        DeniedDoors.Clear();
-        Obstacles?.Clear();
+
+        if (includeObstacles)
+        {
+          DeniedDoors.Clear();
+          Obstacles?.Clear();
+        }
 
         if (includePath)
         {

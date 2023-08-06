@@ -33,6 +33,7 @@ using AiEnabled.Graphics.Support;
 using AiEnabled.API;
 using VRage.Voxels;
 using AiEnabled.Bots;
+using Sandbox.Game.Entities.Blocks;
 
 namespace AiEnabled.Utilities
 {
@@ -119,34 +120,38 @@ namespace AiEnabled.Utilities
       if (slim == null || slim.MaxIntegrity == 0 || slim.IsDestroyed)
         return -1f;
 
+      var cube = slim.FatBlock as MyCubeBlock;
+      if (cube?.IsPreview == true)
+        return 0;
+
+      var realGrid = slim.CubeGrid as MyCubeGrid;
+      if (realGrid?.Projector != null)
+        return 0;
+
       float maxIntegrity = slim.MaxIntegrity;
       float buildIntegrity = slim.BuildIntegrity;
       float currentDamage = slim.CurrentDamage;
       float health = (buildIntegrity - currentDamage) / maxIntegrity;
 
-      if (AiSession.Instance.ModSaveData.ObeyProjectionIntegrityForRepairs && entList != null)
+      if (AiSession.Instance.ModSaveData.ObeyProjectionIntegrityForRepairs && entList != null && realGrid?.Projector == null)
       {
-        var realGrid = slim.CubeGrid as MyCubeGrid;
-        if (realGrid?.Projector == null)
+        entList.Clear();
+        var worldPosition = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+        var sphere = new BoundingSphereD(worldPosition, slim.CubeGrid.GridSize * 0.5);
+        MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+        for (int i = 0; i < entList.Count; i++)
         {
-          entList.Clear();
-          var worldPosition = slim.CubeGrid.GridIntegerToWorld(slim.Position);
-          var sphere = new BoundingSphereD(worldPosition, slim.CubeGrid.GridSize * 0.5);
-          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
-
-          for (int i = 0; i < entList.Count; i++)
+          var projGrid = entList[i] as MyCubeGrid;
+          if (projGrid?.Projector != null)
           {
-            var projGrid = entList[i] as MyCubeGrid;
-            if (projGrid?.Projector != null)
-            {
-              var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
-              var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
+            var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
+            var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
 
-              if (projectedBlock?.BlockDefinition.Id == slim.BlockDefinition.Id && slim.BuildIntegrity >= projectedBlock.BuildIntegrity)
-              {
-                health = 1;
-                break;
-              }
+            if (projectedBlock?.BlockDefinition.Id == slim.BlockDefinition.Id && slim.BuildIntegrity >= projectedBlock.BuildIntegrity)
+            {
+              health = 1;
+              break;
             }
           }
         }
@@ -386,8 +391,15 @@ namespace AiEnabled.Utilities
           var character = obj as IMyCharacter;
           if (character == null)
           {
-            if (block?.CubeGrid == null || block.IsDestroyed || ((MyCubeGrid)block.CubeGrid).BlocksCount == 1)
+            if (block?.CubeGrid == null || (block.IsDestroyed && block.StockpileEmpty))
               continue;
+
+            if (((MyCubeGrid)block.CubeGrid).BlocksCount == 1)
+            {
+              var wheel = block.FatBlock as IMyWheel;
+              if (wheel == null || !wheel.IsAttached)
+                continue;
+            }
 
             var tgtPriorities = priorities as RemoteBotAPI.TargetPriorities;
             if (tgtPriorities?.DamageToDisable == true && block.FatBlock != null)

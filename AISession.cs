@@ -80,7 +80,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.18";
+    public const string VERSION = "v1.5.20";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -289,7 +289,7 @@ namespace AiEnabled
         return;
 
       pc.Locked = false;
-      pc.CleanUp(true);
+      pc.CleanUp(true, true);
       pc.Bot = null;
 
       if (_pathCollections != null)

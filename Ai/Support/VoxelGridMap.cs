@@ -1374,7 +1374,7 @@ namespace AiEnabled.Ai.Support
       return defaultValue;
     }
 
-    public override IMySlimBlock GetBlockAtPosition(Vector3I localPosition)
+    public override IMySlimBlock GetBlockAtPosition(Vector3I localPosition, bool checkOtherGrids = false)
     {
       var worldPosition = LocalToWorld(localPosition);
       var sphere = new BoundingSphereD(worldPosition, 0.25);
@@ -1401,6 +1401,9 @@ namespace AiEnabled.Ai.Support
         if (block != null)
           break;
       }
+
+      entList.Clear();
+      AiSession.Instance.EntListStack.Push(entList);
 
       return block;
     }

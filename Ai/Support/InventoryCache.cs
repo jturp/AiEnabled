@@ -857,15 +857,18 @@ namespace AiEnabled.Ai.Support
             return;
         }
 
+        bool allowInvPosition = grid.EntityId == Grid.EntityId
+          && (terminal is IMyShipConnector || (terminal is IMyCargoContainer && terminal.BlockDefinition.SubtypeName.IndexOf("cargo", StringComparison.OrdinalIgnoreCase) >= 0));
+
         bool hookEvents = _terminals.Add(terminal.Position);
         if (hookEvents)
         {
-          if (grid.EntityId == Grid.EntityId && (terminal is IMyCargoContainer || terminal is IMyShipConnector))
+          if (allowInvPosition)
             _inventoryPositions.TryAdd(terminal.Position, terminal);
 
           terminal.OnClosing += Terminal_OnClosing;
         }
-        else if (_refreshInvList)
+        else if (_refreshInvList && allowInvPosition)
           _inventoryPositions.TryAdd(terminal.Position, terminal);
         
         for (int j = 0; j < terminal.InventoryCount; j++)

@@ -1860,7 +1860,7 @@ namespace AiEnabled.Bots
             Target.RemoveTarget();
         }
 
-        if (HasWeaponOrTool && !inSeat && !GrenadeThrown && AllowEquipWeapon)
+        if (HasWeaponOrTool && !inSeat && !GrenadeThrown && AllowEquipWeapon && ToolDefinition != null)
         {
           bool canEquip = true;
           if (Target.Entity != null && Target.Entity == Owner?.Character)
@@ -3656,6 +3656,19 @@ namespace AiEnabled.Bots
               var fixedPos = hit.Position - hit.Normal * hitGrid.GridSize * 0.2f;
               localPos = hitGrid.WorldToGridInteger(fixedPos);
               cube = hitGrid.GetCubeBlock(localPos);
+
+              if (cube == null)
+              {
+                fixedPos = hit.Position + hit.Normal * hitGrid.GridSize * 0.2f;
+                localPos = hitGrid.WorldToGridInteger(fixedPos);
+                cube = hitGrid.GetCubeBlock(localPos);
+
+                if (cube == null)
+                {
+                  // we hit a grid but can't find the cube?
+                  continue;
+                }
+              }
             }
 
             var targetCube = Target.IsInventory ? Target.Inventory : Target.IsCubeBlock ? (Target.Entity as IMyCubeBlock).SlimBlock : Target.Entity as IMySlimBlock;
@@ -3663,10 +3676,6 @@ namespace AiEnabled.Bots
 
             if (checkCube)
             {
-              Vector3 targetExtents;
-              targetCube.ComputeScaledHalfExtents(out targetExtents);
-              var ext = targetExtents.AbsMax() * 2;
-
               if (cube == targetCube)
               {
                 result = true;
@@ -3678,22 +3687,29 @@ namespace AiEnabled.Bots
 
                 result = Vector3D.DistanceSquared(worldCube, worldTgtCube) < 10;
               }
-              else if ((cube.Position - targetCube.Position).RectangularLength() <= ext / targetCube.CubeGrid.GridSize)
-              {
-                // Just in case we are positioned too close to the block 
-                // and the ray clips through the corner of a neighboring block
-
-                var worldCube = cube.CubeGrid.GridIntegerToWorld(cube.Position);
-                result = Vector3D.DistanceSquared(hit.Position, worldCube) < ext;
-              }
-              else if (cube.FatBlock is IMyMechanicalConnectionBlock && targetCube.FatBlock is IMyAttachableTopBlock)
-              {
-                var mechBlock = cube.FatBlock as IMyMechanicalConnectionBlock;
-                var topBlock = targetCube.FatBlock as IMyAttachableTopBlock;
-                result = mechBlock.Top == topBlock;
-              }
               else
-                result = false;
+              {
+                Vector3 targetExtents;
+                targetCube.ComputeScaledHalfExtents(out targetExtents);
+                var ext = targetExtents.AbsMax() * 2;
+
+                if ((cube.Position - targetCube.Position).RectangularLength() <= ext / targetCube.CubeGrid.GridSize)
+                {
+                  // Just in case we are positioned too close to the block 
+                  // and the ray clips through the corner of a neighboring block
+
+                  var worldCube = cube.CubeGrid.GridIntegerToWorld(cube.Position);
+                  result = Vector3D.DistanceSquared(hit.Position, worldCube) < ext;
+                }
+                else if (cube.FatBlock is IMyMechanicalConnectionBlock && targetCube.FatBlock is IMyAttachableTopBlock)
+                {
+                  var mechBlock = cube.FatBlock as IMyMechanicalConnectionBlock;
+                  var topBlock = targetCube.FatBlock as IMyAttachableTopBlock;
+                  result = mechBlock.Top == topBlock;
+                }
+                else
+                  result = false;
+              }
             }
             else
               result = false;

@@ -613,7 +613,7 @@ namespace AiEnabled.Ai.Support
 
     public abstract Node GetReturnHomePoint(BotBase bot);
 
-    public abstract IMySlimBlock GetBlockAtPosition(Vector3I localPosition);
+    public abstract IMySlimBlock GetBlockAtPosition(Vector3I localPosition, bool checkOtherGrids = false);
 
     public virtual void TeleportNearby(BotBase bot)
     {

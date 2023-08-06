@@ -237,7 +237,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 return;
             }
           }
-          else if (!slim.IsDestroyed && invRatioOK)
+          else if (invRatioOK && (!slim.IsDestroyed || !slim.StockpileEmpty))
           {
 
             Vector3? grindColor = null;
@@ -614,10 +614,20 @@ namespace AiEnabled.Bots.Roles.Helpers
             if (checkGrid?.Physics == null || checkGrid.IsPreview || checkGrid.MarkedForClose)
               continue;
 
-            if (!checkGrid.IsSameConstructAs(mainGrid) && (mainGrid.Physics.LinearVelocity - checkGrid.Physics.LinearVelocity).LengthSquared() > 10)
+            bool sameGrid = checkGrid.IsSameConstructAs(mainGrid);
+            if (!sameGrid && (mainGrid.Physics.LinearVelocity - checkGrid.Physics.LinearVelocity).LengthSquared() > 10)
               continue;
 
             var owner = checkGrid.BigOwners?.Count > 0 ? checkGrid.BigOwners[0] : checkGrid.SmallOwners?.Count > 0 ? checkGrid.SmallOwners[0] : -1L;
+
+            if (owner < 0)
+            {
+              if (sameGrid)
+                owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
+              else
+                owner = 0L;
+            }
+
             var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
 
             if (relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies)
@@ -658,8 +668,13 @@ namespace AiEnabled.Bots.Roles.Helpers
             {
               var obj = kvp.Value[j];
               var slim = obj as IMySlimBlock;
-              if (slim?.CubeGrid == null || slim.IsDestroyed)
+              if (slim?.CubeGrid == null || (slim.IsDestroyed && slim.StockpileEmpty))
                 continue;
+
+              if (slim.BlockDefinition.Id.SubtypeName.IndexOf("wheel", StringComparison.OrdinalIgnoreCase) >= 0)
+              {
+                MyAPIGateway.Utilities.ShowNotification(" ", 16);
+              }
 
               var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
@@ -763,6 +778,15 @@ namespace AiEnabled.Bots.Roles.Helpers
               if (projector.CubeGrid.EntityId != mainGrid.EntityId)
               {
                 var owner = projector.CubeGrid.BigOwners?.Count > 0 ? projector.CubeGrid.BigOwners[0] : projector.CubeGrid.SmallOwners?.Count > 0 ? projector.CubeGrid.SmallOwners[0] : -1L;
+
+                if (owner < 0) 
+                {
+                  if (projector.CubeGrid.IsSameConstructAs(mainGrid))
+                    owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
+                  else
+                    owner = 0L;
+                }
+
                 var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
 
                 if (relation != MyRelationsBetweenPlayers.Self && relation != MyRelationsBetweenPlayers.Allies)
@@ -782,7 +806,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                   {
                     var obj = priKvp.Value[j];
                     var slim = obj as IMySlimBlock;
-                    if (slim == null || slim.IsDestroyed)
+                    if (slim == null || (slim.IsDestroyed && slim.StockpileEmpty))
                       continue;
 
                     var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
@@ -866,7 +890,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                   {
                     var obj = priKvp.Value[i];
                     var slim = obj as IMySlimBlock;
-                    if (slim == null || slim.IsDestroyed)
+                    if (slim == null || (slim.IsDestroyed && slim.StockpileEmpty))
                       continue;
 
                     var buildResult = projector.CanBuild(slim, true);
@@ -1199,6 +1223,24 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
 
+        bool canWeld = CurrentBuildMode == BuildMode.Weld && ((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0;
+        if (canWeld)
+        {
+          var slim = Target.Entity as IMySlimBlock;
+          if (slim != null)
+          {
+            var myGrid = slim.CubeGrid as MyCubeGrid;
+            var projector = myGrid?.Projector as IMyProjector;
+
+            if (projector != null)
+            {
+              var buildResult = projector.CanBuild(slim, true);
+              if (buildResult != BuildCheckResult.OK)
+                movement = Vector3.Backward;
+            }
+          }
+        }
+
         var notMoving = Vector3.IsZero(ref movement);
         var notRotating = ignoreRotation || Vector2.IsZero(ref rotation);
 
@@ -1214,7 +1256,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
               grid.InventoryCache.RemoveItemsFor(Target.Entity as IMySlimBlock, this);
               Target.RemoveInventory();
-              Target.RemoveTarget();
+
+              if (CurrentBuildMode != BuildMode.Weld)
+                Target.RemoveTarget();
             }
 
             return;
@@ -1249,7 +1293,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           var slim = Target.Entity as IMySlimBlock;
           if (slim != null)
           {
-            if (CurrentBuildMode == BuildMode.Weld && ((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
+            if (canWeld)
             {
               var myGrid = slim.CubeGrid as MyCubeGrid;
               var projector = myGrid?.Projector as IMyProjector;

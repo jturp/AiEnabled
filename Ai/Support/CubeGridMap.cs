@@ -1266,7 +1266,7 @@ namespace AiEnabled.Ai.Support
 
       if (isSlimBlock)
       {
-        var block = node?.Block ?? GetBlockAtPosition(localPosition);
+        var block = node?.Block != null ? node.Block : GetBlockAtPosition(localPosition, true);
 
         if (node?.IsGridNodeUnderGround == true)
         {
@@ -8918,9 +8918,39 @@ namespace AiEnabled.Ai.Support
       return defaultValue;
     }
 
-    public override IMySlimBlock GetBlockAtPosition(Vector3I mainGridPosition)
+    public override IMySlimBlock GetBlockAtPosition(Vector3I mainGridPosition, bool checkOtherGrids = false)
     {
       var block = MainGrid?.GetCubeBlock(mainGridPosition) as IMySlimBlock;
+
+      if (block == null && checkOtherGrids)
+      {
+        var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
+        var sphere = new BoundingSphereD(worldPosition, 0.25);
+
+        List<MyEntity> entList;
+        if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
+          entList = new List<MyEntity>();
+        else
+          entList.Clear();
+
+        MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+        for (int i = 0; i < entList.Count; i++)
+        {
+          var grid = entList[i] as IMyCubeGrid;
+          if (grid == null || grid.MarkedForClose)
+            continue;
+
+          var gridLocal = grid.WorldToGridInteger(worldPosition);
+          block = grid.GetCubeBlock(gridLocal);
+
+          if (block != null)
+            break;
+        }
+
+        entList.Clear();
+        AiSession.Instance.EntListStack.Push(entList);
+      }
 
       if (block != null)
       {
@@ -8928,26 +8958,6 @@ namespace AiEnabled.Ai.Support
         if (def == null || !def.HasPhysics || def.Id.SubtypeName.StartsWith("LargeWarningSign"))
           block = null;
       }
-
-      //if (block == null)
-      //{
-      //  var worldPosition = MainGrid.GridIntegerToWorld(mainGridPosition);
-
-      //  for (int i = 0; i < GridCollection.Count; i++)
-      //  {
-      //    var grid = GridCollection[i] as MyCubeGrid;
-      //    if (grid?.Physics == null || grid.MarkedForClose || grid.IsPreview || grid.EntityId == MainGrid?.EntityId)
-      //    {
-      //      continue;
-      //    }
-
-      //    var localPosition = grid.WorldToGridInteger(worldPosition);
-      //    block = grid.GetCubeBlock(localPosition);
-
-      //    if (block != null)
-      //      break;
-      //  }
-      //}
 
       return block;
     }
