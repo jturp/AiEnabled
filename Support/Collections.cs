@@ -67,7 +67,7 @@ namespace AiEnabled
 
     public List<string> HelperAnimations = new List<string>()
     {
-      "Wave", "Victory", "Thumb-Up", "Stretching", "CheckWrist", "FacePalm"
+      "Wave", "Victory", "Thumb-Up", "Stretching", "CheckWrist", "FacePalm", "FingerGuns"
     };
 
     public List<string> BotFactionTags = new List<string>()

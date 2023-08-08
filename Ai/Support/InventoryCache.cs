@@ -858,7 +858,9 @@ namespace AiEnabled.Ai.Support
         }
 
         bool allowInvPosition = grid.EntityId == Grid.EntityId
-          && (terminal is IMyShipConnector || (terminal is IMyCargoContainer && terminal.BlockDefinition.SubtypeName.IndexOf("cargo", StringComparison.OrdinalIgnoreCase) >= 0));
+          && (terminal is IMyShipConnector || (terminal is IMyCargoContainer 
+          && (terminal.BlockDefinition.SubtypeName.IndexOf("container", StringComparison.OrdinalIgnoreCase) >= 0) 
+          || terminal.BlockDefinition.SubtypeName.IndexOf("freight", StringComparison.OrdinalIgnoreCase) >= 0));
 
         bool hookEvents = _terminals.Add(terminal.Position);
         if (hookEvents)
