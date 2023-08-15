@@ -773,7 +773,29 @@ namespace AiEnabled.API
         return true;
       }
 
-      validWorldPosition = Vector3D.Zero;
+      validWorldPosition = startPosition;
+      return false;
+    }
+
+    /// <summary>
+    /// Attempts to find the closest surface point to the provided world position by checking up and down from that point. 
+    /// Does nothing if the position is not near a voxel body (planet or asteroid).
+    /// </summary>
+    /// <param name="startPosition">the position to check from</param>
+    /// <param name="voxel">a planet or asteroid, if null one will be looked for</param>\
+    /// <param name="validWorldPosition">the surface point if it exists, otherwise the start position</param>
+    /// <returns>true if able to find a valid surface position, otherwise false</returns>
+    public bool GetClosestSurfacePoint(Vector3D startPosition, out Vector3D validWorldPosition, MyVoxelBase voxel = null)
+    {
+      var result = _getClosestSurfacePoint?.Invoke(startPosition, voxel);
+
+      if (result.HasValue)
+      {
+        validWorldPosition = result.Value;
+        return true;
+      }
+
+      validWorldPosition = startPosition;
       return false;
     }
 
@@ -784,6 +806,27 @@ namespace AiEnabled.API
     /// <param name="orientation">The matrix to use to determine proper orientation for the grid map</param>
     /// <returns>true if a map exists or if able to create one, otherwise false</returns>
     public bool CreateGridMap(MyCubeGrid grid, MatrixD? orientation = null) => _createGridMap?.Invoke(grid, orientation) ?? false;
+
+    /// <summary>
+    /// Attempts to retrieve the world orientation for the main grid that would be used for pathing. This may not be the same grid that is passed into the method.
+    /// HINT: Use this as the orientation for bots spawned on this grid!
+    /// </summary>
+    /// <param name="grid">the grid that you want to get the map orientation for</param>
+    /// <param name="checkForMainGrid">if true, check for other grids that may be more suitable as the map's main grid</param>
+    /// <returns>The world orientation the grid's map will use, or null if no suitable main grid is found</returns>
+    public bool GetGridMapMatrix(MyCubeGrid grid, bool checkForMainGrid, out MatrixD mapMatrix)
+    {
+      var result = _getGridMapMatrix?.Invoke(grid, checkForMainGrid);
+
+      if (result.HasValue)
+      {
+        mapMatrix = result.Value;
+        return true;
+      }
+
+      mapMatrix = MatrixD.Identity;
+      return false;
+    }
 
     /// <summary>
     /// Determines if a grid map is ready to be used. Note that when blocks are added or removed, the grid is reprocessed!
@@ -837,6 +880,15 @@ namespace AiEnabled.API
     /// <param name="toolSubtypes">A list of SubtypeIds for the weapon or tool you want to give the bot. A random item will be chosen from the list.</param>
     /// <returns>true if the change is successful, otherwise false</returns>
     public bool SwitchBotRole(long botEntityId, string newRole, List<string> toolSubtypes) => _switchBotRoleSlim?.Invoke(botEntityId, newRole, toolSubtypes) ?? false;
+
+    /// <summary>
+    /// Updates the bot's data associated with <see cref="SpawnData"/>. 
+    /// Does NOT change data associated with the character itself (color, subtype, etc).
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="spawnData">The serialized <see cref="SpawnData"/> object</param>
+    /// <returns>true if the change is successful, otherwise false</returns>
+    public bool UpdateBotSpawnData(long botEntityId, byte[] spawnData) => _updateBotSpawnData?.Invoke(botEntityId, spawnData) ?? false;
 
     /// <summary>
     /// Attempts to switch a bot's weapon. The weapon will be added if not found in the bot's inventory. Ammo is NOT included.
@@ -991,6 +1043,9 @@ namespace AiEnabled.API
     private Func<long, Vector3D, Vector3I?> _getLocalPositionForGrid;
     private Func<long, IMyCubeGrid> _getMainGrid;
     private Func<long, bool, bool> _setToolsEnabled;
+    private Func<Vector3D, MyVoxelBase, Vector3D?> _getClosestSurfacePoint;
+    private Func<long, byte[], bool> _updateBotSpawnData;
+    private Func<MyCubeGrid, bool, MatrixD?> _getGridMapMatrix;
 
     private void ReceiveModMessage(object payload)
     {
@@ -1049,6 +1104,9 @@ namespace AiEnabled.API
         _getLocalPositionForGrid = dict["GetLocalPositionForGrid"] as Func<long, Vector3D, Vector3I?>;
         _getMainGrid = dict["GetMainMapGrid"] as Func<long, IMyCubeGrid>;
         _setToolsEnabled = dict["SetToolsEnabled"] as Func<long, bool, bool>;
+        _getClosestSurfacePoint = dict["GetClosestSurfacePoint"] as Func<Vector3D, MyVoxelBase, Vector3D?>;
+        _updateBotSpawnData = dict["UpdateBotSpawnData"] as Func<long, byte[], bool>;
+        _getGridMapMatrix = dict["GetGridMapMatrix"] as Func<MyCubeGrid, bool, MatrixD?>;
 
       }
       catch

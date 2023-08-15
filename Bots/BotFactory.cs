@@ -43,9 +43,21 @@ namespace AiEnabled.Bots
 {
   public static class BotFactory
   {
-    public enum BotRoleNeutral { NOMAD, ENFORCER };
+    public enum BotRoleNeutral { NOMAD, ENFORCER, PATRON };
     public enum BotRoleEnemy { ZOMBIE, SOLDIER, BRUISER, GRINDER, GHOST, CREATURE };
     public enum BotRoleFriendly { REPAIR, SCAVENGER, COMBAT, CREW };
+
+    public static void ResetBotTargeting(BotBase bot)
+    {
+      if (bot != null)
+      {
+        bot.PatrolMode = false;
+        bot.UseAPITargets = false;
+        bot.Target.RemoveTarget();
+        bot.Target.RemoveOverride(false);
+        bot.CleanPath();
+      }
+    }
 
     public static bool ThrowGrenade(BotBase bot)
     {
@@ -1399,6 +1411,7 @@ namespace AiEnabled.Bots
 
         bool isNomad = false;
         bool isEnforcer = false;
+        bool isPatron = false;
         if (!string.IsNullOrWhiteSpace(role))
         {
           var upper = role.ToUpperInvariant();
@@ -1406,9 +1419,11 @@ namespace AiEnabled.Bots
             isNomad = true;
           else if (upper == "ENFORCER")
             isEnforcer = true;
+          else if (upper == "PATRON")
+            isPatron = true;
         }
 
-        if (!isNomad && !isEnforcer)
+        if (!isNomad && !isEnforcer && !isPatron)
         {
           if (!ownerId.HasValue && grid != null)
           {
@@ -1445,11 +1460,11 @@ namespace AiEnabled.Bots
 
         BotBase robot;
         bool runNeutral = false;
-        if (isNomad || isEnforcer)
+        if (isNomad || isEnforcer || isPatron)
         {
           if (needsName)
           {
-            bot.Name = GetUniqueName(isNomad ? "NomadBot" : "EnforcerBot");
+            bot.Name = GetUniqueName(isNomad ? "NomadBot" : isEnforcer ? "EnforcerBot" : "PatronBot");
           }
 
           var botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag("NOMAD");
@@ -1471,8 +1486,10 @@ namespace AiEnabled.Bots
 
           if (isNomad)
             robot = new NomadBot(bot, gridMap, tuple.Item2, toolType);
-          else
+          else if (isEnforcer)
             robot = new EnforcerBot(bot, gridMap, tuple.Item2, toolType);
+          else
+            robot = new PatronBot(bot, gridMap, tuple.Item2, toolType);
 
           runNeutral = true;
         }

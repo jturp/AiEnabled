@@ -43,7 +43,8 @@ namespace AiEnabled.Bots
     internal byte _sideNodeTimer, _sideNodeWaitTime;
     List<float> _randoms = new List<float>(10);
 
-    public NeutralBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo) : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
+    public NeutralBotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo)
+      : base(bot, minDamage, maxDamage, gridBase, ctrlInfo)
     {
       _deathSound = new MySoundPair("PlayVocDeath");
       _deathSoundString = "PlayVocDeath";

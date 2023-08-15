@@ -53,6 +53,7 @@ using VRage.Sync;
 using Sandbox.ModAPI.Interfaces.Terminal;
 using SpaceEngineers.Game.ModAPI;
 using AiEnabled.Networking.Packets;
+using Sandbox.Engine.Multiplayer;
 
 namespace AiEnabled
 {
@@ -80,7 +81,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.5.21";
+    public const string VERSION = "v1.6.2";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -312,6 +313,22 @@ namespace AiEnabled
     {
       info.Clear();
       _healthInfoStack.Push(info);
+    }
+
+    public override void LoadData()
+    {
+      try
+      {
+        MyVisualScriptLogicProvider.PrefabSpawnedDetailed += OnPrefabSpawned;
+      }
+      catch (Exception ex)
+      {
+        MyLog.Default.WriteLine(ex.ToString());
+      }
+      finally
+      {
+        base.LoadData();
+      }
     }
 
     protected override void UnloadData()
@@ -1176,7 +1193,8 @@ namespace AiEnabled
 
           if (ModSaveData.AllowedBotSubtypes == null || ModSaveData.AllowedBotSubtypes.Count == 0)
           {
-            ModSaveData.AllowedBotSubtypes = new List<string>();
+            if (ModSaveData.AllowedBotSubtypes == null) 
+              ModSaveData.AllowedBotSubtypes = new List<string>();
 
             foreach (var charDef in MyDefinitionManager.Static.Characters)
             {
@@ -1208,7 +1226,8 @@ namespace AiEnabled
 
           if (ModSaveData.AllowedBotRoles == null || ModSaveData.AllowedBotRoles.Count == 0)
           {
-            ModSaveData.AllowedBotRoles = new List<string>();
+            if (ModSaveData.AllowedBotRoles == null)
+              ModSaveData.AllowedBotRoles = new List<string>();
 
             var friends = Enum.GetNames(typeof(BotFactory.BotRoleFriendly));
             var enemies = Enum.GetNames(typeof(BotFactory.BotRoleEnemy));
@@ -1770,7 +1789,6 @@ namespace AiEnabled
         }
 
         MyEntities.OnEntityAdd += MyEntities_OnEntityAdd;
-        MyVisualScriptLogicProvider.PrefabSpawnedDetailed += OnPrefabSpawned;
         MyVisualScriptLogicProvider.PlayerConnected += PlayerConnected;
         MyVisualScriptLogicProvider.PlayerDisconnected += PlayerDisconnected;
         MyVisualScriptLogicProvider.PlayerEnteredCockpit += PlayerEnteredCockpit;
@@ -3366,7 +3384,7 @@ namespace AiEnabled
             {
               var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag(tag);
               if (faction != null && !faction.AcceptHumans)
-                OnPrefabSpawned(id, grid.DisplayName);
+                _prefabsToCheck.Enqueue(MyTuple.Create(grid.EntityId, grid.DisplayName, MyAPIGateway.Session.GameplayFrameCounter));
             }
           }
 
@@ -4024,8 +4042,10 @@ namespace AiEnabled
 
     private void OnPrefabSpawned(long entityId, string prefabName)
     {
-      _prefabsToCheck.Enqueue(MyTuple.Create(entityId, prefabName, MyAPIGateway.Session.GameplayFrameCounter));
+      if (EconomyGrids == null || !EconomyGrids.Contains(entityId))
+        _prefabsToCheck.Enqueue(MyTuple.Create(entityId, prefabName, MyAPIGateway.Session.GameplayFrameCounter));
     }
+
 
     bool IsEconGrid(MyCubeGrid grid)
     {
@@ -4035,12 +4055,11 @@ namespace AiEnabled
       {
         var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(owner);
         if (faction == null || faction.AcceptHumans)
-        {
           return false;
-        }
       }
 
-      return IsInAnySafeZone(grid);
+      var result = IsInAnySafeZone(grid);
+      return result;
     }
 
     bool IsInAnySafeZone(MyEntity entity)
@@ -4139,6 +4158,12 @@ namespace AiEnabled
       }
 
       return false;
+    }
+
+    public override MyObjectBuilder_SessionComponent GetObjectBuilder()
+    {
+      // This fires before the final save, but need a way to know it is the FINAL save
+      return base.GetObjectBuilder();
     }
 
     public override void SaveData()
@@ -4699,14 +4724,21 @@ namespace AiEnabled
                   bot.Close();
                 }
               }
+              else
+              {
+                Logger.Log($"Spawned a dummy bot, but it did not have an IdentityId > 0!");
+              }
 
               if (useBot)
               {
                 _controllerSet = false;
                 _controlBotIds.Add(botId);
                 Scheduler.Schedule(GetBotController);
-                //MyAPIGateway.Utilities.InvokeOnGameThread(GetBotController, "AiEnabled");
               }
+            }
+            else
+            {
+              Logger.Log($"Attempted to spawn a dummy bot, but found it to be null!");
             }
           }
           catch
@@ -5078,7 +5110,7 @@ namespace AiEnabled
             continue;
           }
 
-          var ent = MyEntities.GetEntityById(tuple.Item1) as MyCubeGrid;
+          var ent = MyEntities.GetEntityById(tuple.Item1);
 
           if (ent == null)
             MyEntities.TryGetEntityByName(tuple.Item2, out ent);

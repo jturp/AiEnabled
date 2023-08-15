@@ -102,6 +102,8 @@ namespace AiEnabled.Bots
       AllowEquipWeapon = 0x80000000000,
       GrenadeThrown = 0x100000000000,
       IsDead = 0x200000000000,
+      AllowVisorChanges = 0x400000000000,
+      CanOpenDoors = 0x800000000000
     }
 
     public IMyPlayer Owner;
@@ -109,6 +111,8 @@ namespace AiEnabled.Bots
     public TargetInfo Target;
     public float DamageModifier;
     public int TicksBetweenProjectiles = 10;
+    public int MaxTravelDistance = 0;
+    public Vector3D SpawnPosition;
     public long BotIdentityId;
     public MyHandItemDefinition ToolDefinition;
     public AiSession.BotType BotType;
@@ -116,8 +120,42 @@ namespace AiEnabled.Bots
     public RemoteBotAPI.RepairPriorities RepairPriorities;
     public RemoteBotAPI.TargetPriorities TargetPriorities;
 
+    public string Role => this.GetType().Name;
+
     public enum BuildMode { None, Weld, Grind }
     public BuildMode CurrentBuildMode = BuildMode.Weld;
+
+    public bool CanOpenDoors
+    {
+      get { return (_botInfo & BotInfoEnum.CanOpenDoors) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfoEnum.CanOpenDoors;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.CanOpenDoors;
+        }
+      }
+    }
+
+    public bool AllowHelmetVisorChanges
+    {
+      get { return (_botInfo & BotInfoEnum.AllowVisorChanges) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfoEnum.AllowVisorChanges;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.AllowVisorChanges;
+        }
+      }
+    }
 
     public bool IsDead
     {
@@ -207,7 +245,7 @@ namespace AiEnabled.Bots
       get { return (_botInfo & BotInfoEnum.HelmetEnabled) > 0; }
       set
       {
-        if (value)
+        if (value && AllowHelmetVisorChanges)
         {
           var charDef = Character?.Definition as MyCharacterDefinition;
           if (AiSession.Instance?.ModSaveData != null && AiSession.Instance.ModSaveData.AllowHelmetVisorChanges && charDef?.AnimationNameToSubtypeName != null
@@ -911,6 +949,7 @@ namespace AiEnabled.Bots
     internal Action _targetAction;
     internal string _patrolName;
 
+    readonly List<IHitInfo> _hitListThread;
     readonly List<IHitInfo> _hitList;
     Task _graphTask;
     BotInfoEnum _botInfo;
@@ -973,6 +1012,7 @@ namespace AiEnabled.Bots
     public BotBase(IMyCharacter bot, float minDamage, float maxDamage, GridBase gridBase, AiSession.ControlInfo ctrlInfo)
     {
       Character = bot;
+      SpawnPosition = bot.WorldAABB.Center;
       BotIdentityId = bot.ControllerInfo.ControllingIdentityId;
       Target = new TargetInfo(this);
       UsePathFinder = gridBase != null;
@@ -994,9 +1034,15 @@ namespace AiEnabled.Bots
       IsWolf = wolfBot;
       IsSmallSpider = smallSpider;
       IsLargeSpider = largeSpider;
+      AllowHelmetVisorChanges = AiSession.Instance.ModSaveData.AllowHelmetVisorChanges;
       HelmetEnabled = AiSession.Instance.ModSaveData.AllowHelmetVisorChanges;
       AllowIdleMovement = AiSession.Instance.ModSaveData.AllowIdleMovement;
       AllowEquipWeapon = true;
+
+      if (!AiSession.Instance.HitListStack.TryPop(out _hitListThread) || _hitListThread == null)
+        _hitListThread = new List<IHitInfo>();
+      else
+        _hitListThread.Clear();
 
       if (!AiSession.Instance.HitListStack.TryPop(out _hitList) || _hitList == null)
         _hitList = new List<IHitInfo>();
@@ -1267,6 +1313,12 @@ namespace AiEnabled.Bots
         _pathCollection.OnGridBaseClosing();
         _pathCollection.ClearObstacles(true);
         AiSession.Instance.ReturnCollection(_pathCollection);
+      }
+
+      if (_hitListThread != null)
+      {
+        _hitListThread.Clear();
+        AiSession.Instance.HitListStack.Push(_hitListThread);
       }
 
       if (_hitList != null)
@@ -2231,7 +2283,7 @@ namespace AiEnabled.Bots
       if (Target?.HasTarget != true || Vector3D.IsZero(BotInfo.CurrentBotPositionActual))
         return false;
 
-      return Target.IsFriendly() || Target.GetDistanceSquared() < 650000;
+      return Target.Override.HasValue || Target.IsFriendly() || Target.GetDistanceSquared() < 650000;
     }
 
     public virtual void AddWeapon()
@@ -3021,7 +3073,8 @@ namespace AiEnabled.Bots
       var seat = Character.Parent as IMyCockpit;
       if (seat != null && Owner == null && Target.Entity != null)
       {
-        seat.RemovePilot();
+        //seat.RemovePilot();
+        BotFactory.RemoveBotFromSeat(this, false);
       }
     }
 
@@ -3050,7 +3103,8 @@ namespace AiEnabled.Bots
       }
     }
 
-    internal bool CheckGraphValidity(Vector3D targetPosition, ref bool force, out MyCubeGrid newGrid, out Vector3D newGraphPosition, out Vector3D intermediary, out bool botInNewBox)
+    internal bool CheckGraphValidity(Vector3D targetPosition, ref bool force, 
+      out MyCubeGrid newGrid, out Vector3D newGraphPosition, out Vector3D intermediary, out bool botInNewBox)
     {
       bool result = false;
       newGrid = null;
@@ -3433,57 +3487,93 @@ namespace AiEnabled.Bots
           var seat = cube?.FatBlock as IMyCockpit;
           if (seat != null && !onLadder)
           {
-            if (CanUseSeats && seat.Pilot == null && (localTgt - localBot).AbsMax() < 2 && manhattanDist <= 2)
+            var cPit = seat as MyCockpit;
+            if (cPit != null && CanUseSeats && seat.Pilot == null && manhattanDist <= 2)
             {
-              var cPit = seat as MyCockpit;
-              if (cPit != null)
+              if (Vector3D.DistanceSquared(botPos, targetPosition) > 6)
+                return false;
+
+              _hitList.Clear();
+              MyAPIGateway.Physics.CastRay(botPos, seat.WorldAABB.Center, _hitList, CollisionLayers.CharacterCollisionLayer);
+
+              foreach (var hit in _hitList)
               {
-                var seatCube = seat as MyCubeBlock;
-                var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
-                bool changeBack = false;
-                bool ignoreShareMode = false;
-
-                if (shareMode != MyOwnershipShareModeEnum.All)
+                var hitGrid = hit.HitEntity as MyCubeGrid;
+                if (hitGrid != null)
                 {
-                  var seatRelation = seatCube.IDModule.GetUserRelationToOwner(BotIdentityId);
-                  if (seatRelation == MyRelationsBetweenPlayerAndBlock.FactionShare)
-                  {
-                    ignoreShareMode = true;
+                  var localHit = gridGraph.WorldToLocal(hit.Position);
+                  if (localHit == localTarget)
+                    break;
 
-                    if (seatCube.IDModule.ShareMode != MyOwnershipShareModeEnum.Faction)
+                  var hitCube = hitGrid.GetCubeBlock(localHit) as IMySlimBlock;
+                  if (hitCube == null)
+                  {
+                    localHit = gridGraph.WorldToLocal(hit.Position + hit.Normal * 0.1f);
+                    hitCube = hitGrid.GetCubeBlock(localHit) as IMySlimBlock;
+
+                    if (hitCube == null)
                     {
-                      seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.Faction;
-                      changeBack = true;
+                      localHit = gridGraph.WorldToLocal(hit.Position - hit.Normal * 0.1f);
+                      hitCube = hitGrid.GetCubeBlock(localHit) as IMySlimBlock;
                     }
                   }
-                  else
-                  {
-                    var owner = Owner?.IdentityId ?? BotIdentityId;
-                    var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
 
-                    var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
-                    if (relation != MyRelationsBetweenPlayers.Enemies)
+                  if (hitCube != null && localHit != localTarget)
+                  {
+                    var cubeDef = hitCube.BlockDefinition as MyCubeBlockDefinition;
+                    if (cubeDef.Id.SubtypeName.IndexOf("shower", StringComparison.OrdinalIgnoreCase) < 0)
                     {
-                      changeBack = true;
-                      seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+                      return false;
                     }
                   }
                 }
-
-                if (ignoreShareMode || seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
-                {
-                  var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
-                  AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
-
-                  seat.AttachPilot(this.Character);
-                }
-
-                if (changeBack)
-                  AiSession.Instance.BotToSeatShareMode[Character.EntityId] = shareMode;
-
-                shouldReturn = true;
-                return true;
               }
+
+              var seatCube = seat as MyCubeBlock;
+              var shareMode = seatCube.IDModule?.ShareMode ?? MyOwnershipShareModeEnum.All;
+              bool changeBack = false;
+              bool ignoreShareMode = false;
+
+              if (shareMode != MyOwnershipShareModeEnum.All)
+              {
+                var seatRelation = seatCube.IDModule.GetUserRelationToOwner(BotIdentityId);
+                if (seatRelation == MyRelationsBetweenPlayerAndBlock.FactionShare)
+                {
+                  ignoreShareMode = true;
+
+                  if (seatCube.IDModule.ShareMode != MyOwnershipShareModeEnum.Faction)
+                  {
+                    seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.Faction;
+                    changeBack = true;
+                  }
+                }
+                else
+                {
+                  var owner = Owner?.IdentityId ?? BotIdentityId;
+                  var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+
+                  var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+                  if (relation != MyRelationsBetweenPlayers.Enemies)
+                  {
+                    changeBack = true;
+                    seatCube.IDModule.ShareMode = MyOwnershipShareModeEnum.All;
+                  }
+                }
+              }
+
+              if (ignoreShareMode || seatCube.IDModule == null || seatCube.IDModule.ShareMode == MyOwnershipShareModeEnum.All)
+              {
+                var relativePosition = Vector3D.Rotate(botPos - seat.GetPosition(), MatrixD.Transpose(seat.WorldMatrix));
+                AiSession.Instance.BotToSeatRelativePosition[Character.EntityId] = relativePosition;
+
+                seat.AttachPilot(this.Character);
+              }
+
+              if (changeBack)
+                AiSession.Instance.BotToSeatShareMode[Character.EntityId] = shareMode;
+
+              shouldReturn = true;
+              return true;
             }
 
             return manhattanDist < 2;
@@ -3916,9 +4006,9 @@ namespace AiEnabled.Bots
       }
 
       AwaitingCallBack = true;
-      _hitList.Clear();
+      _hitListThread.Clear();
 
-      MyAPIGateway.Physics.CastRayParallel(ref muzzlePosition, ref tgtPosition, _hitList, CollisionLayers.CharacterCollisionLayer, RayBlockedCallback);
+      MyAPIGateway.Physics.CastRayParallel(ref muzzlePosition, ref tgtPosition, _hitListThread, CollisionLayers.CharacterCollisionLayer, RayBlockedCallback);
     }
 
     void RayBlockedCallback(List<IHitInfo> hitList)
@@ -4088,11 +4178,16 @@ namespace AiEnabled.Bots
 
           MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
 
+          var thisGrid = (_currentGraph as CubeGridMap)?.MainGrid;
+
           for (int i = 0; i < entList.Count; i++)
           {
             var grid = entList[i] as MyCubeGrid;
             if (grid != null && !grid.IsPreview && !grid.MarkedForClose && grid.GridSizeEnum == MyCubeSize.Large && grid.BlocksCount >= 5)
             {
+              if (thisGrid != null && grid.IsSameConstructAs(thisGrid))
+                continue;
+
               transitionOk = false;
               break;
             }
@@ -4105,7 +4200,9 @@ namespace AiEnabled.Bots
         if (!nextGraphOK || !transitionOk || (!targetInNext && targetInCurrent))
         {
           if (nextGraphOK && !targetInNext)
+          {
             _nextGraph = null;
+          }
 
           _transitionPoint = null;
           NeedsTransition = false;
@@ -4148,23 +4245,7 @@ namespace AiEnabled.Bots
 
           if (switchNow)
           {
-            AdjustPatrolPointsForNewGraph(_currentGraph, _nextGraph);
-
-            _pathCollection?.OnGridBaseClosing();
-            _previousGraph = _currentGraph;
-            _currentGraph = _nextGraph;
-            _nextGraph = null;
-            _transitionPoint = null;
-            _transitionIdle = false;
-            NeedsTransition = false;
-            _pathTimer = 101;
-
-            if (_pathCollection != null)
-            {
-              _currentGraph.HookEventsForPathCollection(_pathCollection);
-              _pathCollection.ClearObstacles();
-              CleanPath();
-            }
+            SwitchGraph();
           }
         }
       }
@@ -4190,7 +4271,7 @@ namespace AiEnabled.Bots
             // check to see if we should switch now or find a point in the buffer zone to move to
             var gridGraph = _currentGraph as CubeGridMap;
 
-            if (!botInNewBox && (!gridGraph.IsInBufferZone(botPosition) || _nextGraph?.IsPositionValid(botPosition) != true))
+            if (!botInNewBox || !gridGraph.IsInBufferZone(botPosition) || _nextGraph?.IsPositionValid(botPosition) != true)
             {
               switchNow = false;
               Node tgtPoint = null;
@@ -4258,7 +4339,7 @@ namespace AiEnabled.Bots
             bool nextIsPrev = voxelGraphNext != null && voxelGraphNext.Key == voxelGraphPrev?.Key;
             Node tgtPoint = null;
 
-            if (!botInNewBox)
+            if (!botInNewBox || !_currentGraph.IsInBufferZone(botPosition) || !_nextGraph.IsPositionValid(botPosition))
             {
               switchNow = false;
               var direction = _currentGraph.WorldMatrix.GetClosestDirection(_nextGraph.OBB.Center - _currentGraph.OBB.Center);
@@ -4272,7 +4353,10 @@ namespace AiEnabled.Bots
                 {
                   var nextOBB = _nextGraph.OBB;
                   var box = new BoundingBoxD(-nextOBB.HalfExtent, nextOBB.HalfExtent);
-                  var tuple = _nextGraph.RootVoxel.GetVoxelContentInBoundingBox_Fast(box, _nextGraph.WorldMatrix);
+                  MyTuple<float, float> tuple;
+
+                  using (_nextGraph.RootVoxel.Pin())
+                    tuple = _nextGraph.RootVoxel.GetVoxelContentInBoundingBox_Fast(box, _nextGraph.WorldMatrix);
 
                   if (tuple.Item2 > 0.6)
                   {
@@ -4335,30 +4419,36 @@ namespace AiEnabled.Bots
             var intermediateNode = _currentGraph.WorldToLocal(intermediatePosition);
             if (_currentGraph.GetClosestValidNode(this, intermediateNode, out intermediateNode))
             {
-              _currentGraph.TryGetNodeForPosition(intermediateNode, out _transitionPoint);
+              bool result = _currentGraph.TryGetNodeForPosition(intermediateNode, out _transitionPoint);
             }
           }
         }
 
         if (switchNow && _nextGraph != null)
         {
-          AdjustPatrolPointsForNewGraph(_currentGraph, _nextGraph);
-
-          _pathCollection?.OnGridBaseClosing();
-          _previousGraph = _currentGraph;
-          _currentGraph = _nextGraph;
-          _nextGraph = null;
-          _transitionPoint = null;
-          NeedsTransition = false;
-          _pathTimer = 101;
-
-          if (_pathCollection != null)
-          {
-            _currentGraph.HookEventsForPathCollection(_pathCollection);
-            _pathCollection.ClearObstacles();
-            CleanPath();
-          }
+          SwitchGraph();
         }
+      }
+    }
+
+    internal void SwitchGraph(bool keepCurrent = true)
+    {
+      AdjustPatrolPointsForNewGraph(_currentGraph, _nextGraph);
+
+      NeedsTransition = false;
+      _pathCollection?.OnGridBaseClosing();
+      _previousGraph = keepCurrent ? _currentGraph : null;
+      _currentGraph = _nextGraph;
+      _nextGraph = null;
+      _transitionPoint = null;
+      _transitionIdle = false;
+      _pathTimer = 60;
+
+      if (_pathCollection != null)
+      {
+        _currentGraph.HookEventsForPathCollection(_pathCollection);
+        _pathCollection.ClearObstacles();
+        CleanPath();
       }
     }
 
@@ -4409,19 +4499,9 @@ namespace AiEnabled.Bots
             || ((gridGraph = _currentGraph as CubeGridMap) != null && (gridGraph.MainGrid == null || gridGraph.MainGrid.MarkedForClose)))
           {
             CheckGraphNeeded = false;
-            NeedsTransition = false;
+            _nextGraph = AiSession.Instance.GetVoxelGraph(BotInfo.CurrentBotPositionActual, WorldMatrix, true);
 
-            _previousGraph = null;
-            _nextGraph = null;
-            _pathCollection?.OnGridBaseClosing();
-            _currentGraph = AiSession.Instance.GetVoxelGraph(BotInfo.CurrentBotPositionActual, WorldMatrix, true);
-
-            if (_pathCollection != null)
-            {
-              CleanPath();
-              _pathCollection.ClearObstacles();
-              _currentGraph?.HookEventsForPathCollection(_pathCollection);
-            }
+            SwitchGraph(false);
           }
 
           return;
@@ -4435,7 +4515,7 @@ namespace AiEnabled.Bots
         }
 
         #region debugOnly
-        if (AiSession.Instance.DrawDebug && _currentGraph.IsValid) // && Owner != null)
+        if (AiSession.Instance.DrawDebug && _currentGraph.IsValid)
           _pathCollection.DrawFreeSpace(BotInfo.CurrentBotPositionActual, gotoPosition);
         #endregion
 
@@ -4852,7 +4932,17 @@ namespace AiEnabled.Bots
         if (goBack)
         {
           if (Target.Override.HasValue && exit == Target.Override)
-            Target.RemoveOverride(false);
+          {
+            if (!_currentGraph.IsPositionValid(exit))
+            {
+              if (!NeedsTransition && !CheckGraphNeeded)
+                CheckGraphNeeded = true;
+
+              return;
+            }
+            else
+              Target.RemoveOverride(false);
+          }
 
           bool markObstacle = false;
           bool allowObstacle = !_currentGraph.Dirty && !_currentGraph.Remake && !_currentGraph.NeedsBlockUpdate && !_currentGraph.NeedsVoxelUpdate;
@@ -5282,7 +5372,7 @@ namespace AiEnabled.Bots
 
         MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward * 3, hitlist, CollisionLayers.CharacterCollisionLayer);
 
-        bool canUseDoors = !(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors;
+        bool canUseDoors = CanOpenDoors && (!(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors);
         bool foundTarget = false;
         IMyDoor door = null;
 
@@ -5873,13 +5963,6 @@ namespace AiEnabled.Bots
         _currentGraph.HookEventsForPathCollection(_pathCollection);
       }
 
-      //if (AiSession.Instance.DrawDebug && _pathCollection != null)
-      //{
-      //  var start = Position;
-      //  var end = _moveTo ?? start;
-      //  _pathCollection.DrawFreeSpace(start, end);
-      //}
-
       if (_moveTo == null)
       {
         _moveToNode = null;
@@ -5974,7 +6057,22 @@ namespace AiEnabled.Bots
               if (!_transitionIdle)
               {
                 Node moveNode;
-                var pos = botPosition + direction * MyUtils.GetRandomInt(10, (int)_currentGraph.OBB.HalfExtent.AbsMax());
+                int minDistance, maxDistance;
+                var startPosition = botPosition;
+
+                if (MaxTravelDistance > 0)
+                {
+                  minDistance = Math.Min(10, MaxTravelDistance);
+                  maxDistance = Math.Min(MaxTravelDistance, (int)_currentGraph.OBB.HalfExtent.AbsMax());
+                  startPosition = SpawnPosition;
+                }
+                else
+                {
+                  minDistance = 10;
+                  maxDistance = (int)_currentGraph.OBB.HalfExtent.AbsMax();
+                }
+
+                var pos = startPosition + direction * MyUtils.GetRandomInt(minDistance, maxDistance);
 
                 if (_currentGraph.GetRandomOpenNode(this, pos, out moveNode))
                 {

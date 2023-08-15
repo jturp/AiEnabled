@@ -58,6 +58,7 @@ namespace AiEnabled.Projectiles
       { MyStringHash.GetOrCompute("Wolf"), "WepPlayRifleImpPlay" },
       { MyStringHash.GetOrCompute("Spider"), "WepPlayRifleImpPlay" },
       { MyStringHash.GetOrCompute("Glass"), "WepPlayRifleImpGlass" },
+      { MyStringHash.GetOrCompute("GlassOpaque"), "WepPlayRifleImpGlass" },
       { MyStringHash.GetOrCompute("Snow"), "WepPlayRifleImpSand" },
       { MyStringHash.GetOrCompute("Ice"), "WepPlayRifleImpRock" },
       { MyStringHash.GetOrCompute("MoonSoil"), "WepPlayRifleImpSand" },

@@ -647,10 +647,8 @@ namespace AiEnabled.Ai.Support
           var map = AiSession.Instance.GetVoxelGraph(newGraphPosition, graph.WorldMatrix);
           if (map != null)
           {
-            bot._previousGraph = bot._currentGraph;
-            bot._currentGraph = map;
-            bot._nextGraph = null;
-            bot.CleanPath();
+            bot._nextGraph = map;
+            bot.SwitchGraph();
           }
         }
 
@@ -1106,6 +1104,65 @@ namespace AiEnabled.Ai.Support
       }
 
       return pointAbove;
+    }
+
+    public static Vector3D? GetClosestSurfacePointAboveGround(ref Vector3D worldPosition, Vector3D? up = null, MyVoxelBase voxel = null)
+    {
+      if (voxel == null)
+      {
+        List<MyVoxelBase> vList;
+        if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
+          vList = new List<MyVoxelBase>();
+        else
+          vList.Clear();
+
+        var sphere = new BoundingSphereD(worldPosition, 1);
+        MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
+
+        var distance = double.MaxValue;
+
+        for (int j = 0; j < vList.Count; j++)
+        {
+          var vb = vList[j];
+          if (vb == vb.RootVoxel)
+          {
+            var dist = Vector3D.DistanceSquared(vb.PositionComp.GetPosition(), worldPosition);
+            if (dist < distance)
+            {
+              voxel = vb;
+              distance = dist;
+            }
+          }
+        }
+
+        vList.Clear();
+        AiSession.Instance.VoxelMapListStack.Push(vList);
+
+        if (voxel == null)
+          return null;
+      }
+
+      var planet = voxel as MyPlanet;
+      if (planet != null)
+        worldPosition = planet.GetClosestSurfacePointGlobal(ref worldPosition);
+
+      if (up == null || up.Value == Vector3D.Zero)
+      {
+        float _;
+        var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out _);
+        if (gravity.LengthSquared() > 0)
+          up = Vector3D.Normalize(-gravity);
+        else
+          up = Vector3D.Normalize(worldPosition - voxel.PositionComp.GetPosition());
+
+        if (up == Vector3D.Zero)
+          return null;
+      }
+
+      while (PointInsideVoxel(worldPosition, voxel))
+        worldPosition += up.Value * 2;
+
+      return worldPosition;
     }
 
     public static bool GetClosestPointAboveGround(ref Vector3D worldPosition, ref Vector3D up, out MyVoxelBase voxel, int testPoints = 20)

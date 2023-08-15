@@ -70,14 +70,16 @@ namespace AiEnabled.GameLogic
     List<string> _neutralTypes = new List<string>(5);
     List<string> _priorities = new List<string>(15);
     List<WeaponInfo> _weaponSubtypes = new List<WeaponInfo>(5);
-    string _soldierColor, _zombieColor, _grinderColor, _nomadColor, _enforcerColor;
+    string _soldierColor, _zombieColor, _grinderColor, _nomadColor, _enforcerColor, _patronColor;
     bool _useRandomColor = true, _allowFlight = true, _spidersOnly, _wolvesOnly, _customOnly;
-    bool _allowBossBot = true, _nomadBotOnly, _enforcerBotOnly, _neutralBotOnly, _creatureBotOnly;
+    bool _allowBossBot = true, _nomadBotOnly, _enforcerBotOnly, _patronBotOnly, _neutralBotOnly, _creatureBotOnly;
     bool _hasSpawned = true, _isClient, _isServer;
+    bool _allowDoorUsage = true, _allowRocketLaunchers = true;
 
     int _minSecondsBetweenSpawns = 60;
     int _maxSecondsBetweenSpawns = 180;
     int _maxSimultaneousSpawns = 2;
+    int _maxTravelDistance = 0;
 
     Sandbox.ModAPI.IMyUpgradeModule _block;
     MyShipController _fakeBlock = new MyShipController();
@@ -241,6 +243,8 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       _ini.Set("AiEnabled", "Allow Spawns to Fly", _allowFlight);
       _ini.Set("AiEnabled", "Use Random Spawn Colors", true);
+      _ini.Set("AiEnabled", "Max Travel Distance", _maxTravelDistance);
+      _ini.Set("AiEnabled", "Allow Door Usage", _allowDoorUsage);
       _ini.Set("AiEnabled", "Allow SoldierBot", true);
       _ini.Set("AiEnabled", "SoldierBot Color", hexColor);
       _ini.Set("AiEnabled", "SoldierBot Loot Container Id", string.Empty);
@@ -257,10 +261,14 @@ namespace AiEnabled.GameLogic
       _ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       _ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       _ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
+      _ini.Set("AiEnabled", "PatronBots Only", _patronBotOnly);
       _ini.Set("AiEnabled", "NomadBot Color", hexColor);
       _ini.Set("AiEnabled", "EnforcerBot Color", hexColor);
+      _ini.Set("AiEnabled", "PatronBot Color", hexColor);
       _ini.Set("AiEnabled", "NomadBot Loot Container Id", string.Empty);
       _ini.Set("AiEnabled", "EnforcerBot Loot Container Id", string.Empty);
+      _ini.Set("AiEnabled", "PatronBot Loot Container Id", string.Empty);
+      _ini.Set("AiEnabled", "Allow Rocket Launchers", true);
       _ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
       _ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
       _ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
@@ -275,6 +283,8 @@ namespace AiEnabled.GameLogic
       _ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
       _ini.SetComment("AiEnabled", "Allow Spawns to Fly", " \n If True, bots spawned by this block will be allowed to fly.\n Note that Admin settings override this, and bot must have\n a valid jetpack component.\n ");
       _ini.SetComment("AiEnabled", "Use Random Spawn Colors", " \n If True, all spawns will use a random color.\n ");
+      _ini.SetComment("AiEnabled", "Max Travel Distance", $" \n The radius the bot is allowed to wander from the Spawner Block.\n Set to zero to disable.\n ");
+      _ini.SetComment("AiEnabled", "Allow Door Usage", " \n If True, bots will be able to open and pass through doors.\n Does not override the admin setting for neutral bots.\n ");
       _ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
       _ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
@@ -299,7 +309,7 @@ namespace AiEnabled.GameLogic
       _ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
 
       _ini.Set("Additional Subtypes", "Subtype", "BotRole;#112233");
-      _ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
+      _ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD, ENFORCER, PATRON\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
 
       _lastConfig = _ini.ToString();
       _block.CustomData = _lastConfig;
@@ -398,6 +408,9 @@ namespace AiEnabled.GameLogic
       _nomadColor = ini.Get("AiEnabled", "NomadBot Color").ToString(hexColor);
       _enforcerBotOnly = ini.Get("AiEnabled", "EnforcerBots Only").ToBoolean(false);
       _enforcerColor = ini.Get("AiEnabled", "EnforcerBot Color").ToString(hexColor);
+      _patronBotOnly = ini.Get("AiEnabled", "PatronBots Only").ToBoolean(false);
+      _patronColor = ini.Get("AiEnabled", "PatronBot Color").ToString(hexColor);
+      _allowRocketLaunchers = ini.Get("AiEnabled", "Allow Rocket Launchers").ToBoolean(true);
 
       if (_neutralBotOnly)
       {
@@ -405,8 +418,10 @@ namespace AiEnabled.GameLogic
         _neutralTypes.Add("Default_Astronaut_Female");
       }
 
+      _allowDoorUsage = ini.Get("AiEnabled", "Allow Door Usage").ToBoolean(true);
       _useRandomColor = ini.Get("AiEnabled", "Use Random Spawn Colors").ToBoolean(true);
       _allowBossBot = ini.Get("AiEnabled", "Allow BruiserBot").ToBoolean(true);
+      _maxTravelDistance = ini.Get("AiEnabled", "Max Travel Distance").ToInt32(0);
       _minSecondsBetweenSpawns = Math.Max(1, ini.Get("AiEnabled", "Min Spawn Interval").ToInt32(60));
       _maxSecondsBetweenSpawns = Math.Max(_minSecondsBetweenSpawns, ini.Get("AiEnabled", "Max Spawn Interval").ToInt32(180));
       _maxSimultaneousSpawns = Math.Max(1, ini.Get("AiEnabled", "Max Simultaneous Spawns").ToInt32(2));
@@ -423,6 +438,7 @@ namespace AiEnabled.GameLogic
       var bruiserLoot = ini.Get("AiEnabled", "BruiserBot Loot Container Id").ToString(string.Empty);
       var nomadLoot = ini.Get("AiEnabled", "NomadBot Loot Container Id").ToString(string.Empty);
       var enforcerLoot = ini.Get("AiEnabled", "EnforcerBot Loot Container Id").ToString(string.Empty);
+      var patronLoot = ini.Get("AiEnabled", "PatronBot Loot Container Id").ToString(string.Empty);
       var wolfLoot = ini.Get("AiEnabled", "Wolf Loot Container Id").ToString(string.Empty);
       var spiderLoot = ini.Get("AiEnabled", "Spider Loot Container Id").ToString(string.Empty);
 
@@ -434,6 +450,7 @@ namespace AiEnabled.GameLogic
       _botTypeToLootContainerId["BruiserLoot"] = bruiserLoot;
       _botTypeToLootContainerId["NomadLoot"] = nomadLoot;
       _botTypeToLootContainerId["EnforcerLoot"] = enforcerLoot;
+      _botTypeToLootContainerId["PatronLoot"] = patronLoot;
       _botTypeToLootContainerId["WolfLoot"] = wolfLoot;
       _botTypeToLootContainerId["SpiderLoot"] = spiderLoot;
 
@@ -570,18 +587,8 @@ namespace AiEnabled.GameLogic
               break;
 
             case "NOMAD":
-
-              _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
-
-              if (!_allSubtypes.Contains(subtype))
-                _allSubtypes.Add(subtype);
-
-              if (!_neutralTypes.Contains(subtype))
-                _neutralTypes.Add(subtype);
-
-              break;
-
             case "ENFORCER":
+            case "PATRON":
 
               _subtypeToRole[subtype] = new KeyValuePair<string, string>(role, color);
 
@@ -645,6 +652,8 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Max Simultaneous Spawns", _maxSimultaneousSpawns);
       ini.Set("AiEnabled", "Allow Spawns to Fly", _allowFlight);
       ini.Set("AiEnabled", "Use Random Spawn Colors", _useRandomColor);
+      ini.Set("AiEnabled", "Max Travel Distance", _maxTravelDistance);
+      ini.Set("AiEnabled", "Allow Door Usage", _allowDoorUsage);
       ini.Set("AiEnabled", "Allow SoldierBot", allowSoldier);
       ini.Set("AiEnabled", "SoldierBot Color", _soldierColor);
       ini.Set("AiEnabled", "SoldierBot Loot Container Id", soldierLoot);
@@ -661,10 +670,14 @@ namespace AiEnabled.GameLogic
       ini.Set("AiEnabled", "Neutral Bots Only", _neutralBotOnly);
       ini.Set("AiEnabled", "NomadBots Only", _nomadBotOnly);
       ini.Set("AiEnabled", "EnforcerBots Only", _enforcerBotOnly);
+      ini.Set("AiEnabled", "PatronBots Only", _patronBotOnly);
       ini.Set("AiEnabled", "NomadBot Color", _nomadColor);
       ini.Set("AiEnabled", "EnforcerBot Color", _enforcerColor);
+      ini.Set("AiEnabled", "PatronBot Color", _patronColor);
       ini.Set("AiEnabled", "NomadBot Loot Container Id", nomadLoot);
       ini.Set("AiEnabled", "EnforcerBot Loot Container Id", enforcerLoot);
+      ini.Set("AiEnabled", "PatronBot Loot Container Id", patronLoot);
+      ini.Set("AiEnabled", "Allow Rocket Launchers", _allowRocketLaunchers);
       ini.Set("AiEnabled", "CreatureBots Only", _creatureBotOnly);
       ini.Set("AiEnabled", "Wolves Only", _wolvesOnly);
       ini.Set("AiEnabled", "Spiders Only", _spidersOnly);
@@ -679,6 +692,8 @@ namespace AiEnabled.GameLogic
       ini.SetComment("AiEnabled", "Max Simultaneous Spawns", " \n The Maximum number of active spawns allowed at any given time.\n ");
       ini.SetComment("AiEnabled", "Allow Spawns to Fly", " \n If True, bots spawned by this block will be allowed to fly.\n Note that Admin settings override this, and bot must have\n a valid jetpack component.\n ");
       ini.SetComment("AiEnabled", "Use Random Spawn Colors", " \n If True, all spawns will use a random color.\n ");
+      ini.SetComment("AiEnabled", "Max Travel Distance", $" \n The radius the bot is allowed to wander from the Spawner Block.\n Set to zero to disable.\n ");
+      ini.SetComment("AiEnabled", "Allow Door Usage", " \n If True, bots will be able to open and pass through doors.\n Does not override the admin setting for neutral bots.\n ");
       ini.SetComment("AiEnabled", "Allow SoldierBot", " \n The SoldierBot uses an automatic rifle to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow GrinderBot", " \n The GrinderBot uses a grinder to hunt you down.\n ");
       ini.SetComment("AiEnabled", "Allow ZombieBot", " \n The ZombieBot applies poison damage over time with its attacks.\n ");
@@ -737,7 +752,7 @@ namespace AiEnabled.GameLogic
       {
         ini.SetSectionComment("SoldierBot Weapon Subtypes", "\n You can add additional weapon subtypes for the SoldierBot to use\n by placing one subtype per line, along with the minimum threshold\n for each. A roll between 0 and 100 will be used to determine\n which subtype to use based on highest threshold that is > rolled #\n If roll doesn't match anything, bot will use the default rapid fire rifle\n EXAMPLE:\n    BasicHandHeldLauncherItem = 90 (if roll is > 90)\n    SuperCoolModRifle = 75 (if roll > 75)\n    ElitePistolItem = 10 (if roll > 10)\n ");
 
-        ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
+        ini.SetSectionComment("Additional Subtypes", " \n You can have the block spawn additional characters by\n adding their subtypes below, one per line, in the following format:\n   SubtypeId = Role;ColorHexValue\n   Valid Roles: GRINDER, SOLDIER, ZOMBIE, GHOST, BRUISER,\n                        CREATURE, NOMAD, ENFORCER, PATRON\n   EXAMPLE: Default_Astronaut=GRINDER;#112233\n   NOTE: The same subtype cannot be used for multiple roles\n ");
       }
 
       _lastConfig = ini.ToString();
@@ -850,11 +865,23 @@ namespace AiEnabled.GameLogic
                 role = "ENFORCER";
               else if (_nomadBotOnly)
                 role = "NOMAD";
+              else if (_patronBotOnly)
+                role = "PATRON";
               else
-                role = MyUtils.GetRandomInt(0, 10) > 5 ? "ENFORCER" : "NOMAD";
+              {
+                var roll = MyUtils.GetRandomInt(0, 75);
+                if (roll >= 50)
+                  role = "ENFORCER";
+                else if (roll >= 25)
+                  role = "PATRON";
+                else
+                  role = "NOMAD";
+              }
 
               if (role == "NOMAD")
                 lootType = _botTypeToLootContainerId.GetValueOrDefault("NomadLoot");
+              else if (role == "PATRON")
+                lootType = _botTypeToLootContainerId.GetValueOrDefault("PatronLoot");
               else
                 lootType = _botTypeToLootContainerId.GetValueOrDefault("EnforcerLoot");
             }
@@ -941,12 +968,18 @@ namespace AiEnabled.GameLogic
                   {
                     color = ColorExtensions.FromHtml(_enforcerColor);
                   }
+                  else if (_patronBotOnly)
+                  {
+                    color = ColorExtensions.FromHtml(_patronColor);
+                  }
                   else if (_neutralBotOnly)
                   {
                     if (role == "NOMAD")
                       color = ColorExtensions.FromHtml(_nomadColor);
-                    else
+                    else if (role == "ENFORCER")
                       color = ColorExtensions.FromHtml(_enforcerColor);
+                    else
+                      color = ColorExtensions.FromHtml(_patronColor);
                   }
 
                   break;
@@ -987,14 +1020,29 @@ namespace AiEnabled.GameLogic
               }
             }
 
-            if (toolType == null && role?.ToUpperInvariant() == "NOMAD")
+            if (toolType == null && role != null)
             {
-              var rand = MyUtils.GetRandomInt(0, 100);
+              var upper = role.ToUpperInvariant();
+              if (upper == "NOMAD")
+              {
+                var rand = MyUtils.GetRandomInt(0, 100);
 
-              if (rand >= 90)
-                toolType = "FullAutoPistolItem";
-              else if (rand >= 60)
-                toolType = "SemiAutoPistolItem";
+                if (rand >= 90)
+                  toolType = "FullAutoPistolItem";
+                else if (rand >= 60)
+                  toolType = "SemiAutoPistolItem";
+              }
+              else if (upper == "ENFORCER" && !_allowRocketLaunchers)
+              {
+                var rand = MyUtils.GetRandomInt(0, 100);
+
+                if (rand >= 75)
+                  toolType = "RapidFireAutomaticRifleItem";
+                else if (rand >= 40)
+                  toolType = "FullAutoPistolItem";
+                else
+                  toolType = "SemiAutoPistolItem";
+              }
             }
 
             var intVecFwd = -Base6Directions.GetIntVector(_block.Orientation.Forward);
@@ -1045,6 +1093,10 @@ namespace AiEnabled.GameLogic
                   bot.CanUseSpaceNodes = false;
                 }
 
+                if (_maxTravelDistance > 0)
+                  bot.MaxTravelDistance = _maxTravelDistance;
+
+                bot.CanOpenDoors = _allowDoorUsage;
                 AssignPriorities(bot);
               }
             }

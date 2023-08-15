@@ -178,6 +178,7 @@ namespace AiEnabled.Ai
       var stackedStairs = collection.StackedStairsFound;
       var botPosition = bot.BotInfo.CurrentBotPositionActual;
       var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
+      var canUseDoors = bot.CanOpenDoors;
 
       cameFrom.Clear();
       costSoFar.Clear();
@@ -238,7 +239,7 @@ namespace AiEnabled.Ai
         costSoFar.TryGetValue(current, out currentCost);
         currentCost += currentNode.MovementCost;
 
-        bool checkDoors = !(bot is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors;
+        bool checkDoors = canUseDoors && (!(bot is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors);
         if (isGridGraph)
         {
           var addedCost = currentNode.AddedMovementCost;
@@ -339,6 +340,17 @@ namespace AiEnabled.Ai
           }
           else if (bot.WaterNodesOnly)
             continue;
+
+          if (isGridGraph && !canUseDoors)
+          {
+            var door = node.Block?.FatBlock as IMyDoor;
+
+            if (door == null)
+              door = gridGraph.GetBlockAtPosition(node.Position)?.FatBlock as IMyDoor;
+
+            if (door != null && door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Open && !door.SlimBlock.IsBlockUnbuilt())
+              continue;
+          }
 
           int nextCost;
           bool stackFound = false;

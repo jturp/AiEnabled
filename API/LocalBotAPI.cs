@@ -93,7 +93,11 @@ namespace AiEnabled.API
         { "GetLocalPositionForGrid", new Func<long, Vector3D, Vector3I?>(GetLocalPositionForGrid) },
         { "GetMainMapGrid", new Func<long, IMyCubeGrid>(GetMainMapGrid) },
         { "SetToolsEnabled", new Func<long, bool, bool>(SetToolsEnabled) },
-     };
+        { "GetClosestSurfacePoint", new Func<Vector3D, MyVoxelBase, Vector3D?>(GetClosestSurfacePoint)},
+        { "UpdateBotSpawnData", new Func<long, byte[], bool>(UpdateBotSpawnData) },
+        { "GetGridMapMatrix", new Func<MyCubeGrid, bool, MatrixD?>(GetGridMapMatrix) },
+
+      };
 
       return dict;
     }
@@ -340,6 +344,77 @@ namespace AiEnabled.API
     }
 
     /// <summary>
+    /// Attempts to retrieve the world orientation for the main grid that would be used for pathing. This may not be the same grid that is passed into the method.
+    /// HINT: Use this as the orientation for bots spawned on this grid!
+    /// </summary>
+    /// <param name="grid">the grid that you want to get the map orientation for</param>
+    /// <param name="checkForMainGrid">if true, check for other grids that may be more suitable as the map's main grid</param>
+    /// <returns>The world orientation the grid's map will use, or null if no suitable main grid is found</returns>
+    public MatrixD? GetGridMapMatrix(MyCubeGrid grid, bool checkForMainGrid = true)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered || grid == null)
+        return null;
+
+      if (checkForMainGrid)
+        grid = GetMainMapGrid(grid.EntityId) as MyCubeGrid;
+
+      if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
+        return null;
+
+      CubeGridMap gridMap;
+      if (AiSession.Instance.GridGraphDict.TryGetValue(grid.EntityId, out gridMap) && gridMap.IsValid)
+        return gridMap.WorldMatrix;
+
+      Vector3D upVector = grid.WorldMatrix.Up;
+
+      int numSeats;
+      if (grid.HasMainCockpit())
+      {
+        upVector = grid.MainCockpit.WorldMatrix.Up;
+      }
+      else if (grid.HasMainRemoteControl())
+      {
+        upVector = grid.MainRemoteControl.WorldMatrix.Up;
+      }
+      else if (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_Cockpit), out numSeats) && numSeats > 0
+        || grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_ShipController), out numSeats) && numSeats > 0)
+      {
+        foreach (var b in grid.GetFatBlocks())
+        {
+          if (b is IMyShipController || b is IMyCockpit)
+          {
+            upVector = b.WorldMatrix.Up;
+            break;
+          }
+        }
+      }
+      else
+      {
+        float _;
+        var gridPos = grid.PositionComp.WorldAABB.Center;
+        var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(gridPos, out _);
+        var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(gridPos, 0);
+
+        if (aGrav.LengthSquared() > 0)
+        {
+          upVector = Vector3D.Normalize(-aGrav);
+        }
+        else if (nGrav.LengthSquared() > 0)
+        {
+          upVector = Vector3D.Normalize(-nGrav);
+        }
+        else
+        {
+          upVector = grid.WorldMatrix.Up;
+        }
+      }
+
+      var rotationMatrix = MatrixD.CreateWorld(grid.PositionComp.WorldAABB.Center, Vector3D.CalculatePerpendicularVector(upVector), upVector);
+      return rotationMatrix;
+    }
+
+
+    /// <summary>
     /// Starts processing a grid to be used as a grid map, if it doesn't already exist
     /// </summary>
     /// <param name="grid">The grid to process</param>
@@ -347,7 +422,7 @@ namespace AiEnabled.API
     /// <returns>true if a map exists or if able to create one, otherwise false</returns>
     public bool CreateGridMap(MyCubeGrid grid, MatrixD? rotationMatrix = null)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance == null | !AiSession.Instance.Registered)
         return false;
 
       if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
@@ -355,50 +430,7 @@ namespace AiEnabled.API
 
       if (rotationMatrix == null)
       {
-        Vector3D upVector = grid.WorldMatrix.Up;
-
-        int numSeats;
-        if (grid.HasMainCockpit())
-        {
-          upVector = grid.MainCockpit.WorldMatrix.Up;
-        }
-        else if (grid.HasMainRemoteControl())
-        {
-          upVector = grid.MainRemoteControl.WorldMatrix.Up;
-        }
-        else if (grid.BlocksCounters.TryGetValue(typeof(MyObjectBuilder_Cockpit), out numSeats) && numSeats > 0)
-        {
-          foreach (var b in grid.GetFatBlocks())
-          {
-            if (b is IMyShipController)
-            {
-              upVector = b.WorldMatrix.Up;
-              break;
-            }
-          }
-        }
-        else
-        {
-          float _;
-          var gridPos = grid.PositionComp.WorldAABB.Center;
-          var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(gridPos, out _);
-          var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(gridPos, 0);
-
-          if (aGrav.LengthSquared() > 0)
-          {
-            upVector = Vector3D.Normalize(-aGrav);
-          }
-          else if (nGrav.LengthSquared() > 0)
-          {
-            upVector = Vector3D.Normalize(-nGrav);
-          }
-          else
-          {
-            upVector = grid.WorldMatrix.Up;
-          }
-        }
-
-        rotationMatrix = MatrixD.CreateWorld(grid.PositionComp.WorldAABB.Center, Vector3D.CalculatePerpendicularVector(upVector), upVector);
+        rotationMatrix = GetGridMapMatrix(grid, false);
       }
 
       var map = AiSession.Instance.GetGridGraph(grid, rotationMatrix.Value);
@@ -475,6 +507,33 @@ namespace AiEnabled.API
       }
 
       return null;
+    }
+
+    /// <summary>
+    /// Updates the bot's data associated with <see cref="SpawnData"/>. 
+    /// Does NOT change data associated with the character itself (color, subtype, etc), nor does it change the bot's Role.
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="spawnData">The serialized <see cref="RemoteBotAPI.SpawnData"/> object</param>
+    /// <returns>true if the change is successful, otherwise false</returns>
+    public bool UpdateBotSpawnData(long botEntityId, byte[] spawnData) => SwitchBotRole(botEntityId, spawnData);
+
+    /// <summary>
+    /// Attempts to find the closest surface point to the provided world position by checking up and down from that point. 
+    /// Does nothing if the position is not near a voxel body (planet or asteroid).
+    /// </summary>
+    /// <param name="startPosition">the position to check from</param>
+    /// <param name="voxel">a planet or asteroid</param>\
+    /// <returns>the surface position if it exists, otherwise null</returns>
+    public Vector3D? GetClosestSurfacePoint(Vector3D startPosition, MyVoxelBase voxel)
+    {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      {
+        AiSession.Instance?.Logger?.Log($"AiEnabled API received UpdateBotSpawnData before mod is ready", MessageType.WARNING);
+        return null;
+      }
+
+      return GridBase.GetClosestSurfacePointAboveGround(ref startPosition, voxel: voxel);
     }
 
     /// <summary>
@@ -640,6 +699,7 @@ namespace AiEnabled.API
       bot.UseAPITargets = true;
       bot.Target.SetOverride(goTo);
       bot.CleanPath();
+      bot.CheckGraphNeeded = true;
       return true;
     }
 
@@ -809,11 +869,7 @@ namespace AiEnabled.API
       if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot?.IsDead != false)
         return false;
 
-      bot.PatrolMode = false;
-      bot.UseAPITargets = false;
-      bot.Target.RemoveTarget();
-      bot.Target.RemoveOverride(false);
-      bot.CleanPath();
+      BotFactory.ResetBotTargeting(bot);
       return true;
     }
 
@@ -1417,6 +1473,7 @@ namespace AiEnabled.API
           newBot.CanUseSpaceNodes = bot.CanUseSpaceNodes;
         }
 
+        newBot.AllowHelmetVisorChanges = bot.AllowHelmetVisorChanges;
         newBot.AllowIdleMovement = bot.AllowIdleMovement;
         newBot.CanTransitionMaps = bot.CanTransitionMaps;
         newBot.ConfineToMap = bot.ConfineToMap;
@@ -1427,6 +1484,7 @@ namespace AiEnabled.API
         newBot.CanUseSeats = bot.CanUseSeats;
         newBot.ShouldLeadTargets = bot.ShouldLeadTargets;
         newBot.HelmetEnabled = bot.HelmetEnabled;
+        newBot.EnableDespawnTimer = bot.EnableDespawnTimer;
         newBot._lootContainerSubtype = bot._lootContainerSubtype;
         newBot._shotAngleDeviationTan = bot._shotAngleDeviationTan;
         newBot._despawnTicks = bot._despawnTicks;
@@ -1481,7 +1539,7 @@ namespace AiEnabled.API
     }
 
     /// <summary>
-    /// Changes the bot's role
+    /// Changes the bot's role and associated data from <see cref="RemoteBotAPI.SpawnData"/>
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     /// <param name="spawnData">The serialized <see cref="RemoteBotAPI.SpawnData"/> object</param>
@@ -1498,99 +1556,112 @@ namespace AiEnabled.API
       var spawnData = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(data);
       if (spawnData == null)
       {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SwitchBotRole command with malformed SpawnData object.", MessageType.WARNING);
         return false;
       }
 
       var newRole = spawnData.BotRole;
-      var character = bot.Character;
-      var controlEnt = character as Sandbox.Game.Entities.IMyControllableEntity;
+      var needNewbot = bot.Role.IndexOf(newRole, StringComparison.OrdinalIgnoreCase) < 0;
+      if (needNewbot)
+      {
+        var character = bot.Character;
+        var controlEnt = character as Sandbox.Game.Entities.IMyControllableEntity;
 
-      var gun = character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
-      gun?.OnControlReleased();
+        var gun = character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+        gun?.OnControlReleased();
 
-      controlEnt?.SwitchToWeapon(null);
-      
-      GridBase graph;
-      if (bot._currentGraph != null && bot._currentGraph.IsValid)
-        graph = bot._currentGraph;
+        controlEnt?.SwitchToWeapon(null);
+
+        GridBase graph;
+        if (bot._currentGraph != null && bot._currentGraph.IsValid)
+          graph = bot._currentGraph;
+        else
+          graph = AiSession.Instance.GetNewGraph(null, character.WorldAABB.Center, character.WorldMatrix);
+
+        string toolType = null;
+        if (spawnData?.ToolSubtypeIdList?.Count > 0)
+        {
+          for (int i = spawnData.ToolSubtypeIdList.Count - 1; i >= 0; i--)
+          {
+            var subtype = spawnData.ToolSubtypeIdList[i];
+            if (!AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, subtype))
+              spawnData.ToolSubtypeIdList.RemoveAtFast(i);
+          }
+
+          if (spawnData.ToolSubtypeIdList.Count > 0)
+          {
+            var num = MyUtils.GetRandomInt(0, spawnData.ToolSubtypeIdList.Count);
+            toolType = spawnData.ToolSubtypeIdList[num];
+          }
+        }
+        else if (!string.IsNullOrWhiteSpace(spawnData.ToolSubtypeId) && AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, spawnData.ToolSubtypeId))
+        {
+          toolType = spawnData.ToolSubtypeId;
+        }
+
+        if (bot.Owner != null)
+        {
+          var role = BotFactory.ParseFriendlyRole(newRole);
+          switch (role)
+          {
+            case BotFactory.BotRoleFriendly.COMBAT:
+              newBot = new CombatBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
+              break;
+            case BotFactory.BotRoleFriendly.REPAIR:
+              newBot = new RepairBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
+              break;
+            case BotFactory.BotRoleFriendly.SCAVENGER:
+              newBot = new ScavengerBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo);
+              break;
+            default:
+              AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid friendly role: {newRole}", MessageType.WARNING);
+              return false;
+          }
+        }
+        else if (newRole.Equals("nomad", StringComparison.OrdinalIgnoreCase))
+        {
+          newBot = new NomadBot(character, graph, bot.BotControlInfo);
+        }
+        else if (newRole.Equals("enforcer", StringComparison.OrdinalIgnoreCase))
+        {
+          newBot = new EnforcerBot(character, graph, bot.BotControlInfo);
+        }
+        else
+        {
+          var role = BotFactory.ParseEnemyBotRole(newRole);
+          switch (role)
+          {
+            case BotFactory.BotRoleEnemy.BRUISER:
+              newBot = new BruiserBot(character, graph, bot.BotControlInfo);
+              break;
+            case BotFactory.BotRoleEnemy.CREATURE:
+              newBot = new CreatureBot(character, graph, bot.BotControlInfo);
+              break;
+            case BotFactory.BotRoleEnemy.GHOST:
+              newBot = new GhostBot(character, graph, bot.BotControlInfo);
+              break;
+            case BotFactory.BotRoleEnemy.GRINDER:
+              newBot = new GrinderBot(character, graph, bot.BotControlInfo, toolType);
+              break;
+            case BotFactory.BotRoleEnemy.SOLDIER:
+              newBot = new SoldierBot(character, graph, bot.BotControlInfo, toolType);
+              break;
+            case BotFactory.BotRoleEnemy.ZOMBIE:
+              newBot = new ZombieBot(character, graph, bot.BotControlInfo);
+              break;
+            default:
+              AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid enemy role: {newRole}", MessageType.WARNING);
+              return false;
+          }
+        }
+
+        AiSession.Instance.SwitchBot(newBot);
+        AiSession.Instance.Bots[botEntityId] = newBot;
+        bot.Close(false, false);
+      }
       else
-        graph = AiSession.Instance.GetNewGraph(null, character.WorldAABB.Center, character.WorldMatrix);
-
-      string toolType = null;
-      if (spawnData?.ToolSubtypeIdList?.Count > 0)
       {
-        for (int i = spawnData.ToolSubtypeIdList.Count - 1; i >= 0; i--)
-        {
-          var subtype = spawnData.ToolSubtypeIdList[i];
-          if (!AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, subtype))
-            spawnData.ToolSubtypeIdList.RemoveAtFast(i);
-        }
-
-        if (spawnData.ToolSubtypeIdList.Count > 0)
-        {
-          var num = MyUtils.GetRandomInt(0, spawnData.ToolSubtypeIdList.Count);
-          toolType = spawnData.ToolSubtypeIdList[num];
-        }
-      }
-      else if (!string.IsNullOrWhiteSpace(spawnData.ToolSubtypeId) && AiSession.Instance.IsBotAllowedToUse(spawnData.BotRole, spawnData.ToolSubtypeId))
-      {
-        toolType = spawnData.ToolSubtypeId;
-      }
-
-      if (bot.Owner != null)
-      {
-        var role = BotFactory.ParseFriendlyRole(newRole);
-        switch(role)
-        {
-          case BotFactory.BotRoleFriendly.COMBAT:
-            newBot = new CombatBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
-            break;
-          case BotFactory.BotRoleFriendly.REPAIR:
-            newBot = new RepairBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo, toolType);
-            break;
-          case BotFactory.BotRoleFriendly.SCAVENGER:
-            newBot = new ScavengerBot(character, graph, bot.Owner.IdentityId, bot.BotControlInfo);
-            break;
-          default:
-            AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid friendly role: {newRole}", MessageType.WARNING);
-            return false;
-        }
-      }
-      else if (newRole.Equals("nomad", StringComparison.OrdinalIgnoreCase))
-      {
-        newBot = new NomadBot(character, graph, bot.BotControlInfo);
-      }
-      else if (newRole.Equals("enforcer", StringComparison.OrdinalIgnoreCase))
-      {
-        newBot = new EnforcerBot(character, graph, bot.BotControlInfo);
-      }
-      else
-      {
-        var role = BotFactory.ParseEnemyBotRole(newRole);
-        switch (role)
-        {
-          case BotFactory.BotRoleEnemy.BRUISER:
-            newBot = new BruiserBot(character, graph, bot.BotControlInfo);
-            break;
-          case BotFactory.BotRoleEnemy.CREATURE:
-            newBot = new CreatureBot(character, graph, bot.BotControlInfo);
-            break;
-          case BotFactory.BotRoleEnemy.GHOST:
-            newBot = new GhostBot(character, graph, bot.BotControlInfo);
-            break;
-          case BotFactory.BotRoleEnemy.GRINDER:
-            newBot = new GrinderBot(character, graph, bot.BotControlInfo, toolType);
-            break;
-          case BotFactory.BotRoleEnemy.SOLDIER:
-            newBot = new SoldierBot(character, graph, bot.BotControlInfo, toolType);
-            break;
-          case BotFactory.BotRoleEnemy.ZOMBIE:
-            newBot = new ZombieBot(character, graph, bot.BotControlInfo);
-            break;
-          default:
-            AiSession.Instance.Logger.Log($"LocalBotAPI.SwitchBotRole received an invalid enemy role: {newRole}", MessageType.WARNING);
-            return false;
-        }
+        newBot = bot;
       }
 
       if (newBot != null)
@@ -1601,6 +1672,7 @@ namespace AiEnabled.API
           newBot.CanUseSpaceNodes = spawnData.CanUseSpaceNodes;
         }
 
+        newBot.AllowHelmetVisorChanges = spawnData.AllowHelmetVisorChanges;
         newBot.AllowIdleMovement = spawnData.AllowIdleMovement;
         newBot.CanTransitionMaps = spawnData.AllowMapTransitions;
         newBot.ConfineToMap = spawnData.ConfineToMap;
@@ -1615,9 +1687,9 @@ namespace AiEnabled.API
         newBot._lootContainerSubtype = spawnData.LootContainerSubtypeId;
         newBot._shotAngleDeviationTan = (float)Math.Tan(MathHelper.ToRadians(spawnData.ShotDeviationAngle));
 
-        if (spawnData.DespawnTicks == 0)
-          newBot.EnableDespawnTimer = false;
-        else
+        newBot.EnableDespawnTimer = spawnData.DespawnTicks > 0;
+
+        if (spawnData.DespawnTicks > 0)
           newBot._despawnTicks = spawnData.DespawnTicks;
 
         if (!string.IsNullOrWhiteSpace(spawnData.DeathSound))
@@ -1699,9 +1771,6 @@ namespace AiEnabled.API
         }
       }
 
-      AiSession.Instance.SwitchBot(newBot);
-      AiSession.Instance.Bots[botEntityId] = newBot;
-      bot.Close(false, false);
       return true;
     }
 

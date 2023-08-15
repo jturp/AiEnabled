@@ -272,14 +272,23 @@ namespace AiEnabled.Bots.Roles.Helpers
       var isGridGraph = graph?.MainGrid?.MarkedForClose == false;
       var botPosition = BotInfo.CurrentBotPositionActual;
 
+      bool isFriendlyMap = true;
+      if (isGridGraph)
+      {
+        var grid = graph.MainGrid;
+        var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
+        var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
+        isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
+      }
+
       if (CurrentBuildMode == BuildMode.Weld)
         tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
       else if (CurrentBuildMode == BuildMode.Grind && invRatioOK)
-        tgt = GetGrindTarget(_currentGraph, ref botPosition, out isInventory, out returnNow);
+        tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
 
       if (returnNow)
         return;
- 
+
       if (tgt == null)
       {
         if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
@@ -331,15 +340,18 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
             {
-              // inv too full, send bot to drop off current stock
-
-              var botLocal = graph.WorldToLocal(botPosition);
-              var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
-              if (invBlock != null)
+              if (isFriendlyMap)
               {
-                tgt = invBlock;
-                Target.SetInventory(invBlock);
-                isInventory = true;
+                // inv too full, send bot to drop off current stock
+
+                var botLocal = graph.WorldToLocal(botPosition);
+                var invBlock = graph.InventoryCache.GetClosestInventory(botLocal, this);
+                if (invBlock != null)
+                {
+                  tgt = invBlock;
+                  Target.SetInventory(invBlock);
+                  isInventory = true;
+                }
               }
 
               break;
@@ -365,7 +377,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         }
       }
 
-      if (tgt == null && isGridGraph && graph.InventoryCache.ShouldSendToUnload(this))
+      if (tgt == null && isGridGraph && isFriendlyMap && graph.InventoryCache.ShouldSendToUnload(this))
       {
         // send bot to drop off current stock
 
@@ -442,7 +454,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       CleanPath();
     }
 
-    object GetGrindTarget(GridBase graph, ref Vector3D botPosition, out bool isInventory, out bool returnNow)
+    object GetGrindTarget(GridBase graph, ref Vector3D botPosition, ref bool isFriendlyMap, out bool isInventory, out bool returnNow)
     {
       isInventory = false;
       returnNow = false;
@@ -476,14 +488,17 @@ namespace AiEnabled.Bots.Roles.Helpers
           // inv too full, try to send bot to drop off current stock
           // if no inventory available, we'll let the block comps be spawned on the ground
 
-          var botLocal = graph.WorldToLocal(botPosition);
-          var invBlock = gridGraph?.InventoryCache.GetClosestInventory(botLocal, this);
-          if (invBlock != null)
+          if (isFriendlyMap)
           {
-            Target.SetInventory(invBlock);
+            var botLocal = graph.WorldToLocal(botPosition);
+            var invBlock = gridGraph?.InventoryCache.GetClosestInventory(botLocal, this);
+            if (invBlock != null)
+            {
+              Target.SetInventory(invBlock);
 
-            tgt = invBlock;
-            isInventory = true;
+              tgt = invBlock;
+              isInventory = true;
+            }
           }
 
           return tgt;
@@ -618,7 +633,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             if (!sameGrid && (mainGrid.Physics.LinearVelocity - checkGrid.Physics.LinearVelocity).LengthSquared() > 10)
               continue;
 
-            var owner = checkGrid.BigOwners?.Count > 0 ? checkGrid.BigOwners[0] : checkGrid.SmallOwners?.Count > 0 ? checkGrid.SmallOwners[0] : -1L;
+            var owner = checkGrid.BigOwners?.Count > 0 ? checkGrid.BigOwners[0] : checkGrid.SmallOwners?.Count > 0 ? checkGrid.SmallOwners[0] : 0L;
 
             if (owner < 0)
             {
