@@ -1095,7 +1095,7 @@ namespace AiEnabled.Bots
         if (ToolDefinition != null)
           AiSession.Instance.Scheduler.Schedule(AddWeapon);
 
-        oldChar?.Close();
+        oldChar?.Delete();
       }
       else
       {
@@ -1233,7 +1233,7 @@ namespace AiEnabled.Bots
         if (seat != null)
           seat.RemovePilot();
 
-        Character.Close();
+        Character.Delete();
       }
     }
 
@@ -3074,7 +3074,7 @@ namespace AiEnabled.Bots
       if (seat != null && Owner == null && Target.Entity != null)
       {
         //seat.RemovePilot();
-        BotFactory.RemoveBotFromSeat(this, false);
+        AiSession.Instance.Scheduler.Schedule(() => BotFactory.RemoveBotFromSeat(this, false));
       }
     }
 

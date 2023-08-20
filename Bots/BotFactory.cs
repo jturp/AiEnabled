@@ -1218,6 +1218,9 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnHelper(string subType, string displayName, long ownerId, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, CrewBot.CrewType? crewFunction = null, bool adminSpawned = false, long? factionId = null)
     {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+        return null;
+
       bool invalidRole = !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant());
       if (!adminSpawned && !string.IsNullOrEmpty(role) && invalidRole)
       {
@@ -1277,7 +1280,7 @@ namespace AiEnabled.Bots
           if (invalidRole)
             AiSession.Instance.Logger.Log($"Something attempted to spawn a {botRole} helper which is not in AllowedBotRoles.", MessageType.WARNING);
 
-          bot.Close();
+          bot.Delete();
           return null;
         }
 
@@ -1356,6 +1359,9 @@ namespace AiEnabled.Bots
 
     public static IMyCharacter SpawnNPC(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, string toolType = null, Color? color = null, long? ownerId = null, bool adminSpawned = false)
     {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+        return null; 
+
       bool nullRole = string.IsNullOrEmpty(role);
       bool invalidRole = !nullRole && !AiSession.Instance.ModSaveData.AllowedBotRoles.Contains(role.ToUpperInvariant());
       if (!adminSpawned && invalidRole)
@@ -1479,7 +1485,7 @@ namespace AiEnabled.Bots
             if (botFaction == null)
             {
               AiSession.Instance.Logger.Log($"BotFactory.SpawnNPC: Faction was null after assignment. Closing bot!", MessageType.WARNING);
-              bot.Close();
+              bot.Delete();
               return null;
             }
           }
@@ -1511,7 +1517,7 @@ namespace AiEnabled.Bots
             if (botFaction == null)
             {
               AiSession.Instance.Logger.Log($"BotFactory.SpawnNPC: Faction was null after assignment. Closing bot!", MessageType.WARNING);
-              bot.Close();
+              bot.Delete();
               return null;
             }
           }
@@ -1549,7 +1555,7 @@ namespace AiEnabled.Bots
             if (invalidRole)
               AiSession.Instance.Logger.Log($"Something attempted to spawn a {botRole} helper which is not in AllowedBotRoles.", MessageType.WARNING);
 
-            bot.Close();
+            bot.Delete();
             return null;
           }
 
@@ -1615,6 +1621,9 @@ namespace AiEnabled.Bots
     {
       try
       {
+        if (Environment.CurrentManagedThreadId != AiSession.MainThreadId)
+          AiSession.Instance.Logger.Log($"CreateBotObject called from parallel thread! ThreadId = {Environment.CurrentManagedThreadId}", MessageType.WARNING);
+
         if (string.IsNullOrEmpty(subType))
           subType = "Default_Astronaut";
 

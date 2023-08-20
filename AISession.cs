@@ -1,59 +1,49 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using AiEnabled.Ai.Support;
+using AiEnabled.API;
+using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
+using AiEnabled.ConfigData;
+using AiEnabled.Graphics;
+using AiEnabled.Input;
+using AiEnabled.Networking;
+using AiEnabled.Networking.Packets;
+using AiEnabled.Particles;
+using AiEnabled.Projectiles;
+using AiEnabled.Support;
+using AiEnabled.Utilities;
 
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
+using Sandbox.Game;
+using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
-using Sandbox.Game.WorldEnvironment;
+using Sandbox.Game.Entities.Character;
+using Sandbox.Game.Entities.Character.Components;
+using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
+using Sandbox.ModAPI.Weapons;
+
+using SpaceEngineers.Game.ModAPI;
+
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Text;
 
 using VRage;
-using VRage.Collections;
 using VRage.Game;
 using VRage.Game.Components;
+using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.Game.ModAPI.Ingame.Utilities;
+using VRage.Input;
+using VRage.ModAPI;
 using VRage.ObjectBuilders;
+using VRage.Utils;
 
 using VRageMath;
 
 using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
-using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
-using AiEnabled.Utilities;
-using AiEnabled.Bots;
-using AiEnabled.Ai.Support;
-using AiEnabled.Support;
-using AiEnabled.Networking;
-using Sandbox.Game;
-using VRage.ModAPI;
-using VRage.Game.Entity;
-using AiEnabled.Bots.Roles;
-using VRage.Utils;
-using Sandbox.Game.Weapons;
-using VRage.Game.Entity.UseObject;
-using AiEnabled.Bots.Roles.Helpers;
-using AiEnabled.Particles;
-using Sandbox.Game.Components;
-using AiEnabled.ConfigData;
-using Sandbox.Game.Entities.Character.Components;
-using AiEnabled.API;
-using AiEnabled.Graphics.Support;
-using AiEnabled.Graphics;
-using VRage.Input;
-using AiEnabled.Input;
-using Sandbox.ModAPI.Weapons;
-using AiEnabled.Projectiles;
-using VRage.Network;
-using VRage.Game.ModAPI.Network;
-using VRage.Sync;
-using Sandbox.ModAPI.Interfaces.Terminal;
-using SpaceEngineers.Game.ModAPI;
-using AiEnabled.Networking.Packets;
-using Sandbox.Engine.Multiplayer;
 
 namespace AiEnabled
 {
@@ -81,7 +71,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.6.2";
+    public const string VERSION = "v1.6.3";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -146,8 +136,9 @@ namespace AiEnabled
 
     IMyHudNotification _hudMsg;
     Vector3D _starterPosition;
-    bool _isControlBot;
+    bool _isControlBot, _firstCacheComplete;
     int _controllerCacheNum = 20;
+    TimeSpan _firstFrameTime;
     FastResourceLock _voxelMapResourceLock = new FastResourceLock();
     FastResourceLock _gridMapResourceLock = new FastResourceLock();
 
@@ -331,6 +322,37 @@ namespace AiEnabled
       }
     }
 
+    private void MyEntities_OnCloseAll()
+    {
+      try
+      {
+        if (Environment.CurrentManagedThreadId != MainThreadId)
+          Logger.Log($"Calling MyEntities.CloseAll from a parallel thread! ThreadId = {Environment.CurrentManagedThreadId}");
+
+        if (Bots?.Count > 0)
+        {
+          Logger.Log($"Closing {Bots.Count} bots before unload");
+
+          foreach (var kvp in Bots)
+          {
+            BotBase bot;
+            if (Bots.TryRemove(kvp.Key, out bot) && bot != null)
+            {
+              bot.Close();
+            }
+          }
+
+          Bots.Clear();
+          Bots = null;
+        }
+      }
+      catch (Exception ex)
+      {
+        Logger?.Log(ex.ToString());
+      }
+    }
+
+
     protected override void UnloadData()
     {
       try
@@ -351,6 +373,7 @@ namespace AiEnabled
 
       MyAPIGateway.Utilities.MessageEntered -= OnMessageEntered;
       MyEntities.OnEntityAdd -= MyEntities_OnEntityAdd;
+      MyEntities.OnCloseAll -= MyEntities_OnCloseAll;
       MyVisualScriptLogicProvider.PlayerConnected -= PlayerConnected;
       MyVisualScriptLogicProvider.PlayerDisconnected -= PlayerDisconnected;
       MyVisualScriptLogicProvider.PlayerEnteredCockpit -= PlayerEnteredCockpit;
@@ -787,6 +810,7 @@ namespace AiEnabled
         IsClient = !IsServer;
         MainThreadId = Environment.CurrentManagedThreadId;
         _controllerCacheNum = Math.Max(20, Math.Min(50, MyAPIGateway.Session.MaxPlayers * 2));
+        _firstFrameTime = MyAPIGateway.Session.ElapsedPlayTime;
 
         bool sessionOK = MyAPIGateway.Session != null;
         if (sessionOK)
@@ -1692,7 +1716,7 @@ namespace AiEnabled
                 if (isBot)
                 {
                   MyGamePruningStructure.Remove((MyEntity)entity);
-                  character.Close();
+                  character.Delete();
                   continue;
                 }
               }
@@ -1720,7 +1744,7 @@ namespace AiEnabled
                     {
                       seat.RemovePilot();
                       MyGamePruningStructure.Remove((MyEntity)pilot);
-                      pilot.Close();
+                      pilot.Delete();
                     }
                   }
                 }
@@ -1789,6 +1813,7 @@ namespace AiEnabled
         }
 
         MyEntities.OnEntityAdd += MyEntities_OnEntityAdd;
+        MyEntities.OnCloseAll += MyEntities_OnCloseAll;
         MyVisualScriptLogicProvider.PlayerConnected += PlayerConnected;
         MyVisualScriptLogicProvider.PlayerDisconnected += PlayerDisconnected;
         MyVisualScriptLogicProvider.PlayerEnteredCockpit += PlayerEnteredCockpit;
@@ -3283,9 +3308,9 @@ namespace AiEnabled
         if (obj == null)
           return;
 
-        var grid = obj as MyCubeGrid;
-        if (grid != null)
-          Logger.Log($"Grid being removed: Name = {grid.DisplayName}, {grid.DebugName}, Id = {grid.EntityId}");
+        //var grid = obj as MyCubeGrid;
+        //if (grid != null)
+        //  Logger.Log($"Grid being removed: Name = {grid.DisplayName}, {grid.DebugName}, Id = {grid.EntityId}");
 
         obj.OnClose -= MyEntities_OnEntityRemove;
 
@@ -3325,6 +3350,23 @@ namespace AiEnabled
           if (_botsToClose.Count == 0)
           {
             _controllerSet = true;
+
+            if (!_firstCacheComplete && CanSpawn)
+            {
+              _firstCacheComplete = true;
+              var elapsed = MyAPIGateway.Session.ElapsedPlayTime - _firstFrameTime;
+              var hours = elapsed.Hours;
+              var mins = elapsed.Minutes - (60 * hours);
+              var secs = Math.Round(elapsed.TotalSeconds - (60 * mins), 3);
+
+              if (secs >= 60)
+              {
+                mins++;
+                secs -= 60;
+              }
+
+              Logger.Log($"Mod setup completed in {hours}H {mins}M {secs:0.###}S");
+            }
           }
         }
       }
@@ -3486,7 +3528,7 @@ namespace AiEnabled
 
         if (_robots.Count >= ModSaveData.MaxBotsInWorld)
         {
-          character.Close();
+          character.Delete();
         }
         else
         {
@@ -4639,17 +4681,6 @@ namespace AiEnabled
         return;
       }
 
-      Vector3D position = Vector3D.Zero; // get meteor position
-      var planet = MyGamePruningStructure.GetClosestPlanet(position);
-      if (planet != null)
-      {
-        var surface = planet.GetClosestSurfacePointGlobal(position);
-        if (Vector3D.DistanceSquared(surface, position) > 20 * 20)
-        {
-          // skip spawn
-        }
-      }
-
       try
       {
         if (Players.Count == 0)
@@ -4678,7 +4709,7 @@ namespace AiEnabled
           if (_controlSpawnTimer > checkTime)
           {
             foreach (var bot in _botCharsToClose)
-              bot?.Close();
+              bot?.Delete();
 
             _botCharsToClose.Clear();
           }
@@ -4711,7 +4742,7 @@ namespace AiEnabled
                   {
                     Logger.Log($"Found duplicate identity in faction {kvp.Value.Name} (discarding identity)", MessageType.WARNING);
                     useBot = false;
-                    bot.Close();
+                    bot.Delete();
                     break;
                   }
                 }
@@ -4721,12 +4752,12 @@ namespace AiEnabled
                 {
                   Logger.Log($"Found duplicate identity for player {p.DisplayName} (discarding identity)", MessageType.WARNING);
                   useBot = false;
-                  bot.Close();
+                  bot.Delete();
                 }
               }
               else
               {
-                Logger.Log($"Spawned a dummy bot, but it did not have an IdentityId > 0!");
+                Logger.Log($"Spawned a dummy bot, but it did not have an IdentityId > 0!", MessageType.WARNING);
               }
 
               if (useBot)
@@ -4738,7 +4769,7 @@ namespace AiEnabled
             }
             else
             {
-              Logger.Log($"Attempted to spawn a dummy bot, but found it to be null!");
+              Logger.Log($"Attempted to spawn a dummy bot, but found it to be null!", MessageType.WARNING);
             }
           }
           catch

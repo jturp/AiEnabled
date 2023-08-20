@@ -141,7 +141,7 @@ namespace AiEnabled.Bots.Roles
           ++_seatedCounter;
           if (_seatedCounter >= 30 || !anyPlayerPresent)
           {
-            BotFactory.RemoveBotFromSeat(this, false);
+            AiSession.Instance.Scheduler.Schedule(() => BotFactory.RemoveBotFromSeat(this, false));
             BotFactory.ResetBotTargeting(this);
             AllowIdleMovement = true;
           }
@@ -201,6 +201,11 @@ namespace AiEnabled.Bots.Roles
               Target.SetOverride(seat.WorldAABB.Center);
               _lastSeat = seat;
               return;
+            }
+            else
+            {
+              AllowIdleMovement = true;
+              _seatedCounter = MyUtils.GetRandomInt(0, 5);
             }
           }
         }
