@@ -171,6 +171,16 @@ namespace AiEnabled.Ai.Support
       AiSession.Instance.MapInitQueue.Enqueue(this);
     }
 
+    public override void ClearTempObstacles()
+    {
+      foreach (var node in OpenTileDict.Values)
+      {
+        node.TempBlockedMask = 0;
+      }
+
+      NeedsTempCleared = false;
+    }
+
     public override bool IsPositionValid(Vector3D position)
     {
       if (OBB.Contains(ref position))

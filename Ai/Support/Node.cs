@@ -34,6 +34,7 @@ namespace AiEnabled.Ai.Support
     public Vector3I Position;
     public Vector3 Offset;
     public int BlockedMask;
+    public int TempBlockedMask;
     public byte MovementCost = 1;
     public byte AddedMovementCost = 0;
     public NodeType NodeType;
@@ -51,8 +52,8 @@ namespace AiEnabled.Ai.Support
     public bool IsWaterNode => (NodeType & NodeType.Water) > 0;
     public bool IsAirNode => (NodeType & NodeType.Ground) == 0;
     public bool IsTunnelNode => (NodeType & NodeType.Tunnel) > 0;
-    public bool IsBlocked(Vector3I pos) => (BlockedMask & GetBlockedMask(pos)) != 0;
     public bool IsSpaceNode(GridBase gBase) => _isSpaceNode ?? IsNodeInSpace(gBase);
+    public void ResetTempBlocked() => TempBlockedMask = 0;
 
     public Node() { }
 
@@ -90,7 +91,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (IsGridNode && AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+      if (IsGridNode)
         CalculateMovementCost(gBase);
     }
 
@@ -129,7 +130,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (IsGridNode && AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+      if (IsGridNode)
         CalculateMovementCost(gBase);
     }
 
@@ -138,33 +139,36 @@ namespace AiEnabled.Ai.Support
       if (IsAirNode || IsWaterNode)
         MovementCost++;
 
-      var gridMap = gBase as CubeGridMap;
-      if (gridMap?.WeaponPositions?.Count > 0)
+      if (AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
       {
-        var grid = gridMap.MainGrid;
-        var worldPosition = grid.GridIntegerToWorld(Position) + Offset;
-        var hitInfo = AiSession.Instance.CubeGridHitInfo;
-
-        var closestDistance = int.MaxValue;
-        foreach (var point in gridMap.WeaponPositions)
+        var gridMap = gBase as CubeGridMap;
+        if (gridMap?.WeaponPositions?.Count > 0)
         {
-          var worldPoint = grid.GridIntegerToWorld(point);
-          var line = new LineD(worldPoint, worldPosition);
-          bool hitSomething = grid.GetIntersectionWithLine(ref line, ref hitInfo);
+          var grid = gridMap.MainGrid;
+          var worldPosition = grid.GridIntegerToWorld(Position) + Offset;
+          var hitInfo = AiSession.Instance.CubeGridHitInfo;
 
-          if (!hitSomething || hitInfo.Position == Position)
+          var closestDistance = int.MaxValue;
+          foreach (var point in gridMap.WeaponPositions)
           {
-            var distance = (point - Position).Length();
-            if (distance < closestDistance)
+            var worldPoint = grid.GridIntegerToWorld(point);
+            var line = new LineD(worldPoint, worldPosition);
+            bool hitSomething = grid.GetIntersectionWithLine(ref line, ref hitInfo);
+
+            if (!hitSomething || hitInfo.Position == Position)
             {
-              closestDistance = distance;
+              var distance = (point - Position).Length();
+              if (distance < closestDistance)
+              {
+                closestDistance = distance;
+              }
             }
           }
-        }
 
-        var num = 5 - (closestDistance / 7);
-        if (num > 0)
-          AddedMovementCost = (byte)(num * num);
+          var num = 5 - (closestDistance / 7);
+          if (num > 0)
+            AddedMovementCost = (byte)(num * num);
+        }
       }
     }
 
@@ -215,7 +219,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (IsGridNode && AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+      if (IsGridNode)
         CalculateMovementCost(gBase);
     }
 
@@ -240,6 +244,26 @@ namespace AiEnabled.Ai.Support
       }
 
       return false;
+    }
+
+    public bool SetBlockedTemp(Vector3I dir)
+    {
+      var mask = GetBlockedMask(dir);
+
+      if ((TempBlockedMask & mask) == 0)
+      {
+        BlockedMask |= mask;
+        return true;
+      }
+
+      return false;
+    }
+
+    public bool IsBlocked(Vector3I dir)
+    {
+      var mask = GetBlockedMask(dir);
+
+      return (BlockedMask & mask) > 0 || (TempBlockedMask & mask) > 0;
     }
 
     int GetBlockedMask(Vector3I pos)
@@ -269,6 +293,34 @@ namespace AiEnabled.Ai.Support
       var nGrav = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPos, out _);
       var aGrav = MyAPIGateway.Physics.CalculateArtificialGravityAt(worldPos, 0);
       return nGrav.LengthSquared() <= 0 && aGrav.LengthSquared() <= 0;
+    }
+
+    /// <summary>
+    /// Debug only
+    /// </summary>
+    public string GetBlockedEdges(StringBuilder sb)
+    {
+      sb.Clear();
+
+      if (IsBlocked(Vector3I.Up))
+        sb.Append("Up ");
+
+      if (IsBlocked(Vector3I.Down))
+        sb.Append("Down ");
+
+      if (IsBlocked(Vector3I.Left))
+        sb.Append("Left ");
+
+      if (IsBlocked(Vector3I.Right))
+        sb.Append("Right ");
+
+      if (IsBlocked(Vector3I.Forward))
+        sb.Append("Forward ");
+
+      if (IsBlocked(Vector3I.Backward))
+        sb.Append("Backward");
+
+      return sb.ToString();
     }
 
     public int Compare(Node x, Node y)

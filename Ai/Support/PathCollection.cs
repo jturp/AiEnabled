@@ -52,8 +52,7 @@ namespace AiEnabled.Ai.Support
     public bool Dirty;
 
     /// <summary>
-    /// This graph needs to be set BEFORE calling FindPath
-    /// Ensure this has the proper grid info or it won't work!
+    /// The bot's current map graph
     /// </summary>
     public GridBase Graph => Bot?._currentGraph ?? null;
 
@@ -66,7 +65,7 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// True if there are any waypoints left to move to
     /// </summary>
-    public bool HasPath => PathToTarget.Count > 0;
+    public bool HasPath => PathToTarget.Count > 0 || NextNode != null;
 
     /// <summary>
     /// True if the next node isn't null
@@ -99,7 +98,7 @@ namespace AiEnabled.Ai.Support
     public Dictionary<Vector3I, Vector3I> CameFrom = new Dictionary<Vector3I, Vector3I>(Vector3I.Comparer);
 
     /// <summary>
-    /// This tracks the movement cost for each checked position
+    /// This tracks the movement cost for each checked position.
     /// It uses a fixed cost per tile along with a heuristic and keeps only the smallest value for any given tile
     /// </summary>
     public Dictionary<Vector3I, int> CostSoFar = new Dictionary<Vector3I, int>(Vector3I.Comparer);
@@ -108,6 +107,12 @@ namespace AiEnabled.Ai.Support
     /// Used for permanently blocked nodes
     /// </summary>
     internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
+
+    /// <summary>
+    /// Used for temporarily blocked nodes (ie bot got stuck on the corner of a block, try another path but this one may still be valid).
+    /// If same position is added more than five times without a successful pass, will be considered a permanent obstacle.
+    /// </summary>
+    internal ConcurrentDictionary<Vector3I, byte> TempObstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
 
     /// <summary>
     /// Used for potential block targets that reside outside the current map area.
@@ -381,8 +386,12 @@ namespace AiEnabled.Ai.Support
 
           if (curIsLadder && !nextIsLadder)
           {
+            var upDir = gridGraph.WorldMatrix.GetClosestDirection(botMatrix.Up);
+            var upVec = Base6Directions.GetIntVector(upDir);
+            var localVector = localResult - localCurrent;
             var vector = worldResultNode - worldCurrentNode;
-            if (vector.Dot(botMatrix.Up) <= 0)
+
+            if (upVec.Dot(ref localVector) <= 0 || vector.Dot(botMatrix.Up) <= 0)
             {
               curIsLadder = false;
             }
@@ -1030,9 +1039,20 @@ namespace AiEnabled.Ai.Support
         AiSession.Instance.TempNodeStack.Push(temp);
 
       if (includelast)
+      {
         LastNode = null;
+      }
       else
+      {
+        if (LastNode != null)
+        {
+          byte _;
+          if (TempObstacles.ContainsKey(LastNode.Position))
+            TempObstacles.TryRemove(LastNode.Position, out _);
+        }
+
         LastNode = NextNode;
+      }
 
       NextNode = null;
       _distanceToWaypointSquared = null;

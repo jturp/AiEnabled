@@ -125,10 +125,12 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_LargeMissileTurret)),
     };
 
-    public MyDefinitionId[] BtnPanelDefinitions = new MyDefinitionId[]
+    public MyDefinitionId[] ButtonPanelDefinitions = new MyDefinitionId[]
     {
       new MyDefinitionId(typeof(MyObjectBuilder_ButtonPanel), "ButtonPanelLarge"),
       new MyDefinitionId(typeof(MyObjectBuilder_ButtonPanel), "LargeSciFiButtonPanel"),
+      new MyDefinitionId(typeof(MyObjectBuilder_ButtonPanel), "LargeButtonPanelPedestal"),
+      new MyDefinitionId(typeof(MyObjectBuilder_TerminalBlock), "LargeControlPanelPedestal"),
     };
 
     public MyDefinitionId[] FlatWindowDefinitions = new MyDefinitionId[]
@@ -285,6 +287,23 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_StoreBlock), "AtmBlock"),
       new MyDefinitionId(typeof(MyObjectBuilder_VendingMachine), "VendingMachine"),
       new MyDefinitionId(typeof(MyObjectBuilder_VendingMachine), "FoodDispenser"), // DNSK
+
+      // Decorative Pack 3 and Warfare Evolution 
+      new MyDefinitionId(typeof(MyObjectBuilder_TerminalBlock), "LargeCrate"),
+      new MyDefinitionId(typeof(MyObjectBuilder_Warhead), "LargeExplosiveBarrel"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeBarrel"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussHalf"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussSloped"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussAngled"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloor"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorHalf"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorAngled"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorAngledInverted"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CryoChamber), "LargeBlockCryoRoom"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_CryoChamber), "LargeBlockInsetBed"),
+      //new MyDefinitionId(typeof(MyObjectBuilder_Cockpit), "LargeBlockInsetPlantCouch"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CryoChamber), "LargeBlockHalfBed"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CryoChamber), "LargeBlockHalfBedOffset"),
     };
 
     public MyDefinitionId[] ConveyorFullBlockDefinitions = new MyDefinitionId[]
@@ -349,8 +368,14 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign11"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign12"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSign13"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster2"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster3"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster9"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster10"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster11"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster13"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctGrate"),
-   };
+    };
 
     public Dictionary<MyDefinitionId, Base6Directions.Direction[]> CatwalkRailDirections { get; protected set; } = new Dictionary<MyDefinitionId, Base6Directions.Direction[]>(MyDefinitionId.Comparer)
     {
@@ -481,6 +506,8 @@ namespace AiEnabled
       { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderBottom"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
     };
 
+    Dictionary<string, int> _activeHelpersToUpkeep = new Dictionary<string, int>();
+
     public Dictionary<BotType, long> BotPrices = new Dictionary<BotType, long>()
     {
       { BotType.Repair, 10000 },
@@ -488,6 +515,15 @@ namespace AiEnabled
       { BotType.Crew, 15000 },
       //{ BotType.Medic, 30000 },
       { BotType.Combat, 50000 },
+    };
+
+    public Dictionary<BotType, long> BotUpkeepPrices = new Dictionary<BotType, long>()
+    {
+      { BotType.Repair, 100 },
+      { BotType.Scavenger, 50 },
+      { BotType.Crew, 100 },
+      //{ BotType.Medic, 150 },
+      { BotType.Combat, 200 },
     };
 
     public Dictionary<BotType, List<SerialId>> BotComponents = new Dictionary<BotType, List<SerialId>>()
@@ -815,6 +851,7 @@ namespace AiEnabled
     public Queue<FutureBot> FutureBotQueue = new Queue<FutureBot>();
     public HashSet<string> PendingBotRespawns = new HashSet<string>();
     public HashSet<long> AnalyzeHash = new HashSet<long>();
+    public HashSet<long> HealingHash = new HashSet<long>();
     public Dictionary<MyDefinitionId, MyDefinitionBase> AllGameDefinitions = new Dictionary<MyDefinitionId, MyDefinitionBase>(MyDefinitionId.Comparer);
     public List<MyDefinitionId> ScavengerItemList = new List<MyDefinitionId>();
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
@@ -839,7 +876,8 @@ namespace AiEnabled
     ConcurrentDictionary<long, IconInfo> _botSpeakers = new ConcurrentDictionary<long, IconInfo>();
     ConcurrentDictionary<long, IconInfo> _botAnalyzers = new ConcurrentDictionary<long, IconInfo>();
     ConcurrentDictionary<long, HealthInfo> _healthBars = new ConcurrentDictionary<long, HealthInfo>();
-    List<long> _analyzeList = new List<long>();
+    ConcurrentDictionary<long, IconInfo> _botHealings = new ConcurrentDictionary<long, IconInfo>();
+    List<long> _iconAddList = new List<long>();
     List<WeaponInfo> _weaponFireList = new List<WeaponInfo>();
     List<BotBase> _robots = new List<BotBase>(10);
     List<IMyUseObject> _useObjList = new List<IMyUseObject>();
@@ -874,6 +912,7 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Slope"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_Concrete_Half_Block_Slope"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AQD_LG_ReinforcedConcrete_Half_Block_Slope"),
+      new MyDefinitionId(typeof(MyObjectBuilder_TextPanel), "LargeDiagonalLCDPanel"),
     };
   }
 }

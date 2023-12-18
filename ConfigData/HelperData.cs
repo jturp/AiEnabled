@@ -42,6 +42,7 @@ namespace AiEnabled.ConfigData
   {
     [ProtoMember(100)] public long HelperId;
     [ProtoMember(101)] public long GridEntityId;
+    [ProtoMember(117)] public long SeatEntityId;
     [ProtoMember(102)] public string CharacterDefinitionName;
     [ProtoMember(103)] public string DisplayName;
     [ProtoMember(104)] public SerializableDefinitionId? ToolPhysicalItem;
@@ -74,6 +75,9 @@ namespace AiEnabled.ConfigData
       Priorities = priList;
       DamageToDisable = disableOnly;
       AdminSpawned = adminSpawn;
+      
+      if (bot.Parent is IMyCockpit)
+        SeatEntityId = bot.Parent.EntityId;
 
       if (crewRole.HasValue)
         CrewFunction = (int)crewRole.Value;

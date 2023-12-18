@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -44,9 +45,11 @@ namespace AiEnabled.Bots.Roles.Helpers
     List<MyInventoryItem> _invItems = new List<MyInventoryItem>();
     List<IMySlimBlock> _cubes = new List<IMySlimBlock>();
     List<MyEntity> _threadOnlyEntList, _noThreadEntList;
+    List<MyPhysicalItemDefinition> _validToolDefinitions = new List<MyPhysicalItemDefinition>(2);
     bool _cleaned;
 
     public string FirstMissingItemForRepairs;
+    public bool WeldBeforeGrind => RepairPriorities?.WeldBeforeGrind ?? true;
 
     public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo, string toolType = null) : base(bot, 1, 1, gridBase, ownerId, ctrlInfo)
     {
@@ -133,6 +136,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _builtBlocks?.Clear();
         _repairedBlocks?.Clear();
         _patrolOBBs?.Clear();
+        _validToolDefinitions?.Clear();
 
         _projectedGrids = null;
         _missingComps = null;
@@ -143,6 +147,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _targetAction = null;
         _repairedBlocks = null;
         _patrolOBBs = null;
+        _validToolDefinitions = null;
       }
       catch(Exception ex)
       {
@@ -173,15 +178,41 @@ namespace AiEnabled.Bots.Roles.Helpers
       base.AddWeapon();
     }
 
-    public override void EquipWeapon()
-    {
-      UpdateWeaponInfo();
-      base.EquipWeapon();
-    }
-
     public void UpdateWeaponInfo()
     {
       _toolInfo.CheckMultiplier(ToolDefinition, out CurrentBuildMode);
+    }
+
+    public void UpdateWeaponInfoAndEquip()
+    {
+      if (CurrentBuildMode == BuildMode.Weld)
+      {
+        foreach (var item in _validToolDefinitions)
+        {
+          if (item.DisplayNameText.EndsWith("Welder"))
+          {
+            var handItem = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Id);
+            ToolDefinition = handItem;
+            break;
+          }
+        }
+      }
+      else if (CurrentBuildMode == BuildMode.Grind)
+      {
+        foreach (var item in _validToolDefinitions)
+        {
+          if (item.DisplayNameText.EndsWith("Grinder"))
+          {
+            var handItem = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Id);
+            ToolDefinition = handItem;
+            break;
+          }
+        }
+      }
+
+      var currentTool = Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>;
+      if (currentTool == null || currentTool.DefinitionId.SubtypeId != ToolDefinition?.PhysicalItemId.SubtypeId)
+        base.EquipWeapon();
     }
 
     List<MyOrientedBoundingBoxD> _patrolOBBs = new List<MyOrientedBoundingBoxD>();
@@ -190,6 +221,77 @@ namespace AiEnabled.Bots.Roles.Helpers
     internal void UpdatePatrolOBBCache()
     {
       UpdatePatrolOBBCache(ref _lastRadius, _patrolOBBs);
+    }
+
+    internal void GetValidActions(IMyInventory botInv, out bool canWeld, out bool canGrind)
+    {
+      canWeld = canGrind = false;
+
+      _validToolDefinitions.Clear();
+
+      MyPhysicalItemDefinition currentWelder = null;
+      MyPhysicalItemDefinition currentGrinder = null;
+
+      _invItems.Clear();
+      botInv.GetItems(_invItems);
+
+      for (int i = _invItems.Count - 1; i >= 0; i--)
+      {
+        var item = _invItems[i];
+        var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Type);
+        if (handItemDef != null)
+        {
+          var physicalItem = MyDefinitionManager.Static.GetPhysicalItemForHandItem(handItemDef.Id);
+          var displayName = physicalItem.DisplayNameText;
+
+          if (displayName.EndsWith("Welder"))
+          {
+            var curLevel = 0;
+            if (currentWelder != null)
+              curLevel = GetItemLevel(currentWelder.DisplayNameText);
+
+            var lvl = GetItemLevel(physicalItem.DisplayNameText);
+            if (lvl > curLevel)
+              currentWelder = physicalItem;
+          }
+          else if (displayName.EndsWith("Grinder"))
+          {
+            var curLevel = 0;
+            if (currentGrinder != null)
+              curLevel = GetItemLevel(currentGrinder.DisplayNameText);
+
+            var lvl = GetItemLevel(physicalItem.DisplayNameText);
+            if (lvl > curLevel)
+              currentGrinder = physicalItem;
+          }
+        }
+      }
+
+      if (currentGrinder != null)
+      {
+        canGrind = true;
+        _validToolDefinitions.Add(currentGrinder);
+      }
+
+      if (currentWelder != null)
+      {
+        canWeld = true;
+        _validToolDefinitions.Add(currentWelder);
+      }
+    }
+
+    int GetItemLevel(string item)
+    {
+      if (item.StartsWith("Elite"))
+        return 4;
+
+      if (item.StartsWith("Proficient"))
+        return 3;
+
+      if (item.StartsWith("Enhanced"))
+        return 2;
+
+      return 1;
     }
 
     internal override void SetTargetInternal()
@@ -220,8 +322,17 @@ namespace AiEnabled.Bots.Roles.Helpers
         return;
       }
 
-      var inv = Character.GetInventory() as MyInventory;
+      var inv = Character.GetInventory();
       var invRatioOK = inv != null && ((float)inv.CurrentVolume / (float)inv.MaxVolume) < 0.9f;
+
+      bool canWeld, canGrind;
+      GetValidActions(inv, out canWeld, out canGrind);
+
+      if (!canWeld && !canGrind)
+      {
+        CurrentBuildMode = BuildMode.None;
+        return;
+      }
 
       if (Target.IsSlimBlock && CurrentBuildMode != BuildMode.None)
       {
@@ -281,15 +392,55 @@ namespace AiEnabled.Bots.Roles.Helpers
         isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
       }
 
-      if (CurrentBuildMode == BuildMode.Weld)
+      if (canWeld && canGrind)
+      {
+        if (WeldBeforeGrind) // prioritize welding
+        {
+          tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
+          CurrentBuildMode = BuildMode.Weld;
+
+          if (tgt == null && !returnNow)
+          {
+            tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
+            CurrentBuildMode = BuildMode.Grind;
+          }
+        }
+        else // prioritize grinding
+        {
+          tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
+          CurrentBuildMode = BuildMode.Grind;
+
+          if (tgt == null && !returnNow)
+          {
+            tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
+            CurrentBuildMode = BuildMode.Weld;
+          }
+        }
+      }
+      else if (canWeld)
+      {
         tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
-      else if (CurrentBuildMode == BuildMode.Grind && invRatioOK)
+        CurrentBuildMode = BuildMode.Weld;
+      }
+      else // canGrind
+      {
         tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
+        CurrentBuildMode = BuildMode.Grind;
+      }
+
+      //if (CurrentBuildMode == BuildMode.Weld)
+      //  tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
+      //else if (CurrentBuildMode == BuildMode.Grind && invRatioOK)
+      //  tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
 
       if (returnNow)
         return;
 
-      if (tgt == null)
+      if (tgt != null)
+      {
+        UpdateWeaponInfoAndEquip();
+      }
+      else
       {
         if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
         {
@@ -685,11 +836,6 @@ namespace AiEnabled.Bots.Roles.Helpers
               var slim = obj as IMySlimBlock;
               if (slim?.CubeGrid == null || (slim.IsDestroyed && slim.StockpileEmpty))
                 continue;
-
-              if (slim.BlockDefinition.Id.SubtypeName.IndexOf("wheel", StringComparison.OrdinalIgnoreCase) >= 0)
-              {
-                MyAPIGateway.Utilities.ShowNotification(" ", 16);
-              }
 
               var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
@@ -1161,14 +1307,14 @@ namespace AiEnabled.Bots.Roles.Helpers
                 if (slim.FatBlock != null)
                 {
                   distanceCheck = slim.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 4f;
-                  distanceCheck *= distanceCheck;
+                  distanceCheck = (float)Math.Ceiling(distanceCheck * distanceCheck);
                 }
                 else
                 {
                   BoundingBoxD box;
                   slim.GetWorldBoundingBox(out box, true);
                   distanceCheck = (float)box.HalfExtents.AbsMax() + 4f;
-                  distanceCheck *= distanceCheck;
+                  distanceCheck = (float)Math.Ceiling(distanceCheck * distanceCheck);
                 }
               }
               else
@@ -1177,7 +1323,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 if (cube != null)
                 {
                   distanceCheck = cube.PositionComp.LocalAABB.HalfExtents.AbsMax() + 4f;
-                  distanceCheck *= distanceCheck;
+                  distanceCheck = (float)Math.Ceiling(distanceCheck * distanceCheck);
                 }
                 else
                 {
@@ -1185,19 +1331,16 @@ namespace AiEnabled.Bots.Roles.Helpers
                 }
               }
 
-              if (isInv)
+              var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
+              if (distance <= distanceCheck)
               {
-                var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
-                if (distance <= distanceCheck)
-                {
-                  movement.Y = 0;
-                  movement.Z = 0;
-                }
+                movement.Y = 0;
+                movement.Z = 0;
               }
-              else // if (directToBlock || directToFloater)
+              else
               {
-                var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
-                if (distance <= distanceCheck)
+                var dirVec = Character.WorldMatrix.GetClosestDirection(actualPosition - botPosition);
+                if (dirVec == Base6Directions.Direction.Down && Vector3D.DistanceSquared(actualPosition, BotInfo.CurrentBotPositionAtFeet) <= distanceCheck)
                 {
                   movement.Y = 0;
                   movement.Z = 0;

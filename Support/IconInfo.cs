@@ -32,7 +32,9 @@ namespace AiEnabled.Support
     public bool Update(ref MatrixD cameraMatrix, ref MyStringId material, ref Vector4 color)
     {
       if (Bot == null || Bot.MarkedForClose)
+      {
         return true;
+      }
 
       var position = Bot.WorldAABB.Center + Bot.WorldMatrix.Up * (Bot.LocalAABB.HalfExtents.Y + 0.1);
       MyTransparentGeometry.AddBillboardOriented(material, color, position, (Vector3)cameraMatrix.Left, (Vector3)cameraMatrix.Up, radius: 0.15f, blendType: BlendTypeEnum.PostPP);

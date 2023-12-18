@@ -2,6 +2,7 @@
 using AiEnabled.Bots;
 using AiEnabled.Bots.Roles;
 using AiEnabled.Bots.Roles.Helpers;
+using AiEnabled.Networking;
 using AiEnabled.Parallel;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
@@ -53,6 +54,9 @@ namespace AiEnabled.API
         { "SpawnBotCustom", new Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>(SpawnBot)},
         { "SpawnBotQueued", new Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>(SpawnBotQueued)},
         { "SpawnBotCustomQueued", new Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>(SpawnBotQueued)},
+
+        { "SpawnBotQueuedWithId", new Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter, long>, long>(SpawnBotQueuedWithId)},
+        { "SpawnBotCustomQueuedWithId", new Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter, long>, long>(SpawnBotQueuedWithId)},
         { "GetFriendlyRoles", new Func<string[]>(GetFriendlyBotRoles) },
         { "GetNPCRoles", new Func<string[]>(GetNPCBotRoles) },
         { "GetNeutralRoles", new Func<string[]>(GetNeutralBotRoles) },
@@ -96,6 +100,8 @@ namespace AiEnabled.API
         { "GetClosestSurfacePoint", new Func<Vector3D, MyVoxelBase, Vector3D?>(GetClosestSurfacePoint)},
         { "UpdateBotSpawnData", new Func<long, byte[], bool>(UpdateBotSpawnData) },
         { "GetGridMapMatrix", new Func<MyCubeGrid, bool, MatrixD?>(GetGridMapMatrix) },
+        { "AssignToPlayer", new Func<long, long, bool>(AssignToPlayer) },
+        { "FollowPlayer", new Func<long, long, bool>(FollowPlayer) },
 
       };
 
@@ -138,7 +144,7 @@ namespace AiEnabled.API
     /// <returns>true if the Id belongs to a bot, otherwise false</returns>
     public bool IsBot(long id)
     {
-      if (AiSession.Instance?.Registered != true || AiSession.Instance.Bots == null)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       if (AiSession.Instance.Bots.ContainsKey(id))
@@ -173,7 +179,7 @@ namespace AiEnabled.API
     /// <returns>MyRelationsBetweenPlayerAndBlock, default is NoOwnership</returns>
     public MyRelationsBetweenPlayerAndBlock GetRelationshipBetween(long botEntityId, long otherIdentityId)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return MyRelationsBetweenPlayerAndBlock.NoOwnership;
 
       BotBase bot;
@@ -198,7 +204,7 @@ namespace AiEnabled.API
     /// <returns>the relation found if it's an AiEnabled bot, otherwise null</returns>
     public MyRelationsBetweenPlayerAndBlock? CheckBotRelationTo(long botEntityId, long otherIdentityId)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return null;
 
       BotBase bot;
@@ -227,13 +233,117 @@ namespace AiEnabled.API
     }
 
     /// <summary>
+    /// Attempts to assign ownership of the bot to the player
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="playerIdentityId">The IdentityId of the Player to take ownership</param>
+    /// <returns>true if the change is successful, otherwise false</returns>
+    public bool AssignToPlayer(long botEntityId, long playerIdentityId)
+    {
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
+        return false;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot.IsDead)
+        return false;
+
+      BotFactory.ResetBotTargeting(bot);
+      var player = AiSession.Instance.Players?.GetValueOrDefault(playerIdentityId, null);
+      var curOwner = bot.Owner;
+      bot.Owner = player;
+
+      List<BotBase> helpers;
+      if (player != null)
+      {
+        bot.FollowMode = true;
+
+        if (!AiSession.Instance.PlayerToHelperDict.TryGetValue(playerIdentityId, out helpers))
+        {
+          helpers = new List<BotBase>();
+          AiSession.Instance.PlayerToHelperDict[playerIdentityId] = helpers;
+        }
+
+        helpers.Add(bot);
+
+        var packet = new SpawnPacketClient(bot.Character.EntityId, false);
+        AiSession.Instance.Network.SendToPlayer(packet, player.SteamUserId);
+      }
+      else if (curOwner != null && AiSession.Instance.PlayerToHelperDict.TryGetValue(curOwner.IdentityId, out helpers))
+      {
+        for (int i = helpers.Count - 1; i >= 0;)
+        {
+          if (helpers[i]?.BotIdentityId == bot.BotIdentityId)
+          {
+            helpers.RemoveAtFast(i);
+            var packet = new SpawnPacketClient(bot.Character.EntityId, true);
+            AiSession.Instance.Network.SendToPlayer(packet, player.SteamUserId);
+            break;
+          }
+        }
+      }
+
+      return player == null ? curOwner != null : curOwner == null;
+    }
+
+    /// <summary>
+    /// Attempts to have the bot follow the player
+    /// </summary>
+    /// <param name="botEntityId">The EntityId of the Bot's Character</param>
+    /// <param name="playerIdentityId">The IdentityId of the Player to follow</param>
+    /// <returns>true if the change is successful, otherwise false</returns>
+    public bool FollowPlayer(long botEntityId, long playerIdentityId)
+    {
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
+        return false;
+
+      BotBase bot;
+      if (!AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) || bot.IsDead)
+        return false;
+
+      BotFactory.ResetBotTargeting(bot);
+
+      var player = playerIdentityId > 0 ? AiSession.Instance.Players?.GetValueOrDefault(playerIdentityId, null) : null;
+      var curOwner = bot.Owner;
+      bot.Owner = player;
+
+      List<BotBase> helpers;
+
+      if (curOwner != null && AiSession.Instance.PlayerToHelperDict.TryGetValue(curOwner.IdentityId, out helpers))
+      {
+        for (int i = helpers.Count - 1; i >= 0;)
+        {
+          if (helpers[i]?.BotIdentityId == bot.BotIdentityId)
+          {
+            helpers.RemoveAtFast(i);
+            break;
+          }
+        }
+      }
+
+      if (player != null)
+      {
+        bot.FollowMode = true;
+
+        if (!AiSession.Instance.PlayerToHelperDict.TryGetValue(playerIdentityId, out helpers))
+        {
+          helpers = new List<BotBase>();
+          AiSession.Instance.PlayerToHelperDict[playerIdentityId] = helpers;
+        }
+
+        helpers.Add(bot);
+      }
+
+      return player == null ? curOwner != null : curOwner == null;
+    }
+
+    /// <summary>
     /// Attempts to have a bot speak some phrase
     /// </summary>
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     /// <param name="phrase">The name of the phrase (leave null to use a random phrase)</param>
     public void Speak(long botEntityId, string phrase = null)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return;
 
       BotBase bot;
@@ -250,7 +360,7 @@ namespace AiEnabled.API
     /// <param name="action">The name of the action to perform (leave null to use a random action)</param>
     public void Perform(long botEntityId, string action = null)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return;
 
       BotBase bot;
@@ -267,7 +377,7 @@ namespace AiEnabled.API
     /// <returns>true if a grid is ready to use, otherwise false</returns>
     public bool IsGridMapReady(MyCubeGrid grid)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
@@ -447,7 +557,7 @@ namespace AiEnabled.API
     [Obsolete("Use the overload that takes in a Vector3D for startPosition to avoid subgrid issues")]
     public Vector3D? GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3I startPosition, Vector3D? upVec)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return null;
 
       if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
@@ -482,7 +592,7 @@ namespace AiEnabled.API
     /// <returns>the valid world position if found, otherwise null</returns>
     public Vector3D? GetClosestValidNode(long botEntityId, MyCubeGrid grid, Vector3D startPosition, Vector3D? upVec, bool allowAirNodes = true)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return null;
 
       if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
@@ -627,8 +737,9 @@ namespace AiEnabled.API
         return;
       }
 
+      var spawnId = AiSession.Instance.LastSpawnId++;
       var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
-      future.SetInfo(subType, displayName, positionAndOrientation, grid, role, owner, color, callBack);
+      future.SetInfo(subType, displayName, positionAndOrientation, spawnId, grid, role, owner, color, callBack);
       AiSession.Instance.FutureBotAPIQueue.Enqueue(future);
     }
 
@@ -662,9 +773,84 @@ namespace AiEnabled.API
         return;
       }
 
+      var spawnId = AiSession.Instance.LastSpawnId++;
       var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
-      future.SetInfo(positionAndOrientation, data, grid, owner, callBack);
+      future.SetInfo(positionAndOrientation, data, spawnId, grid, owner, callBack);
       AiSession.Instance.FutureBotAPIQueue.Enqueue(future);
+    }
+
+    /// <summary>
+    /// This method will queue a Bot to be spawned with custom behavior
+    /// </summary>
+    /// <param name="subType">The SubtypeId of the Bot you want to Spawn (see <see cref="GetBotSubtypes"/>)</param>
+    /// <param name="displayName">The DisplayName of the Bot</param>
+    /// <param name="role">Bot Role: see <see cref="GetFriendlyBotRoles"/>, <see cref="GetNPCBotRoles"/>, or <see cref="GetNeutralBotRoles"/>. If not supplied, it will be determined by the subType's default usage</param>
+    /// <param name="positionAndOrientation">Position and Orientation</param>
+    /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
+    /// <param name="owner">Owner / Identity of the Bot (if a HelperBot)</param>
+    /// <param name="color">The color for the bot in RGB format</param>
+    /// <param name="callBack">The callback method to invoke when the bot is spawned</param>
+    /// <returns>The spawn id associated with the request, or -1 if invalid, 
+    /// and the IMyCharacter created for the Bot, or null if unsuccessful, in a callback method</returns>
+    public long SpawnBotQueuedWithId(string subType, string displayName, MyPositionAndOrientation positionAndOrientation, MyCubeGrid grid = null, string role = null, long? owner = null, Color? color = null, Action<IMyCharacter, long> callBack = null)
+    {
+      if (AiSession.Instance?.CanSpawn != true)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        return -1;
+      }
+
+      if (grid != null && (grid.Physics == null || grid.IsPreview))
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with grid that has null physics.", MessageType.WARNING);
+        return -1;
+      }
+
+      var spawnId = AiSession.Instance.LastSpawnId++;
+      var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
+      future.SetInfo(subType, displayName, positionAndOrientation, spawnId, grid, role, owner, color, callBack);
+      AiSession.Instance.FutureBotAPIQueue.Enqueue(future);
+
+      return spawnId;
+    }
+
+    /// <summary>
+    /// This method will queue a Bot to be spawned with custom behavior
+    /// </summary>
+    /// <param name="positionAndOrientation">Position and Orientation</param>
+    /// <param name="spawnData">The serialized <see cref="RemoteBotAPI.SpawnData"/> object</param>
+    /// <param name="grid">If supplied, the Bot will start with a Cubegrid Map for pathfinding, otherwise a Voxel Map</param>
+    /// <param name="owner">Owner's IdentityId for the Bot (if a HelperBot)</param>
+    /// <param name="callBack">The callback method to invoke when the bot is spawned</param>
+    /// <returns>The spawn id associated with the request, or -1 if invalid, 
+    /// and the IMyCharacter created for the Bot, or null if unsuccessful, in a callback method</returns>
+    public long SpawnBotQueuedWithId(MyPositionAndOrientation positionAndOrientation, byte[] spawnData, MyCubeGrid grid = null, long? owner = null, Action<IMyCharacter, long> callBack = null)
+    {
+      if (AiSession.Instance?.CanSpawn != true)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command before mod was ready to spawn bots.", MessageType.WARNING);
+        return -1;
+      }
+
+      if (grid != null && (grid.Physics == null || grid.IsPreview))
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with grid that has null physics.", MessageType.WARNING);
+        return -1;
+      }
+
+      var data = MyAPIGateway.Utilities.SerializeFromBinary<RemoteBotAPI.SpawnData>(spawnData);
+      if (data == null)
+      {
+        AiSession.Instance.Logger.Log($"AiEnabled API received SpawnBot command with malformed SpawnData object.", MessageType.WARNING);
+        return -1;
+      }
+
+      var spawnId = AiSession.Instance.LastSpawnId++;
+      var future = AiSession.Instance.FutureBotAPIStack.Count > 0 ? AiSession.Instance.FutureBotAPIStack.Pop() : new FutureBotAPI();
+      future.SetInfo(positionAndOrientation, data, spawnId, grid, owner, callBack);
+      AiSession.Instance.FutureBotAPIQueue.Enqueue(future);
+
+      return spawnId;
     }
 
     /// <summary>
@@ -673,7 +859,7 @@ namespace AiEnabled.API
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     public Vector3D? GetBotOverride(long botEntityId)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return null;
 
       BotBase bot;
@@ -689,7 +875,7 @@ namespace AiEnabled.API
     /// <returns>true if the override is set successfully, otherwise false</returns>
     public bool SetBotOverride(long botEntityId, Vector3D goTo)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -712,7 +898,7 @@ namespace AiEnabled.API
     /// <returns>true if the route is assigned successfully, otherwise false</returns>
     public bool SetBotPatrol(long botEntityId, List<Vector3D> waypoints)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       if (waypoints == null || waypoints.Count == 0)
@@ -767,7 +953,7 @@ namespace AiEnabled.API
     /// <returns>true if the route is assigned successfully, otherwise false</returns>
     public bool SetBotPatrol(long botEntityId, List<Vector3I> waypoints)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       if (waypoints == null || waypoints.Count == 0)
@@ -821,7 +1007,7 @@ namespace AiEnabled.API
     /// <returns>true if the action is set successfully, otherwise false</returns>
     public bool SetOverrideAction(long botEntityId, Action<long, bool> action)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -842,7 +1028,7 @@ namespace AiEnabled.API
     /// <returns>true if the target is set successfully, otherwise false</returns>
     public bool SetBotTarget(long botEntityId, object target)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -862,7 +1048,7 @@ namespace AiEnabled.API
     /// <returns>true if targeting is successfully reset, otherwise false</returns>
     public bool ResetBotTargeting(long botEntityId)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -880,7 +1066,7 @@ namespace AiEnabled.API
     /// <returns>true if the bot is successfully removed, otherwise false</returns>
     public bool CloseBot(long botEntityId)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance == null || !AiSession.Instance.Registered || AiSession.Instance.Bots == null)
         return false;
 
       BotBase bot;
@@ -899,7 +1085,7 @@ namespace AiEnabled.API
     /// <returns>true if the action is set successfully, otherwise false</returns>
     public bool SetTargetAction(long botEntityId, Action<long> action)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -918,7 +1104,7 @@ namespace AiEnabled.API
     /// <returns>true if able to seat the Bot, otherwise false</returns>
     public bool TrySeatBot(long botEntityId, IMyCockpit seat)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       if (seat == null || seat.MarkedForClose || !seat.IsFunctional)
@@ -954,7 +1140,7 @@ namespace AiEnabled.API
     /// <returns>true if able to seat the Bot, otherwise false</returns>
     public bool TrySeatBotOnGrid(long botEntityId, IMyCubeGrid grid)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       if (grid?.Physics == null || grid.MarkedForClose)
@@ -983,7 +1169,7 @@ namespace AiEnabled.API
     /// <returns>true if able to remove the Bot from its seat, otherwise false</returns>
     public bool TryRemoveBotFromSeat(long botEntityId)
     {
-      if (AiSession.Instance?.Registered != true)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -1320,7 +1506,7 @@ namespace AiEnabled.API
                 if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
                   nodeList.Add(worldPosition);
               }
-              else if (cubeAbove.FatBlock != null && cubeAbove.FatBlock is IMyButtonPanel)
+              else if (cubeAbove.FatBlock != null && (cubeAbove.FatBlock is IMyButtonPanel || AiSession.Instance.ButtonPanelDefinitions.ContainsItem(cubeAboveDef.Id)))
               {
                 if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
                 {
@@ -1345,7 +1531,7 @@ namespace AiEnabled.API
     /// <returns>true if the change is successful, otherwise false</returns>
     public bool SetToolsEnabled(long botEntityId, bool enable)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -1372,7 +1558,7 @@ namespace AiEnabled.API
     /// <returns>true if the change is successful, otherwise false</returns>
     public bool SwitchBotRole(long botEntityId, string newRole, List<string> toolSubtypes)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot, newBot;
@@ -1488,6 +1674,8 @@ namespace AiEnabled.API
         newBot._lootContainerSubtype = bot._lootContainerSubtype;
         newBot._shotAngleDeviationTan = bot._shotAngleDeviationTan;
         newBot._despawnTicks = bot._despawnTicks;
+        newBot.RepairPriorities = bot.RepairPriorities;
+        newBot.TargetPriorities = bot.TargetPriorities;
 
         if (!string.IsNullOrWhiteSpace(bot._deathSoundString))
         {
@@ -1546,7 +1734,7 @@ namespace AiEnabled.API
     /// <returns>true if the change is successful, otherwise false</returns>
     public bool SwitchBotRole(long botEntityId, byte[] data)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot, newBot;
@@ -1783,7 +1971,7 @@ namespace AiEnabled.API
     {
       long ownerId = 0L;
 
-      if (AiSession.Instance != null && AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots != null && AiSession.Instance.Registered)
       {
         BotBase bot;
         if (AiSession.Instance.Bots.TryGetValue(botEntityId, out bot) && bot?.Owner != null)
@@ -1801,7 +1989,7 @@ namespace AiEnabled.API
     /// <returns>true if the switch is successful, otherwise false</returns>
     public bool SwitchBotWeapon(long botEntityId, string toolSubtypeId)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return false;
 
       BotBase bot;
@@ -1844,7 +2032,7 @@ namespace AiEnabled.API
     /// <param name="includeNeutral">whether or not to include Nomad bots</param>
     public void GetBots(Dictionary<long, IMyCharacter> botDict, bool includeFriendly = true, bool includeEnemy = true, bool includeNeutral = true)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return;
 
       if (botDict == null)
@@ -1883,7 +2071,7 @@ namespace AiEnabled.API
     /// <param name="botEntityId">The EntityId of the Bot's Character</param>
     public void ThrowGrenade(long botEntityId)
     {
-      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+      if (AiSession.Instance?.Bots == null || !AiSession.Instance.Registered)
         return;
 
       BotBase bot;

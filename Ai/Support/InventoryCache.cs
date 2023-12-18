@@ -212,8 +212,36 @@ namespace AiEnabled.Ai.Support
       var rBot = bot as RepairBot;
       IMySlimBlock inv = null;
 
+      Vector3? grindColor = null;
+      var colorVec = new Vector3(360, 100, 100);
+
+      if (bot?.Owner != null && AiSession.Instance?.ModSaveData?.PlayerHelperData != null)
+      {
+        var modData = AiSession.Instance.ModSaveData.PlayerHelperData;
+        for (int i = 0; i < modData.Count; i++)
+        {
+          var data = modData[i];
+          if (data.OwnerIdentityId == bot.Owner.IdentityId)
+          {
+            grindColor = data.RepairBotGrindColorMask;
+            break;
+          }
+        }
+      }
+
       foreach (var kvp in _inventoryPositions)
       {
+        var block = kvp.Value.SlimBlock;
+        if (block == null)
+          continue;
+
+        if (grindColor != null)
+        {
+          var color = MyColorPickerConstants.HSVOffsetToHSV(block.ColorMaskHSV) * colorVec;
+          if (!Vector3.IsZero(grindColor.Value - color, 1E-2f))
+            continue;
+        }
+
         Vector3I node;
         if (!bot._currentGraph.GetClosestValidNode(bot, kvp.Key, out node, isSlimBlock: true))
         {
@@ -241,7 +269,6 @@ namespace AiEnabled.Ai.Support
         if (!kvp.Value.IsFunctional)
           continue;
 
-        var block = kvp.Value.SlimBlock;
         if (block.IsBlockUnbuilt())
           continue;
 
@@ -367,9 +394,12 @@ namespace AiEnabled.Ai.Support
           if (rBot != null)
           {
             var def = new MyDefinitionId(typeof(MyObjectBuilder_Component), kvp.Key);
-            var compDef = MyDefinitionManager.Static.GetComponentDefinition(def) as MyComponentDefinition;
-            if (compDef != null)
+
+            MyDefinitionBase compDef;
+            if (AiSession.Instance.AllGameDefinitions.TryGetValue(def, out compDef) && compDef != null)
+            {
               rBot.FirstMissingItemForRepairs = compDef.DisplayNameText;
+            }
           }
 
           valid = false;

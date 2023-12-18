@@ -74,7 +74,6 @@ namespace AiEnabled.Networking
           helper._patrolList?.Clear();
           helper.CleanPath();
 
-
           if (helper.Target != null)
           {
             helper.Target.RemoveInventory();

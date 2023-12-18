@@ -51,6 +51,7 @@ namespace AiEnabled.Bots
     {
       if (bot != null)
       {
+        bot.FollowMode = false;
         bot.PatrolMode = false;
         bot.UseAPITargets = false;
         bot.Target.RemoveTarget();
@@ -333,7 +334,18 @@ namespace AiEnabled.Bots
                 }
                 else
                 {
-                  bool allowSolar = block.FatBlock is IMySolarPanel && Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0;
+                  bool allowSolar = false;
+                  if (block.FatBlock is IMySolarPanel)
+                  {
+                    if (block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                      allowSolar = Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) < 0;
+                    }
+                    else
+                    {
+                      allowSolar = Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0;
+                    }
+                  }
                   bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
                   bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
 

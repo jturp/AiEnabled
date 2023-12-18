@@ -36,6 +36,7 @@ using AiEnabled.Parallel;
 using ParallelTasks;
 using Sandbox.Game.Entities.Blocks;
 using AiEnabled.Bots.Roles.Helpers;
+using static VRage.Game.MyObjectBuilder_SessionComponentMission;
 
 namespace AiEnabled.Ai.Support
 {
@@ -1248,8 +1249,9 @@ namespace AiEnabled.Ai.Support
           if (isSlimBlock)
           {
             var cube = node.Block ?? GetBlockAtPosition(testPosition);
-            if (cube == null || (cube.FatBlock is IMyTextPanel)
+            if (cube == null
               || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
+              || (cube.FatBlock is IMyTextPanel && !AiSession.Instance.SlopeBlockDefinitions.Contains(cube.BlockDefinition.Id))
               || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
@@ -1360,8 +1362,9 @@ namespace AiEnabled.Ai.Support
           if (isSlimBlock)
           {
             var cube = node.Block ?? GetBlockAtPosition(testPosition);
-            if (cube == null || (cube.FatBlock is IMyTextPanel)
+            if (cube == null
               || (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics != true
+              || (cube.FatBlock is IMyTextPanel && !AiSession.Instance.SlopeBlockDefinitions.Contains(cube.BlockDefinition.Id))
               || AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
               || AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
@@ -1390,6 +1393,7 @@ namespace AiEnabled.Ai.Support
       var worldPosition = MainGrid.GridIntegerToWorld(localPosition);
       Vector3I? closestGround = null;
 
+      //AiSession.Instance.Logger.AddLine($"GetClosestNode: Checking Neighbors for {testPosition}, Center = {center}");
       foreach (var point in Neighbors(bot, center, center, worldPosition, true, true, isSlimBlock, up, checkRepairInfo: checkRepairInfo))
       {
         TryGetNodeForPosition(point, out node);
@@ -1491,6 +1495,7 @@ namespace AiEnabled.Ai.Support
       if (preferGroundNode && closestGround.HasValue)
         localPosition = closestGround.Value;
 
+      //AiSession.Instance.Logger.AddLine($" -> Finished: FinalPosition = {localPosition}, Valid = {localDistance < double.MaxValue}\n");
       return localDistance < double.MaxValue;
     }
 
@@ -1498,7 +1503,7 @@ namespace AiEnabled.Ai.Support
     {
       Vector3I upVec = Vector3I.Zero;
       var rBot = bot as RepairBot;
-      var checkAdditionalTile = checkRepairInfo && (rBot.Target.Entity as IMySlimBlock)?.CubeGrid.GridSizeEnum == MyCubeSize.Small;
+      var checkAdditionalTile = checkRepairInfo && (rBot?.Target.Entity as IMySlimBlock)?.CubeGrid.GridSizeEnum == MyCubeSize.Small;
 
       if (up.HasValue)
       {
@@ -1506,10 +1511,15 @@ namespace AiEnabled.Ai.Support
         upVec = Base6Directions.GetIntVector(upDir);
       }
 
+      //AiSession.Instance.Logger.AddLine($" -> Bot = {bot}, Prev = {previousNode}, Cur = {currentNode}, CurIsObs = {currentIsObstacle}, IsSlim = {isSlimBlock}, Up = {upVec}");
+
+      //AiSession.Instance.Logger.AddLine($" -> Cardinals: ");
       foreach (var dir in AiSession.Instance.CardinalDirections)
       {
+        //AiSession.Instance.Logger.AddLine($"  -> Dir = {dir}, Next = {currentNode + dir}");
         if (dir.Dot(ref upVec) != 0)
         {
+          //AiSession.Instance.Logger.AddLine($"   -> Dot Up != 0, continuing");
           continue;
         }
 
@@ -1518,14 +1528,28 @@ namespace AiEnabled.Ai.Support
         {
           yield return next;
         }
+        //else if (!InBounds(next))
+        //{
+        //  AiSession.Instance.Logger.AddLine($"   -> Not in bounds");
+        //}
+        //else
+        //  AiSession.Instance.Logger.AddLine($"   -> Not passable");
 
         if (checkAdditionalTile)
         {
           next = currentNode + dir * 2;
+          //AiSession.Instance.Logger.AddLine($"   -> Checking additional: Next = {next}");
+
           if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, currentIsObstacle, isSlimBlock, checkRepairInfo))
           {
             yield return next;
           }
+          //else if (!InBounds(next))
+          //{
+          //  AiSession.Instance.Logger.AddLine($"   -> Not in bounds");
+          //}
+          //else
+          //  AiSession.Instance.Logger.AddLine($"   -> Not passable");
         }
       }
 
@@ -1540,10 +1564,13 @@ namespace AiEnabled.Ai.Support
       {
         if (node?.IsGridNodeUnderGround == true)
         {
+          //AiSession.Instance.Logger.AddLine($" -> VoxelMovements (underground): ");
           foreach (var dir in AiSession.Instance.VoxelMovementDirections)
           {
+            //AiSession.Instance.Logger.AddLine($"  -> Dir = {dir}, Next = {currentNode + dir}");
             if (dir.Dot(ref upVec) != 0)
             {
+              //AiSession.Instance.Logger.AddLine($"   -> Dot Up != 0, continuing");
               continue;
             }
 
@@ -1552,6 +1579,12 @@ namespace AiEnabled.Ai.Support
             {
               yield return next;
             }
+            //else if (!InBounds(next))
+            //{
+            //  AiSession.Instance.Logger.AddLine($"   -> Not in bounds");
+            //}
+            //else
+            //  AiSession.Instance.Logger.AddLine($"   -> Not passable");
           }
         }
 
@@ -1560,10 +1593,13 @@ namespace AiEnabled.Ai.Support
 
       if (isVoxelNode || (currentIsObstacle && bot?.Target.IsFloater != true))
       {
+        //AiSession.Instance.Logger.AddLine($" -> Diagonals: ");
         foreach (var dir in AiSession.Instance.DiagonalDirections)
         {
+          //AiSession.Instance.Logger.AddLine($"  -> Dir = {dir}, Next = {currentNode + dir}");
           if (dir.Dot(ref upVec) != 0)
           {
+            //AiSession.Instance.Logger.AddLine($"   -> Dot Up != 0, continuing");
             continue;
           }
 
@@ -1572,6 +1608,12 @@ namespace AiEnabled.Ai.Support
           {
             yield return next;
           }
+          //else if (!InBounds(next))
+          //{
+          //  AiSession.Instance.Logger.AddLine($"   -> Not in bounds");
+          //}
+          //else
+          //  AiSession.Instance.Logger.AddLine($"   -> Not passable");
         }
       }
 
@@ -1580,10 +1622,13 @@ namespace AiEnabled.Ai.Support
         yield break;
       }
 
+      //AiSession.Instance.Logger.AddLine($" -> VoxelMovements: ");
       foreach (var dir in AiSession.Instance.VoxelMovementDirections)
       {
+        //AiSession.Instance.Logger.AddLine($"  -> Dir = {dir}, Next = {currentNode + dir}");
         if (dir.Dot(ref upVec) != 0)
         {
+          //AiSession.Instance.Logger.AddLine($"   -> Dot Up != 0, continuing");
           continue;
         }
 
@@ -1592,6 +1637,12 @@ namespace AiEnabled.Ai.Support
         {
           yield return next;
         }
+        //else if (!InBounds(next))
+        //{
+        //  AiSession.Instance.Logger.AddLine($"   -> Not in bounds");
+        //}
+        //else
+        //  AiSession.Instance.Logger.AddLine($"   -> Not passable");
       }
     }
 
@@ -1905,7 +1956,9 @@ namespace AiEnabled.Ai.Support
             continue;
 
           var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
-          if (cubeDef == null || !cubeDef.HasPhysics || block.FatBlock is IMyButtonPanel || block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MotorRotor))
+          if (cubeDef == null || !cubeDef.HasPhysics || block.FatBlock is IMyButtonPanel
+            || AiSession.Instance.ButtonPanelDefinitions.ContainsItem(cubeDef.Id)
+            || block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MotorRotor))
             continue;
 
           if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(cubeDef.Id))
@@ -2070,6 +2123,11 @@ namespace AiEnabled.Ai.Support
 
     void InitBlock(IMySlimBlock block, ref Vector3I upVec, ref Base6Directions.Direction upDir, ref float cellSize, ref float halfCellSize, MyCubeBlockDefinition cubeDef)
     {
+      if (block.CubeGrid.DisplayName == "Test Grid 123" && block.Position == new Vector3I(4, 1, -4))
+      {
+        AiSession.Instance.Logger.AddLine("");
+        AiSession.Instance.Logger.ClearCached();
+      }
 
       CheckFaces(block, upVec, cubeDef);
 
@@ -2503,27 +2561,36 @@ namespace AiEnabled.Ai.Support
       {
         var positionAbove = position + upVec;
         var cubeAbove = GetBlockAtPosition(positionAbove);
-        var entrance = Base6Directions.GetOppositeDirection(block.Orientation.Forward);
+        bool isLCD = block.FatBlock is IMyTextPanel;
+        var blockEntranceDir = isLCD ? block.Orientation.Left : block.Orientation.Forward;
+        var blockUpDir = isLCD ? block.Orientation.Forward : block.Orientation.Up;
+        var entrance = Base6Directions.GetOppositeDirection(blockEntranceDir);
         bool cubeAboveEmpty = cubeAbove == null || !((MyCubeBlockDefinition)cubeAbove.BlockDefinition).HasPhysics;
         bool validHalfStair = false;
         bool includeAbove = false;
         bool entranceIsUp = entrance == upDir;
-        bool upIsUp = !entranceIsUp && block.Orientation.Up == upDir;
+        bool upIsUp = !entranceIsUp && blockUpDir == upDir;
 
         bool addThis = (upIsUp && cubeAboveEmpty)
           || (entranceIsUp && (cubeAboveEmpty || cubeAbove == block));
 
         if (!addThis)
         {
-          if (cubeAboveEmpty && block.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock"))
+          if (cubeAboveEmpty)
           {
-            addThis = upIsUp || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Forward;
-          }
-          else if (block.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
-          {
-            addThis = upDir == block.Orientation.Left || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Left;
-          }
+            if (block.FatBlock is IMyTextPanel)
+            {
+              upIsUp = upDir == block.Orientation.Forward;
+              entranceIsUp = Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Left;
 
+              addThis = upIsUp || entranceIsUp;
+            }
+            else if (block.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock"))
+            {
+              addThis = upIsUp || Base6Directions.GetOppositeDirection(upDir) == block.Orientation.Forward;
+            }
+          }
+          
           if (!addThis)
           {
             if (!cubeAboveEmpty && (entranceIsUp || upIsUp))
@@ -3280,7 +3347,8 @@ namespace AiEnabled.Ai.Support
       }
       else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
       {
-        if (block.Orientation.Forward == Base6Directions.GetOppositeDirection(upDir))
+        bool validSolar = block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) < 0;
+        if (validSolar && block.Orientation.Forward == Base6Directions.GetOppositeDirection(upDir))
         {
           Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
           if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(cubeDef.Id, out faceDict))
@@ -4142,6 +4210,27 @@ namespace AiEnabled.Ai.Support
                   addNodeBelow = false;
                 }
               }
+              else if (slimBelow.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+              {
+                var thrustBasePosition = slimBelow.Position;
+                var thrustForwardVec = Base6Directions.GetIntVector(slimBelow.Orientation.Forward);
+                var thrustUpVec = Base6Directions.GetIntVector(slimBelow.Orientation.Up);
+
+                var flamePosition = thrustBasePosition + thrustForwardVec;
+                var adjustedPosition = localBelowOther - thrustForwardVec;
+
+                if (localBelowOther == flamePosition || slimBelow.CubeGrid.GetCubeBlock(adjustedPosition)?.Position != slimBelow.Position)
+                {
+                  addNodeBelow = false;
+                }
+              }
+              else if (slimBelow.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
+              {
+                if (Base6Directions.GetIntVector(slimBelow.Orientation.Up).Dot(ref upVec) != 0)
+                {
+                  addNodeBelow = false;
+                }
+              }
               else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(slimBelow.BlockDefinition.Id))
                 addNodeBelow = false;
             }
@@ -4174,7 +4263,8 @@ namespace AiEnabled.Ai.Support
             }
             else if (slim.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
             {
-              if (slim.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0)
+              if (slim.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0
+                || slim.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0)
               {
                 add = false;
                 break;
@@ -4184,6 +4274,28 @@ namespace AiEnabled.Ai.Support
             {
               if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(slim.BlockDefinition.Id)
                 || slim.BlockDefinition.Id.SubtypeName.Contains("Centered"))
+              {
+                add = false;
+                break;
+              }
+            }
+            else if (slim.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+            {
+              var thrustBasePosition = slim.Position;
+              var thrustForwardVec = Base6Directions.GetIntVector(slim.Orientation.Forward);
+              var thrustUpVec = Base6Directions.GetIntVector(slim.Orientation.Up);
+
+              var flamePosition = thrustBasePosition + thrustForwardVec;
+              var adjustedPosition = localPointOther - thrustForwardVec;
+
+              if (localPointOther == flamePosition || slim.CubeGrid.GetCubeBlock(adjustedPosition)?.Position != slim.Position)
+              {
+                add = false;
+              }
+            }
+            else if (slim.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
+            {
+              if (Base6Directions.GetIntVector(slim.Orientation.Up).Dot(ref upVec) != 0)
               {
                 add = false;
                 break;
@@ -4222,6 +4334,20 @@ namespace AiEnabled.Ai.Support
                   addNodeBelow = false;
                 }
               }
+              else if (blockBelow.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+              {
+                var thrustBasePosition = blockBelow.Position;
+                var thrustForwardVec = Base6Directions.GetIntVector(blockBelow.Orientation.Forward);
+                var thrustUpVec = Base6Directions.GetIntVector(blockBelow.Orientation.Up);
+
+                var flamePosition = thrustBasePosition + thrustForwardVec;
+                var adjustedPosition = localBelow - thrustForwardVec;
+
+                if (localBelow == flamePosition || blockBelow.CubeGrid.GetCubeBlock(adjustedPosition)?.Position != blockBelow.Position)
+                {
+                  addNodeBelow = false;
+                }
+              }
               else if (!AiSession.Instance.FlatWindowDefinitions.ContainsItem(blockBelow.BlockDefinition.Id))
                 addNodeBelow = false;
             }
@@ -4253,9 +4379,25 @@ namespace AiEnabled.Ai.Support
                 add = false;
               }
             }
+            else if (block.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+            {
+              var thrustBasePosition = block.Position;
+              var thrustForwardVec = Base6Directions.GetIntVector(block.Orientation.Forward);
+              var thrustUpVec = Base6Directions.GetIntVector(block.Orientation.Up);
+
+
+              var flamePosition = thrustBasePosition + thrustForwardVec;
+              var adjustedPosition = localPoint - thrustForwardVec;
+
+              if (localPoint == flamePosition || block.CubeGrid.GetCubeBlock(adjustedPosition)?.Position != block.Position)
+              {
+                add = false;
+              }
+            }
             else if (block.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
             {
-              if (block.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0)
+              if (block.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0
+                || block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0)
               {
                 add = false;
               }
@@ -4264,6 +4406,13 @@ namespace AiEnabled.Ai.Support
             {
               if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(block.BlockDefinition.Id)
                 || block.BlockDefinition.Id.SubtypeName.Contains("Centered"))
+              {
+                add = false;
+              }
+            }
+            else if (block.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
+            {
+              if (Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref upVec) != 0)
               {
                 add = false;
               }
@@ -4309,7 +4458,28 @@ namespace AiEnabled.Ai.Support
               }
               else if (slim.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
               {
-                if (slim.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (slim.BlockDefinition.Id.SubtypeName.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0
+                  || slim.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  add = false;
+                }
+              }
+              else if (slim.BlockDefinition.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+              {
+                var thrustBasePosition = slim.Position;
+                var thrustForwardVec = Base6Directions.GetIntVector(slim.Orientation.Forward);
+                var thrustUpVec = Base6Directions.GetIntVector(slim.Orientation.Up);
+                var flamePosition = thrustBasePosition + thrustForwardVec + thrustUpVec;
+
+                var adjustedPosition = localAbove - thrustForwardVec;
+                if (localAbove == flamePosition || slim.CubeGrid.GetCubeBlock(adjustedPosition)?.Position != slim.Position)
+                {
+                  add = false;
+                }
+              }
+              else if (slim.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
+              {
+                if (Base6Directions.GetIntVector(slim.Orientation.Up).Dot(ref upVec) != 0)
                 {
                   add = false;
                 }
@@ -4617,8 +4787,21 @@ namespace AiEnabled.Ai.Support
       }
 
       bool airTight = cubeDef.IsAirTight ?? false;
-      bool allowSolar = !airTight && block.FatBlock is IMySolarPanel && Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0;
-      //bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
+      bool allowSolar = false;
+      if (!airTight && block.FatBlock is IMySolarPanel)
+      {
+        bool isColorable = block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0;
+        Vector3I vecFwd = Base6Directions.GetIntVector(block.Orientation.Forward);
+
+        if (isColorable)
+        {
+          allowSolar = vecFwd.Dot(ref normal) < 0;
+        }
+        else
+        {
+          allowSolar = vecFwd.Dot(ref normal) > 0;
+        }
+      }
       bool isFlatWindow = !allowSolar && AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id);
       bool isCylinder = !isFlatWindow && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
       bool isAllowedConveyor = !isCylinder && AiSession.Instance.ConveyorFullBlockDefinitions.ContainsItem(cubeDef.Id);
@@ -4700,9 +4883,24 @@ namespace AiEnabled.Ai.Support
         {
           if (checkAbove)
           {
-            var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-            node.SetNodeType(NodeType.Ground);
-            OpenTileDict[mainGridPosition] = node;
+            if (allowSolar && block.BlockDefinition.Id.SubtypeName.IndexOf("colorablesolarpanelcorner", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              var cellKey = kvp.Key;
+              var xVal = block.BlockDefinition.Id.SubtypeName.EndsWith("Inverted") ? 1 : 0;
+              
+              if (cellKey == new Vector3I(xVal, 0, 0) || cellKey == new Vector3I(xVal, 1, 0))
+              {
+                var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
+                node.SetNodeType(NodeType.Ground);
+                OpenTileDict[mainGridPosition] = node;
+              }
+            }
+            else
+            {
+              var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
+              node.SetNodeType(NodeType.Ground);
+              OpenTileDict[mainGridPosition] = node;
+            }
           }
           else if (isAutomatonsFull)
           {
@@ -4798,6 +4996,21 @@ namespace AiEnabled.Ai.Support
             node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid, cubeAbove);
             OpenTileDict[mainGridPosition] = node;
           }
+          else if (cubeAboveDef.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+          {
+            var thrustForwardVec = Base6Directions.GetIntVector(cubeAbove.Orientation.Forward);
+            var subtractedPosition = mainGridPosition - thrustForwardVec;
+
+            if (thrustForwardVec.Dot(ref normal) == 0 && cubeAbove.CubeGrid.GetCubeBlock(subtractedPosition)?.Position == cubeAbove.Position)
+            {              
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid, cubeAbove);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
           else if (aboveisAutomatonsFlat)
           {
             Node node;
@@ -4835,17 +5048,21 @@ namespace AiEnabled.Ai.Support
               OpenTileDict[mainGridPosition] = node;
             }
           }
-          else if (cubeAbove.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MedicalRoom) && cubeAbove.BlockDefinition.Id.SubtypeName == "LargeMedicalRoom")
+          else if (cubeAbove.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MedicalRoom))
           {
-            var relPosition = positionAbove - cubeAbove.Position;
-            if (relPosition.RectangularLength() > 1)
+            var subtype = cubeAbove.BlockDefinition.Id.SubtypeName;
+            if (subtype == "LargeMedicalRoom" || subtype == "LargeMedicalRoomReskin")
             {
-              Node node;
-              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
-                node = new Node();
+              var relPosition = positionAbove - cubeAbove.Position;
+              if (relPosition.RectangularLength() > 1)
+              {
+                Node node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                  node = new Node();
 
-              node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid, cubeAbove);
-              OpenTileDict[mainGridPosition] = node;
+                node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid, cubeAbove);
+                OpenTileDict[mainGridPosition] = node;
+              }
             }
           }
           else if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -5013,6 +5230,18 @@ namespace AiEnabled.Ai.Support
               OpenTileDict[mainGridPosition] = node;
             }
           }
+          else if (cubeAboveDef.Id.SubtypeName.EndsWith("Slope2Tip"))
+          {
+            if (Base6Directions.GetIntVector(cubeAbove.Orientation.Left).Dot(ref normal) != 0)
+            {
+              Node node;
+              if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                node = new Node();
+
+              node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid, cubeAbove);
+              OpenTileDict[mainGridPosition] = node;
+            }
+          }
           else if (cubeAbove.FatBlock != null)
           {
             var door = cubeAbove.FatBlock as IMyDoor;
@@ -5072,7 +5301,20 @@ namespace AiEnabled.Ai.Support
                 OpenTileDict[mainGridPosition] = node;
               }
             }
-            else if (cubeAbove.FatBlock is IMyTextPanel || cubeAbove.FatBlock is IMySolarPanel || cubeAbove.FatBlock is IMyButtonPanel)
+            else if (cubeAbove.FatBlock is IMySolarPanel)
+            {
+              if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("colorable") < 0 && Base6Directions.GetIntVector(cubeAbove.Orientation.Forward).Dot(ref normal) > 0)
+              {
+                Node node;
+                if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
+                  node = new Node();
+
+                node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid, cubeAbove);
+                OpenTileDict[mainGridPosition] = node;
+              }
+            }
+            else if (cubeAbove.FatBlock is IMyButtonPanel || AiSession.Instance.ButtonPanelDefinitions.ContainsItem(cubeAboveDef.Id)
+              || (cubeAbove.FatBlock is IMyTextPanel && !AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef.Id)))
             {
               Node node;
               if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
@@ -5101,6 +5343,12 @@ namespace AiEnabled.Ai.Support
       var thisBlock = node.Block;
       var blockBelowThis = GetBlockAtPosition(nodePos - upVec);
 
+      if (node.Grid.DisplayName == "Test Grid 123" && node.Position == new Vector3I(4, 1, -4))
+      {
+        AiSession.Instance.Logger.AddLine("");
+        AiSession.Instance.Logger.ClearCached();
+      }
+
       bool thisBlockEmpty = thisBlock == null || !((MyCubeBlockDefinition)thisBlock.BlockDefinition).HasPhysics;
       bool thisIsDoor = false, thisIsSlope = false, thisIsHalfSlope = false, thisIsHalfStair = false, thisIsRamp = false, thisIsSolar = false;
       bool thisIsCatwalk = false, thisIsBtnPanel = false, thisIsLadder = false, thisIsWindowFlat = false, thisIsWindowSlope = false;
@@ -5125,7 +5373,7 @@ namespace AiEnabled.Ai.Support
         thisIsPassage = !thisIsPassageStair && AiSession.Instance.PassageBlockDefinitions.Contains(def);
         thisIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
         thisIsCatwalk = AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
-        thisIsBtnPanel = AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
+        thisIsBtnPanel = AiSession.Instance.ButtonPanelDefinitions.ContainsItem(def);
         thisIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
         thisIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
         thisIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
@@ -5212,7 +5460,7 @@ namespace AiEnabled.Ai.Support
           nextIsPassage = !nextIsPassageStair && AiSession.Instance.PassageBlockDefinitions.Contains(def);
           nextIsRamp = AiSession.Instance.RampBlockDefinitions.Contains(def);
           nextIsCatwalk = AiSession.Instance.CatwalkBlockDefinitions.Contains(def);
-          nextIsBtnPanel = AiSession.Instance.BtnPanelDefinitions.ContainsItem(def);
+          nextIsBtnPanel = AiSession.Instance.ButtonPanelDefinitions.ContainsItem(def);
           nextIsWindowFlat = AiSession.Instance.FlatWindowDefinitions.ContainsItem(def);
           nextIsWindowSlope = AiSession.Instance.AngledWindowDefinitions.ContainsItem(def);
           nextIsCoverWall = def.SubtypeName.StartsWith("LargeCoverWall") || def.SubtypeName.StartsWith("FireCover");
@@ -5963,6 +6211,94 @@ namespace AiEnabled.Ai.Support
                 continue;
               }
             }
+            else if (subtype.StartsWith("Truss"))
+            {
+              if (subtype.EndsWith("FloorHalf"))
+              {
+                if (dir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype.EndsWith("Half"))
+              {
+                if (dir != thisBlock.Orientation.Forward && oppositeDir != thisBlock.Orientation.Forward)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype == "TrussSloped")
+              {
+                if (dir == thisBlock.Orientation.Left || oppositeDir == thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype == "TrussFloor")
+              {
+                if (dir == thisBlock.Orientation.Left || oppositeDir == thisBlock.Orientation.Left || oppositeDir == thisBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype.EndsWith("Angled"))
+              {
+                if (dir != thisBlock.Orientation.Forward && dir != thisBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+                else if (subtype.EndsWith("FloorAngled") && oppositeDir == thisBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype.EndsWith("AngledInverted"))
+              {
+                if (dir != thisBlock.Orientation.Forward && dir != thisBlock.Orientation.Left && dir != thisBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+            }
+            else if (subtype == "LargeCrate")
+            {
+              if (oppositeDir == thisBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("HalfBed"))
+            {
+              if (oppositeDir != thisBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("HalfBedOffset"))
+            {
+              if (dir != thisBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("CryoRoom") || subtype.EndsWith("Bed") || subtype.EndsWith("Couch"))
+            {
+              if (dir != thisBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
           }
           else if (thisIsSlope)
           {
@@ -5975,7 +6311,23 @@ namespace AiEnabled.Ai.Support
               }
             }
 
-            if (thisIsHalfSlope)
+            if (thisBlock.FatBlock is IMyTextPanel)
+            {
+              if (dir == thisBlock.Orientation.Left || oppositeDir == thisBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+              else if (dir == thisBlock.Orientation.Up || oppositeDir == thisBlock.Orientation.Up)
+              {
+                if (nextBlockEmpty || nextBlock.BlockDefinition.Id != thisBlock.BlockDefinition.Id || nextBlock.Orientation != thisBlock.Orientation)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+            }
+            else if (thisIsHalfSlope)
             {
               bool dirIsForwardOfThis = dir == thisBlock.Orientation.Forward || oppositeDir == thisBlock.Orientation.Forward;
               if (nextIsDoor && dirIsForwardOfThis)
@@ -6979,7 +7331,9 @@ namespace AiEnabled.Ai.Support
           }
           else if (thisBlock?.FatBlock is IMyTextPanel)
           {
-            if (dir == thisBlock.Orientation.Forward && thisBlock.BlockDefinition.Id.SubtypeName.IndexOf("corner", StringComparison.OrdinalIgnoreCase) < 0)
+            if (dir == thisBlock.Orientation.Forward
+              && thisBlock.BlockDefinition.Id.SubtypeName.IndexOf("corner", StringComparison.OrdinalIgnoreCase) < 0
+              && thisBlock.BlockDefinition.Id.SubtypeName.IndexOf("hololcd", StringComparison.OrdinalIgnoreCase) < 0)
             {
               node.SetBlocked(dirVec); 
               continue;
@@ -7469,6 +7823,94 @@ namespace AiEnabled.Ai.Support
                 continue;
               }
             }
+            else if (subtype.StartsWith("Truss"))
+            {
+              if (subtype.EndsWith("FloorHalf"))
+              {
+                if (oppositeDir != nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype.EndsWith("Half"))
+              {
+                if (dir != nextBlock.Orientation.Forward && oppositeDir != nextBlock.Orientation.Forward)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype == "TrussSloped")
+              {
+                if (dir == nextBlock.Orientation.Left || oppositeDir == nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype == "TrussFloor")
+              {
+                if (dir == nextBlock.Orientation.Left || oppositeDir == nextBlock.Orientation.Left || dir == nextBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype.EndsWith("Angled"))
+              {
+                if (oppositeDir != nextBlock.Orientation.Forward && oppositeDir != nextBlock.Orientation.Left)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+                else if (subtype.EndsWith("FloorAngled") && dir == nextBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+              else if (subtype.EndsWith("AngledInverted"))
+              {
+                if (dir == nextBlock.Orientation.Forward || dir == nextBlock.Orientation.Left || dir == nextBlock.Orientation.Up)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+            }
+            else if (subtype == "LargeCrate")
+            {
+              if (dir == nextBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("HalfBed"))
+            {
+              if (dir != nextBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("HalfBedOffset"))
+            {
+              if (oppositeDir != nextBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
+            else if (subtype.EndsWith("CryoRoom") || subtype.EndsWith("Bed") || subtype.EndsWith("Couch"))
+            {
+              if (oppositeDir != nextBlock.Orientation.Forward)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+            }
           }
           else if (nextIsSlope)
           {
@@ -7481,7 +7923,23 @@ namespace AiEnabled.Ai.Support
               }
             }
 
-            if (nextIsHalfSlope)
+            if (nextBlock.FatBlock is IMyTextPanel)
+            {
+              if (dir == nextBlock.Orientation.Forward || oppositeDir == nextBlock.Orientation.Left)
+              {
+                node.SetBlocked(dirVec);
+                continue;
+              }
+              else if (dir == nextBlock.Orientation.Up || oppositeDir == nextBlock.Orientation.Up)
+              {
+                if (thisBlockEmpty || thisBlock.BlockDefinition.Id != nextBlock.BlockDefinition.Id || thisBlock.Orientation != nextBlock.Orientation)
+                {
+                  node.SetBlocked(dirVec);
+                  continue;
+                }
+              }
+            }
+            else if (nextIsHalfSlope)
             {
               if (dir != nextBlock.Orientation.Forward && oppositeDir != nextBlock.Orientation.Forward)
               {
@@ -8063,7 +8521,10 @@ namespace AiEnabled.Ai.Support
           }
           else if (nextBlock?.FatBlock is IMyTextPanel)
           {
-            if (oppositeDir == nextBlock.Orientation.Forward && nextBlock.BlockDefinition.Id.SubtypeName.IndexOf("corner") < 0)
+            if (oppositeDir == nextBlock.Orientation.Forward
+              && nextBlock.BlockDefinition.Id.SubtypeName.IndexOf("corner", StringComparison.OrdinalIgnoreCase) < 0
+              && nextBlock.BlockDefinition.Id.SubtypeName.IndexOf("hololcd", StringComparison.OrdinalIgnoreCase) < 0)
+
             {
               node.SetBlocked(dirVec); 
               continue;
@@ -8813,6 +9274,22 @@ namespace AiEnabled.Ai.Support
 
       _lastMatrix = MainGrid.WorldMatrix;
     }
+
+    public override void ClearTempObstacles()
+    {
+      foreach (var node in OpenTileDict.Values)
+      {
+        node.TempBlockedMask = 0;
+      }
+
+      foreach (var node in PlanetTileDictionary.Values)
+      {
+        node.TempBlockedMask = 0;
+      }
+
+      NeedsTempCleared = false;
+    }
+
 
     public override bool IsPositionValid(Vector3D position)
     {

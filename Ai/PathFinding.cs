@@ -81,10 +81,12 @@ namespace AiEnabled.Ai
         else if (!collection.Dirty)
         {
           bool isInventory = false;
+          IMySlimBlock invBlock = null;
 
           if (graph.IsGridGraph && bot is RepairBot)
           {
             isInventory = bot.Target.IsInventory;
+            invBlock = bot.Target.Inventory;
 
             if (!isInventory && !bot.Target.IsSlimBlock)
             {
@@ -137,6 +139,16 @@ namespace AiEnabled.Ai
                 bot.Target.RemoveTarget();
                 collection.AddBlockedObstacle(slim);
               }
+            }
+          }
+          else
+          {
+            //AiSession.Instance.Logger.Log($"Bot failed to find path to inventory: Start = {start}, Goal = {goal}, InvPos = {invBlock.Position}");
+
+            if (!graph.TempBlockedNodes.ContainsKey(goal))
+            {
+              //AiSession.Instance.Logger.Log($" -> adding {goal} (inv) to temp obstacles from Pathfinding");
+              graph.TempBlockedNodes[goal] = new byte();
             }
           }
 
@@ -193,25 +205,33 @@ namespace AiEnabled.Ai
       MyRelationsBetweenPlayers relation;
       collection.CheckDoors(out relation);
 
+
+      //AiSession.Instance.Logger.AddLine($"RunAlgorithm: Start = {start}, Goal = {goal}");
+
       bool pathFound = false;
       while (queue.Count > 0)
       {
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
         if (collection.Dirty || currentMS > maxTimeMS)
         {
+          //AiSession.Instance.Logger.AddLine($" -> Collection Dirty or Timeout");
           break;
         }
 
         if (pathFound)
         {
+          //AiSession.Instance.Logger.AddLine($" -> Path found!");
           break;
         }
 
         Vector3I current;
         if (!queue.TryDequeue(out current))
         {
+          //AiSession.Instance.Logger.AddLine($" -> Failed to dequeue from Queue");
           break;
         }
+
+        //AiSession.Instance.Logger.AddLine($" -> Current = {current}");
 
         if (current == goal)
         {
@@ -219,6 +239,7 @@ namespace AiEnabled.Ai
 
           if (!isGridGraph)
           {
+            //AiSession.Instance.Logger.AddLine($" -> Path found!");
             break;
           }
         }
@@ -226,12 +247,14 @@ namespace AiEnabled.Ai
         Vector3I previous;
         if (!cameFrom.TryGetValue(current, out previous))
         {
+          //AiSession.Instance.Logger.AddLine($" -> Failed to find previous in CameFrom for {current}");
           break;
         }
 
         Node currentNode;
         if (!graph.TryGetNodeForPosition(current, out currentNode))
         {
+          //AiSession.Instance.Logger.AddLine($" -> Failed to find node for current, {current}");
           break;
         }
 
@@ -293,16 +316,23 @@ namespace AiEnabled.Ai
           }
         }
 
+        //AiSession.Instance.Logger.AddLine($" -> Checking Neighbors: Prev = {previous}, Cur = {current}");
         foreach (var next in graph.Neighbors(bot, previous, current, botPosition, checkDoors))
         {
+          //AiSession.Instance.Logger.AddLine($"  -> Next = {next}");
           Node node;
           if (!graph.TryGetNodeForPosition(next, out node))
+          {
+            //AiSession.Instance.Logger.AddLine($"   -> No node found for next");
             continue;
+          }
 
           var newCost = currentCost;
 
           if (groundNodesFirst && !node.IsGroundNode)
+          {
             continue;
+          }
 
           if (node.IsSpaceNode(graph))
           {
@@ -352,6 +382,8 @@ namespace AiEnabled.Ai
               continue;
           }
 
+          //AiSession.Instance.Logger.AddLine($"   -> Able to use this node");
+
           int nextCost;
           bool stackFound = false;
 
@@ -372,6 +404,8 @@ namespace AiEnabled.Ai
             var isGoal = next == goal;
             int priority = isGoal ? -1 : newCost + Vector3I.DistanceManhattan(next, goal);
 
+            //AiSession.Instance.Logger.AddLine($"   -> Adding {next} to queue with pri {priority}");
+
             queue.Enqueue(next, priority);
             costSoFar[next] = newCost;
             cameFrom[next] = current;
@@ -384,6 +418,8 @@ namespace AiEnabled.Ai
         }
       }
 
+      //AiSession.Instance.Logger.AddLine($" -> PathFound = {pathFound}");
+      //AiSession.Instance.Logger.LogAll();
       return pathFound;
     }
 
@@ -577,6 +613,7 @@ namespace AiEnabled.Ai
                 {
                   var blockBelowDef = nBelow.Block.BlockDefinition.Id;
                   if (AiSession.Instance.SlopeBlockDefinitions.Contains(blockBelowDef)
+                    && !(nBelow.Block.FatBlock is IMyTextPanel)
                     && !AiSession.Instance.HalfStairBlockDefinitions.Contains(blockBelowDef)
                     && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(blockBelowDef))
                   {
@@ -861,7 +898,28 @@ namespace AiEnabled.Ai
               }
               else if (subtype == "Jukebox" || subtype == "AtmBlock" || subtype == "FoodDispenser" || subtype == "VendingMachine")
               {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.1;
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.2;
+              }
+              else if (subtype == "TrussFloorHalf")
+              {
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.25;
+              }
+              else if (subtype == "LargeCrate")
+              {
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
+              }
+              else if (subtype.EndsWith("Barrel"))
+              {
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.25
+                  + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
+              }
+              else if (subtype.EndsWith("HalfBed"))
+              {
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.25;
+              }
+              else if (subtype.EndsWith("HalfBedOffset"))
+              {
+                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
               }
 
               Node node;
@@ -1281,6 +1339,20 @@ namespace AiEnabled.Ai
                   }
                 }
               }
+              else if (thisBlock.FatBlock is IMyTextPanel)
+              {
+                var botUpDir = Base6Directions.GetOppositeDirection(botDownDir);
+                Vector3D blockFwd;
+
+                if (botUpDir == thisBlock.Orientation.Forward)
+                  blockFwd = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
+                else if (botUpDir == thisBlock.Orientation.Left)
+                  blockFwd = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
+                else
+                  continue; // upside down or sideways
+
+                offset = blockFwd * gridSize * 0.5f;
+              }
               else if (thisBlock.BlockDefinition.Context.ModName == "PassageIntersections" && thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large"))
               {
                 // offset already 
@@ -1431,7 +1503,15 @@ namespace AiEnabled.Ai
 
               if (isRamp || isSlope)
               {
-                if (blockBelowThis.Orientation.Up == botDownDir)
+                if (isSlope && blockBelowThis.FatBlock is IMyTextPanel)
+                {
+                  var botUpDir = Base6Directions.GetOppositeDirection(botDownDir);
+                  if (botUpDir == blockBelowThis.Orientation.Forward || botUpDir == blockBelowThis.Orientation.Left)
+                    offset = downTravelDir * gridSize * 0.5f;
+                  else
+                    offset = null;
+                }
+                else if (blockBelowThis.Orientation.Up == botDownDir)
                 {
                   offset = null;
                 }
@@ -1699,6 +1779,18 @@ namespace AiEnabled.Ai
                   else if (subtype.StartsWith("LargeBlockCouch"))
                   {
                     offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * 0.3;
+                  }
+                  else if (subtype == "TrussFloorHalf")
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.25;
+                  }
+                  else if (subtype == "LargeCrate")
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
+                  }
+                  else if (subtype.EndsWith("Barrel"))
+                  {
+                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.25;
                   }
                   else
                   {
@@ -2279,7 +2371,7 @@ namespace AiEnabled.Ai
       {
         return Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) <= 0;
       }
-      else if (block.FatBlock is IMyTextPanel
+      else if ((block.FatBlock is IMyTextPanel && !AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id))
         || (block.FatBlock is IMyLightingBlock && cubeDef.Id.SubtypeName == "LargeLightPanel"))
       {
         return Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref upVec) >= 0;

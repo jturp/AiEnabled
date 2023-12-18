@@ -112,6 +112,11 @@ namespace AiEnabled.Ai.Support
     public bool NeedsBlockUpdate;
 
     /// <summary>
+    /// If true, temp obstacles will be cleared before the next pathfinding attempt
+    /// </summary>
+    public bool NeedsTempCleared;
+
+    /// <summary>
     /// Determines whether the given position is still within this graph's limits
     /// </summary>
     /// <param name="position">The position to check</param>
@@ -208,6 +213,9 @@ namespace AiEnabled.Ai.Support
     /// <returns></returns>
     public virtual bool IsPositionUsable(BotBase bot, Vector3D worldPosition)
     {
+      if (Dirty || !Ready)
+        return false;
+
       if (bot == null || bot.IsDead)
         return false;
 
@@ -509,12 +517,17 @@ namespace AiEnabled.Ai.Support
     }
 
     /// <summary>
+    /// Clears all temporary blockages from the map
+    /// </summary>
+    public abstract void ClearTempObstacles();
+
+    /// <summary>
     /// Adds a blocked edge to known obstacles
     /// </summary>
     /// <param name="prevNode">Previous <see cref="Node"/> position</param>
     /// <param name="curNode">Current <see cref="Node"/> position</param>
     /// <param name="nextNode">Next <see cref="Node"/> position</param>
-    public virtual bool AddToObstacles(Vector3I prevNode, Vector3I curNode, Vector3I nextNode)
+    public virtual bool AddToObstacles(Vector3I prevNode, Vector3I curNode, Vector3I nextNode, bool asTemp)
     {
       var prev = prevNode; // WorldToLocal(prevNode);
       var curr = curNode; // WorldToLocal(curNode);
@@ -528,8 +541,14 @@ namespace AiEnabled.Ai.Support
         var min = -Vector3I.One;
         Vector3I.Clamp(ref dirPN, ref min, ref Vector3I.One, out dirPN);
 
-        if (node.SetBlocked(dirPN))
+        if (asTemp)
+        {
+          if (node.SetBlockedTemp(dirPN))
+            addObstacle = false;
+        }
+        else if (node.SetBlocked(dirPN))
           addObstacle = false;
+
       }
 
       if (addObstacle && TryGetNodeForPosition(curr, out node))
@@ -538,7 +557,12 @@ namespace AiEnabled.Ai.Support
         var min = -Vector3I.One;
         Vector3I.Clamp(ref dirCN, ref min, ref Vector3I.One, out dirCN);
 
-        if (node.SetBlocked(dirCN))
+        if (asTemp)
+        {
+          if (node.SetBlockedTemp(dirCN))
+            addObstacle = false;
+        }
+        else if (node.SetBlocked(dirCN))
           addObstacle = false;
       }
 
@@ -614,6 +638,12 @@ namespace AiEnabled.Ai.Support
     public abstract Node GetReturnHomePoint(BotBase bot);
 
     public abstract IMySlimBlock GetBlockAtPosition(Vector3I localPosition, bool checkOtherGrids = false);
+
+    public virtual IMySlimBlock GetBlockAtPosition(Vector3D worldPosition, bool checkOtherGrids = false)
+    {
+      var localPosition = WorldToLocal(worldPosition);
+      return GetBlockAtPosition(localPosition, checkOtherGrids);
+    }
 
     public virtual void TeleportNearby(BotBase bot)
     {

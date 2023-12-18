@@ -21,10 +21,11 @@ namespace AiEnabled.Networking
       foreach (var kvp in AiSession.Instance.BotComponents)
       {
         var reqs = kvp.Value;
-        long credits;
+        long credits, upkeep;
         AiSession.Instance.BotPrices.TryGetValue(kvp.Key, out credits);
+        AiSession.Instance.BotUpkeepPrices.TryGetValue(kvp.Key, out upkeep);
 
-        var serialPrice = new SerializableBotPrice(kvp.Key, credits, reqs);
+        var serialPrice = new SerializableBotPrice(kvp.Key, credits, upkeep, reqs);
         prices.Add(serialPrice);
       }
 

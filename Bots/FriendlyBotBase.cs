@@ -645,6 +645,12 @@ namespace AiEnabled.Bots
       var relVectorBot = Vector3D.TransformNormal(vecToWP, MatrixD.Transpose(botMatrix));
       var tgtFriendly = Target.IsFriendly();
       var isFriendly = isTarget && tgtFriendly;
+
+      if (isFriendly && (FollowMode || Owner != null) && Target.Override.HasValue && _currentGraph.GetBlockAtPosition(Target.Override.Value)?.FatBlock is IMyCockpit)
+      {
+        isFriendly = false;
+      }
+
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
       var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder) && !(Character.EquippedTool is IMyWelder);
 

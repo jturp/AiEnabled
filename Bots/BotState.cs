@@ -32,6 +32,7 @@ namespace AiEnabled.Bots
       IsJumping = 128
     }
 
+    public Vector3D CurrentBotPositionAtFeet { get;private set; }
     public Vector3D CurrentBotPositionAdjusted { get; private set; }
     public Vector3D CurrentBotPositionActual { get; private set; }
     public Vector3D CurrentGravityAtBotPosition_Nat { get; private set; }
@@ -60,6 +61,7 @@ namespace AiEnabled.Bots
         return;
 
       CurrentBotPositionActual = Bot.Character.WorldAABB.Center;
+      CurrentBotPositionAtFeet = Bot.Character.GetPosition();
       CurrentBotPositionAdjusted = Bot.GetPosition();
 
       float interference;

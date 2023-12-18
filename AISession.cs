@@ -12,6 +12,7 @@ using AiEnabled.Projectiles;
 using AiEnabled.Support;
 using AiEnabled.Utilities;
 
+using Sandbox;
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.Game;
@@ -28,6 +29,8 @@ using SpaceEngineers.Game.ModAPI;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.Remoting.Messaging;
 using System.Text;
 
 using VRage;
@@ -71,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.6.3";
+    public const string VERSION = "v1.7.5";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -105,6 +108,9 @@ namespace AiEnabled
       }
     }
 
+    // for path testing, only works with 1 bot active
+    public bool InPathFinder;
+
     public bool FactoryControlsHooked;
     public bool FactoryControlsCreated;
     public bool FactoryActionsCreated;
@@ -113,6 +119,7 @@ namespace AiEnabled
     public bool ShieldAPILoaded, WcAPILoaded, IndOverhaulLoaded, EemLoaded, GrenadesEnabled;
     public bool InfiniteAmmoEnabled;
     public double SyncRange = 3000;
+    public long LastSpawnId = 1000;
     public readonly MyStringHash FactorySorterHash = MyStringHash.GetOrCompute("RoboFactory");
 
     public List<HelperInfo> MyHelperInfo;
@@ -138,6 +145,7 @@ namespace AiEnabled
     Vector3D _starterPosition;
     bool _isControlBot, _firstCacheComplete;
     int _controllerCacheNum = 20;
+
     TimeSpan _firstFrameTime;
     FastResourceLock _voxelMapResourceLock = new FastResourceLock();
     FastResourceLock _gridMapResourceLock = new FastResourceLock();
@@ -327,11 +335,14 @@ namespace AiEnabled
       try
       {
         if (Environment.CurrentManagedThreadId != MainThreadId)
-          Logger.Log($"Calling MyEntities.CloseAll from a parallel thread! ThreadId = {Environment.CurrentManagedThreadId}");
+        {
+          Logger.Log($"Calling MyEntities.CloseAll from a parallel thread! ThreadId = {Environment.CurrentManagedThreadId}", MessageType.WARNING);
+          MyAPIGateway.Utilities.InvokeOnGameThread(MyEntities_OnCloseAll);
+        }
 
         if (Bots?.Count > 0)
         {
-          Logger.Log($"Closing {Bots.Count} bots before unload");
+          Logger.Log($"Closing {Bots.Count} bot(s) before unload");
 
           foreach (var kvp in Bots)
           {
@@ -393,15 +404,48 @@ namespace AiEnabled
       if (_selectedBot != null)
         MyVisualScriptLogicProvider.SetHighlightLocal(_selectedBot.Name, -1);
 
-      if (ModSaveData != null)
-      {
-        if (ModSaveData.PlayerHelperData != null)
+      if (ModSaveData?.PlayerHelperData != null)
+      { 
+        if (FutureBotQueue?.Count > 0)
         {
-          foreach (var item in ModSaveData.PlayerHelperData)
-            item?.Close();
+          while (FutureBotQueue.Count > 0)
+          {
+            var future = FutureBotQueue.Dequeue();
 
-          ModSaveData.PlayerHelperData.Clear();
+            if (future.OwnerId > 0)
+            {
+              foreach (var data in ModSaveData.PlayerHelperData)
+              {
+                if (data.OwnerIdentityId == future.OwnerId)
+                {
+                  var helpers = data.Helpers;
+                  bool found = false;
+
+                  foreach (var helper in helpers)
+                  {
+                    if (helper.HelperId == future.HelperInfo.HelperId)
+                    {
+                      found = true;
+                      break;
+                    }
+                  }
+
+                  if (!found)
+                    helpers.Add(future.HelperInfo);
+  
+                  break;
+                }
+              }
+            }
+          }
+
+          UpdateAdminConfig(true);
         }
+
+        foreach (var item in ModSaveData.PlayerHelperData)
+          item?.Close();
+
+        ModSaveData.PlayerHelperData.Clear();
       }
 
       if (BlockFaceDictionary != null)
@@ -456,13 +500,9 @@ namespace AiEnabled
 
       if (GridGraphDict != null)
       {
-        foreach (var kvp in GridGraphDict)
+        foreach (var graph in GridGraphDict.Values)
         {
-          var map = kvp.Value;
-          if (map != null)
-          {
-            map.Close();
-          }
+          graph?.Close();
         }
 
         GridGraphDict.Clear();
@@ -472,10 +512,7 @@ namespace AiEnabled
       {
         foreach (var graph in VoxelGraphDict.Values)
         {
-          if (graph != null)
-          {
-            graph.Close();
-          }
+          graph?.Close();
         }
 
         VoxelGraphDict.Clear();
@@ -603,6 +640,10 @@ namespace AiEnabled
       CubeGridHitInfo?.Reset();
       HelperAnimations?.Clear();
       PlayerFollowDistanceDict?.Clear();
+      GridsToDraw?.Clear();
+      BotUpkeepPrices?.Clear();
+      HealingHash?.Clear();
+      AnalyzeHash?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -628,13 +669,15 @@ namespace AiEnabled
       _keyPresses?.Clear();
       _iconRemovals?.Clear();
       _hBarRemovals?.Clear();
-      _analyzeList?.Clear();
+      _iconAddList?.Clear();
       _botCharsToClose?.Clear();
       _botSpeakers?.Clear();
       _botAnalyzers?.Clear();
       _healthBars?.Clear();
+      _botHealings?.Clear();
       _prefabsToCheck?.Clear();
       _commandInfo?.Clear();
+      _activeHelpersToUpkeep?.Clear();
 
       Scheduler = null;
       AllCoreWeaponDefinitions = null;
@@ -659,7 +702,7 @@ namespace AiEnabled
       Bots = null;
       DiagonalDirections = null;
       CardinalDirections = null;
-      BtnPanelDefinitions = null;
+      ButtonPanelDefinitions = null;
       VoxelMovementDirections = null;
       CatwalkRailDirections = null;
       CatwalkBlockDefinitions = null;
@@ -750,6 +793,10 @@ namespace AiEnabled
       CubeGridHitInfo = null;
       HelperAnimations = null;
       PlayerFollowDistanceDict = null;
+      GridsToDraw = null;
+      BotUpkeepPrices = null;
+      HealingHash = null;
+      AnalyzeHash = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -779,15 +826,17 @@ namespace AiEnabled
       _keyPresses = null;
       _iconRemovals = null;
       _hBarRemovals = null;
-      _analyzeList = null;
+      _iconAddList = null;
       _botCharsToClose = null;
       _botSpeakers = null;
       _botAnalyzers = null;
       _healthBars = null;
+      _botHealings = null;
       _voxelMapResourceLock = null;
       _gridMapResourceLock = null;
       _prefabsToCheck = null;
       _commandInfo = null;
+      _activeHelpersToUpkeep = null;
 
       if (Logger != null)
       {
@@ -810,7 +859,8 @@ namespace AiEnabled
         IsClient = !IsServer;
         MainThreadId = Environment.CurrentManagedThreadId;
         _controllerCacheNum = Math.Max(20, Math.Min(50, MyAPIGateway.Session.MaxPlayers * 2));
-        _firstFrameTime = MyAPIGateway.Session.ElapsedPlayTime;
+
+        Scheduler.Schedule(() => _firstFrameTime = MyAPIGateway.Session.ElapsedPlayTime);
 
         bool sessionOK = MyAPIGateway.Session != null;
         if (sessionOK)
@@ -1005,6 +1055,7 @@ namespace AiEnabled
             {
               var bType = kvp.Key;
               var credits = kvp.Value;
+              var upkeep = BotUpkeepPrices[bType];
 
               List<SerialId> comps;
               if (!BotComponents.TryGetValue(bType, out comps))
@@ -1028,6 +1079,7 @@ namespace AiEnabled
               {
                 BotType = bType,
                 SpaceCredits = credits,
+                UpkeepCredits = upkeep,
                 Components = new List<SerialId>(comps)
               };
 
@@ -1039,6 +1091,7 @@ namespace AiEnabled
             foreach (var kvp in BotPrices)
             {
               var bType = kvp.Key;
+              var upkeep = BotUpkeepPrices[bType];
 
               bool found = false;
               for (int i = 0; i < ModPriceData.BotPrices.Count; i++)
@@ -1075,6 +1128,7 @@ namespace AiEnabled
                 {
                   BotType = bType,
                   SpaceCredits = kvp.Value,
+                  UpkeepCredits = upkeep,
                   Components = new List<SerialId>(comps)
                 };
 
@@ -1108,7 +1162,8 @@ namespace AiEnabled
                   BotComponents[botPrice.BotType.Value]?.Clear();
                 }
 
-                BotPrices[botPrice.BotType.Value] = botPrice.SpaceCredits ?? 0;
+                BotPrices[botPrice.BotType.Value] = botPrice.SpaceCredits;
+                BotUpkeepPrices[botPrice.BotType.Value] = botPrice.UpkeepCredits;
               }
             }
           }
@@ -1197,9 +1252,14 @@ namespace AiEnabled
               MaxHelpersPerPlayer = 2,
               MaxBotProjectileDistance = 150,
               MaxBotHuntingDistanceEnemy = 300,
-              MaxBotHuntingDistanceFriendly = 150,
-               
+              MaxBotHuntingDistanceFriendly = 150,               
             };
+          }
+
+          if (ModSaveData.BotUpkeepTimeInMinutes <= 0)
+          {
+            ModSaveData.BotUpkeepTimeInMinutes = 0;
+            ModSaveData.ChargePlayersForBotUpkeep = false;
           }
 
           if (ModSaveData.AllowedHelperSubtypes == null || ModSaveData.AllowedHelperSubtypes.Count == 0)
@@ -1912,11 +1972,12 @@ namespace AiEnabled
       }
     }
 
-    public void UpdateAdminConfig()
+    public void UpdateAdminConfig(bool force = false)
     {
-      if (++_updateCounterAdmin < UpdateTime)
+      if (!force && ++_updateCounterAdmin < UpdateTime)
         return;
 
+      _updateCounterAdmin = 0;
       _needsAdminUpdate = false;
 
       Config.WriteFileToWorldStorage("AiEnabled.cfg", typeof(SaveData), ModSaveData, Logger);
@@ -2549,7 +2610,7 @@ namespace AiEnabled
               {
                 if (!gridGraph.TempBlockedNodes.ContainsKey(seat.Position))
                 {
-                  gridSeats.RemoveAtFast(i);
+                  gridSeats.RemoveAtFast(j);
                   var seatPos = seatPosition;
                   bot.Target.SetOverride(seatPos);
                   break;
@@ -3038,7 +3099,6 @@ namespace AiEnabled
             }
           }
 
-
           if (PlayerToHelperDict.TryGetValue(playerId, out botList))
           {
             bool playerFound = false;
@@ -3071,6 +3131,11 @@ namespace AiEnabled
                       var gridGraph = bot._currentGraph as CubeGridMap;
                       var grid = gridGraph?.MainGrid ?? null;
                       helper.GridEntityId = grid?.EntityId ?? 0L;
+
+                      if (bot.Character?.Parent is IMyCockpit)
+                        helper.SeatEntityId = bot.Character.Parent.EntityId;
+                      else
+                        helper.SeatEntityId = 0L;
 
                       var inventory = botChar.GetInventory() as MyInventory;
                       if (inventory?.ItemCount > 0)
@@ -4028,7 +4093,7 @@ namespace AiEnabled
         UpdateParticles();
         UpdateGPSLocal(player);
 
-        if (_botAnalyzers.Count > 0 || _botSpeakers.Count > 0 || _healthBars.Count > 0)
+        if (_botAnalyzers.Count > 0 || _botSpeakers.Count > 0 || _healthBars.Count > 0 || _botHealings.Count > 0)
           DrawOverHeadIcons();
 
         if (CommandMenu == null || !CommandMenu.Registered)
@@ -4259,6 +4324,11 @@ namespace AiEnabled
           helperData.Orientation = Quaternion.CreateFromRotationMatrix(botChar.WorldMatrix);
           helperData.InventoryItems?.Clear();
           helperData.ToolPhysicalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
+
+          if (botChar.Parent is IMyCockpit)
+            helperData.SeatEntityId = botChar.Parent.EntityId;
+          else
+            helperData.SeatEntityId = 0L;
 
           var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
 
@@ -4549,8 +4619,31 @@ namespace AiEnabled
       }
     }
 
+    public void AddHealingIcons(List<long> healings)
+    {
+      if (healings == null)
+        return;
+
+      for (int i = 0; i < healings.Count; i++)
+      {
+        var botId = healings[i];
+        if (_botHealings.ContainsKey(botId))
+          continue;
+
+        var bot = MyEntities.GetEntityById(botId) as IMyCharacter;
+        if (bot == null || bot.MarkedForClose)
+          continue;
+
+        var info = GetIconInfo();
+        info.Set(bot, 90);
+        if (!_botHealings.TryAdd(botId, info))
+          ReturnIconInfo(info);
+      }
+    }
+
     MyStringId _material_Analyze = MyStringId.GetOrCompute("AiEnabled_Analyze");
     MyStringId _material_Chat = MyStringId.GetOrCompute("AiEnabled_Chat");
+    MyStringId _material_Heal = MyStringId.GetOrCompute("AiEnabled_Heal");
     Vector4 _iconColor = Color.LightCyan.ToVector4();
     void DrawOverHeadIcons()
     {
@@ -4594,6 +4687,25 @@ namespace AiEnabled
         }
       }
 
+      if (_botHealings.Count > 0)
+      {
+        _iconRemovals.Clear();
+
+        foreach (var kvp in _botHealings)
+        {
+          var info = kvp.Value;
+          if (info.Update(ref matrix, ref _material_Heal, ref _iconColor))
+            _iconRemovals.Add(kvp.Key);
+        }
+
+        foreach (var botId in _iconRemovals)
+        {
+          IconInfo info;
+          if (_botHealings.TryRemove(botId, out info))
+            ReturnIconInfo(info);
+        }
+      }
+
       if (_healthBars.Count > 0)
       {
         _hBarRemovals.Clear();
@@ -4611,7 +4723,7 @@ namespace AiEnabled
           if (_healthBars.TryRemove(botId, out info))
             ReturnHealthInfo(info);
         }
-      }      
+      }
 
       _hBarRemovals.Clear();
       _iconRemovals.Clear();
@@ -4794,7 +4906,7 @@ namespace AiEnabled
         foreach (var kvp in GridGraphDict)
         {
           var gridGraph = kvp.Value;
-          if (gridGraph?.Ready == true && gridGraph.MainGrid?.IsStatic == false)
+          if (gridGraph?.MainGrid != null && gridGraph.Ready && !gridGraph.MainGrid.IsStatic)
             gridGraph.RecalculateOBB();
         }
 
@@ -4807,14 +4919,25 @@ namespace AiEnabled
             continue;
           }
 
+          var hasOwner = robot.Owner != null;
+
+          if (hasOwner && ModSaveData.ChargePlayersForBotUpkeep)
+          {
+            var upkeep = BotUpkeepPrices.GetValueOrDefault(robot.BotType, 0);
+            if (upkeep > 0)
+              UpdateBotUpkeep(robot, upkeep);
+          }
+
           if (!robot.Update() || robot.Character.Parent is IMyCockpit)
           {
             continue;
           }
 
-          if (robot.Owner != null)
+          if (hasOwner)
+          {
             robot.CheckPathCounter();
-  
+          }
+
           robot.MoveToTarget();
         }
 
@@ -4840,6 +4963,52 @@ namespace AiEnabled
       catch (Exception ex)
       {
         Logger.Log($"Exception in DoTickNow.ServerStuff: {ex.ToString()}", MessageType.ERROR);
+      }
+    }
+
+    void UpdateBotUpkeep(BotBase bot, long credits)
+    {
+      try
+      {
+        var name = bot.Character?.Name;
+        if (name == null || bot.Owner == null)
+          return;
+
+        int ticks;
+        _activeHelpersToUpkeep.TryGetValue(name, out ticks);
+
+        ticks++;
+        var upkeepTicks = (ModSaveData?.BotUpkeepTimeInMinutes ?? 30) * 60 * 60;
+        
+        if (ticks >= upkeepTicks)
+        {
+          long balance;
+          bot.Owner.TryGetBalanceInfo(out balance);
+
+          if (balance < credits)
+          {
+            // store bot
+            var pkt = new MessagePacket($"Insufficient funds for helper, {name} will now be stored.", ttl: 10000);
+            Network.SendToPlayer(pkt, bot.Owner.SteamUserId);
+
+            var storePkt = new StoreBotPacket(bot.Character.EntityId);
+            Network.SendToServer(storePkt);
+          }
+          else
+          {
+            ticks = 0;
+            bot.Owner.RequestChangeBalance(-credits);
+
+            var pkt = new MessagePacket($"You have been charged {credits} SC for {name}.", ttl: 10000);
+            Network.SendToPlayer(pkt, bot.Owner.SteamUserId);
+          }
+        }
+
+        _activeHelpersToUpkeep[name] = ticks;
+      }
+      catch (Exception ex)
+      {
+        Logger.Log(ex.ToString(), MessageType.ERROR);
       }
     }
 
@@ -4960,46 +5129,41 @@ namespace AiEnabled
       foreach (var kvp in GridGraphDict)
       {
         var graph = kvp.Value;
-        if (graph?.MainGrid == null || graph.MainGrid.MarkedForClose || !graph.IsGridGraph)
+        if (graph?.MainGrid == null || graph.MainGrid.MarkedForClose || !graph.IsGridGraph || !graph.IsValid)
         {
           _graphRemovals.Add(kvp.Key);
           continue;
         }
 
+        graph.AdjustWorldMatrix();
         bool updateInventory = false;
 
-        if (graph.Ready)
+        if (graph.Remake || graph.Dirty)
+        {
+          if (graph.Remake)
+            graph.Refresh();
+
+          graph.InventoryCache._needsUpdate = true;
+          updateInventory = true;
+        }
+        else if (graph.Ready)
         {
           graph.LastActiveTicks++;
           if (graph.LastActiveTicks > 6)
           {
+            if (clearObstacles)
+              graph.ClearTempObstacles();
+
             graph.IsActive = false;
             continue;
           }
-        }
 
-        graph.AdjustWorldMatrix();
+          if (graph.NeedsGridUpdate)
+            graph.UpdateGridCollection();
 
-        if (graph.NeedsGridUpdate)
-          graph.UpdateGridCollection();
-
-        if (graph.Remake)
-        {
-          graph.Refresh();
-
-          graph.InventoryCache._needsUpdate = true;
-          updateInventory = true;
-        }
-        else if (graph.Dirty)
-        {  
-          graph.InventoryCache._needsUpdate = true;
-          updateInventory = true;
-        }
-        else
-        {
           if (clearObstacles)
           {
-            graph.TempBlockedNodes.Clear();
+            graph.ClearTempObstacles();
             updateInventory = graph.InventoryCache.AccessibleInventoryCount == 0;
           }
 
@@ -5032,24 +5196,24 @@ namespace AiEnabled
       {
         var graph = kvp.Value;
 
-        if (graph.Ready)
-        {
-          graph.LastActiveTicks++;
-          if (graph.LastActiveTicks > 6)
-          {
-            graph.IsActive = false;
-            continue;
-          }
-        }
-
         if (graph.Remake)
         {
           graph.Refresh();
         }
-        else
+        else if (graph.Ready)
         {
+          graph.LastActiveTicks++;
+          if (graph.LastActiveTicks > 6)
+          {
+            if (clearObstacles)
+              graph.ClearTempObstacles();
+
+            graph.IsActive = false;
+            continue;
+          }
+
           if (clearObstacles)
-            graph.TempBlockedNodes.Clear();
+            graph.ClearTempObstacles();
         }
       }
 
@@ -5058,18 +5222,34 @@ namespace AiEnabled
 
       if (AnalyzeHash.Count > 0)
       {
-        _analyzeList.AddRange(AnalyzeHash);
+        _iconAddList.AddRange(AnalyzeHash);
         if (mpActive)
         {
-          var pkt = new OverHeadIconPacket(_analyzeList);
+          var pkt = new OverHeadIconPacket(_iconAddList, false);
           Network.RelayToClients(pkt);
         }
 
         if (localPlayer != null)
-          AddOverHeadIcons(_analyzeList);
+          AddOverHeadIcons(_iconAddList);
 
-        _analyzeList.Clear();
+        _iconAddList.Clear();
         AnalyzeHash.Clear();
+      }
+
+      if (HealingHash.Count > 0)
+      {
+        _iconAddList.AddRange(HealingHash);
+        if (mpActive)
+        {
+          var pkt = new OverHeadIconPacket(_iconAddList, true);
+          Network.RelayToClients(pkt);
+        }
+
+        if (localPlayer != null)
+          AddHealingIcons(_iconAddList);
+
+        _iconAddList.Clear();
+        HealingHash.Clear();
       }
 
       foreach (var kvp in PlayerToHealthBars)
@@ -5307,6 +5487,15 @@ namespace AiEnabled
                   }
                 }
 
+                if (future.HelperInfo.SeatEntityId > 0)
+                {
+                  IMyEntity seat;
+                  MyAPIGateway.Entities.TryGetEntityById(future.HelperInfo.SeatEntityId, out seat);
+
+                  if (seat != null) 
+                    Scheduler.Schedule(() => BotFactory.TrySeatBot(botBase, seat as IMyCockpit), 10);
+                }
+
                 IMyPlayer player;
                 if (Players.TryGetValue(future.OwnerId, out player) && player != null)
                 {
@@ -5348,7 +5537,7 @@ namespace AiEnabled
 
             if (FutureBotQueue.Count == 0)
             {
-              SaveModData(true);
+              Scheduler.Schedule(() => SaveModData(true), 15);
             }
           }
         }

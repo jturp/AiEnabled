@@ -55,11 +55,12 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
     internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
-    internal MenuItem AllowNeutralsToOpenDoors;
+    internal MenuItem AllowNeutralsToOpenDoors, ChargePlayersForBotUpkeep;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
     internal MenuTextInput RepairBotSearchRadius, HelperGpsColorInput, BotVolumeModifier;
+    internal MenuTextInput BotUpkeepTimeInMinutes;
     PlayerData _playerData;
     float _lastSpreadKeyPressed, _lastCloserKeyPressed;
 
@@ -143,6 +144,9 @@ namespace AiEnabled.Graphics
       MaxFriendlyHuntRadius = new MenuTextInput($"Max friendly hunting radius: <color=orange>{data.MaxBotHuntingDistanceFriendly}", AdminMenu, "Set max hunting radius for helper bots, between 50-1000 meters (default = 150)", MaxFriendlyHuntRange_Submitted);
       
       MaxBotProjectileDistance = new MenuTextInput($"Max projectile distance: <color=orange>{data.MaxBotProjectileDistance}", AdminMenu, "Set max bot projectile distance in meters (default = 150)", MaxProjectileRange_Submitted);
+
+      ChargePlayersForBotUpkeep = CreateMenuItemToggle(AdminMenu, data.ChargePlayersForBotUpkeep, "Charge players for helper upkeep", ChargeForUpkeep_Clicked);
+      BotUpkeepTimeInMinutes = new MenuTextInput($"Bot upkeep time interval (mins): <color=orange>{data.BotUpkeepTimeInMinutes}", AdminMenu, "Set bot upkeep time interval in minutes (default = 30)", BotUpkeepTime_Submitted);
 
       AllowRepairBot = CreateMenuItemToggle(AdminMenu, data.AllowRepairBot, "Allow RepairBot helpers", AllowRepairBot_Clicked);
       AllowCombatBot = CreateMenuItemToggle(AdminMenu, data.AllowCombatBot, "Allow CombatBot helpers", AllowCombatBot_Clicked);
@@ -584,6 +588,22 @@ namespace AiEnabled.Graphics
           BotVolumeModifier = null;
         }
 
+        if (BotUpkeepTimeInMinutes != null)
+        {
+          BotUpkeepTimeInMinutes.Text = null;
+          BotUpkeepTimeInMinutes.BackingObject = null;
+          BotUpkeepTimeInMinutes.OnSubmitAction = null;
+          BotUpkeepTimeInMinutes = null;
+        }
+
+        if (ChargePlayersForBotUpkeep != null)
+        {
+          ChargePlayersForBotUpkeep.Text = null;
+          ChargePlayersForBotUpkeep.OnClick = null;
+          ChargePlayersForBotUpkeep.BackingObject = null;
+          ChargePlayersForBotUpkeep = null;
+        }
+
         _playerData = null;
       }
       catch (Exception ex)
@@ -937,6 +957,19 @@ namespace AiEnabled.Graphics
     #endregion
 
     #region AdminOnly
+    private void ChargeForUpkeep_Clicked()
+    {
+      var data = AiSession.Instance.ModSaveData;
+      var newValue = !data.ChargePlayersForBotUpkeep;
+      data.ChargePlayersForBotUpkeep = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      ChargePlayersForBotUpkeep.Text = $"Charge players for helper upkeep: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
     private void AllowNeutralDoors_Clicked()
     {
       var data = AiSession.Instance.ModSaveData;
@@ -1266,6 +1299,23 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartSettingSyncCounter();
     }
 
+    private void BotUpkeepTime_Submitted(string input)
+    {
+      float num;
+      if (float.TryParse(input, out num))
+      {
+        var newValue = (int)Math.Max(0, Math.Ceiling(num));
+        var data = AiSession.Instance.ModSaveData;
+        if (data.BotUpkeepTimeInMinutes != newValue)
+        {
+          BotUpkeepTimeInMinutes.Text = $"Bot upkeep time interval (mins): <color=orange>{newValue}";
+          data.BotUpkeepTimeInMinutes = newValue;
+          AiSession.Instance.StartAdminUpdateCounter();
+          AiSession.Instance.StartSettingSyncCounter();
+        }
+      }
+    }
+
     internal void MaxProjectileRange_Submitted(string input)
     {
       float num;
@@ -1414,6 +1464,10 @@ namespace AiEnabled.Graphics
       color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowNeutralTargets.Text = $"Allow enemy bots to target neutrals: {color}{newValue}";
 
+      newValue = data.ChargePlayersForBotUpkeep;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      ChargePlayersForBotUpkeep.Text = $"Charge players for helper upkeep: {color}{newValue}";
+
       newValue = data.AllowHelpersToFly;
       color = newValue ? "<color=orange>" : "<color=yellow>";
       AllowFriendlyFlight.Text = $"Allow helper bots to fly: {color}{newValue}";
@@ -1498,6 +1552,7 @@ namespace AiEnabled.Graphics
       PlayerDamageModifier.Text = $"Player weapon damage modifier: <color=orange>{data.PlayerWeaponDamageModifier}";
       MaxBots.Text = $"Max bots allowed in world: <color=orange>{data.MaxBotsInWorld}";
       MaxHelpers.Text = $"Max active helpers allowed per player: <color=orange>{data.MaxHelpersPerPlayer}";
+      BotUpkeepTimeInMinutes.Text = $"Bot upkeep time interval (mins): <color=orange>{data.BotUpkeepTimeInMinutes}";
     }
     #endregion
   }

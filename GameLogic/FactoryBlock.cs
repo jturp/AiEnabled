@@ -33,6 +33,7 @@ using VRage.Utils;
 using AiEnabled.API;
 using Sandbox.Game.EntityComponents;
 using AiEnabled.Networking.Packets;
+using System.Linq.Expressions;
 
 namespace AiEnabled.GameLogic
 {
@@ -139,6 +140,7 @@ namespace AiEnabled.GameLogic
       var repList = ent.EntityStorage.ReadStringList("AiEnabled_RepairPriorityList");
       var tgtList = ent.EntityStorage.ReadStringList("AiEnabled_TargetPriorityList");
       var tgtDmgCheck = ent.EntityStorage.ReadBool("AiEnabled_DamageToDisable");
+      var repWeldCheck = ent.EntityStorage.ReadBool("AiEnabled_WeldBeforeGrind");
       var priListKVP = new List<KeyValuePair<string, bool>>();
 
       if (repList != null)
@@ -156,7 +158,10 @@ namespace AiEnabled.GameLogic
           }
         }
 
-        RepairPriorities = new RemoteBotAPI.RepairPriorities(priListKVP);
+        RepairPriorities = new RemoteBotAPI.RepairPriorities(priListKVP)
+        {
+          WeldBeforeGrind = repWeldCheck
+        };
       }
       else
       {
@@ -167,8 +172,13 @@ namespace AiEnabled.GameLogic
           _priListTemp.Add($"{prefix} {item.Key}");
         }
 
-        RepairPriorities = new RemoteBotAPI.RepairPriorities();
+        RepairPriorities = new RemoteBotAPI.RepairPriorities()
+        {
+          WeldBeforeGrind = true
+        };
+
         ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
+        ent.EntityStorage.Write("AiEnabled_WeldBeforeGrind", true);
       }
 
       if (tgtList != null)
@@ -204,6 +214,7 @@ namespace AiEnabled.GameLogic
         {
           DamageToDisable = tgtDmgCheck
         };
+
         ent.EntityStorage.Write("AiEnabled_TargetPriorityList", _priListTemp);
         ent.EntityStorage.Write("AiEnabled_DamageToDisable", tgtDmgCheck);
       }
@@ -261,6 +272,7 @@ namespace AiEnabled.GameLogic
           }
 
           ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
+          ent.EntityStorage.Write("AiEnabled_WeldBeforeGrind", RepairPriorities.WeldBeforeGrind);
         }
 
         if (!updateRepairList || updateBoth)
@@ -622,7 +634,32 @@ namespace AiEnabled.GameLogic
         {
           sb.Append(" - ")
             .Append(price.ToString("#,###,##0"))
-            .Append(" Space Credits")
+            .Append(" SC")
+            .Append('\n');
+        }
+
+        if (AiSession.Instance.ModSaveData?.ChargePlayersForBotUpkeep == true 
+          && AiSession.Instance.ModSaveData.BotUpkeepTimeInMinutes > 0
+          && AiSession.Instance.BotUpkeepPrices.TryGetValue(SelectedRole, out price) && price > 0)
+        {
+          var mins = AiSession.Instance.ModSaveData.BotUpkeepTimeInMinutes;
+          string upkeepStr;
+          if (mins >= 60)
+          {
+            var hrs = mins / 60;
+            mins -= hrs * 60;
+
+            upkeepStr = $"{hrs}Hr {mins}Min";
+          }
+          else
+          {
+            upkeepStr = $"0Hr {mins}Min";
+          }
+
+          sb.Append(" - ")
+            .Append(price.ToString("#,###,##0"))
+            .Append(" SC per ")
+            .Append(upkeepStr)
             .Append('\n', 2);
         }
         else

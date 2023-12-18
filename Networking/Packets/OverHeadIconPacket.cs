@@ -11,20 +11,25 @@ namespace AiEnabled.Networking
   [ProtoContract]
   public class OverHeadIconPacket : PacketBase
   {
-    [ProtoMember(1)] List<long> _analyzeBotList;
+    [ProtoMember(1)] List<long> _iconBotList;
+    [ProtoMember(2)] bool _isHealing;
 
     public OverHeadIconPacket() { }
 
-    public OverHeadIconPacket(List<long> analyzers)
+    public OverHeadIconPacket(List<long> analyzers, bool isHealing)
     {
-      _analyzeBotList = analyzers;
+      _iconBotList = analyzers;
+      _isHealing = isHealing;
     }
 
     public override bool Received(NetworkHandler netHandler)
     {
-      if (_analyzeBotList?.Count > 0)
+      if (_iconBotList?.Count > 0)
       {
-        AiSession.Instance.AddOverHeadIcons(_analyzeBotList);
+        if (_isHealing)
+          AiSession.Instance.AddHealingIcons(_iconBotList);
+        else
+          AiSession.Instance.AddOverHeadIcons(_iconBotList);
       }
 
       return false;

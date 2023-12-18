@@ -113,6 +113,18 @@ namespace AiEnabled.Support
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(PriBtnVisSwitch);
       controls.Add(PriBtnVisSwitch);
 
+      var weldPriCheckBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyConveyorSorter>("CheckBoxWeldPriority");
+      weldPriCheckBox.Visible = CombineFunc.Create(weldPriCheckBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
+      weldPriCheckBox.Title = MyStringId.GetOrCompute("Weld before grind");
+      weldPriCheckBox.Tooltip = MyStringId.GetOrCompute("If checked, bots will prioritize welding. If not, they will prioritize grinding.");
+      weldPriCheckBox.OnText = MyStringId.GetOrCompute("Checked");
+      weldPriCheckBox.OffText = MyStringId.GetOrCompute("Unchecked");
+      weldPriCheckBox.Getter = (Block) => WeldBeforeGrindBtn_Getter(Block);
+      weldPriCheckBox.Setter = (Block, enabled) => WeldBeforeGrindBtn_Setter(Block, enabled);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(weldPriCheckBox);
+      controls.Add(weldPriCheckBox);
+
       var repairPriorityBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("ListBoxRepairPri");
       repairPriorityBox.Visible = CombineFunc.Create(repairPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                       && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
@@ -406,6 +418,26 @@ namespace AiEnabled.Support
       }
     }
 
+    private static bool WeldBeforeGrindBtn_Getter(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      return logic?.RepairPriorities?.WeldBeforeGrind ?? false;
+    }
+
+    private static void WeldBeforeGrindBtn_Setter(IMyTerminalBlock block, bool enabled)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      if (logic.RepairPriorities == null)
+        logic.RepairPriorities = new RemoteBotAPI.RepairPriorities();
+
+      logic.RepairPriorities.WeldBeforeGrind = enabled;
+      logic.UpdatePriorityLists(true);
+      RefreshTerminalControls(block);
+    }
+
     private static bool TargetDamageToDisableBtn_Getter(IMyTerminalBlock block)
     {
       var logic = block.GameLogic.GetAs<Factory>();
@@ -454,7 +486,7 @@ namespace AiEnabled.Support
       var repList = logic.RepairPriorities.PriorityTypes;
       var tgtList = logic.TargetPriorities.PriorityTypes;
 
-      var pkt = new PriorityUpdatePacket(player.IdentityId, repList, tgtList, logic.TargetPriorities.DamageToDisable);
+      var pkt = new PriorityUpdatePacket(player.IdentityId, repList, tgtList, logic.TargetPriorities.DamageToDisable, logic.RepairPriorities.WeldBeforeGrind);
       AiSession.Instance.Network.SendToServer(pkt);
 
       logic.ButtonPressed = true;

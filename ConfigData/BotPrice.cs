@@ -14,7 +14,8 @@ namespace AiEnabled.ConfigData
   public class BotPrice
   {
     public AiSession.BotType? BotType;
-    public long? SpaceCredits;
+    public long SpaceCredits;
+    public long UpkeepCredits;
 
     [XmlArrayItem("DefinitionId")]
     public List<SerialId> Components;
@@ -71,14 +72,16 @@ namespace AiEnabled.ConfigData
   {
     [ProtoMember(1)] public int BotType;
     [ProtoMember(2)] public long SpaceCredits;
-    [ProtoMember(3)] public List<SerialId> Components;
+    [ProtoMember(3)] public long UpkeepCredits;
+    [ProtoMember(4)] public List<SerialId> Components;
 
     public SerializableBotPrice() { }
 
-    public SerializableBotPrice(AiSession.BotType botType, long credits, List<SerialId> comps)
+    public SerializableBotPrice(AiSession.BotType botType, long credits, long upkeep, List<SerialId> comps)
     {
       BotType = (int)botType;
       SpaceCredits = credits;
+      UpkeepCredits = upkeep;
       Components = comps;
     }
   }

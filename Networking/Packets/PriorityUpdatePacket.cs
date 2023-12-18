@@ -17,15 +17,17 @@ namespace AiEnabled.Networking.Packets
     [ProtoMember(2)] readonly List<KeyValuePair<string, bool>> _targetPriorities;
     [ProtoMember(3)] readonly bool _damageToDisable;
     [ProtoMember(4)] readonly long _ownerId;
+    [ProtoMember(5)] readonly bool _weldBeforeGrind;
 
     public PriorityUpdatePacket() { }
 
-    public PriorityUpdatePacket(long ownerIdentityId, List<KeyValuePair<string, bool>> repList, List<KeyValuePair<string, bool>> tgtList, bool disableOnly)
+    public PriorityUpdatePacket(long ownerIdentityId, List<KeyValuePair<string, bool>> repList, List<KeyValuePair<string, bool>> tgtList, bool disableOnly, bool weldBeforeGrind)
     {
       _repairPriorities = repList;
       _targetPriorities = tgtList;
       _damageToDisable = disableOnly;
       _ownerId = ownerIdentityId;
+      _weldBeforeGrind = weldBeforeGrind;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -63,6 +65,7 @@ namespace AiEnabled.Networking.Packets
               }
 
               helper.TargetPriorities.DamageToDisable = _damageToDisable;
+              helper.RepairPriorities.WeldBeforeGrind = _weldBeforeGrind;
             }
           }
         }
