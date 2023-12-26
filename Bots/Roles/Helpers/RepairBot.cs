@@ -223,60 +223,63 @@ namespace AiEnabled.Bots.Roles.Helpers
       UpdatePatrolOBBCache(ref _lastRadius, _patrolOBBs);
     }
 
-    internal void GetValidActions(IMyInventory botInv, out bool canWeld, out bool canGrind)
+    internal void GetValidActions()
     {
-      canWeld = canGrind = false;
-
       _validToolDefinitions.Clear();
+      AllowedBuildModes = BuildMode.None;
 
-      MyPhysicalItemDefinition currentWelder = null;
-      MyPhysicalItemDefinition currentGrinder = null;
-
-      _invItems.Clear();
-      botInv.GetItems(_invItems);
-
-      for (int i = _invItems.Count - 1; i >= 0; i--)
+      var botInv = Character.GetInventory();
+      if (botInv != null)
       {
-        var item = _invItems[i];
-        var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Type);
-        if (handItemDef != null)
+        MyPhysicalItemDefinition currentWelder = null;
+        MyPhysicalItemDefinition currentGrinder = null;
+
+        _invItems.Clear();
+        botInv.GetItems(_invItems);
+
+        for (int i = _invItems.Count - 1; i >= 0; i--)
         {
-          var physicalItem = MyDefinitionManager.Static.GetPhysicalItemForHandItem(handItemDef.Id);
-          var displayName = physicalItem.DisplayNameText;
-
-          if (displayName.EndsWith("Welder"))
+          var item = _invItems[i];
+          var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Type);
+          if (handItemDef != null)
           {
-            var curLevel = 0;
-            if (currentWelder != null)
-              curLevel = GetItemLevel(currentWelder.DisplayNameText);
+            var physicalItem = MyDefinitionManager.Static.GetPhysicalItemForHandItem(handItemDef.Id);
+            var displayName = physicalItem.DisplayNameText;
 
-            var lvl = GetItemLevel(physicalItem.DisplayNameText);
-            if (lvl > curLevel)
-              currentWelder = physicalItem;
-          }
-          else if (displayName.EndsWith("Grinder"))
-          {
-            var curLevel = 0;
-            if (currentGrinder != null)
-              curLevel = GetItemLevel(currentGrinder.DisplayNameText);
+            if (displayName.EndsWith("Welder"))
+            {
+              var curLevel = 0;
+              if (currentWelder != null)
+                curLevel = GetItemLevel(currentWelder.DisplayNameText);
 
-            var lvl = GetItemLevel(physicalItem.DisplayNameText);
-            if (lvl > curLevel)
-              currentGrinder = physicalItem;
+              var lvl = GetItemLevel(physicalItem.DisplayNameText);
+              if (lvl > curLevel)
+                currentWelder = physicalItem;
+            }
+            else if (displayName.EndsWith("Grinder"))
+            {
+              var curLevel = 0;
+              if (currentGrinder != null)
+                curLevel = GetItemLevel(currentGrinder.DisplayNameText);
+
+              var lvl = GetItemLevel(physicalItem.DisplayNameText);
+              if (lvl > curLevel)
+                currentGrinder = physicalItem;
+            }
           }
         }
-      }
 
-      if (currentGrinder != null)
-      {
-        canGrind = true;
-        _validToolDefinitions.Add(currentGrinder);
-      }
+        if (currentGrinder != null)
+        {
+          AllowedBuildModes |= BuildMode.Grind;
+          _validToolDefinitions.Add(currentGrinder);
+        }
 
-      if (currentWelder != null)
-      {
-        canWeld = true;
-        _validToolDefinitions.Add(currentWelder);
+        if (currentWelder != null)
+        {
+          AllowedBuildModes |= BuildMode.Weld;
+          _validToolDefinitions.Add(currentWelder);
+        }
       }
     }
 
@@ -292,6 +295,19 @@ namespace AiEnabled.Bots.Roles.Helpers
         return 2;
 
       return 1;
+    }
+
+    public override bool RunPreTargetChecks()
+    {
+      GetValidActions();
+
+      if (AllowedBuildModes == BuildMode.None)
+      {
+        CurrentBuildMode = BuildMode.None;
+        return false;
+      }
+
+      return true;
     }
 
     internal override void SetTargetInternal()
@@ -324,15 +340,6 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       var inv = Character.GetInventory();
       var invRatioOK = inv != null && ((float)inv.CurrentVolume / (float)inv.MaxVolume) < 0.9f;
-
-      bool canWeld, canGrind;
-      GetValidActions(inv, out canWeld, out canGrind);
-
-      if (!canWeld && !canGrind)
-      {
-        CurrentBuildMode = BuildMode.None;
-        return;
-      }
 
       if (Target.IsSlimBlock && CurrentBuildMode != BuildMode.None)
       {
@@ -392,7 +399,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
       }
 
-      if (canWeld && canGrind)
+      if ((AllowedBuildModes & (BuildMode.Weld | BuildMode.Grind)) > 0)
       {
         if (WeldBeforeGrind) // prioritize welding
         {
@@ -417,7 +424,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           }
         }
       }
-      else if (canWeld)
+      else if ((AllowedBuildModes & BuildMode.Weld) > 0)
       {
         tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
         CurrentBuildMode = BuildMode.Weld;

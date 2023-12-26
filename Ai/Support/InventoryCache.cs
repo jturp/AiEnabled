@@ -238,7 +238,7 @@ namespace AiEnabled.Ai.Support
         if (grindColor != null)
         {
           var color = MyColorPickerConstants.HSVOffsetToHSV(block.ColorMaskHSV) * colorVec;
-          if (!Vector3.IsZero(grindColor.Value - color, 1E-2f))
+          if (Vector3.IsZero(grindColor.Value - color, 1E-2f))
             continue;
         }
 

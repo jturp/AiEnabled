@@ -122,8 +122,9 @@ namespace AiEnabled.Bots
 
     public string Role => this.GetType().Name;
 
-    public enum BuildMode { None, Weld, Grind }
+    [Flags] public enum BuildMode { None, Weld = 2, Grind = 4 }
     public BuildMode CurrentBuildMode = BuildMode.Weld;
+    public BuildMode AllowedBuildModes = BuildMode.None;
 
     public bool CanOpenDoors
     {
@@ -2533,6 +2534,8 @@ namespace AiEnabled.Bots
       }
     }
 
+    public virtual bool RunPreTargetChecks() => true;
+
     public virtual void SetTarget()
     {
       if (_currentGraph == null || !_currentGraph.Ready)
@@ -2549,7 +2552,7 @@ namespace AiEnabled.Bots
         MyAPIGateway.Utilities.ShowNotification($"Exception during {GetType().Name}.SetTarget task!");
       }
 
-      if (_targetTask.IsComplete)
+      if (_targetTask.IsComplete && RunPreTargetChecks())
       {
         _targetTask = MyAPIGateway.Parallel.Start(_targetAction);
       }
