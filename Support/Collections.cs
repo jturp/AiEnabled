@@ -31,6 +31,7 @@ using VRage.Input;
 using AiEnabled.ConfigData;
 using VRage.Utils;
 using VRage;
+using System.Runtime.ConstrainedExecution;
 
 namespace AiEnabled
 {
@@ -799,14 +800,10 @@ namespace AiEnabled
     public ConcurrentDictionary<ulong, VoxelGridMap> VoxelGraphDict;
     public ConcurrentDictionary<long, long> EntityToIdentityDict = new ConcurrentDictionary<long, long>(2, 100);
     public ConcurrentDictionary<long, AiSession.ControlInfo> BotToControllerInfoDict = new ConcurrentDictionary<long, ControlInfo>(); // bot entity id to controller info
+    public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
-    public ConcurrentStack<TempNode> TempNodeStack = new ConcurrentStack<TempNode>();
-    public ConcurrentStack<Node> NodeStack = new ConcurrentStack<Node>();
-    public ConcurrentStack<GraphWorkData> GraphWorkStack = new ConcurrentStack<GraphWorkData>();
-    public ConcurrentStack<PathWorkData> PathWorkStack = new ConcurrentStack<PathWorkData>();
-    public ConcurrentStack<RepairWorkData> RepairWorkStack = new ConcurrentStack<RepairWorkData>();
-    public ConcurrentStack<List<IMySlimBlock>> SlimListStack = new ConcurrentStack<List<IMySlimBlock>>();
-    public ConcurrentStack<List<IMyCubeGrid>> GridGroupListStack = new ConcurrentStack<List<IMyCubeGrid>>();
+
+    // TODO: Turn all of these into MyConcurrentPools
     public ConcurrentStack<List<MyVoxelBase>> VoxelMapListStack = new ConcurrentStack<List<MyVoxelBase>>();
     public ConcurrentStack<List<Vector3I>> LineListStack = new ConcurrentStack<List<Vector3I>>();
     public ConcurrentStack<List<Vector3D>> PatrolListStack = new ConcurrentStack<List<Vector3D>>();
@@ -829,7 +826,73 @@ namespace AiEnabled
     public ConcurrentStack<MyQueue<VoxelUpdateItem>> VoxelUpdateQueueStack = new ConcurrentStack<MyQueue<VoxelUpdateItem>>();
     public ConcurrentStack<VoxelUpdateItem> VoxelUpdateItemStack = new ConcurrentStack<VoxelUpdateItem>();
     public ConcurrentStack<List<IMyCharacter>> CharacterListStack = new ConcurrentStack<List<IMyCharacter>>();
-    public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
+
+    public MyConcurrentPool<List<IMyCubeGrid>> GridGroupListPool = new MyConcurrentPool<List<IMyCubeGrid>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<IMyCubeGrid>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<IMySlimBlock>> SlimListPool = new MyConcurrentPool<List<IMySlimBlock>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<IMySlimBlock>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<RepairWorkData> RepairWorkPool = new MyConcurrentPool<RepairWorkData>
+    (
+      defaultCapacity: 1000,
+      expectedAllocations: 1000,
+      activator: () => new RepairWorkData(),
+      deactivator: (n) => { n = null; }
+    );
+
+    public MyConcurrentPool<PathWorkData> PathWorkPool = new MyConcurrentPool<PathWorkData>
+    (
+      defaultCapacity: 1000,
+      expectedAllocations: 1000,
+      activator: () => new PathWorkData(),
+      deactivator: (n) => { n = null; }
+    );
+
+    public MyConcurrentPool<GraphWorkData> GraphWorkPool = new MyConcurrentPool<GraphWorkData>
+    (
+      defaultCapacity: 1000,
+      expectedAllocations: 1000,
+      activator: () => new GraphWorkData(),
+      deactivator: (n) => { n = null; }
+    );
+
+    public MyConcurrentPool<Node> NodePool = new MyConcurrentPool<Node>
+    (
+      defaultCapacity: 1000,
+      expectedAllocations: 1000,
+      activator: () => new TempNode(),
+      deactivator: (n) => { n = null; }
+    );
+
+    public MyConcurrentPool<TempNode> TempNodePool = new MyConcurrentPool<TempNode>
+    (
+      defaultCapacity: 1000,
+      expectedAllocations: 1000,
+      activator: () => new TempNode(),
+      deactivator: (n) => { n = null; }
+    );
+
+    public MyConcurrentPool<Queue<Vector3I>> LocalVectorQueuePool = new MyConcurrentPool<Queue<Vector3I>>
+    (
+      defaultCapacity: 100,
+      clear: (q) => q.Clear(),
+      expectedAllocations: 100,
+      activator: () => new Queue<Vector3I>(),
+      deactivator: (q) => { q.Clear(); q = null; }
+    );
 
     public static ConcurrentStack<MyStorageData> StorageStack = new ConcurrentStack<MyStorageData>();
     public static List<string> AllowedBotRoles = new List<string>(5);

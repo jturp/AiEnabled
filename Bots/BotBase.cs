@@ -1039,6 +1039,7 @@ namespace AiEnabled.Bots
       HelmetEnabled = AiSession.Instance.ModSaveData.AllowHelmetVisorChanges;
       AllowIdleMovement = AiSession.Instance.ModSaveData.AllowIdleMovement;
       AllowEquipWeapon = true;
+      CanOpenDoors = !(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors;
 
       if (!AiSession.Instance.HitListStack.TryPop(out _hitListThread) || _hitListThread == null)
         _hitListThread = new List<IHitInfo>();
@@ -1059,11 +1060,8 @@ namespace AiEnabled.Bots
       _pathWorkAction = new Action<WorkData>(FindPath);
       _pathWorkCallBack = new Action<WorkData>(FindPathCallBack);
 
-      if (!AiSession.Instance.GraphWorkStack.TryPop(out _graphWorkData) || _graphWorkData == null)
-        _graphWorkData = new GraphWorkData();
-
-      if (!AiSession.Instance.PathWorkStack.TryPop(out _pathWorkData) || _pathWorkData == null)
-        _pathWorkData = new PathWorkData();
+      _graphWorkData = AiSession.Instance.GraphWorkPool.Get();
+      _pathWorkData = AiSession.Instance.PathWorkPool.Get();
 
       if (!AiSession.Instance.LineListStack.TryPop(out _patrolList) || _patrolList == null)
         _patrolList = new List<Vector3I>();
@@ -1106,6 +1104,15 @@ namespace AiEnabled.Bots
 
     private void Character_CharacterDied(IMyCharacter bot)
     {
+      if (bot?.Components != null && Owner != null)
+      {
+        var comp = bot.Components.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
+        if (comp != null)
+        {
+          AiSession.Instance.Logger.Log($"[{Owner.DisplayName}] {bot.Name} was killed with {comp.LastDamage.Amount} points of {comp.LastDamage.Type.String} damage.");
+        }
+      }
+
       var inventory = bot?.GetInventory() as MyInventory;
       if (inventory != null)
       {
@@ -1304,10 +1311,10 @@ namespace AiEnabled.Bots
       }
 
       if (_pathWorkData != null)
-        AiSession.Instance.PathWorkStack.Push(_pathWorkData);
+        AiSession.Instance.PathWorkPool.Return(_pathWorkData);
 
       if (_graphWorkData != null)
-        AiSession.Instance.GraphWorkStack.Push(_graphWorkData);
+        AiSession.Instance.GraphWorkPool.Return(_graphWorkData);
 
       if (_pathCollection != null)
       {
@@ -2668,9 +2675,7 @@ namespace AiEnabled.Bots
       if (!AiSession.Instance.EntListStack.TryPop(out blockTargets) || blockTargets == null)
         blockTargets = new List<MyEntity>();
 
-      List<IMyCubeGrid> gridGroups;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups) || gridGroups == null)
-        gridGroups = new List<IMyCubeGrid>();
+      List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
 
       List<MyEntity> entList;
       if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
@@ -2678,11 +2683,7 @@ namespace AiEnabled.Bots
       else
         entList.Clear();
 
-      List<IMySlimBlock> blockList;
-      if (!AiSession.Instance.SlimListStack.TryPop(out blockList) || blockList == null)
-        blockList = new List<IMySlimBlock>();
-      else
-        blockList.Clear();
+      List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
 
       HashSet<long> checkedGridIDs;
       if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs) || checkedGridIDs == null)
@@ -2920,8 +2921,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      blockList.Clear();
-      AiSession.Instance.SlimListStack.Push(blockList);
+      AiSession.Instance.SlimListPool.Return(blockList);
 
       _taskPrioritiesTemp.PrioritySort(_taskPriorities, TargetPriorities, botPosition);
       bool damageToDisable = TargetPriorities.DamageToDisable;
@@ -3043,7 +3043,7 @@ namespace AiEnabled.Bots
       cellList.Clear();
 
       AiSession.Instance.EntListStack.Push(blockTargets);
-      AiSession.Instance.GridGroupListStack.Push(gridGroups);
+      AiSession.Instance.GridGroupListPool.Return(gridGroups);
       AiSession.Instance.EntListStack.Push(entList);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
       AiSession.Instance.OverlapResultListStack.Push(resultList);
@@ -3309,11 +3309,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      List<IMyCubeGrid> gridGroups;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups) || gridGroups == null)
-        gridGroups = new List<IMyCubeGrid>();
-      else
-        gridGroups.Clear();
+      List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
 
       List<MyLineSegmentOverlapResult<MyEntity>> rayEntities;
       if (!AiSession.Instance.OverlapResultListStack.TryPop(out rayEntities) || rayEntities == null)
@@ -3441,11 +3437,10 @@ namespace AiEnabled.Bots
         }
       }
 
-      gridGroups.Clear();
       rayEntities.Clear();
       checkedGridIDs.Clear();
 
-      AiSession.Instance.GridGroupListStack.Push(gridGroups);
+      AiSession.Instance.GridGroupListPool.Return(gridGroups);
       AiSession.Instance.OverlapResultListStack.Push(rayEntities);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
 
@@ -5128,10 +5123,7 @@ namespace AiEnabled.Bots
 
           lock (_pathCollection.PathToTarget)
           {
-            TempNode temp;
-            if (!AiSession.Instance.TempNodeStack.TryPop(out temp))
-              temp = new TempNode();
-
+            TempNode temp = AiSession.Instance.TempNodePool.Get();
             temp.Update(position, offset, null, NodeType.None, 0, grid, block);
             _pathCollection.PathToTarget.Enqueue(temp);
           }
@@ -5164,12 +5156,12 @@ namespace AiEnabled.Bots
       //AiSession.Instance.Logger.Log($"Blocked Edges for {endNode.Position}: {edges}");
 
 
-      _task = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
+      //_task = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
 
       // testing only
-      //_pathCollection.PathTimer.Stop();
-      //FindPath(_pathWorkData);
-      //Reset();
+      _pathCollection.PathTimer.Stop();
+      FindPath(_pathWorkData);
+      Reset();
     }
 
     bool BlockIsOnSameGrid()
@@ -5486,7 +5478,7 @@ namespace AiEnabled.Bots
         else
           hitlist.Clear();
 
-        MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward * 3, hitlist, CollisionLayers.CharacterCollisionLayer);
+        MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward, hitlist, CollisionLayers.CharacterCollisionLayer);
 
         bool canUseDoors = CanOpenDoors && (!(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors);
         bool foundTarget = false;
@@ -5639,34 +5631,62 @@ namespace AiEnabled.Bots
           if (door.CubeGrid.EntityId != gridGraph.MainGrid.EntityId)
             pos = gridGraph.MainGrid.WorldToGridInteger(door.CubeGrid.GridIntegerToWorld(pos));
 
+          if (door.CustomName.IndexOf("airlock", StringComparison.OrdinalIgnoreCase) >= 0
+          || door.CustomName.IndexOf("[AiE]", StringComparison.OrdinalIgnoreCase) >= 0)
+          {
+            doorFound = true;
+            return true;
+          }
+
           if (!gridGraph.BlockedDoors.ContainsKey(pos))
           {
-            gridGraph.BlockedDoors[pos] = door;
-            var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
-            var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+            List<Vector3I> positionList;
+            if (!AiSession.Instance.LineListStack.TryPop(out positionList))
+              positionList = new List<Vector3I>();
+            else
+              positionList.Clear();
 
-            Matrix matrix = new Matrix
+            gridGraph.FindAllPositionsForBlock(door.SlimBlock, positionList);
+
+            for (int i = 0; i < positionList.Count; i++)
             {
-              Forward = Base6Directions.GetVector(block.Orientation.Forward),
-              Left = Base6Directions.GetVector(block.Orientation.Left),
-              Up = Base6Directions.GetVector(block.Orientation.Up)
-            };
+              var point = positionList[i];
 
-            matrix.TransposeRotationInPlace();
+              if (door.CubeGrid.EntityId != gridGraph.MainGrid.EntityId)
+                point = gridGraph.MainGrid.WorldToGridInteger(door.CubeGrid.GridIntegerToWorld(point));
 
-            Vector3I center = cubeDef.Center;
-            Vector3I.TransformNormal(ref center, ref matrix, out center);
-            var adjustedPosition = block.Position - center;
-
-            foreach (var kvp in faceDict)
-            {
-              var cell = kvp.Key;
-              Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-              var position = adjustedPosition + cell;
-              var mainGridPosition = gridGraph.MainGrid.WorldToGridInteger(block.CubeGrid.GridIntegerToWorld(position));
-
-              gridGraph.BlockedDoors[mainGridPosition] = door;
+              gridGraph.BlockedDoors[point] = door;
             }
+
+            positionList.Clear();
+            AiSession.Instance.LineListStack.Push(positionList);
+
+            //gridGraph.BlockedDoors[pos] = door;
+            //var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+            //var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+
+            //Matrix matrix = new Matrix
+            //{
+            //  Forward = Base6Directions.GetVector(block.Orientation.Forward),
+            //  Left = Base6Directions.GetVector(block.Orientation.Left),
+            //  Up = Base6Directions.GetVector(block.Orientation.Up)
+            //};
+
+            //matrix.TransposeRotationInPlace();
+
+            //Vector3I center = cubeDef.Center;
+            //Vector3I.TransformNormal(ref center, ref matrix, out center);
+            //var adjustedPosition = block.Position - center;
+
+            //foreach (var kvp in faceDict)
+            //{
+            //  var cell = kvp.Key;
+            //  Vector3I.TransformNormal(ref cell, ref matrix, out cell);
+            //  var position = adjustedPosition + cell;
+            //  var mainGridPosition = gridGraph.MainGrid.WorldToGridInteger(block.CubeGrid.GridIntegerToWorld(position));
+
+            //  gridGraph.BlockedDoors[mainGridPosition] = door;
+            //}
           }
 
           var pointBehind = botPosition + botMatrix.Backward * gridGraph.CellSize;

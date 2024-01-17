@@ -1006,11 +1006,7 @@ namespace AiEnabled.Ai.Support
         if (initialGrid == null)
           return null;
 
-        List<IMyCubeGrid> gridList;
-        if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
-          gridList = new List<IMyCubeGrid>();
-        else
-          gridList.Clear();
+        List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
 
         var biggest = initialGrid;
         initialGrid?.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
@@ -1025,8 +1021,7 @@ namespace AiEnabled.Ai.Support
             biggest = g;
         }
 
-        gridList.Clear();
-        AiSession.Instance.GridGroupListStack.Push(gridList);
+        AiSession.Instance.GridGroupListPool.Return(gridList);
 
         return (biggest?.GridSize > 1) ? biggest : null;
       }
@@ -1461,11 +1456,7 @@ namespace AiEnabled.Ai.Support
           if (gridGraph.MainGrid.IsRoomAtPositionAirtight(localPoint))
             return true;
 
-          List<IMyCubeGrid> gridList;
-          if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
-            gridList = new List<IMyCubeGrid>();
-          else
-            gridList.Clear();
+          List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
 
           gridGraph.MainGrid.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
           bool airtight = false;
@@ -1481,9 +1472,7 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          gridList.Clear();
-          AiSession.Instance.GridGroupListStack.Push(gridList);
-
+          AiSession.Instance.GridGroupListPool.Return(gridList);
           return airtight;
         }
       }

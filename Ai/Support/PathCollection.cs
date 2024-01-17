@@ -1036,7 +1036,7 @@ namespace AiEnabled.Ai.Support
     {
       var temp = LastNode as TempNode;
       if (temp != null)
-        AiSession.Instance.TempNodeStack.Push(temp);
+        AiSession.Instance.TempNodePool.Return(temp);
 
       if (includelast)
       {
@@ -1100,11 +1100,11 @@ namespace AiEnabled.Ai.Support
 
           var temp = NextNode as TempNode;
           if (temp != null)
-            AiSession.Instance.TempNodeStack.Push(temp);
+            AiSession.Instance.TempNodePool.Return(temp);
 
           temp = LastNode as TempNode;
           if (temp != null)
-            AiSession.Instance.TempNodeStack.Push(temp);
+            AiSession.Instance.TempNodePool.Return(temp);
 
           NextNode = null;
           LastNode = null;
@@ -1227,7 +1227,7 @@ namespace AiEnabled.Ai.Support
         {
           var pn = queue[i] as TempNode;
           if (pn != null)
-            AiSession.Instance.TempNodeStack.Push(pn);
+            AiSession.Instance.TempNodePool.Return(pn);
         }
       }
     }

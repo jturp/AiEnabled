@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using ProtoBuf;
 
+using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 
@@ -61,7 +62,15 @@ namespace AiEnabled.Networking
 
         if (bot != null && bot.IsDead && AiSession.Instance.PlayerData?.NotifyOnHelperDeath == true)
         {
-          AiSession.Instance.ShowMessage($"{bot.Name} has died.", timeToLive: 5000);
+          var comp = bot.Components?.Get<MyEntityStatComponent>() as MyCharacterStatComponent;
+          if (comp != null)
+          {
+            AiSession.Instance.ShowMessage($"{bot.Name} has died from {comp.LastDamage.Type.String} damage.", timeToLive: 5000);
+          }
+          else
+          {
+            AiSession.Instance.ShowMessage($"{bot.Name} has died.", timeToLive: 5000);
+          }
         }
       }
       else

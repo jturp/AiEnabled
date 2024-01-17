@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.7.6";
+    public const string VERSION = "v1.7.12";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -561,11 +561,7 @@ namespace AiEnabled
       ProjectileConstants.Close();
 
       AllCoreWeaponDefinitions?.Clear();
-      RepairWorkStack?.Clear();
-      GraphWorkStack?.Clear();
-      PathWorkStack?.Clear();
       InvCacheStack?.Clear();
-      SlimListStack?.Clear();
       GridMapListStack?.Clear();
       OverlapResultListStack?.Clear();
       GridCheckHashStack?.Clear();
@@ -574,7 +570,6 @@ namespace AiEnabled
       EntListStack?.Clear();
       HitListStack?.Clear();
       LineListStack?.Clear();
-      GridGroupListStack?.Clear();
       Players?.Clear();
       Bots?.Clear();
       CatwalkRailDirections?.Clear();
@@ -625,8 +620,6 @@ namespace AiEnabled
       VoxelUpdateListStack?.Clear();
       VoxelUpdateItemStack?.Clear();
       VoxelUpdateQueueStack?.Clear();
-      NodeStack?.Clear();
-      TempNodeStack?.Clear();
       BotToControllerInfoDict?.Clear();
       CharacterListStack?.Clear();
       KnownLootContainerIds?.Clear();
@@ -644,6 +637,14 @@ namespace AiEnabled
       BotUpkeepPrices?.Clear();
       HealingHash?.Clear();
       AnalyzeHash?.Clear();
+      LocalVectorQueuePool?.Clean();
+      TempNodePool?.Clean(); 
+      NodePool?.Clean();
+      GraphWorkPool?.Clean();
+      PathWorkPool?.Clean();
+      RepairWorkPool?.Clean();
+      SlimListPool?.Clean();
+      GridGroupListPool?.Clean();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -681,14 +682,14 @@ namespace AiEnabled
 
       Scheduler = null;
       AllCoreWeaponDefinitions = null;
-      RepairWorkStack = null;
-      GraphWorkStack = null;
-      PathWorkStack = null;
+      RepairWorkPool = null;
+      GraphWorkPool = null;
+      PathWorkPool = null;
       BlockRepairDelays = null;
       MapInitQueue = null;
       InvCacheStack = null;
       CornerArrayStack = null;
-      SlimListStack = null;
+      SlimListPool = null;
       GridMapListStack = null;
       OverlapResultListStack = null;
       GridCheckHashStack = null;
@@ -697,7 +698,7 @@ namespace AiEnabled
       EntListStack = null;
       HitListStack = null;
       LineListStack = null;
-      GridGroupListStack = null;
+      GridGroupListPool = null;
       Players = null;
       Bots = null;
       DiagonalDirections = null;
@@ -777,8 +778,8 @@ namespace AiEnabled
       VoxelUpdateItemStack = null;
       VoxelUpdateListStack = null;
       VoxelUpdateQueueStack = null;
-      NodeStack = null;
-      TempNodeStack = null;
+      NodePool = null;
+      TempNodePool = null;
       BotToControllerInfoDict = null;
       CharacterListStack = null;
       KnownLootContainerIds = null;
@@ -797,6 +798,7 @@ namespace AiEnabled
       BotUpkeepPrices = null;
       HealingHash = null;
       AnalyzeHash = null;
+      LocalVectorQueuePool = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -2529,17 +2531,8 @@ namespace AiEnabled
           return;
         }
 
-        List<IMyCubeGrid> gridGroup;
-        if (!GridGroupListStack.TryPop(out gridGroup))
-          gridGroup = new List<IMyCubeGrid>();
-        else
-          gridGroup.Clear();
-
-        List<IMySlimBlock> gridSeats;
-        if (!SlimListStack.TryPop(out gridSeats))
-          gridSeats = new List<IMySlimBlock>();
-        else
-          gridSeats.Clear();
+        List<IMyCubeGrid> gridGroup = GridGroupListPool.Get();
+        List<IMySlimBlock> gridSeats = SlimListPool.Get();
 
         playerGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
 
@@ -2563,8 +2556,7 @@ namespace AiEnabled
           });
         }
 
-        gridGroup.Clear();
-        GridGroupListStack.Push(gridGroup);
+        GridGroupListPool.Return(gridGroup);
 
         if (gridSeats.Count > 0)
         {
@@ -2660,8 +2652,7 @@ namespace AiEnabled
           }
         }
 
-        gridSeats.Clear();
-        SlimListStack.Push(gridSeats);
+        SlimListPool.Return(gridSeats);
       }
       catch (Exception ex)
       {
@@ -2723,6 +2714,8 @@ namespace AiEnabled
           return;
         }
 
+        var checkFriendlyFire = !MyAPIGateway.Utilities.IsDedicated ||!MyAPIGateway.Session.SessionSettings.EnableFriendlyFire;
+
         BotBase bot;
         bool targetIsBot = false;
         bool targetIsPlayer = false;
@@ -2748,8 +2741,30 @@ namespace AiEnabled
           targetisWildLife = true;
         }
 
-        long ownerId, ownerIdentityId = 0;
+        long ownerId = -1, ownerIdentityId = 0;
         float damageAmount;
+
+        if (targetIsBot && checkFriendlyFire )
+        {
+          var ent = MyEntities.GetEntityById(info.AttackerId, true);
+          var grid = ent as MyCubeGrid;
+          if (grid == null)
+          {
+            var block = ent as MyCubeBlock;
+            grid = block?.CubeGrid;
+          }
+
+          if (grid != null)
+          {
+            ownerId = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
+
+            ValidateDamageForTarget(bot, ownerId, ref info);
+
+            if (info.Amount == 0)
+              return;
+          }
+        }
+
         switch (info.Type.String)
         {
           case "Environment":
@@ -2999,6 +3014,14 @@ namespace AiEnabled
       }
     }
 
+    void ValidateDamageForTarget(BotBase bot, long attackerId, ref MyDamageInformation info)
+    {
+      var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+      var relation = MyIDModule.GetRelationPlayerPlayer(botOwner, attackerId);
+      if (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self)
+        info.Amount = 0;
+    }
+
     void CheckGrindTarget(IMySlimBlock block, long attackerId)
     {
       var entity = MyEntities.GetEntityById(attackerId) as IMyCharacter;
@@ -3127,6 +3150,7 @@ namespace AiEnabled
                       helper.Position = matrix.Translation;
                       helper.ToolPhysicalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
                       helper.InventoryItems?.Clear();
+                      helper.RemainInPlace = bot.UseAPITargets;
 
                       var gridGraph = bot._currentGraph as CubeGridMap;
                       var grid = gridGraph?.MainGrid ?? null;
@@ -4324,6 +4348,7 @@ namespace AiEnabled
           helperData.Orientation = Quaternion.CreateFromRotationMatrix(botChar.WorldMatrix);
           helperData.InventoryItems?.Clear();
           helperData.ToolPhysicalItem = bot.ToolDefinition?.PhysicalItemId ?? (botChar.EquippedTool as IMyHandheldGunObject<MyDeviceBase>)?.PhysicalItemDefinition?.Id;
+          helperData.RemainInPlace = bot.UseAPITargets;
 
           if (botChar.Parent is IMyCockpit)
             helperData.SeatEntityId = botChar.Parent.EntityId;
@@ -5492,8 +5517,11 @@ namespace AiEnabled
                   IMyEntity seat;
                   MyAPIGateway.Entities.TryGetEntityById(future.HelperInfo.SeatEntityId, out seat);
 
-                  if (seat != null) 
+                  if (seat != null)
+                  {
+                    botBase.UseAPITargets = future.HelperInfo.RemainInPlace;
                     Scheduler.Schedule(() => BotFactory.TrySeatBot(botBase, seat as IMyCockpit), 10);
+                  }
                 }
 
                 IMyPlayer player;

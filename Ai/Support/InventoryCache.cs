@@ -94,9 +94,7 @@ namespace AiEnabled.Ai.Support
       Grid = grid;
       _workAction = new Action<WorkData>(RemoveItemsInternal);
       _workCallBack = new Action<WorkData>(RemoveItemsComplete);
-
-      if (!AiSession.Instance.RepairWorkStack.TryPop(out _workData))
-        _workData = new RepairWorkData();
+      _workData = AiSession.Instance.RepairWorkPool.Get();
 
       if (Grid != null)
       {
@@ -155,7 +153,7 @@ namespace AiEnabled.Ai.Support
       _closed = true;
 
       if (_workData != null)
-        AiSession.Instance.RepairWorkStack.Push(_workData);
+        AiSession.Instance.RepairWorkPool.Return(_workData);
 
       ItemCounts?.Clear();
       ItemCounts = null;
@@ -766,8 +764,8 @@ namespace AiEnabled.Ai.Support
     {
       if (_repairTask.IsComplete)
       {
-        if (_workData == null && !AiSession.Instance.RepairWorkStack.TryPop(out _workData))
-          _workData = new RepairWorkData();
+        if (_workData == null)
+          _workData = AiSession.Instance.RepairWorkPool.Get();
 
         _workData.Bot = bot;
         _workData.Block = block;
@@ -803,11 +801,7 @@ namespace AiEnabled.Ai.Support
 
       _itemCounts.Clear();
 
-      List<IMyCubeGrid> gridList;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
-        gridList = new List<IMyCubeGrid>();
-      else
-        gridList.Clear();
+      List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
 
       Grid.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
 
@@ -818,8 +812,7 @@ namespace AiEnabled.Ai.Support
           CheckInventories(grid);
       }
 
-      gridList.Clear();
-      AiSession.Instance.GridGroupListStack.Push(gridList);
+      AiSession.Instance.GridGroupListPool.Return(gridList);
 
       _refreshInvList = false;
 
@@ -861,12 +854,7 @@ namespace AiEnabled.Ai.Support
 
     void CheckInventories(IMyCubeGrid grid)
     {
-      List<IMySlimBlock> blockList;
-      if (!AiSession.Instance.SlimListStack.TryPop(out blockList))
-        blockList = new List<IMySlimBlock>();
-      else
-        blockList.Clear();
-
+      List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
       grid.GetBlocks(blockList);
       for (int i = 0; i < blockList.Count; i++)
       {
@@ -929,8 +917,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      blockList.Clear();
-      AiSession.Instance.SlimListStack.Push(blockList);
+      AiSession.Instance.SlimListPool.Return(blockList);
     }
 
     private void InventoryCache_ContentsChanged(MyInventoryBase obj)

@@ -202,9 +202,7 @@ namespace AiEnabled.Bots
       if (!AiSession.Instance.EntListStack.TryPop(out blockTargets))
         blockTargets = new List<MyEntity>();
 
-      List<IMyCubeGrid> gridGroups;
-      if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroups))
-        gridGroups = new List<IMyCubeGrid>();
+      List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
 
       HashSet<long> checkedGridIDs;
       if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs))
@@ -212,11 +210,7 @@ namespace AiEnabled.Bots
       else
         checkedGridIDs.Clear();
 
-      List<IMySlimBlock> blockList;
-      if (!AiSession.Instance.SlimListStack.TryPop(out blockList) || blockList == null)
-        blockList = new List<IMySlimBlock>();
-      else
-        blockList.Clear();
+      List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
 
       List<MyLineSegmentOverlapResult<MyEntity>> resultList;
       if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
@@ -468,8 +462,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      blockList.Clear();
-      AiSession.Instance.SlimListStack.Push(blockList);
+      AiSession.Instance.SlimListPool.Return(blockList);
 
       _taskPrioritiesTemp.PrioritySort(_taskPriorities, TargetPriorities, botPosition);
       bool damageToDisable = TargetPriorities.DamageToDisable;
@@ -525,7 +518,6 @@ namespace AiEnabled.Bots
       hitList.Clear();
       entities.Clear();
       blockTargets.Clear();
-      gridGroups.Clear();
       checkedGridIDs.Clear();
       resultList.Clear();
       cellList.Clear();
@@ -533,7 +525,7 @@ namespace AiEnabled.Bots
       AiSession.Instance.HitListStack.Push(hitList);
       AiSession.Instance.EntListStack.Push(entities);
       AiSession.Instance.EntListStack.Push(blockTargets);
-      AiSession.Instance.GridGroupListStack.Push(gridGroups);
+      AiSession.Instance.GridGroupListPool.Return(gridGroups);
       AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
       AiSession.Instance.OverlapResultListStack.Push(resultList);
       AiSession.Instance.LineListStack.Push(cellList);

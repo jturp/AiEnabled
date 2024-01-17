@@ -58,10 +58,11 @@ namespace AiEnabled.ConfigData
     [ProtoMember(114)] public List<string> Priorities;
     [ProtoMember(115)] public bool DamageToDisable;
     [ProtoMember(116)] public bool AdminSpawned;
+    [ProtoMember(118)] public bool RemainInPlace;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, bool disableOnly, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, bool disableOnly, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null, bool remainStill = false)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
@@ -75,6 +76,7 @@ namespace AiEnabled.ConfigData
       Priorities = priList;
       DamageToDisable = disableOnly;
       AdminSpawned = adminSpawn;
+      RemainInPlace = remainStill;
       
       if (bot.Parent is IMyCockpit)
         SeatEntityId = bot.Parent.EntityId;

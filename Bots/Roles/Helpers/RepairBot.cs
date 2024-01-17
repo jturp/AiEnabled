@@ -244,25 +244,24 @@ namespace AiEnabled.Bots.Roles.Helpers
           if (handItemDef != null)
           {
             var physicalItem = MyDefinitionManager.Static.GetPhysicalItemForHandItem(handItemDef.Id);
-            var displayName = physicalItem.DisplayNameText;
 
-            if (displayName.EndsWith("Welder"))
+            if (handItemDef.Id.SubtypeName.Contains("Welder"))
             {
               var curLevel = 0;
               if (currentWelder != null)
-                curLevel = GetItemLevel(currentWelder.DisplayNameText);
+                curLevel = GetItemLevel(currentWelder.Id.SubtypeName, "Welder");
 
-              var lvl = GetItemLevel(physicalItem.DisplayNameText);
+              var lvl = GetItemLevel(handItemDef.Id.SubtypeName, "Welder");
               if (lvl > curLevel)
                 currentWelder = physicalItem;
             }
-            else if (displayName.EndsWith("Grinder"))
+            else if (handItemDef.Id.SubtypeName.Contains("Grinder"))
             {
               var curLevel = 0;
               if (currentGrinder != null)
-                curLevel = GetItemLevel(currentGrinder.DisplayNameText);
+                curLevel = GetItemLevel(currentGrinder.Id.SubtypeName, "Grinder");
 
-              var lvl = GetItemLevel(physicalItem.DisplayNameText);
+              var lvl = GetItemLevel(handItemDef.Id.SubtypeName, "Grinder");
               if (lvl > curLevel)
                 currentGrinder = physicalItem;
             }
@@ -283,18 +282,14 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
     }
 
-    int GetItemLevel(string item)
+    int GetItemLevel(string item, string toLookFor)
     {
-      if (item.StartsWith("Elite"))
-        return 4;
+      var idx = item.IndexOf(toLookFor);
+      if (idx < 0)
+        return -1;
 
-      if (item.StartsWith("Proficient"))
-        return 3;
-
-      if (item.StartsWith("Enhanced"))
-        return 2;
-
-      return 1;
+      var num = item[idx + toLookFor.Length];
+      return char.IsDigit(num) ? int.Parse(num.ToString()) : 1;
     }
 
     public override bool RunPreTargetChecks()

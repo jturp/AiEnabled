@@ -75,10 +75,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       var toolSubtype = toolType ?? "SemiAutoPistolItem";
       ToolDefinition = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(new MyDefinitionId(typeof(MyObjectBuilder_PhysicalGunObject), toolSubtype));
 
-      if (!AiSession.Instance.SlimListStack.TryPop(out _goToBlocks) || _goToBlocks == null)
-        _goToBlocks = new List<IMySlimBlock>();
-      else
-        _goToBlocks.Clear();
+      _goToBlocks = AiSession.Instance.SlimListPool.Get();
 
       if (AiSession.Instance.WcAPILoaded)
       {
@@ -88,10 +85,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal override void Close(bool cleanConfig = false, bool removeBot = true)
     {
-      if (_goToBlocks != null && AiSession.Instance?.SlimListStack != null)
+      if (_goToBlocks != null && AiSession.Instance?.SlimListPool != null)
       {
-        _goToBlocks.Clear();
-        AiSession.Instance.SlimListStack.Push(_goToBlocks);
+        AiSession.Instance.SlimListPool.Return(_goToBlocks);
       }
 
       base.Close(cleanConfig, removeBot);

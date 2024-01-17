@@ -127,11 +127,7 @@ namespace AiEnabled.Bots
         var enclosureRating = Math.Max(1, Math.Min(apiData.EnclosureRating, 6));
         var airtightOnly = apiData.AirtightNodesOnly;
 
-        List<IMyCubeGrid> gridList;
-        if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList) || gridList == null)
-          gridList = new List<IMyCubeGrid>();
-        else
-          gridList.Clear();
+        List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
 
         var group = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
         if (group == null)
@@ -397,8 +393,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        gridList.Clear();
-        AiSession.Instance.GridGroupListStack.Push(gridList);
+        AiSession.Instance.GridGroupListPool.Return(gridList);
       }
       catch (Exception ex)
       {
@@ -1393,11 +1388,7 @@ namespace AiEnabled.Bots
 
         if (grid != null && !grid.MarkedForClose && !AiSession.Instance.GridGraphDict.ContainsKey(grid.EntityId))
         {
-          List<IMyCubeGrid> gridGroup;
-          if (!AiSession.Instance.GridGroupListStack.TryPop(out gridGroup))
-            gridGroup = new List<IMyCubeGrid>();
-          else
-            gridGroup.Clear();
+          List<IMyCubeGrid> gridGroup = AiSession.Instance.GridGroupListPool.Get();
 
           grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
 
@@ -1410,8 +1401,7 @@ namespace AiEnabled.Bots
             }
           }
 
-          gridGroup.Clear();
-          AiSession.Instance.GridGroupListStack.Push(gridGroup);
+          AiSession.Instance.GridGroupListPool.Return(gridGroup);
         }
 
         if (biggestGrid?.Physics != null && !biggestGrid.IsStatic)

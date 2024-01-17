@@ -1298,11 +1298,7 @@ namespace AiEnabled.API
       else
         nodeList.Clear();
 
-      List<IMyCubeGrid> gridList = null;
-      if (AiSession.Instance?.GridGroupListStack?.TryPop(out gridList) != true || gridList == null)
-        gridList = new List<IMyCubeGrid>();
-      else
-        gridList.Clear();
+      List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
 
       var gridLink = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
       if (gridLink == null)
@@ -1519,8 +1515,7 @@ namespace AiEnabled.API
         }
       }
 
-      gridList.Clear();
-      AiSession.Instance?.GridGroupListStack?.Push(gridList);
+      AiSession.Instance?.GridGroupListPool?.Return(gridList);
     }
 
     /// <summary>

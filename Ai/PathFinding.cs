@@ -280,7 +280,7 @@ namespace AiEnabled.Ai
             door = currentNode.Block.FatBlock as IMyDoor;
             if (door != null)
             {
-              bool isHangar = door is IMyAirtightHangarDoor;
+              bool isHangar = door is IMyAirtightHangarDoor || door.BlockDefinition.SubtypeName.Contains("Gate");
               bool isOpen = door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open;
 
               if (!isOpen)
@@ -295,7 +295,7 @@ namespace AiEnabled.Ai
                 }
                 else
                 {
-                  currentCost += isHangar ? 9 : 2;
+                  currentCost += isHangar ? 25 : 2;
                 }
               }
 
@@ -303,12 +303,12 @@ namespace AiEnabled.Ai
               {
                 if (!isOpen && (collection.DeniedDoors.ContainsKey(current) || gridGraph.BlockedDoors.ContainsKey(current)))
                 {
-                  currentCost += isHangar ? 20 : 10;
+                  currentCost += isHangar ? 40 : 15;
                 }
 
                 checkDoors &= (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self);
               }
-              else if (collection.DeniedDoors.ContainsKey(current))
+              else if (collection.DeniedDoors.ContainsKey(current) || (!isOpen && gridGraph.BlockedDoors.ContainsKey(current)))
               {
                 continue;
               }
@@ -804,10 +804,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -824,10 +821,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -844,10 +838,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -925,10 +916,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -952,10 +940,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -993,10 +978,7 @@ namespace AiEnabled.Ai
                   Node node;
                   gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                  TempNode tempNode;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                    tempNode = new TempNode();
-
+                  TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                   tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
                   path.Enqueue(tempNode);
 
@@ -1021,10 +1003,7 @@ namespace AiEnabled.Ai
                 Node node;
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
-
+                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                 tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
                 path.Enqueue(tempNode);
 
@@ -1042,10 +1021,7 @@ namespace AiEnabled.Ai
                   Node node;
                   gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                  TempNode tempNode;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                    tempNode = new TempNode();
-
+                  TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                   tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
                   path.Enqueue(tempNode);
 
@@ -1063,10 +1039,7 @@ namespace AiEnabled.Ai
                     Node node;
                     gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                    TempNode tempNode;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                      tempNode = new TempNode();
-
+                    TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                     tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
                     path.Enqueue(tempNode);
 
@@ -1089,10 +1062,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -1126,10 +1096,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -1185,9 +1152,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
 
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
               {
@@ -1224,10 +1189,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -1261,10 +1223,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
               path.Enqueue(tempNode);
 
@@ -1325,10 +1284,7 @@ namespace AiEnabled.Ai
                     Node node2;
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    TempNode tempNode2;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                      tempNode2 = new TempNode();
-
+                    TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                     tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                     path.Enqueue(tempNode2);
 
@@ -1359,10 +1315,7 @@ namespace AiEnabled.Ai
                 Node node2;
                 gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                TempNode tempNode2;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                  tempNode2 = new TempNode();
-
+                TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                 tempNode2.Update(node2, node2.Offset);
                 path.Enqueue(tempNode2);
 
@@ -1400,10 +1353,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
               {
                 var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
@@ -1466,10 +1416,7 @@ namespace AiEnabled.Ai
                 Node node2;
                 gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                TempNode tempNode2;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                  tempNode2 = new TempNode();
-
+                TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                 tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                 path.Enqueue(tempNode2);
 
@@ -1549,9 +1496,7 @@ namespace AiEnabled.Ai
                 Node node;
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
@@ -1589,9 +1534,7 @@ namespace AiEnabled.Ai
                 Node node;
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
@@ -1624,9 +1567,7 @@ namespace AiEnabled.Ai
                 Node node;
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
@@ -1690,10 +1631,7 @@ namespace AiEnabled.Ai
                   Node node2;
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  TempNode tempNode2;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                    tempNode2 = new TempNode();
-
+                  TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                   tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                   path.Enqueue(tempNode2);
 
@@ -1717,10 +1655,7 @@ namespace AiEnabled.Ai
               Node node;
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
-              TempNode tempNode;
-              if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                tempNode = new TempNode();
-
+              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, (Vector3)offset.Value);
               path.Enqueue(tempNode);
 
@@ -1743,10 +1678,7 @@ namespace AiEnabled.Ai
                   Node node2;
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  TempNode tempNode2;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                    tempNode2 = new TempNode();
-
+                  TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                   tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                   path.Enqueue(tempNode2);
 
@@ -1802,10 +1734,7 @@ namespace AiEnabled.Ai
                     Node node2;
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    TempNode tempNode2;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                      tempNode2 = new TempNode();
-
+                    TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                     tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                     path.Enqueue(tempNode2);
 
@@ -1840,10 +1769,7 @@ namespace AiEnabled.Ai
                     Node node2;
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                    TempNode tempNode2;
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                      tempNode2 = new TempNode();
-
+                    TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                     tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                     path.Enqueue(tempNode2);
 
@@ -1864,10 +1790,7 @@ namespace AiEnabled.Ai
                   Node node2;
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  TempNode tempNode2;
-                  if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-                    tempNode2 = new TempNode();
-
+                  TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                   tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
                   path.Enqueue(tempNode2);
 
@@ -1912,9 +1835,7 @@ namespace AiEnabled.Ai
                 Node node;
                 gridGraph.TryGetNodeForPosition(start, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
                 {
@@ -2000,8 +1921,7 @@ namespace AiEnabled.Ai
                   {
                     gridGraph.TryGetNodeForPosition(insertPos, out node);
 
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                      tempNode = new TempNode();
+                    tempNode = AiSession.Instance.TempNodePool.Get();
 
                     dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
                     if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
@@ -2022,8 +1942,7 @@ namespace AiEnabled.Ai
 
                 gridGraph.TryGetNodeForPosition(start, out node);
 
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
                 {
@@ -2078,9 +1997,7 @@ namespace AiEnabled.Ai
             Node node2;
             gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-            TempNode tempNode2;
-            if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-              tempNode2 = new TempNode();
+            TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
 
             if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
             {
@@ -2129,9 +2046,7 @@ namespace AiEnabled.Ai
                 Node node;
                 gridGraph.TryGetNodeForPosition(start, out node);
 
-                TempNode tempNode;
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
                 {
@@ -2217,8 +2132,7 @@ namespace AiEnabled.Ai
                   {
                     gridGraph.TryGetNodeForPosition(insertPos, out node);
 
-                    if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                      tempNode = new TempNode();
+                    tempNode = AiSession.Instance.TempNodePool.Get();
 
                     dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
                     if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
@@ -2239,8 +2153,7 @@ namespace AiEnabled.Ai
 
                 gridGraph.TryGetNodeForPosition(start, out node);
 
-                if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-                  tempNode = new TempNode();
+                tempNode = AiSession.Instance.TempNodePool.Get();
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? Using offset here instead of extra
                 {
@@ -2295,9 +2208,7 @@ namespace AiEnabled.Ai
             Node node2;
             gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-            TempNode tempNode2;
-            if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-              tempNode2 = new TempNode();
+            TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
 
             if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
             {
@@ -2322,10 +2233,7 @@ namespace AiEnabled.Ai
             Node node2;
             gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-            TempNode tempNode2;
-            if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-              tempNode2 = new TempNode();
-
+            TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
             tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
             path.Enqueue(tempNode2);
 
@@ -2710,18 +2618,12 @@ namespace AiEnabled.Ai
 
       if (addCenterPoint)
       {
-        TempNode tempNode2;
-        if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode2))
-          tempNode2 = new TempNode();
-
+        TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
         tempNode2.Update(node, Vector3.Zero);
         path.Enqueue(tempNode2);
       }
 
-      TempNode tempNode;
-      if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-        tempNode = new TempNode();
-
+      TempNode tempNode = AiSession.Instance.TempNodePool.Get();
       tempNode.Update(node, (Vector3)(offset ?? Vector3D.Zero));
       path.Enqueue(tempNode);
     }
@@ -3015,10 +2917,7 @@ namespace AiEnabled.Ai
         Node node;
         gridGraph.TryGetNodeForPosition(next, out node);
 
-        TempNode tempNode;
-        if (!AiSession.Instance.TempNodeStack.TryPop(out tempNode))
-          tempNode = new TempNode();
-
+        TempNode tempNode = AiSession.Instance.TempNodePool.Get();
         tempNode.Update(node, (Vector3)offset.Value);
         path.Enqueue(tempNode);
       }

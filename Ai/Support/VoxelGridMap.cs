@@ -781,7 +781,7 @@ namespace AiEnabled.Ai.Support
             {
               if (node != null)
               {
-                AiSession.Instance.NodeStack?.Push(node);
+                AiSession.Instance.NodePool?.Return(node);
               }
 
               OpenTileDict.Remove(current);
@@ -993,10 +993,7 @@ namespace AiEnabled.Ai.Support
 
         var offset = (Vector3)(groundPoint - LocalToWorld(localPoint));
 
-        Node node;
-        if (!AiSession.Instance.NodeStack.TryPop(out node) || node == null)
-          node = new Node();
-
+        Node node = AiSession.Instance.NodePool.Get();
         node.Update(localPoint, offset, this, nType, 0);
 
         if (checkForVoxel)
@@ -1113,12 +1110,7 @@ namespace AiEnabled.Ai.Support
       else
         tempEntities.Clear();
 
-      List<IMySlimBlock> blocks;
-      if (!AiSession.Instance.SlimListStack.TryPop(out blocks) || blocks == null)
-        blocks = new List<IMySlimBlock>();
-      else
-        blocks.Clear();
-
+      List<IMySlimBlock> blocks = AiSession.Instance.SlimListPool.Get();
       var sphere = new BoundingSphereD(OBB.Center, OBB.HalfExtent.AbsMax());
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, tempEntities);
 
@@ -1226,8 +1218,7 @@ namespace AiEnabled.Ai.Support
       var obstacleData = data as ObstacleWorkData;
       if (obstacleData?.Blocks != null && AiSession.Instance?.ObstacleWorkDataStack != null && AiSession.Instance.Registered)
       {
-        obstacleData.Blocks.Clear();
-        AiSession.Instance.SlimListStack.Push(obstacleData.Blocks);
+        AiSession.Instance.SlimListPool.Return(obstacleData.Blocks);
       }
     }
 

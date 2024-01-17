@@ -526,11 +526,7 @@ namespace AiEnabled.Bots
           CubeGridMap turretGraph;
           if (turretGrid.GridSize > 1)
           {
-            List<IMyCubeGrid> gridList;
-            if (!AiSession.Instance.GridGroupListStack.TryPop(out gridList))
-              gridList = new List<IMyCubeGrid>();
-            else
-              gridList.Clear();
+            List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
 
             turretGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridList);
 
@@ -555,8 +551,7 @@ namespace AiEnabled.Bots
               }
             }
 
-            gridList.Clear();
-            AiSession.Instance.GridGroupListStack.Push(gridList);
+            AiSession.Instance.GridGroupListPool.Return(gridList);
 
             if (returnNow)
               return true;
