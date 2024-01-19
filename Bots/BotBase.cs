@@ -47,6 +47,7 @@ using SpaceEngineers.Game.ModAPI;
 using AiEnabled.Networking.Packets;
 using AiEnabled.Particles;
 using VRage.Game.Models;
+using System.Collections;
 
 namespace AiEnabled.Bots
 {
@@ -103,7 +104,8 @@ namespace AiEnabled.Bots
       GrenadeThrown = 0x100000000000,
       IsDead = 0x200000000000,
       AllowVisorChanges = 0x400000000000,
-      CanOpenDoors = 0x800000000000
+      CanOpenDoors = 0x800000000000,
+      DoorInPath = 0x1000000000000,
     }
 
     public IMyPlayer Owner;
@@ -125,6 +127,22 @@ namespace AiEnabled.Bots
     [Flags] public enum BuildMode { None, Weld = 2, Grind = 4 }
     public BuildMode CurrentBuildMode = BuildMode.Weld;
     public BuildMode AllowedBuildModes = BuildMode.None;
+
+    public bool DoorInPath
+    {
+      get { return (_botInfo & BotInfoEnum.DoorInPath) > 0; }
+      set
+      {
+        if (value)
+        {
+          _botInfo |= BotInfoEnum.DoorInPath;
+        }
+        else
+        {
+          _botInfo &= ~BotInfoEnum.DoorInPath;
+        }
+      }
+    }
 
     public bool CanOpenDoors
     {
@@ -1862,6 +1880,9 @@ namespace AiEnabled.Bots
 
       Behavior?.Update();
       BotInfo?.UpdateBotState();
+
+      if (CanUseLadders)
+        DoorInPath = IsDoorInPath();
 
       if (Target != null)
       {
@@ -4881,7 +4902,7 @@ namespace AiEnabled.Bots
       else if (AfterNextIsLadder)
       {
         // Only true if you're about to climb down from a cliff edge
-        UseLadder = true;
+        UseLadder = !DoorInPath;
       }
       else
       {
@@ -5156,12 +5177,12 @@ namespace AiEnabled.Bots
       //AiSession.Instance.Logger.Log($"Blocked Edges for {endNode.Position}: {edges}");
 
 
-      //_task = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
+      _task = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
 
       // testing only
-      _pathCollection.PathTimer.Stop();
-      FindPath(_pathWorkData);
-      Reset();
+      //_pathCollection.PathTimer.Stop();
+      //FindPath(_pathWorkData);
+      //Reset();
     }
 
     bool BlockIsOnSameGrid()
@@ -5368,7 +5389,35 @@ namespace AiEnabled.Bots
 
         if (direction != Base6Directions.Direction.Down)
         {
-          Character.SetPosition(worldNode + WorldMatrix.Down);
+          var posBelow = botPosition + WorldMatrix.Down * 2.5;
+
+          if (!GridBase.PointInsideVoxel(posBelow, _currentGraph.RootVoxel))
+          {
+            var gridGraph = _currentGraph as CubeGridMap;
+            var blockBelow = gridGraph?.GetBlockAtPosition(posBelow);
+
+            if (blockBelow != null && blockBelow.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
+            {
+              var position = worldNode + WorldMatrix.Down;
+
+              var door = gridGraph.GetBlockAtPosition(worldNode)?.FatBlock as MyDoor;
+              if (door != null)
+              {
+                var dirVec = WorldMatrix.GetDirectionVector(direction);
+                posBelow = worldNode - dirVec * 2;
+
+                IHitInfo hit;
+                MyAPIGateway.Physics.CastRay(posBelow, worldNode, out hit, CollisionLayers.CharacterCollisionLayer);
+                
+                if (hit?.HitEntity != null)
+                {
+                  position = hit.Position - dirVec + WorldMatrix.Down;
+                }
+              }
+
+              Character.SetPosition(position);
+            }
+          }
         }
       }
     }
@@ -5457,6 +5506,44 @@ namespace AiEnabled.Bots
         UpdatePathAndMove(ref distanceToCheck);
     }
 
+    internal bool IsDoorInPath()
+    {
+      if (Character == null || Character.MarkedForClose || Character.IsDead)
+        return false;
+
+      var botPosition = BotInfo.CurrentBotPositionActual;
+      var botMatrix = WorldMatrix;
+
+      List<IHitInfo> hitList;
+      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
+        hitList = new List<IHitInfo>();
+
+      hitList.Clear();
+      MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward * 3, hitList, CollisionLayers.CharacterCollisionLayer);
+
+      bool doorFound = false;
+      for (int i = 0; i < hitList.Count; i++)
+      {
+        var hitInfo = hitList[i];
+        var hitEnt = hitInfo?.HitEntity;
+
+        if (hitEnt == null || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == Character.EquippedTool?.EntityId)
+          continue;
+
+        var subpart = hitEnt as MyEntitySubpart;
+        if (subpart != null)
+        {
+          doorFound = true;
+          break;
+        }
+      }
+
+      hitList.Clear();
+      AiSession.Instance.HitListStack.Push(hitList);
+
+      return doorFound;
+    }
+
     internal bool CheckPathForObstacles(ref int stuckTimer, out bool swerve, out bool doorFound)
     {
       swerve = false;
@@ -5475,9 +5562,8 @@ namespace AiEnabled.Bots
         List<IHitInfo> hitlist;
         if (!AiSession.Instance.HitListStack.TryPop(out hitlist) || hitlist == null)
           hitlist = new List<IHitInfo>();
-        else
-          hitlist.Clear();
 
+        hitlist.Clear();
         MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward, hitlist, CollisionLayers.CharacterCollisionLayer);
 
         bool canUseDoors = CanOpenDoors && (!(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors);

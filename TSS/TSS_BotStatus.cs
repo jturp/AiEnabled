@@ -15,28 +15,57 @@ using VRage.Game.ModAPI;
 
 using VRageMath;
 
+using VRageRender;
+
 namespace AiEnabled.TSS
 {
   [MyTextSurfaceScript("TSS_BotStatus", "[AiEnabled] Helper Status")]
   public class TSS_BotStatus : MyTSSCommon
   {
     public override ScriptUpdate NeedsUpdate => ScriptUpdate.Update100;
-    readonly float _scale;
-    readonly string _font = "Debug";
+    float _scale, _lastScale;
+    string _font = "Debug", _lastFont;
     bool _setup, _shouldDraw, _resetDraw, _firstRun = true;
     Vector2 _sizePX;
     Vector2 _center;
     Vector2 _startPos;
     Vector2 _surfaceSize;
     List<MySprite> _sprites = new List<MySprite>(10);
+    List<string> _validFonts = new List<string>()
+    {
+      // These were the valid fonts when I tested. Script will auto-generate the valid list in case it's ever updated.
+
+      "Debug",
+      "Red",
+      "Green",
+      "Blue",
+      "White",
+      "DarkBlue",
+      "UrlNormal",
+      "UrlHighlight",
+      "ErrorMessageBoxCaption",
+      "ErrorMessageBoxText",
+      "InfoMessageBoxCaption",
+      "InfoMessageBoxText",
+      "ScreenCaption",
+      "GameCredits",
+      "LoadingScreen",
+      "BuildInfo",
+      "BuildInfoHighlight",
+      "Monospace",
+      "BI_SEOutlined",
+      "BI_Monospace",
+      "BI_Green",
+      "BI_SkyBlue",
+      "BI_Yellow",
+      "BI_Gray"
+    };
+
     int _spriteIndex, _frameCounter;
+    StringBuilder _scaleBuilder = new StringBuilder("M");
 
     public TSS_BotStatus(IMyTextSurface surface, IMyCubeBlock block, Vector2 size) : base(surface, block, size)
     {
-      _scale = (block is IMyTextPanel) ? 0.6f : 0.5f;
-
-      var builder = new StringBuilder("M");
-      _sizePX = Surface.MeasureStringInPixels(builder, _font, _scale);
       _center = Surface.TextureSize * 0.5f;
       _surfaceSize = surface.SurfaceSize - 4;
       _startPos = _center - (_surfaceSize * 0.5f);
@@ -44,8 +73,11 @@ namespace AiEnabled.TSS
       Surface.BackgroundColor = Color.Black;
       Surface.ScriptBackgroundColor = Color.Black;
 
+      _validFonts.Clear();
+      surface.GetFonts(_validFonts);
+
+      ConfigureFont();
       UpdateStats(null);
-      builder.Clear();
     }
 
     public override void Dispose()
@@ -56,6 +88,12 @@ namespace AiEnabled.TSS
 
         _sprites?.Clear();
         _sprites = null;
+
+        _validFonts?.Clear();
+        _validFonts = null;
+
+        _scaleBuilder?.Clear();
+        _scaleBuilder = null;
 
         if (AiSession.Instance != null)
           AiSession.Instance.OnBotStatsUpdate -= UpdateStats;
@@ -88,6 +126,8 @@ namespace AiEnabled.TSS
 
         if (_shouldDraw)
         {
+          bool needsRedraw = ConfigureFont();
+
           int count;
           AiSession.Instance.SendBotStatusRequest(out count);
 
@@ -95,7 +135,7 @@ namespace AiEnabled.TSS
           {
             _resetDraw = false;
           }
-          else if (count == 0 && !_resetDraw)
+          else if (count == 0 && (!_resetDraw || needsRedraw))
           {
             _resetDraw = true;
             UpdateStats(null);
@@ -106,6 +146,57 @@ namespace AiEnabled.TSS
       {
         AiSession.Instance?.Logger?.Log($"Exception in {this.GetType().FullName}.Run: {ex}", Utilities.MessageType.ERROR);
       }
+    }
+
+    bool ConfigureFont()
+    {
+      bool scaleFound = false;
+      bool fontFound = false;
+
+      var terminal = Block as IMyTerminalBlock;
+      if (terminal != null)
+      {
+        var cd = terminal.CustomData;
+        foreach (var line in cd.Split('\n'))
+        {
+          var trimmed = line.Trim();
+          if (trimmed.StartsWith("[AiE Font Scale]="))
+          {
+            float num;
+            if (float.TryParse(line.Split('=')[1], out num) && num > 0)
+            {
+              _scale = num;
+              scaleFound = true;
+            }
+          }
+          else if (trimmed.StartsWith("[AiE Font Type]="))
+          {
+            var font = line.Split('=')[1].Trim();
+            if (font.Length > 0 && _validFonts.Contains(font))
+            {
+              _font = font;
+              fontFound = true;
+            }
+          }
+
+          if (scaleFound && fontFound)
+            break;
+        }
+      }
+
+      if (!scaleFound)
+        _scale = (Block is IMyTextPanel) ? 0.6f : 0.5f;
+  
+      if (!fontFound)
+        _font = "Debug";
+
+      _sizePX = Surface.MeasureStringInPixels(_scaleBuilder, _font, _scale);
+
+      bool result = _scale != _lastScale || _font != _lastFont;
+      _lastScale = _scale;
+      _lastFont = _font;
+
+      return result;
     }
 
     bool ShouldDisplay()

@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.7.12";
+    public const string VERSION = "v1.7.15";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;

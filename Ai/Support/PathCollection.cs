@@ -25,6 +25,7 @@ using System.Diagnostics;
 using VRage.ModAPI;
 using Sandbox.Definitions;
 using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
+using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
 using AiEnabled.Utilities;
 
 namespace AiEnabled.Ai.Support
@@ -376,6 +377,8 @@ namespace AiEnabled.Ai.Support
         else
           worldResult = worldResultNode;
 
+        bool doorInWay = Bot.DoorInPath;
+
         if (Bot.CanUseLadders)
         {
           var curSlim = gridGraph.GetBlockAtPosition(localCurrent);
@@ -483,7 +486,7 @@ namespace AiEnabled.Ai.Support
               {
                 var cube = nextSlim?.FatBlock as MyCubeBlock;
                 ladderUseObj = GetBlockUseObject(cube);
-                useNow = ladderUseObj != null;
+                useNow = ladderUseObj != null && !doorInWay;
                 NextNode = result;
 
                 return;
@@ -580,8 +583,8 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        Vector3D? curPoint = null;
-        Vector3D? prevPoint = null;
+        Vector3D? curPoint = worldCurrent;
+        Vector3D? prevPoint = worldCurrent;
         var tgtIsOwner = Bot.Owner?.Character != null && Bot.Target.Entity == Bot.Owner.Character;
         var stopShort = tgtIsOwner && isFlying;
 
@@ -609,7 +612,7 @@ namespace AiEnabled.Ai.Support
               var cube = slim.FatBlock as MyCubeBlock;
               ladderUseObj = GetBlockUseObject(cube);
               afterNextIsLadder = ladderUseObj != null;
-              useNow = afterNextIsLadder && checkY < 0;
+              useNow = afterNextIsLadder && checkY < 0 && !doorInWay;
 
               if (useNow)
                 nextIsLadder = false;
