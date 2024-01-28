@@ -1003,10 +1003,13 @@ namespace AiEnabled.Ai.Support
         if (initialGrid == null)
           return null;
 
-        List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
+        var biggest = initialGrid.GridSizeEnum == MyCubeSize.Small ? null : initialGrid;
+        var gridLink = initialGrid.GetGridGroup(GridLinkTypeEnum.Mechanical);
+        if (gridLink == null)
+          return biggest;
 
-        var biggest = initialGrid;
-        initialGrid?.GetGridGroup(GridLinkTypeEnum.Mechanical)?.GetGrids(gridList);
+        List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
+        gridLink.GetGrids(gridList);
 
         for (int i = 0; i < gridList.Count; i++)
         {

@@ -586,7 +586,7 @@ namespace AiEnabled.Support
         return;
 
       var index = logic.TargetPriorities.IndexOf(selected.Key);
-      
+
       if (index > 0)
       {
         logic.TargetPriorities.PriorityTypes.Move(index, index - 1);
@@ -1549,7 +1549,7 @@ namespace AiEnabled.Support
     private static void GetModelContent(List<MyTerminalControlComboBoxItem> list)
     {
       var key = 0;
-     
+
       foreach (var name in AiSession.Instance.BotModelList)
       {
         var item = new MyTerminalControlComboBoxItem()

@@ -124,6 +124,11 @@ namespace AiEnabled.Bots
         if (grid == null || grid.IsPreview || grid.MarkedForClose || grid.Closed)
           return;
 
+        MyCubeGrid biggestGrid = GridBase.GetLargestGridForMap(grid) as MyCubeGrid;
+
+        if (biggestGrid == null || AiSession.Instance == null || !AiSession.Instance.Registered)
+          return;
+
         var enclosureRating = Math.Max(1, Math.Min(apiData.EnclosureRating, 6));
         var airtightOnly = apiData.AirtightNodesOnly;
 
@@ -135,8 +140,7 @@ namespace AiEnabled.Bots
         else
           group.GetGrids(gridList);
 
-        var box = new BoundingBoxI(grid.Min, grid.Max);
-        MyCubeGrid biggestGrid = grid.GridSizeEnum == MyCubeSize.Small ? null : grid;
+        var box = new BoundingBoxI(biggestGrid.Min, biggestGrid.Max);
 
         foreach (var g in gridList)
         {
@@ -144,20 +148,14 @@ namespace AiEnabled.Bots
           if (cubeGrid?.Physics == null || cubeGrid.IsPreview || cubeGrid.MarkedForClose || cubeGrid.Closed || cubeGrid.GridSizeEnum == MyCubeSize.Small)
             continue;
 
-          if (biggestGrid == null || biggestGrid.BlocksCount < cubeGrid.BlocksCount)
-            biggestGrid = cubeGrid;
-
           var worldMin = g.GridIntegerToWorld(g.Min);
           var worldMax = g.GridIntegerToWorld(g.Max);
-          var localMin = grid.WorldToGridInteger(worldMin);
-          var localMax = grid.WorldToGridInteger(worldMax);
+          var localMin = biggestGrid.WorldToGridInteger(worldMin);
+          var localMax = biggestGrid.WorldToGridInteger(worldMax);
 
           box = box.Include(localMin);
           box = box.Include(localMax);
         }
-
-        if (biggestGrid == null || AiSession.Instance == null || !AiSession.Instance.Registered)
-          return;
 
         Vector3D upVector = Vector3D.Zero;
 
@@ -340,14 +338,30 @@ namespace AiEnabled.Bots
                   bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
                   bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
 
-                  var positionList = AiSession.Instance.LineListStack.Get();
-                  AiUtils.FindAllPositionsForBlock(block, positionList);
-
-                  foreach (var cell in positionList)
+                  Matrix matrix = new Matrix
                   {
-                    var positionAbove = cell + normal;
+                    Forward = Base6Directions.GetVector(block.Orientation.Forward),
+                    Left = Base6Directions.GetVector(block.Orientation.Left),
+                    Up = Base6Directions.GetVector(block.Orientation.Up)
+                  };
 
-                    if (positionAbove == nodePosition && (allowConn || allowSolar || isCylinder || AiUtils.IsSidePressurizedForBlock(block, cell, normal)))
+                  var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+
+                  if (faceDict.Count < 2)
+                    matrix.TransposeRotationInPlace();
+
+                  Vector3I side, center = cubeDef.Center;
+                  Vector3I.TransformNormal(ref normal, ref matrix, out side);
+                  Vector3I.TransformNormal(ref center, ref matrix, out center);
+                  var adjustedPosition = block.Position - center;
+
+                  foreach (var kvp in faceDict)
+                  {
+                    var cell = kvp.Key;
+                    Vector3I.TransformNormal(ref cell, ref matrix, out cell);
+                    var positionAbove = adjustedPosition + cell + normal;
+
+                    if (positionAbove == nodePosition && (allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side) == true)))
                     {
                       valid = true;
                       break;
@@ -430,16 +444,31 @@ namespace AiEnabled.Bots
                 bool allowConn = !allowSolar && cube.FatBlock is IMyShipConnector && def.Id.SubtypeName == "Connector";
                 bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(def.Id);
 
-                var positionList = AiSession.Instance.LineListStack.Get();
-                AiUtils.FindAllPositionsForBlock(cube, positionList);
-
-                foreach (var cell in positionList)
+                Matrix matrix = new Matrix
                 {
-                  var checkPosition = cell;
+                  Forward = Base6Directions.GetVector(cube.Orientation.Forward),
+                  Left = Base6Directions.GetVector(cube.Orientation.Left),
+                  Up = Base6Directions.GetVector(cube.Orientation.Up)
+                };
 
-                  if (checkPosition == checkPoint && (allowConn || allowSolar || isCylinder 
-                    || AiUtils.IsSidePressurizedForBlock(cube, cell, normal) 
-                    || AiUtils.IsSidePressurizedForBlock(cube, cell, -normal)))
+                var faceDict = AiSession.Instance.BlockFaceDictionary[def.Id];
+
+                if (faceDict.Count < 2)
+                  matrix.TransposeRotationInPlace();
+
+                Vector3I side1, center = def.Center;
+                Vector3I.TransformNormal(ref normal, ref matrix, out side1);
+                Vector3I.TransformNormal(ref center, ref matrix, out center);
+                var adjustedPosition = cube.Position - center;
+                var side2 = -side1;
+
+                foreach (var kvp in faceDict)
+                {
+                  var cell = kvp.Key;
+                  Vector3I.TransformNormal(ref cell, ref matrix, out cell);
+                  var checkPosition = adjustedPosition + cell;
+
+                  if (checkPosition == checkPoint && (allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side1) == true) || (kvp.Value?.Contains(side2) == true)))
                   {
                     found = true;
                     break;
@@ -1348,20 +1377,7 @@ namespace AiEnabled.Bots
 
         if (grid != null && !grid.MarkedForClose && !AiSession.Instance.GridGraphDict.ContainsKey(grid.EntityId))
         {
-          List<IMyCubeGrid> gridGroup = AiSession.Instance.GridGroupListPool.Get();
-
-          grid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridGroup);
-
-          for (int i = 0; i < gridGroup.Count; i++)
-          {
-            var otherGrid = gridGroup[i] as MyCubeGrid;
-            if (otherGrid != null && otherGrid.EntityId != grid.EntityId && otherGrid.GridSizeEnum == MyCubeSize.Large && otherGrid.BlocksCount > grid.BlocksCount)
-            {
-              biggestGrid = otherGrid;
-            }
-          }
-
-          AiSession.Instance.GridGroupListPool.Return(gridGroup);
+          biggestGrid = GridBase.GetLargestGridForMap(grid) as MyCubeGrid;
         }
 
         if (biggestGrid?.Physics != null && !biggestGrid.IsStatic)

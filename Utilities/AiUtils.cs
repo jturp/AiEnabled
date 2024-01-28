@@ -99,7 +99,7 @@ namespace AiEnabled.Utilities
       positions.Clear();
 
       var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
-      if (cubeDef.IsCubePressurized.Count == 1)
+      if (cubeDef?.IsCubePressurized.Count == 1)
       {
         positions.Add(block.Position);
         return;
@@ -130,7 +130,6 @@ namespace AiEnabled.Utilities
       AiSession.Instance.LocalVectorHashStack.Return(hash);
       AiSession.Instance.LocalVectorQueuePool.Return(queue);
     }
-
 
     public static void DrawOBB(MyOrientedBoundingBoxD obb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f, BlendTypeEnum blendType = BlendTypeEnum.Standard)
     {
@@ -210,7 +209,7 @@ namespace AiEnabled.Utilities
       return MatrixD.CreateFromQuaternion(q0);
     }
 
-    public static bool CheckLineOfSight(ref Vector3D start, ref Vector3D end, 
+    public static bool CheckLineOfSight(ref Vector3D start, ref Vector3D end,
       List<Vector3I> cellList = null, List<MyLineSegmentOverlapResult<MyEntity>> resultList = null, MyVoxelBase voxel = null, params MyEntity[] ignoreEnts)
     {
       var line = new LineD(start, end);

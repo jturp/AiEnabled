@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.7.16";
+    public const string VERSION = "v1.7.17";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -448,6 +448,22 @@ namespace AiEnabled
         ModSaveData.PlayerHelperData.Clear();
       }
 
+      if (BlockFaceDictionary != null)
+      {
+        foreach (var kvp in BlockFaceDictionary)
+        {
+          if (kvp.Value == null)
+            continue;
+
+          foreach (var kvp2 in kvp.Value)
+            kvp2.Value?.Clear();
+
+          kvp.Value?.Clear();
+        }
+
+        BlockFaceDictionary.Clear();
+      }
+
       if (PlayerToHelperIdentity != null)
       {
         foreach (var kvp in PlayerToHelperIdentity)
@@ -689,6 +705,7 @@ namespace AiEnabled
       HalfStairBlockDefinitions = null;
       HalfStairMirroredDefinitions = null;
       LadderBlockDefinitions = null;
+      BlockFaceDictionary = null;
       PassageBlockDefinitions = null;
       PassageIntersectionDefinitions = null;
       ArmorPanelFullDefinitions = null;
@@ -1602,10 +1619,36 @@ namespace AiEnabled
           foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
           {
             var cubeDef = def as MyCubeBlockDefinition;
-            if (cubeDef == null || cubeDef.CubeSize != MyCubeSize.Large || _ignoreTypes.ContainsItem(cubeDef.Id.TypeId))
+            if (cubeDef == null || _ignoreTypes.ContainsItem(cubeDef.Id.TypeId))
               continue;
 
             var blockDef = cubeDef.Id;
+            if (cubeDef.IsCubePressurized != null && !BlockFaceDictionary.ContainsKey(blockDef))
+            {
+              var cubeDict = new Dictionary<Vector3I, HashSet<Vector3I>>();
+
+              foreach (var kvp in cubeDef.IsCubePressurized)
+              {
+                HashSet<Vector3I> faceHash;
+                if (!cubeDict.TryGetValue(kvp.Key, out faceHash))
+                {
+                  faceHash = new HashSet<Vector3I>();
+                  cubeDict[kvp.Key] = faceHash;
+                }
+
+                foreach (var kvp2 in kvp.Value)
+                {
+                  if (kvp2.Value == MyCubeBlockDefinition.MyCubePressurizationMark.PressurizedAlways)
+                    faceHash.Add(kvp2.Key);
+                }
+              }
+
+              BlockFaceDictionary[blockDef] = cubeDict;
+            }
+
+            if (cubeDef.CubeSize != MyCubeSize.Large)
+              continue;
+
             var blockSubtype = blockDef.SubtypeName;
             bool isSlopedBlock = _validSlopedBlockDefs.ContainsItem(blockDef) || blockSubtype.EndsWith("HalfSlopeArmorBlock");
             bool isStairBlock = !isSlopedBlock && blockSubtype != "LargeStairs" && blockSubtype.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0;

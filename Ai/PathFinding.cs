@@ -1025,7 +1025,7 @@ namespace AiEnabled.Ai
                   continue;
                 }
                 else if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
-                {                  
+                {
                   if (botDownDir == thisBlock.Orientation.Left || Base6Directions.GetOppositeDirection(botDownDir) == thisBlock.Orientation.Left)
                   {
                     offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
@@ -2672,7 +2672,7 @@ namespace AiEnabled.Ai
       {
         if (gridTravelDir == nextBlock.Orientation.Forward)
         {
-            offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
+          offset = -blockLeftVector * gridSize * 0.3 - blockFwdVector * gridSize * 0.3;
         }
         else if (Base6Directions.GetOppositeDirection(gridTravelDir) == nextBlock.Orientation.Forward)
         {

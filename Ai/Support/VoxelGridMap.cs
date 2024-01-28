@@ -199,7 +199,7 @@ namespace AiEnabled.Ai.Support
 
       var localPosition = nodePosition;
       IMySlimBlock block = null;
-      
+
       if (isSlimBlock)
       {
         block = GetBlockAtPosition(localPosition);
@@ -1308,10 +1308,7 @@ namespace AiEnabled.Ai.Support
       if (!result && bot != null && !(bot is RepairBot) && (bot.Target.IsSlimBlock || bot.Target.IsCubeBlock))
       {
         var cube = bot.Target.Entity as IMyCubeBlock;
-        var slim = cube?.SlimBlock;
-
-        if (slim == null)
-          slim = bot.Target.Entity as IMySlimBlock;
+        var slim = (cube?.SlimBlock) ?? bot.Target.Entity as IMySlimBlock;
 
         if (slim?.CubeGrid != null)
         {

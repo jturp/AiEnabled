@@ -772,7 +772,7 @@ namespace AiEnabled
     public HashSet<MyDefinitionId> GratedCatwalkExpansionBlocks { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public Dictionary<MyStringHash, string> AnimationControllerDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to controller subtype
     public Dictionary<MyStringHash, string> SubtypeToSkeletonDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to skeleton type
-    //public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
+    public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
     public Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>> NpcSafeCoreWeaponMagazines = new Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>>(MyDefinitionId.Comparer);
 
     public ConcurrentDictionary<long, float> PlayerFollowDistanceDict = new ConcurrentDictionary<long, float>(); // player ident to follow distance

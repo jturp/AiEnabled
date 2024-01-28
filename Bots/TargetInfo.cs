@@ -33,8 +33,8 @@ namespace AiEnabled.Bots
       readonly BotBase _base;
       private Vector3D? _override, _localOverride;
 
-      public Vector3D? Override 
-      { 
+      public Vector3D? Override
+      {
         get { return _override; }
         private set
         {
@@ -223,7 +223,7 @@ namespace AiEnabled.Bots
             return true;
 
           var ownerIdentityId = ch.ControllerInfo.ControllingIdentityId;
-          
+
           BotBase bot;
           if (AiSession.Instance.Bots.TryGetValue(ch.EntityId, out bot) && bot != null)
           {
@@ -548,19 +548,7 @@ namespace AiEnabled.Bots
           CubeGridMap turretGraph;
           if (turretGrid.GridSize > 1)
           {
-            List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
-
-            turretGrid.GetGridGroup(GridLinkTypeEnum.Mechanical).GetGrids(gridList);
-
-            MyCubeGrid biggest = cube.CubeGrid as MyCubeGrid;
-            foreach (var g in gridList)
-            {
-              if (g == null || g.GridSize < 1 || g.MarkedForClose)
-                continue;
-
-              if (g.WorldAABB.Volume > biggest.PositionComp.WorldAABB.Volume)
-                biggest = g as MyCubeGrid;
-            }
+            MyCubeGrid biggest = GridBase.GetLargestGridForMap(turretGrid) as MyCubeGrid;
 
             bool returnNow = false;
             if (AiSession.Instance.GridGraphDict.TryGetValue(biggest.EntityId, out turretGraph))
@@ -572,8 +560,6 @@ namespace AiEnabled.Bots
                 returnNow = true;
               }
             }
-
-            AiSession.Instance.GridGroupListPool.Return(gridList);
 
             if (returnNow)
               return true;

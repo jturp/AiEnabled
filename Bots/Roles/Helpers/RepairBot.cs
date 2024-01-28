@@ -142,7 +142,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _patrolOBBs = null;
         _validToolDefinitions = null;
       }
-      catch(Exception ex)
+      catch (Exception ex)
       {
         AiSession.Instance.Logger.Log($"Exception in RepairBot.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
@@ -586,7 +586,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         _particlePacketSent = false;
         var packet = new ParticlePacket(Character.EntityId, ParticleInfoBase.ParticleType.Weld, remove: true);
 
-        if (MyAPIGateway.Session.Player != null)  
+        if (MyAPIGateway.Session.Player != null)
           packet.Received(AiSession.Instance.Network);
 
         if (AiSession.Instance.IsServer && MyAPIGateway.Multiplayer.MultiplayerActive)
@@ -935,7 +935,7 @@ namespace AiEnabled.Bots.Roles.Helpers
               {
                 var owner = projector.CubeGrid.BigOwners?.Count > 0 ? projector.CubeGrid.BigOwners[0] : projector.CubeGrid.SmallOwners?.Count > 0 ? projector.CubeGrid.SmallOwners[0] : -1L;
 
-                if (owner < 0) 
+                if (owner < 0)
                 {
                   if (projector.CubeGrid.IsSameConstructAs(mainGrid))
                     owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
@@ -1519,7 +1519,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             var slim = Target.Entity as IMySlimBlock;
             slim?.FixBones(0, float.MaxValue);
           }
-          
+
           if (!notMoving && _particlePacketSent)
           {
             _particlePacketSent = false;

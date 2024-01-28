@@ -286,7 +286,7 @@ namespace AiEnabled.Ai.Support
       {
         thisGraph.OnGridBaseClosing -= OnGridBaseClosing;
         thisGraph.OnPositionsRemoved -= ClearObstacles;
-      }  
+      }
     }
 
     /// <summary>
@@ -591,7 +591,7 @@ namespace AiEnabled.Ai.Support
         // Nope, but can we skip ANY?
         for (int i = 0; i < 3; i++)
         {
-          var maxCount = stopShort ? PathToTarget.Count - 1 : PathToTarget.Count; 
+          var maxCount = stopShort ? PathToTarget.Count - 1 : PathToTarget.Count;
           if (i >= maxCount)
             break;
 
@@ -814,7 +814,7 @@ namespace AiEnabled.Ai.Support
 
       // Can we go straight to the target? Only attempted if the target is eye level with the bot
       if (!isTransition && Bot.HasLineOfSight && Math.Abs(transToTgt.Y) < allowedDiff)
-      {          
+      {
         _temp.Clear();
         MyCubeGrid.RayCastStaticCells(startTransformed, endTransformed, _temp, voxelGrid.CellSize, voxelGrid.BoundingBox.HalfExtents);
         bool goDirectToTarget = true;
@@ -985,7 +985,7 @@ namespace AiEnabled.Ai.Support
         var ch = ent as IMyCharacter;
         if (ch != null)
         {
-          
+
           if (ch.EntityId != Bot?.Character?.EntityId)
           {
             var name = string.IsNullOrWhiteSpace(ch.DisplayName) ? ch.Name : ch.DisplayName;
@@ -1116,7 +1116,7 @@ namespace AiEnabled.Ai.Support
 
         Dirty = false;
       }
-      catch(Exception ex)
+      catch (Exception ex)
       {
         AiSession.Instance.Logger.Log($"Exception in {GetType().FullName}: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
       }
@@ -1129,7 +1129,7 @@ namespace AiEnabled.Ai.Support
       ClearObstacles();
       OnGridBaseClosing();
       CleanUp(true);
-      
+
       _useObjList = null;
       _temp = null;
       PathToTarget = null;
@@ -1311,7 +1311,7 @@ namespace AiEnabled.Ai.Support
           vec = curGraph.LocalToWorld(node.Position) + node.Offset;
         else
           vec = curGraph.LocalToWorld(end);
-  
+
         MySimpleObjectDraw.DrawLine(start, vec, MyStringId.GetOrCompute("Square"), ref color, 0.05f);
         obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
         AiUtils.DrawOBB(obb, Color.Red, raster);
@@ -1344,7 +1344,7 @@ namespace AiEnabled.Ai.Support
           vec = curGraph.LocalToWorld(node.Position) + node.Offset;
         else
           vec = curGraph.LocalToWorld(current);
-  
+
         obb = new MyOrientedBoundingBoxD(vec, Vector3D.One * 0.1, rotation);
         AiUtils.DrawOBB(obb, Color.Green, raster);
 

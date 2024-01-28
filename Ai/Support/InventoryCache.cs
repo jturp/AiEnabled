@@ -335,7 +335,7 @@ namespace AiEnabled.Ai.Support
             var fixedPoint = (MyFixedPoint)numToMove;
 
             inv.RemoveItems(invItem.ItemId, fixedPoint);
-            
+
             var toAdd = MyObjectBuilderSerializer.CreateNewObject(itemDef);
             destination.AddItems(fixedPoint, toAdd);
 
@@ -870,8 +870,8 @@ namespace AiEnabled.Ai.Support
         }
 
         bool allowInvPosition = grid.EntityId == Grid.EntityId
-          && (terminal is IMyShipConnector || (terminal is IMyCargoContainer 
-          && (terminal.BlockDefinition.SubtypeName.IndexOf("container", StringComparison.OrdinalIgnoreCase) >= 0) 
+          && (terminal is IMyShipConnector || (terminal is IMyCargoContainer
+          && (terminal.BlockDefinition.SubtypeName.IndexOf("container", StringComparison.OrdinalIgnoreCase) >= 0)
           || terminal.BlockDefinition.SubtypeName.IndexOf("freight", StringComparison.OrdinalIgnoreCase) >= 0));
 
         bool hookEvents = _terminals.Add(terminal.Position);
@@ -884,7 +884,7 @@ namespace AiEnabled.Ai.Support
         }
         else if (_refreshInvList && allowInvPosition)
           _inventoryPositions.TryAdd(terminal.Position, terminal);
-        
+
         for (int j = 0; j < terminal.InventoryCount; j++)
         {
           var inv = terminal.GetInventory(j);

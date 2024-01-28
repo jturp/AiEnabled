@@ -90,7 +90,7 @@ namespace AiEnabled.Bots
               name = "Unknown Route";
             }
 
-            Action = $"Patrolling wp {idx }/{count} for '{name}'";
+            Action = $"Patrolling wp {idx}/{count} for '{name}'";
           }
           else if (bot._currentGraph?.Ready != true)
           {
@@ -144,7 +144,7 @@ namespace AiEnabled.Bots
               name = "Unknown Route";
             }
 
-            Action = $"Patrolling wp {idx }/{count} for '{name}'";
+            Action = $"Patrolling wp {idx}/{count} for '{name}'";
           }
           else if (bot._currentGraph?.Ready != true)
           {
@@ -172,7 +172,7 @@ namespace AiEnabled.Bots
               Action = $"Following {bot.Owner.DisplayName} [Idle]";
             }
             else if (AiSession.Instance.Bots.ContainsKey(ch.EntityId))
-            {              
+            {
               Action = $"Targeting {ch.Name}";
             }
             else if (!string.IsNullOrWhiteSpace(ch.DisplayName))
@@ -216,7 +216,7 @@ namespace AiEnabled.Bots
             name = "Unknown Route";
           }
 
-          Action = $"Patrolling wp {idx }/{count} for '{name}'";
+          Action = $"Patrolling wp {idx}/{count} for '{name}'";
         }
         else if (bot._currentGraph?.Ready != true)
         {

@@ -1291,27 +1291,8 @@ namespace AiEnabled.API
       else
         nodeList.Clear();
 
-      List<IMyCubeGrid> gridList = AiSession.Instance.GridGroupListPool.Get();
-
-      var gridLink = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
-      if (gridLink == null)
-        gridList.Add(grid);
-      else
-        gridLink.GetGrids(gridList);
-
-      MyCubeGrid biggestGrid = grid.GridSizeEnum == MyCubeSize.Small ? null : grid;
-
-      foreach (var g in gridList)
-      {
-        var cubeGrid = g as MyCubeGrid;
-        if (cubeGrid?.Physics == null || cubeGrid.IsPreview || cubeGrid.MarkedForClose || cubeGrid.Closed || cubeGrid.GridSizeEnum == MyCubeSize.Small)
-          continue;
-
-        if (biggestGrid == null || biggestGrid.BlocksCount < cubeGrid.BlocksCount)
-          biggestGrid = cubeGrid;
-      }
-
-      if (biggestGrid == null)
+      var biggestGrid = GridBase.GetLargestGridForMap(grid) as MyCubeGrid;
+      if (biggestGrid == null || biggestGrid.Physics == null || biggestGrid.MarkedForClose || biggestGrid.Closed)
         return;
 
       int numSeats;
@@ -1356,206 +1337,406 @@ namespace AiEnabled.API
       }
 
       var normal = Base6Directions.GetIntVector(biggestGrid.WorldMatrix.GetClosestDirection(upVector.Value));
-      var positionList = AiSession.Instance.LineListStack.Get();
+      var blocks = biggestGrid.GetBlocks().ToList();
 
-      foreach (var g in gridList)
+      foreach (IMySlimBlock block in blocks)
       {
-        if (g?.Physics == null || g.MarkedForClose || g.Closed || g.GridSizeEnum == MyCubeSize.Small)
+        if (nodeList.Count >= numberOfNodesNeeded)
+          break;
+
+        var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+
+        bool isPassageStair = cubeDef.Context.ModName == "PassageIntersections" && cubeDef.Id.SubtypeName.EndsWith("PassageStairs_Large");
+        if (isPassageStair && normal != Base6Directions.GetIntVector(block.Orientation.Up))
           continue;
 
-        var blocks = ((MyCubeGrid)g).GetBlocks();
+        if (AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(cubeDef.Id))
+        {
+          if (cubeDef.Id.SubtypeName.EndsWith("Raised"))
+          {
+            if (normal != Base6Directions.GetIntVector(block.Orientation.Up))
+              continue;
+          }
+          else if (normal != -Base6Directions.GetIntVector(block.Orientation.Up))
+          {
+            continue;
+          }
+        }
 
-        foreach (IMySlimBlock block in blocks)
+        bool airTight = cubeDef.IsAirTight ?? false;
+
+        bool allowSolar = false;
+        if (!airTight && block.FatBlock is IMySolarPanel)
+        {
+          bool isColorable = block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0;
+          Vector3I vecFwd = Base6Directions.GetIntVector(block.Orientation.Forward);
+
+          if (isColorable)
+          {
+            allowSolar = vecFwd.Dot(ref normal) < 0;
+          }
+          else
+          {
+            allowSolar = vecFwd.Dot(ref normal) > 0;
+          }
+        }
+
+        bool isFlatWindow = !allowSolar && AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id);
+        bool isCylinder = !isFlatWindow && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
+        bool isAllowedConveyor = !isCylinder && AiSession.Instance.ConveyorFullBlockDefinitions.ContainsItem(cubeDef.Id);
+        bool isAutomatonsFull = !isAllowedConveyor && AiSession.Instance.AutomatonsFullBlockDefinitions.ContainsItem(cubeDef.Id);
+        bool isSlopeBlock = !isAutomatonsFull && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id)
+          && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef.Id)
+          && !AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef.Id);
+
+        bool isScaffold = !isSlopeBlock && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeDef.Id);
+        bool exclude = isScaffold && (cubeDef.Id.SubtypeName.EndsWith("Open") || cubeDef.Id.SubtypeName.EndsWith("Structure"));
+        bool isPlatform = isScaffold && !exclude && cubeDef.Id.SubtypeName.EndsWith("Unsupported");
+
+        Matrix matrix = new Matrix
+        {
+          Forward = Base6Directions.GetVector(block.Orientation.Forward),
+          Left = Base6Directions.GetVector(block.Orientation.Left),
+          Up = Base6Directions.GetVector(block.Orientation.Up)
+        };
+
+        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+
+        if (faceDict.Count < 2)
+          matrix.TransposeRotationInPlace();
+
+        Vector3I side, center = cubeDef.Center;
+        Vector3I.TransformNormal(ref normal, ref matrix, out side);
+        Vector3I.TransformNormal(ref center, ref matrix, out center);
+        var adjustedPosition = block.Position - center;
+
+        foreach (var kvp in faceDict)
         {
           if (nodeList.Count >= numberOfNodesNeeded)
             break;
 
-          var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+          var cell = kvp.Key;
+          Vector3I.TransformNormal(ref cell, ref matrix, out cell);
 
-          bool isPassageStair = cubeDef.Context.ModName == "PassageIntersections" && cubeDef.Id.SubtypeName.EndsWith("PassageStairs_Large");
-          if (isPassageStair && normal != Base6Directions.GetIntVector(block.Orientation.Up))
-            continue;
+          var position = adjustedPosition + cell;
+          var positionAbove = position + normal;
+          var worldPosition = biggestGrid.GridIntegerToWorld(positionAbove);
+          var cubeAbove = biggestGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
+          var cubeAboveDef = cubeAbove?.BlockDefinition as MyCubeBlockDefinition;
+          bool cubeAboveEmpty = cubeAbove == null || !cubeAboveDef.HasPhysics || cubeAboveDef.Id.SubtypeName.StartsWith("LargeWarningSign");
+          bool aboveisScaffold = cubeAboveDef != null && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeAboveDef.Id);
+          bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
+          bool aboveIsConveyorCap = cubeAbove != null && AiSession.Instance.ConveyorEndCapDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
+          bool aboveisAutomatonsFlat = cubeAbove != null && AiSession.Instance.AutomatonsFlatBlockDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
+          bool checkAbove = !exclude && (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor || (kvp.Value?.Contains(side) ?? false));
 
-          if (AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(cubeDef.Id))
+          if (cubeAboveEmpty)
           {
-            if (cubeDef.Id.SubtypeName.EndsWith("Raised"))
+            if (checkAbove)
             {
-              if (normal != Base6Directions.GetIntVector(block.Orientation.Up))
-                continue;
-            }
-            else if (normal != -Base6Directions.GetIntVector(block.Orientation.Up))
-            {
-              continue;
-            }
-          }
-
-          bool airTight = cubeDef.IsAirTight ?? false;
-          bool allowSolar = false;
-          if (!airTight && block.FatBlock is IMySolarPanel)
-          {
-            bool isColorable = block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) >= 0;
-            Vector3I vecFwd = Base6Directions.GetIntVector(block.Orientation.Forward);
-
-            if (isColorable)
-            {
-              allowSolar = vecFwd.Dot(ref normal) < 0;
-            }
-            else
-            {
-              allowSolar = vecFwd.Dot(ref normal) > 0;
-            }
-          }
-
-          bool isFlatWindow = !allowSolar && AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id);
-          bool isCylinder = !isFlatWindow && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
-          bool isAllowedConveyor = !isCylinder && AiSession.Instance.ConveyorFullBlockDefinitions.ContainsItem(cubeDef.Id);
-          bool isAutomatonsFull = !isAllowedConveyor && AiSession.Instance.AutomatonsFullBlockDefinitions.ContainsItem(cubeDef.Id);
-          bool isSlopeBlock = !isAutomatonsFull && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id)
-            && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef.Id)
-            && !AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef.Id);
-
-          bool isScaffold = !isSlopeBlock && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeDef.Id);
-          bool exclude = isScaffold && (cubeDef.Id.SubtypeName.EndsWith("Open") || cubeDef.Id.SubtypeName.EndsWith("Structure"));
-          bool isPlatform = isScaffold && !exclude && cubeDef.Id.SubtypeName.EndsWith("Unsupported");
-
-          positionList.Clear();
-          AiUtils.FindAllPositionsForBlock(block, positionList);
-
-          foreach (var cell in positionList)
-          {
-            if (nodeList.Count >= numberOfNodesNeeded)
-              break;
-
-            var positionAbove = cell + normal;
-            Vector3D worldPosition = g.GridIntegerToWorld(positionAbove);
-
-            var cubeAbove = g.GetCubeBlock(positionAbove) as IMySlimBlock;
-            var cubeAboveDef = cubeAbove?.BlockDefinition as MyCubeBlockDefinition;
-            bool cubeAboveEmpty = cubeAbove == null || !cubeAboveDef.HasPhysics || cubeAboveDef.Id.SubtypeName.StartsWith("LargeWarningSign");
-            bool aboveisScaffold = cubeAboveDef != null && AiSession.Instance.ScaffoldBlockDefinitions.Contains(cubeAboveDef.Id);
-            bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
-            bool aboveIsConveyorCap = cubeAbove != null && AiSession.Instance.ConveyorEndCapDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
-            bool aboveisAutomatonsFlat = cubeAbove != null && AiSession.Instance.AutomatonsFlatBlockDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
-            bool checkAbove = !exclude &&
-              (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor || AiUtils.IsSidePressurizedForBlock(block, cell, normal));
-
-            if (cubeAboveEmpty)
-            {
-              if (checkAbove)
+              if (allowSolar && block.BlockDefinition.Id.SubtypeName.IndexOf("colorablesolarpanelcorner", StringComparison.OrdinalIgnoreCase) >= 0)
               {
-                if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
+                var cellKey = kvp.Key;
+                var xVal = block.BlockDefinition.Id.SubtypeName.EndsWith("Inverted") ? 1 : 0;
+
+                if (cellKey == new Vector3I(xVal, 0, 0) || cellKey == new Vector3I(xVal, 1, 0))
+                {
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                    nodeList.Add(worldPosition);
+                }
+              }
+              else if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (isAutomatonsFull)
+            {
+              var subtype = cubeDef.Id.SubtypeName;
+              if (subtype.EndsWith("WallB"))
+              {
+                if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref normal) != 0)
+                {
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                    nodeList.Add(worldPosition);
+                }
+              }
+              else if (subtype == "AirDuct2")
+              {
+                if (Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref normal) > 0)
+                {
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                    nodeList.Add(worldPosition);
+                }
+              }
+              else
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
                   nodeList.Add(worldPosition);
               }
-              else if (isFlatWindow)
+            }
+            else if (isPlatform)
+            {
+              if (Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref normal) > 0)
               {
-                if (block.BlockDefinition.Id.SubtypeName == "LargeWindowSquare")
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (isScaffold)
+            {
+              // TODO ??
+              //AiSession.Instance.Logger.Log($"Scaffold block found: {cubeDef.Id.SubtypeName}, HasPhysics = {cubeDef.HasPhysics}");
+            }
+            else if (isFlatWindow)
+            {
+              if (block.BlockDefinition.Id.SubtypeName == "LargeWindowSquare")
+              {
+                if (Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0)
                 {
-                  if (Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0)
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                    nodeList.Add(worldPosition);
+                }
+              }
+              else if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref normal) < 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+              else if (block.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner")
+                && Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (isSlopeBlock)
+            {
+              var leftVec = Base6Directions.GetIntVector(block.Orientation.Left);
+              if (leftVec.Dot(ref normal) != 0 && (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove)))
+                nodeList.Add(worldPosition);
+            }
+          }
+          else if (!aboveIsPassageStair && (checkAbove || aboveisScaffold || aboveIsConveyorCap || aboveisAutomatonsFlat))
+          {
+            if (aboveisScaffold)
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (cubeAboveDef.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
+            {
+              var thrustForwardVec = Base6Directions.GetIntVector(cubeAbove.Orientation.Forward);
+              var subtractedPosition = positionAbove - thrustForwardVec;
+
+              if (thrustForwardVec.Dot(ref normal) == 0 && cubeAbove.CubeGrid.GetCubeBlock(subtractedPosition)?.Position == cubeAbove.Position)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (aboveisAutomatonsFlat)
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (aboveIsConveyorCap)
+            {
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) >= 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (cubeAbove.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_WindTurbine))
+            {
+              var blockPos = cubeAbove.Position;
+
+              if (blockPos != position)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (cubeAbove.BlockDefinition.Id.TypeId == typeof(MyObjectBuilder_MedicalRoom))
+            {
+              var subtype = cubeAbove.BlockDefinition.Id.SubtypeName;
+              if (subtype == "LargeMedicalRoom" || subtype == "LargeMedicalRoomReskin")
+              {
+                var relPosition = positionAbove - cubeAbove.Position;
+                if (relPosition.RectangularLength() > 1)
+                {
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                    nodeList.Add(worldPosition);
+                }
+              }
+            }
+            else if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("NeonTubes", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (cubeAbove.FatBlock is IMyInteriorLight && cubeAbove.BlockDefinition.Id.SubtypeName == "LargeLightPanel")
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (cubeAbove.BlockDefinition.Id.SubtypeName.StartsWith("DeadBody"))
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (cubeAbove.BlockDefinition.Id.SubtypeName == "RoboFactory")
+            {
+              var cubeAbovePosition = cubeAbove.Position;
+
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) > 0 && positionAbove != cubeAbovePosition)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id))
+            {
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) > 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef.Id))
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (cubeAboveDef.Id.SubtypeName.StartsWith("LargeCoverWall") || cubeAboveDef.Id.SubtypeName.StartsWith("FireCover"))
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (AiSession.Instance.LockerDefinitions.ContainsItem(cubeAboveDef.Id))
+            {
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) > 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (AiSession.Instance.ArmorPanelAllDefinitions.Contains(cubeAboveDef.Id))
+            {
+              if (AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(cubeAboveDef.Id)
+                || AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(cubeAboveDef.Id))
+              {
+                if (Base6Directions.GetIntVector(cubeAbove.Orientation.Left).Dot(ref normal) == 0)
+                {
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                    nodeList.Add(worldPosition);
+                }
+              }
+              else
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (AiSession.Instance.FreightBlockDefinitions.ContainsItem(cubeAboveDef.Id))
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(cubeAboveDef.Id))
+            {
+              var turretBasePosition = cubeAbove.Position - Base6Directions.GetIntVector(cubeAbove.Orientation.Up);
+              //if (needsPositionAdjusted)
+              //  turretBasePosition = MainGrid.WorldToGridInteger(cubeAbove.CubeGrid.GridIntegerToWorld(turretBasePosition));
+
+              if (turretBasePosition != positionAbove || cubeAboveDef.Id.TypeId == typeof(MyObjectBuilder_InteriorTurret))
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAboveDef.Id))
+            {
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeAboveDef.Id))
+            {
+              if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                nodeList.Add(worldPosition);
+            }
+            else if (AiSession.Instance.HalfBlockDefinitions.ContainsItem(cubeAboveDef.Id))
+            {
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (cubeAboveDef.Id.SubtypeName.EndsWith("Slope2Tip"))
+            {
+              if (Base6Directions.GetIntVector(cubeAbove.Orientation.Left).Dot(ref normal) != 0)
+              {
+                if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                  nodeList.Add(worldPosition);
+              }
+            }
+            else if (cubeAbove.FatBlock != null)
+            {
+              var door = cubeAbove.FatBlock as IMyDoor;
+              if (door != null)
+              {
+                var doorPosition = door.Position;
+                //if (needsPositionAdjusted)
+                //  doorPosition = MainGrid.WorldToGridInteger(cubeAbove.CubeGrid.GridIntegerToWorld(doorPosition));
+
+                if (door is IMyAirtightHangarDoor)
+                {
+                  if (positionAbove != doorPosition)
                   {
-                    if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
+                    if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
                       nodeList.Add(worldPosition);
                   }
                 }
-                else if (Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref normal) < 0)
+                else if (cubeAbove.BlockDefinition.Id.SubtypeName.StartsWith("SlidingHatchDoor"))
                 {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
+                  if (positionAbove == doorPosition)
+                  {
+                    if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                      nodeList.Add(worldPosition);
+                  }
                 }
-                else if (block.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner")
-                  && Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref normal) > 0)
+                else if (cubeAbove.BlockDefinition.Id.SubtypeName == "LargeBlockGate")
                 {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
-                }
-              }
-            }
-            else if (!aboveIsPassageStair && (checkAbove || aboveisScaffold || aboveIsConveyorCap || aboveisAutomatonsFlat))
-            {
-              if (aboveisScaffold)
-              {
-                if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                  nodeList.Add(worldPosition);
-              }
-              else if (cubeAboveDef.Id.SubtypeName.StartsWith("LargeBlockLargeFlatAtmosphericThrust"))
-              {
-                var thrustForwardVec = Base6Directions.GetIntVector(cubeAbove.Orientation.Forward);
-                var subtractedPosition = positionAbove - thrustForwardVec;
+                  var doorCenter = door.WorldAABB.Center;
+                  var nextPos = biggestGrid.GridIntegerToWorld(positionAbove);
+                  var vector = nextPos - doorCenter;
 
-                if (thrustForwardVec.Dot(ref normal) == 0 && cubeAbove.CubeGrid.GetCubeBlock(subtractedPosition)?.Position == cubeAbove.Position)
-                {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
+                  if (vector.LengthSquared() < 8)
+                  {
+                    if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
+                      nodeList.Add(worldPosition);
+                  }
                 }
-              }
-              else if (aboveisAutomatonsFlat)
-              {
-                if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
+                else if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
                   nodeList.Add(worldPosition);
               }
-              else if (aboveIsConveyorCap)
+              else if (cubeAbove.FatBlock is IMySolarPanel)
               {
-                if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) >= 0)
+                if (cubeAbove.BlockDefinition.Id.SubtypeName.IndexOf("colorable") < 0 && Base6Directions.GetIntVector(cubeAbove.Orientation.Forward).Dot(ref normal) > 0)
                 {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
                     nodeList.Add(worldPosition);
                 }
               }
-              else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeAboveDef.Id))
+              else if (cubeAbove.FatBlock is IMyButtonPanel || AiSession.Instance.ButtonPanelDefinitions.ContainsItem(cubeAboveDef.Id)
+                || (cubeAbove.FatBlock is IMyTextPanel && !AiSession.Instance.SlopeBlockDefinitions.Contains(cubeAboveDef.Id)))
               {
                 if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
                 {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
-                }
-              }
-              else if (cubeAboveDef.Id.SubtypeName.StartsWith("LargeCoverWall") || cubeAboveDef.Id.SubtypeName.StartsWith("FireCover"))
-              {
-                if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
-                {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
-                }
-              }
-              else if (AiSession.Instance.LockerDefinitions.ContainsItem(cubeAboveDef.Id))
-              {
-                if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
-                {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
-                }
-              }
-              else if (AiSession.Instance.FreightBlockDefinitions.ContainsItem(cubeAboveDef.Id))
-              {
-                if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                  nodeList.Add(worldPosition);
-              }
-              else if (AiSession.Instance.VanillaTurretDefinitions.ContainsItem(cubeAboveDef.Id))
-              {
-                var turretBasePosition = cubeAbove.Position - Base6Directions.GetIntVector(cubeAbove.Orientation.Up);
-                if (turretBasePosition != positionAbove || cubeAboveDef.Id.TypeId == typeof(MyObjectBuilder_InteriorTurret))
-                {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
-                }
-              }
-              else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeAboveDef.Id))
-              {
-                if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
-                {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                    nodeList.Add(worldPosition);
-                }
-              }
-              else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeAboveDef.Id))
-              {
-                if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
-                  nodeList.Add(worldPosition);
-              }
-              else if (cubeAbove.FatBlock != null && (cubeAbove.FatBlock is IMyButtonPanel || AiSession.Instance.ButtonPanelDefinitions.ContainsItem(cubeAboveDef.Id)))
-              {
-                if (Base6Directions.GetIntVector(cubeAbove.Orientation.Up).Dot(ref normal) != 0)
-                {
-                  if (!onlyAirtightNodes || g.IsRoomAtPositionAirtight(positionAbove))
+                  if (!onlyAirtightNodes || biggestGrid.IsRoomAtPositionAirtight(positionAbove))
                     nodeList.Add(worldPosition);
                 }
               }
@@ -1563,9 +1744,6 @@ namespace AiEnabled.API
           }
         }
       }
-
-      AiSession.Instance?.LineListStack?.Return(positionList);
-      AiSession.Instance?.GridGroupListPool?.Return(gridList);
     }
 
     /// <summary>

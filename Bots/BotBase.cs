@@ -380,7 +380,7 @@ namespace AiEnabled.Bots
       }
     }
 
-    public bool HasLineOfSight 
+    public bool HasLineOfSight
     {
       get { return (_botInfo & BotInfoEnum.HasLOS) > 0; }
       set
@@ -396,7 +396,7 @@ namespace AiEnabled.Bots
       }
     }
 
-    public bool UseAPITargets 
+    public bool UseAPITargets
     {
       get { return (_botInfo & BotInfoEnum.UseAPITargets) > 0; }
       set
@@ -1481,7 +1481,7 @@ namespace AiEnabled.Bots
         {
           // figure out how to stop them...
         }
-        else 
+        else
           soundComp?.PlayActionSound(soundPair);
       }
     }
@@ -2453,7 +2453,7 @@ namespace AiEnabled.Bots
 
       if (ToolDefinition == null)
         return;
-      
+
       var inventory = Character?.GetInventory() as MyInventory;
       if (inventory == null)
         return;
@@ -2611,7 +2611,7 @@ namespace AiEnabled.Bots
 
         bool allowReturn = ToolDefinition == null || ToolDefinition.WeaponType == MyItemWeaponType.None;
         if (allowReturn && HasLineOfSight)
-        { 
+        {
           var ent = Target.Entity as IMyEntity;
           var cube = Target.Entity as IMyCubeBlock;
           var slim = cube?.SlimBlock;
@@ -2686,7 +2686,7 @@ namespace AiEnabled.Bots
 
       List<BotBase> helpers = null;
       if (Owner != null)
-        AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);  
+        AiSession.Instance.PlayerToHelperDict.TryGetValue(Owner.IdentityId, out helpers);
 
       var botMatrix = WorldMatrix;
       var muzzlePosition = botPosition + botMatrix.Up * 0.4; // close to the muzzle height
@@ -3112,7 +3112,7 @@ namespace AiEnabled.Bots
       }
     }
 
-    internal bool CheckGraphValidity(Vector3D targetPosition, ref bool force, 
+    internal bool CheckGraphValidity(Vector3D targetPosition, ref bool force,
       out MyCubeGrid newGrid, out Vector3D newGraphPosition, out Vector3D intermediary, out bool botInNewBox)
     {
       bool result = false;
@@ -3438,7 +3438,7 @@ namespace AiEnabled.Bots
         localTgt = _currentGraph.WorldToLocal(goToPosition);
       else
         localTgt = _currentGraph.WorldToLocal(targetPosition);
-      
+
       var manhattanDist = Vector3I.DistanceManhattan(localTgt, localBot);
       var overridePos = Target.Override;
 
@@ -3657,7 +3657,7 @@ namespace AiEnabled.Bots
           if (dirVec == Base6Directions.Direction.Down)
           {
             if (Vector3D.DistanceSquared(tgtPos, BotInfo.CurrentBotPositionAtFeet) > checkDistance)
-                return false;
+              return false;
           }
           else
             return false;
@@ -3804,7 +3804,7 @@ namespace AiEnabled.Bots
 
             break;
           }
-          
+
           if (Target.IsFloater)
           {
             var floaterPosition = Target.CurrentGoToPosition;
@@ -3830,7 +3830,7 @@ namespace AiEnabled.Bots
               }
             }
           }
-          
+
           result = HasLineOfSight;
           break;
         }
@@ -3964,7 +3964,7 @@ namespace AiEnabled.Bots
         tgtPosition = tgtChar.GetHeadMatrix(true).Translation;
       }
       else if (hangar != null)
-      { 
+      {
         tgtPosition += hangar.WorldMatrix.Down * hangar.CubeGrid.GridSize;
       }
 
@@ -4157,7 +4157,7 @@ namespace AiEnabled.Bots
         bool targetInNext = nextGraphOK && _nextGraph.IsPositionValid(targetPosition);
         bool targetInCurrent = _currentGraph.IsPositionValid(targetPosition);
         bool transitionOk = _transitionPoint != null && _currentGraph.IsPositionUsable(this, _transitionPoint.Position);
-        
+
         if (transitionOk && nextGraphOK && !_nextGraph.IsGridGraph)
         {
           var tp = _currentGraph.LocalToWorld(_transitionPoint.Position);
@@ -4243,7 +4243,7 @@ namespace AiEnabled.Bots
         var botMatrix = _currentGraph.WorldMatrix;
 
         if (newGrid != null || _currentGraph.IsGridGraph || !_currentGraph.IsPositionValid(newGraphPosition))
-        {         
+        {
           _nextGraph = AiSession.Instance.GetNewGraph(newGrid, newGraphPosition, botMatrix);
         }
 
@@ -4543,7 +4543,7 @@ namespace AiEnabled.Bots
 
           if (removeOverride && Target.Override.HasValue && actualPosition == Target.Override)
           {
-              Target.RemoveOverride(true);
+            Target.RemoveOverride(true);
           }
 
           if (!returnNow)
@@ -4722,7 +4722,7 @@ namespace AiEnabled.Bots
       {
         if (MyAPIGateway.Session?.Player != null)
           MyAPIGateway.Utilities.ShowNotification($"Exception in UsePathFinder: {ex.Message}", 10000);
-  
+
         AiSession.Instance.Logger.LogAll($"Exception in AiEnabled.BotBase.UsePathFinder: {ex.Message}\n{ex.StackTrace}\n", MessageType.ERROR);
       }
     }
@@ -4753,7 +4753,7 @@ namespace AiEnabled.Bots
           if (isGridGraph)
           {
             Node currentNode;
-            addTo = lastNode?.IsGridNodePlanetTile == true || nextNode?.IsGridNodePlanetTile == true 
+            addTo = lastNode?.IsGridNodePlanetTile == true || nextNode?.IsGridNodePlanetTile == true
               || (_currentGraph.TryGetNodeForPosition(current, out currentNode) && currentNode?.IsGridNodePlanetTile == true);
           }
 
@@ -4919,7 +4919,7 @@ namespace AiEnabled.Bots
         var cube = gridGraph?.GetBlockAtPosition(goal);
         isSlimBlock = cube != null && !(cube.FatBlock is IMyTextPanel)
           && (cube.BlockDefinition as MyCubeBlockDefinition)?.HasPhysics == true
-          && !AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id) 
+          && !AiSession.Instance.PassageBlockDefinitions.Contains(cube.BlockDefinition.Id)
           && !AiSession.Instance.CatwalkBlockDefinitions.Contains(cube.BlockDefinition.Id)
           && !AiSession.Instance.RailingBlockDefinitions.ContainsItem(cube.BlockDefinition.Id)
           && !AiSession.Instance.FlatWindowDefinitions.ContainsItem(cube.BlockDefinition.Id)
@@ -5007,7 +5007,7 @@ namespace AiEnabled.Bots
               }
             }
 
-            if (allowObstacle)  
+            if (allowObstacle)
               markObstacle = true;
           }
 
@@ -5189,7 +5189,7 @@ namespace AiEnabled.Bots
               var blockAbove = _currentGraph.GetBlockAtPosition(graphLocal);
               if (blockAbove == null)
                 blockAbove = ladder.CubeGrid.GetCubeBlock(ladder.Position + up) as IMySlimBlock;
-              
+
               if (blockAbove != null && AiSession.Instance.LadderBlockDefinitions.Contains(blockAbove.BlockDefinition.Id))
               {
                 ladder = blockAbove.FatBlock as MyCubeBlock;
@@ -5322,7 +5322,7 @@ namespace AiEnabled.Bots
 
                 IHitInfo hit;
                 MyAPIGateway.Physics.CastRay(posBelow, worldNode, out hit, CollisionLayers.CharacterCollisionLayer);
-                
+
                 if (hit?.HitEntity != null)
                 {
                   position = hit.Position - dirVec + WorldMatrix.Down;
@@ -5390,7 +5390,7 @@ namespace AiEnabled.Bots
 
       var botPosition = BotInfo.CurrentBotPositionAdjusted;
       if (!NextIsLadder && BotInfo.IsOnLadder && ShouldDismountLadder())
-      { 
+      {
         DismountLadder(worldNode, botPosition);
       }
 
@@ -6058,7 +6058,7 @@ namespace AiEnabled.Bots
         _idleTimer = 0;
         _ticksSinceLastIdleTransition = 0;
       }
-      else if (_moveTo.HasValue) 
+      else if (_moveTo.HasValue)
       {
         if (_moveToNode != null && _currentGraph != null)
         {
