@@ -1289,16 +1289,13 @@ namespace AiEnabled.Ai.Support
 
     public override bool TryGetNodeForPosition(Vector3I position, out Node node)
     {
-      if (IsValid && Ready)
-        return OpenTileDict.TryGetValue(position, out node) && node != null;
-
       node = null;
-      return false;
+      return OpenTileDict?.TryGetValue(position, out node) == true && node != null;
     }
 
     public override bool IsOpenTile(Vector3I position)
     {
-      return IsValid && Ready && OpenTileDict.ContainsKey(position);
+      return OpenTileDict?.ContainsKey(position) == true;
     }
 
     public override bool IsObstacle(Vector3I position, BotBase bot, bool includeTemp)
@@ -1352,8 +1349,8 @@ namespace AiEnabled.Ai.Support
 
     public override Node GetValueOrDefault(Vector3I position, Node defaultValue)
     {
-      Node node;
-      if (IsValid && Ready && OpenTileDict.TryGetValue(position, out node))
+      Node node = null;
+      if (OpenTileDict?.TryGetValue(position, out node) == true)
         return node;
 
       return defaultValue;

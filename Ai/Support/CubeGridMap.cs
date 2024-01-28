@@ -8941,13 +8941,16 @@ namespace AiEnabled.Ai.Support
 
     public override void ClearTempObstacles()
     {
-      if (IsValid)
+      if (OpenTileDict != null)
       {
         foreach (var node in OpenTileDict.Values)
         {
           node.TempBlockedMask = 0;
         }
+      }
 
+      if (PlanetTileDictionary != null)
+      {
         foreach (var node in PlanetTileDictionary.Values)
         {
           node.TempBlockedMask = 0;
@@ -8959,43 +8962,37 @@ namespace AiEnabled.Ai.Support
 
     public override bool IsPositionValid(Vector3D position)
     {
-      return IsValid && OBB.Contains(ref position);
+      return OBB.Contains(ref position);
     }
 
     public override bool TryGetNodeForPosition(Vector3I position, out Node node)
     {
-      if (IsValid && Ready)
-      {
-        if (OpenTileDict.TryGetValue(position, out node))
-          return node != null;
-
-        if (PlanetTileDictionary.TryGetValue(position, out node))
-          return node != null;
-      }
-
       node = null;
+      if (OpenTileDict?.TryGetValue(position, out node) == true)
+        return node != null;
+
+      if (PlanetTileDictionary?.TryGetValue(position, out node) == true)
+        return node != null;
+
       return false;
     }
 
     public override bool IsOpenTile(Vector3I position)
     {
-      return IsValid && Ready && (PlanetTileDictionary.ContainsKey(position) || OpenTileDict.ContainsKey(position));
+      return PlanetTileDictionary?.ContainsKey(position) == true || OpenTileDict?.ContainsKey(position) == true;
     }
 
     public override bool IsObstacle(Vector3I position, BotBase bot, bool includeTemp)
     {
       if (!IsValid)
-        return true;
+        return false;
 
       bool result = bot?._pathCollection != null && bot._pathCollection.Obstacles.ContainsKey(position);
 
       if (!result && bot != null && !(bot is RepairBot) && (bot.Target.IsSlimBlock || bot.Target.IsCubeBlock))
       {
         var cube = bot.Target.Entity as IMyCubeBlock;
-        var slim = cube?.SlimBlock;
-
-        if (slim == null)
-          slim = bot.Target.Entity as IMySlimBlock;
+        var slim = (cube?.SlimBlock) ?? bot.Target.Entity as IMySlimBlock;
 
         if (slim?.CubeGrid != null)
         {
@@ -9058,25 +9055,18 @@ namespace AiEnabled.Ai.Support
 
     public override Node GetValueOrDefault(Vector3I position, Node defaultValue)
     {
-      if (IsValid && Ready)
-      {
-        Node node;
-        if (PlanetTileDictionary.TryGetValue(position, out node) && node != null)
-          return node;
+      Node node = null;
+      if (PlanetTileDictionary?.TryGetValue(position, out node) == true && node != null)
+        return node;
 
-        if (OpenTileDict.TryGetValue(position, out node) && node != null)
-          return node;
-      }
+      if (OpenTileDict?.TryGetValue(position, out node) == true && node != null)
+        return node;
 
       return defaultValue;
     }
 
-
     public override IMySlimBlock GetBlockAtPosition(Vector3I mainGridPosition, bool checkOtherGrids = false)
     {
-      if (!IsValid)
-        return null;
-
       var block = MainGrid?.GetCubeBlock(mainGridPosition) as IMySlimBlock;
 
       if (block == null && checkOtherGrids)
@@ -9116,7 +9106,7 @@ namespace AiEnabled.Ai.Support
 
     public bool DoesBlockExist(Vector3I mainGridPosition, bool checkPhysics = true)
     {
-      if (!IsValid || MainGrid == null || MainGrid.MarkedAsTrash)
+      if (MainGrid == null || MainGrid.MarkedAsTrash)
         return false;
 
       IMySlimBlock slim = MainGrid.GetCubeBlock(mainGridPosition);
