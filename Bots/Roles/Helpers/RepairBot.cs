@@ -49,6 +49,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     List<MyPhysicalItemDefinition> _validToolDefinitions = new List<MyPhysicalItemDefinition>(2);
     bool _cleaned;
 
+    public bool FirstMissingItemAssigned;
     public string FirstMissingItemForRepairs;
     public string FirstMissingItemBlock;
     public bool WeldBeforeGrind => RepairPriorities?.WeldBeforeGrind ?? true;
@@ -740,6 +741,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       object tgt = null;
       isInventory = false;
       returnNow = false;
+      FirstMissingItemAssigned = false;
 
       if (((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
       {

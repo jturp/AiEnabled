@@ -353,19 +353,17 @@ namespace AiEnabled.Ai.Support
 
     public bool ContainsItemsFor(IMySlimBlock block, List<MyInventoryItem> botItems, BotBase bot)
     {
-      if (Inventories.Count == 0)
-      {
-        return false;
-      }
-
       var rBot = bot as RepairBot;
-      if (rBot != null)
+      if (rBot != null && !rBot.FirstMissingItemAssigned)
+      {
         rBot.FirstMissingItemForRepairs = null;
-
-      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
+        rBot.FirstMissingItemBlock = null;
+      }
+      else if (Inventories.Count == 0)
+        return false;
 
       bool valid = true;
-
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
       missingComps.Clear();
       block.GetMissingComponents(missingComps);
 
@@ -389,6 +387,27 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
+      if (Inventories.Count == 0)
+      {
+        if (rBot != null && !rBot.FirstMissingItemAssigned)
+        {
+          var firstComp = missingComps.First().Key;
+          var def = new MyDefinitionId(typeof(MyObjectBuilder_Component), firstComp);
+
+          MyDefinitionBase compDef;
+          if (AiSession.Instance.AllGameDefinitions.TryGetValue(def, out compDef) && compDef != null)
+          {
+            var terminal = block.FatBlock as IMyTerminalBlock;
+            rBot.FirstMissingItemBlock = terminal?.CustomName ?? block.BlockDefinition.DisplayNameText;
+            rBot.FirstMissingItemForRepairs = compDef.DisplayNameText;
+            rBot.FirstMissingItemAssigned = true;
+          }
+        }
+
+        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+        return false;
+      }
+
       foreach (var kvp in missingComps)
       {
         float needed = kvp.Value;
@@ -404,7 +423,7 @@ namespace AiEnabled.Ai.Support
         ItemCounts.TryGetValue(kvp.Key, out num);
         if (num < needed)
         {
-          if (rBot != null)
+          if (rBot != null && !rBot.FirstMissingItemAssigned)
           {
             var def = new MyDefinitionId(typeof(MyObjectBuilder_Component), kvp.Key);
 
@@ -414,6 +433,7 @@ namespace AiEnabled.Ai.Support
               var terminal = block.FatBlock as IMyTerminalBlock;
               rBot.FirstMissingItemBlock = terminal?.CustomName ?? block.BlockDefinition.DisplayNameText;
               rBot.FirstMissingItemForRepairs = compDef.DisplayNameText;
+              rBot.FirstMissingItemAssigned = true;
             }
           }
 

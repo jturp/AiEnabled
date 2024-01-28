@@ -104,7 +104,7 @@ namespace AiEnabled.Bots
           if (buildMode == BotBase.BuildMode.Weld)
           {
             var rBot = bot as RepairBot;
-            if (rBot != null)
+            if (rBot?.FirstMissingItemForRepairs != null)
               NeededItem = $"{rBot.FirstMissingItemForRepairs} [{rBot.FirstMissingItemBlock}]";
             else
               NeededItem = null;
