@@ -32,6 +32,7 @@ using VRage.Utils;
 
 using VRageMath;
 using MyInventoryItem = VRage.Game.ModAPI.Ingame.MyInventoryItem;
+using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
 
 namespace AiEnabled.Bots.Roles.Helpers
 {
@@ -49,6 +50,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     bool _cleaned;
 
     public string FirstMissingItemForRepairs;
+    public string FirstMissingItemBlock;
     public bool WeldBeforeGrind => RepairPriorities?.WeldBeforeGrind ?? true;
 
     public RepairBot(IMyCharacter bot, GridBase gridBase, long ownerId, AiSession.ControlInfo ctrlInfo, string toolType = null) : base(bot, 1, 1, gridBase, ownerId, ctrlInfo)
@@ -61,15 +63,8 @@ namespace AiEnabled.Bots.Roles.Helpers
       _blockDamagePerSecond = 0;
       _blockDamagePerAttack = 0; // he's a lover, not a fighter :)
 
-      if (!AiSession.Instance.EntListStack.TryPop(out _threadOnlyEntList) || _threadOnlyEntList == null)
-        _threadOnlyEntList = new List<MyEntity>();
-      else
-        _threadOnlyEntList.Clear();
-
-      if (!AiSession.Instance.EntListStack.TryPop(out _noThreadEntList) || _noThreadEntList == null)
-        _noThreadEntList = new List<MyEntity>();
-      else
-        _noThreadEntList.Clear();
+      _threadOnlyEntList = AiSession.Instance.EntListStack.Get();
+      _noThreadEntList = AiSession.Instance.EntListStack.Get();
     }
 
     internal override void CleanUp(bool cleanConfig = false, bool removeBot = true)
@@ -110,14 +105,12 @@ namespace AiEnabled.Bots.Roles.Helpers
         {
           if (_threadOnlyEntList != null)
           {
-            _threadOnlyEntList.Clear();
-            AiSession.Instance.EntListStack.Push(_noThreadEntList);
+            AiSession.Instance.EntListStack?.Return(_noThreadEntList);
           }
 
           if (_noThreadEntList != null)
           {
-            _noThreadEntList.Clear();
-            AiSession.Instance.EntListStack.Push(_noThreadEntList);
+            AiSession.Instance.EntListStack?.Return(_noThreadEntList);
           }
         }
         else
@@ -911,7 +904,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           _cubes.Clear();
           //entList.Clear();
-          //AiSession.Instance.EntListStack.Push(entList);
+          //AiSession.Instance.EntListStack.Return(entList);
 
           if (tgt == null)
           {
@@ -930,7 +923,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             //}
 
             //entList.Clear();
-            //AiSession.Instance.EntListStack.Push(entList);
+            //AiSession.Instance.EntListStack.Return(entList);
 
             foreach (var kvp in _projectedGrids)
             {
@@ -1041,6 +1034,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 _cubes.Clear();
                 _taskPrioritiesTemp.Clear();
 
+                var entList = AiSession.Instance.EntListStack.Get();
                 var projectedGrid = kvp.Value;
                 projectedGrid.GetBlocks(_cubes);
                 //_cubes.ShellSort(botPosition);
@@ -1049,6 +1043,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
                 foreach (var priKvp in _taskPriorities)
                 {
+                  if (returnNow)
+                    break;
+
                   for (int i = 0; i < priKvp.Value.Count; i++)
                   {
                     var obj = priKvp.Value[i];
@@ -1059,6 +1056,42 @@ namespace AiEnabled.Bots.Roles.Helpers
                     var buildResult = projector.CanBuild(slim, true);
                     if (buildResult != BuildCheckResult.OK)
                       continue;
+
+                    var weldAmount = _toolInfo.WeldAmount;
+                    var boneFixAmount = _toolInfo.BoneFixAmount;
+
+                    if (AiSession.Instance.ModSaveData.ObeyProjectionIntegrityForRepairs)
+                    {
+                      var realGrid = slim.CubeGrid as MyCubeGrid;
+                      if (realGrid?.Projector == null)
+                      {
+                        entList.Clear();
+                        var worldPosition = slim.CubeGrid.GridIntegerToWorld(slim.Position);
+                        var sphere = new BoundingSphereD(worldPosition, slim.CubeGrid.GridSize * 0.5);
+                        MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+                        for (int j = 0; j < entList.Count; j++)
+                        {
+                          var projGrid = entList[j] as MyCubeGrid;
+                          if (projGrid?.Projector != null)
+                          {
+                            var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
+                            var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
+
+                            var blockDef = (MyCubeBlockDefinition)slim.BlockDefinition;
+                            var weldIntegrityAmount = weldAmount / blockDef.IntegrityPointsPerSec;
+                            if (projectedBlock?.BlockDefinition.Id == blockDef.Id && slim.BuildIntegrity + weldIntegrityAmount > projectedBlock.BuildIntegrity)
+                            {
+                              weldAmount = projectedBlock.BuildIntegrity - slim.BuildIntegrity;
+                              break;
+                            }
+                          }
+                        }
+
+                        if (weldAmount <= 0)
+                          continue;
+                      }
+                    }
 
                     var slimWorld = slim.CubeGrid.GridIntegerToWorld(slim.Position);
 
@@ -1085,7 +1118,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                     if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty)
                     {
                       returnNow = true;
-                      return null;
+                      break;
                     }
 
                     Vector3I closestNode;
@@ -1114,9 +1147,11 @@ namespace AiEnabled.Bots.Roles.Helpers
                     }
                   }
                 }
+
+                AiSession.Instance.EntListStack.Return(entList);
               }
 
-              if (tgt != null)
+              if (tgt != null || returnNow)
                 break;
             }
           }
@@ -1148,11 +1183,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return false;
       }
 
-      Dictionary<string, int> missingComps;
-      if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
-      {
-        missingComps = new Dictionary<string, int>();
-      }
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
 
       bool valid = true;
       bool returnNow = false;
@@ -1190,8 +1221,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (!valid || returnNow)
       {
-        missingComps.Clear();
-        AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
         return valid;
       }
 
@@ -1231,8 +1261,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           break;
       }
 
-      missingComps.Clear();
-      AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+      AiSession.Instance.MissingCompsDictStack.Return(missingComps);
       return valid;
     }
 
@@ -1257,28 +1286,6 @@ namespace AiEnabled.Bots.Roles.Helpers
       return true;
     }
 
-    //public override void SetTarget()
-    //{
-    //  if (_targetTask.Exceptions != null)
-    //  {
-    //    AiSession.Instance.Logger.ClearCached();
-    //    AiSession.Instance.Logger.AddLine($"Exceptions found during RepairBot.SetTarget task!\n");
-    //    foreach (var ex in _targetTask.Exceptions)
-    //      AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
-
-    //    AiSession.Instance.Logger.LogAll();
-    //    MyAPIGateway.Utilities.ShowNotification($"Exception during RepairBot.SetTarget task!");
-    //  }
-
-    //  if (_targetTask.IsComplete)
-    //  {
-    //    _targetTask = MyAPIGateway.Parallel.Start(_targetAction);
-    //  }
-
-    //  // Testing only!
-    //  //_targetAction?.Invoke();
-    //}
-
     internal override void MoveToPoint(Vector3D point, bool isTgt = false, double distanceCheck = 1)
     {
       Vector3 movement;
@@ -1287,15 +1294,15 @@ namespace AiEnabled.Bots.Roles.Helpers
       bool fistAttack, rifleAttack;
       GetMovementAndRotation(isTgt, point, out movement, out rotation, out roll, out fistAttack, out rifleAttack, distanceCheck);
 
-      if (Target.IsInventory || (Target.Entity != null && !(Target.Entity is IMyCharacter)))
+      if (isTgt && (Target.IsInventory || (Target.Entity != null && !(Target.Entity is IMyCharacter))))
       {
+        var botPosition = BotInfo.CurrentBotPositionAdjusted;
+        var actualPosition = Target.CurrentActualPosition;
+
         var isInv = Target.IsInventory;
         var directToBlock = isTgt && Target.IsSlimBlock;
         var directToFloater = !directToBlock && isTgt && Target.IsFloater;
         bool ignoreRotation = false;
-
-        var botPosition = BotInfo.CurrentBotPositionAdjusted;
-        var actualPosition = Target.CurrentActualPosition;
 
         if (_currentGraph.IsGridGraph)
         {

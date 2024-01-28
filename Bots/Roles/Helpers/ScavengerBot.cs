@@ -57,15 +57,8 @@ namespace AiEnabled.Bots.Roles.Helpers
       _attackSounds.Add(new MySoundPair("DroneLoopSmall"));
       _attackSoundStrings.Add("DroneLoopSmall");
 
-      if (!AiSession.Instance.EntListStack.TryPop(out _threadOnlyEntList) || _threadOnlyEntList == null)
-        _threadOnlyEntList = new List<MyEntity>();
-      else
-        _threadOnlyEntList.Clear();
-
-      if (!AiSession.Instance.EntListStack.TryPop(out _noThreadEntList) || _noThreadEntList == null)
-        _noThreadEntList = new List<MyEntity>();
-      else
-        _noThreadEntList.Clear();
+      _threadOnlyEntList = AiSession.Instance.EntListStack.Get();
+      _noThreadEntList = AiSession.Instance.EntListStack.Get();
     }
 
     internal override void CleanUp(bool cleanConfig = false, bool removeBot = true)
@@ -74,14 +67,12 @@ namespace AiEnabled.Bots.Roles.Helpers
       {
         if (_threadOnlyEntList != null)
         {
-          _threadOnlyEntList.Clear();
-          AiSession.Instance.EntListStack.Push(_noThreadEntList);
+          AiSession.Instance.EntListStack?.Return(_noThreadEntList);
         }
 
         if (_noThreadEntList != null)
         {
-          _noThreadEntList.Clear();
-          AiSession.Instance.EntListStack.Push(_noThreadEntList);
+          AiSession.Instance.EntListStack?.Return(_noThreadEntList);
         }
       }
       else

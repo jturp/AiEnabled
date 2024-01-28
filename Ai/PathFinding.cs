@@ -119,10 +119,7 @@ namespace AiEnabled.Ai
             }
 
             var cube = bot.Target.Entity as IMyCubeBlock;
-            var slim = cube?.SlimBlock;
-
-            if (slim == null)
-              slim = bot.Target.Entity as IMySlimBlock;
+            var slim = (cube?.SlimBlock) ?? bot.Target.Entity as IMySlimBlock;
 
             if (slim?.CubeGrid != null && graph.IsPositionValid(slim.CubeGrid.GridIntegerToWorld(slim.Position)))
             {
@@ -373,10 +370,7 @@ namespace AiEnabled.Ai
 
           if (isGridGraph && !canUseDoors)
           {
-            var door = node.Block?.FatBlock as IMyDoor;
-
-            if (door == null)
-              door = gridGraph.GetBlockAtPosition(node.Position)?.FatBlock as IMyDoor;
+            var door = (node.Block?.FatBlock as IMyDoor) ?? gridGraph.GetBlockAtPosition(node.Position)?.FatBlock as IMyDoor;
 
             if (door != null && door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Open && !door.SlimBlock.IsBlockUnbuilt())
               continue;
@@ -805,7 +799,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -822,7 +816,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -839,7 +833,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -917,7 +911,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -941,7 +935,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -979,7 +973,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node);
 
                   TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                  tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                  tempNode.Update(node, offset ?? Vector3D.Zero);
                   path.Enqueue(tempNode);
 
                   if (nextIsCatwalkExpansion)
@@ -1004,7 +998,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node);
 
                 TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                tempNode.Update(node, offset ?? Vector3D.Zero);
                 path.Enqueue(tempNode);
 
                 if (nextIsCatwalkExpansion)
@@ -1022,7 +1016,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node);
 
                   TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                  tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                  tempNode.Update(node, offset ?? Vector3D.Zero);
                   path.Enqueue(tempNode);
 
                   if (nextIsCatwalkExpansion)
@@ -1040,7 +1034,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node);
 
                     TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                    tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                    tempNode.Update(node, offset ?? Vector3D.Zero);
                     path.Enqueue(tempNode);
 
                     if (nextIsCatwalkExpansion)
@@ -1063,7 +1057,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1097,7 +1091,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1156,7 +1150,7 @@ namespace AiEnabled.Ai
 
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
               {
-                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                 if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                 {
                   if (offset.HasValue)
@@ -1166,7 +1160,7 @@ namespace AiEnabled.Ai
                 }
               }
 
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1190,7 +1184,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1224,7 +1218,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1285,7 +1279,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                     TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                    tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+                    tempNode2.Update(node2, offset ?? Vector3D.Zero);
                     path.Enqueue(tempNode2);
 
                     if (nextIsCatwalkExpansion)
@@ -1356,7 +1350,7 @@ namespace AiEnabled.Ai
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
               {
-                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                 if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                 {
                   if (offset.HasValue)
@@ -1366,7 +1360,7 @@ namespace AiEnabled.Ai
                 }
               }
 
-              tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+              tempNode.Update(node, offset ?? Vector3D.Zero);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1417,7 +1411,7 @@ namespace AiEnabled.Ai
                 gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                 TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+                tempNode2.Update(node2, offset ?? Vector3D.Zero);
                 path.Enqueue(tempNode2);
 
                 if (nextIsCatwalkExpansion)
@@ -1500,7 +1494,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -1510,7 +1504,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                tempNode.Update(node, offset ?? Vector3D.Zero);
                 path.Enqueue(tempNode);
 
                 if (nextIsCatwalkExpansion)
@@ -1538,7 +1532,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -1548,7 +1542,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                tempNode.Update(node, offset ?? Vector3D.Zero);
                 path.Enqueue(tempNode);
 
                 if (nextIsCatwalkExpansion)
@@ -1571,7 +1565,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -1581,7 +1575,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)(offset ?? Vector3.Zero));
+                tempNode.Update(node, offset ?? Vector3D.Zero);
                 path.Enqueue(tempNode);
 
                 if (nextIsCatwalkExpansion)
@@ -1632,7 +1626,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                   TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                  tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+                  tempNode2.Update(node2, offset ?? Vector3D.Zero);
                   path.Enqueue(tempNode2);
 
                   if (nextIsCatwalkExpansion)
@@ -1656,7 +1650,7 @@ namespace AiEnabled.Ai
               gridGraph.TryGetNodeForPosition(localVec, out node);
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, (Vector3)offset.Value);
+              tempNode.Update(node, offset.Value);
               path.Enqueue(tempNode);
 
               if (nextIsCatwalkExpansion)
@@ -1666,27 +1660,23 @@ namespace AiEnabled.Ai
             }
             else if (!thisIsHalfStair && !thisisHalfPanelSlope && !nextIsHalfStair && !nextIsHalfPanelSlope)
             {
-              var nextIsLadder = AiSession.Instance.LadderBlockDefinitions.Contains(nextDef);
-              if (nextIsLadder)
+              var thisIsLadder = thisBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(thisBlock.BlockDefinition.Id);
+              if (thisIsLadder)
               {
-                var thisIsLadder = thisBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(thisBlock.BlockDefinition.Id);
-                if (thisIsLadder)
-                {
-                  var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-                  offset = blockBwd * gridSize * 0.3;
+                var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
+                offset = blockBwd * gridSize * 0.3;
 
-                  Node node2;
-                  gridGraph.TryGetNodeForPosition(localVec, out node2);
+                Node node2;
+                gridGraph.TryGetNodeForPosition(localVec, out node2);
 
-                  TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                  tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
-                  path.Enqueue(tempNode2);
+                TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
+                tempNode2.Update(node2, offset.Value);
+                path.Enqueue(tempNode2);
 
-                  if (nextIsCatwalkExpansion)
-                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+                if (nextIsCatwalkExpansion)
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
 
-                  continue;
-                }
+                continue;
               }
               else if (AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(nextDef))
               {
@@ -1735,7 +1725,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                     TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                    tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+                    tempNode2.Update(node2, offset ?? Vector3D.Zero);
                     path.Enqueue(tempNode2);
 
                     if (nextIsCatwalkExpansion)
@@ -1770,7 +1760,7 @@ namespace AiEnabled.Ai
                     gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                     TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                    tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+                    tempNode2.Update(node2, offset ?? Vector3D.Zero);
                     path.Enqueue(tempNode2);
 
                     if (nextIsCatwalkExpansion)
@@ -1791,7 +1781,7 @@ namespace AiEnabled.Ai
                   gridGraph.TryGetNodeForPosition(localVec, out node2);
 
                   TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                  tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+                  tempNode2.Update(node2, offset ?? Vector3D.Zero);
                   path.Enqueue(tempNode2);
 
                   if (nextIsCatwalkExpansion)
@@ -1839,7 +1829,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -1849,7 +1839,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)extra);
+                tempNode.Update(node, extra);
                 path.Enqueue(tempNode);
               }
 
@@ -1929,7 +1919,7 @@ namespace AiEnabled.Ai
 
                     extra = dir * gridSize * 0.25;
 
-                    tempNode.Update(node, (Vector3)extra);
+                    tempNode.Update(node, extra);
                     path.Enqueue(tempNode);
                   }
                 }
@@ -1946,7 +1936,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -1956,7 +1946,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)extra);
+                tempNode.Update(node, extra);
                 path.Enqueue(tempNode);
               }
 
@@ -2001,7 +1991,7 @@ namespace AiEnabled.Ai
 
             if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
             {
-              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
               if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
               {
                 if (offset.HasValue)
@@ -2011,7 +2001,7 @@ namespace AiEnabled.Ai
               }
             }
 
-            tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+            tempNode2.Update(node2, offset ?? Vector3D.Zero);
             path.Enqueue(tempNode2);
           }
           else if (halfSlopeCheck)
@@ -2050,7 +2040,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -2060,7 +2050,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)extra);
+                tempNode.Update(node, extra);
                 path.Enqueue(tempNode);
               }
 
@@ -2140,7 +2130,7 @@ namespace AiEnabled.Ai
 
                     extra = dir * gridSize * 0.25;
 
-                    tempNode.Update(node, (Vector3)extra);
+                    tempNode.Update(node, extra);
                     path.Enqueue(tempNode);
                   }
                 }
@@ -2157,7 +2147,7 @@ namespace AiEnabled.Ai
 
                 if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? Using offset here instead of extra
                 {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
                   if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
                   {
                     if (offset.HasValue)
@@ -2167,7 +2157,7 @@ namespace AiEnabled.Ai
                   }
                 }
 
-                tempNode.Update(node, (Vector3)extra);
+                tempNode.Update(node, extra);
                 path.Enqueue(tempNode);
               }
 
@@ -2212,7 +2202,7 @@ namespace AiEnabled.Ai
 
             if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
             {
-              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3.Zero) + gridGraph.WorldMatrix.Down * 0.5;
+              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
               if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
               {
                 if (offset.HasValue)
@@ -2222,7 +2212,7 @@ namespace AiEnabled.Ai
               }
             }
 
-            tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+            tempNode2.Update(node2, offset ?? Vector3D.Zero);
             path.Enqueue(tempNode2);
 
             if (nextIsCatwalkExpansion)
@@ -2234,7 +2224,7 @@ namespace AiEnabled.Ai
             gridGraph.TryGetNodeForPosition(localVec, out node2);
 
             TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-            tempNode2.Update(node2, (Vector3)(offset ?? Vector3.Zero));
+            tempNode2.Update(node2, offset ?? Vector3D.Zero);
             path.Enqueue(tempNode2);
 
             if (nextIsCatwalkExpansion)
@@ -2325,7 +2315,7 @@ namespace AiEnabled.Ai
       {
         if (gridTravelDir == thisBlock.Orientation.Forward)
         {
-          offset = Vector3.Zero;
+          offset = Vector3D.Zero;
         }
         else
         {
@@ -2336,7 +2326,7 @@ namespace AiEnabled.Ai
       {
         if (gridTravelDir == thisBlock.Orientation.Forward)
         {
-          offset = Vector3.Zero;
+          offset = Vector3D.Zero;
         }
         else
         {
@@ -2619,12 +2609,12 @@ namespace AiEnabled.Ai
       if (addCenterPoint)
       {
         TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-        tempNode2.Update(node, Vector3.Zero);
+        tempNode2.Update(node, Vector3D.Zero);
         path.Enqueue(tempNode2);
       }
 
       TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-      tempNode.Update(node, (Vector3)(offset ?? Vector3D.Zero));
+      tempNode.Update(node, offset ?? Vector3D.Zero);
       path.Enqueue(tempNode);
     }
 
@@ -2918,7 +2908,7 @@ namespace AiEnabled.Ai
         gridGraph.TryGetNodeForPosition(next, out node);
 
         TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-        tempNode.Update(node, (Vector3)offset.Value);
+        tempNode.Update(node, offset.Value);
         path.Enqueue(tempNode);
       }
     }

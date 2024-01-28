@@ -20,6 +20,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using VRage;
+using VRage.Collections;
 using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
@@ -76,7 +77,6 @@ namespace AiEnabled.Ai.Support
 
     ConcurrentDictionary<IMyInventory, List<MyInventoryItem>> _inventories = new ConcurrentDictionary<IMyInventory, List<MyInventoryItem>>();
     ConcurrentDictionary<Vector3I, IMyTerminalBlock> _inventoryPositions = new ConcurrentDictionary<Vector3I, IMyTerminalBlock>(Vector3I.Comparer);
-    ConcurrentStack<List<MyInventoryItem>> _invItemListStack = new ConcurrentStack<List<MyInventoryItem>>();
     Dictionary<string, float> _itemCounts = new Dictionary<string, float>(); // component subtype to count
     HashSet<Vector3I> _terminals = new HashSet<Vector3I>(Vector3I.Comparer);
     ParallelTasks.Task _task;
@@ -88,6 +88,15 @@ namespace AiEnabled.Ai.Support
     RepairWorkData _workData;
     List<InventoryAddRemove> _inventoryItemsToAddRemove = new List<InventoryAddRemove>();
     Stack<InventoryAddRemove> _invItemPool = new Stack<InventoryAddRemove>();
+
+    MyConcurrentPool<List<MyInventoryItem>> _invItemListStack = new MyConcurrentPool<List<MyInventoryItem>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<MyInventoryItem>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
 
     public InventoryCache(MyCubeGrid grid)
     {
@@ -103,6 +112,12 @@ namespace AiEnabled.Ai.Support
         Grid.OnFatBlockAdded += Grid_OnFatBlockAddRemove;
         Grid.OnFatBlockRemoved += Grid_OnFatBlockAddRemove;
       }
+    }
+
+    public InventoryCache()
+    {
+      _workAction = new Action<WorkData>(RemoveItemsInternal);
+      _workCallBack = new Action<WorkData>(RemoveItemsComplete);
     }
 
     public void SetGrid(MyCubeGrid grid)
@@ -122,6 +137,9 @@ namespace AiEnabled.Ai.Support
         Grid.OnFatBlockAdded += Grid_OnFatBlockAddRemove;
         Grid.OnFatBlockRemoved += Grid_OnFatBlockAddRemove;
       }
+
+      if (_workData == null)
+        _workData = AiSession.Instance.RepairWorkPool.Get();
 
       ItemCounts.Clear();
       Inventories.Clear();
@@ -176,14 +194,8 @@ namespace AiEnabled.Ai.Support
         _inventories = null;
       }
 
-      if (_invItemListStack != null)
-      {
-        foreach (var list in _invItemListStack)
-          list?.Clear();
-
-        _invItemListStack?.Clear();
-        _invItemListStack = null;
-      }
+      _invItemListStack?.Clean();
+      _invItemListStack = null;
 
       _inventoryItemsToAddRemove?.Clear();
       _inventoryItemsToAddRemove = null;
@@ -231,6 +243,14 @@ namespace AiEnabled.Ai.Support
       {
         var block = kvp.Value.SlimBlock;
         if (block == null)
+          continue;
+
+        var funcBlock = kvp.Value as IMyFunctionalBlock;
+        if (funcBlock != null && !funcBlock.Enabled)
+          continue;
+
+        var connector = kvp.Value as IMyShipConnector;
+        if (connector != null && connector.ThrowOut)
           continue;
 
         if (grindColor != null)
@@ -342,11 +362,7 @@ namespace AiEnabled.Ai.Support
       if (rBot != null)
         rBot.FirstMissingItemForRepairs = null;
 
-      Dictionary<string, int> missingComps;
-      if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
-      {
-        missingComps = new Dictionary<string, int>();
-      }
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
 
       bool valid = true;
 
@@ -369,8 +385,7 @@ namespace AiEnabled.Ai.Support
 
       if (!valid)
       {
-        missingComps.Clear();
-        AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
         return false;
       }
 
@@ -396,6 +411,8 @@ namespace AiEnabled.Ai.Support
             MyDefinitionBase compDef;
             if (AiSession.Instance.AllGameDefinitions.TryGetValue(def, out compDef) && compDef != null)
             {
+              var terminal = block.FatBlock as IMyTerminalBlock;
+              rBot.FirstMissingItemBlock = terminal?.CustomName ?? block.BlockDefinition.DisplayNameText;
               rBot.FirstMissingItemForRepairs = compDef.DisplayNameText;
             }
           }
@@ -405,8 +422,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      missingComps.Clear();
-      AiSession.Instance.MissingCompsDictStack.Push(missingComps);
+      AiSession.Instance.MissingCompsDictStack.Return(missingComps);
       return valid;
     }
 
@@ -465,11 +481,7 @@ namespace AiEnabled.Ai.Support
       if (bot == null || bot.IsDead)
         return false;
 
-      List<MyInventoryItem> invItems;
-      if (!_invItemListStack.TryPop(out invItems) || invItems == null)
-        invItems = new List<MyInventoryItem>();
-      else
-        invItems.Clear();
+      List<MyInventoryItem> invItems = _invItemListStack.Get();
 
       var rBot = bot as RepairBot;
       var botInv = bot.Character.GetInventory();
@@ -501,8 +513,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      invItems.Clear();
-      _invItemListStack.Push(invItems);
+      _invItemListStack.Return(invItems);
 
       return sendToUnload;
     }
@@ -518,12 +529,8 @@ namespace AiEnabled.Ai.Support
       if (bot == null || bot.MarkedForClose || botInv == null)
         return;
 
-      List<MyInventoryItem> invItems;
-      if (!_invItemListStack.TryPop(out invItems) || invItems == null)
-        invItems = new List<MyInventoryItem>();
-      else
-        invItems.Clear();
-      
+      List<MyInventoryItem> invItems = _invItemListStack.Get();
+
       botInv.GetItems(invItems);
       var tool = data.Bot.ToolDefinition?.PhysicalItemId.SubtypeName;
       var grindMode = rBot == null || rBot.CurrentBuildMode == RepairBot.BuildMode.Grind;
@@ -604,17 +611,11 @@ namespace AiEnabled.Ai.Support
 
       if (grindMode || botInv.IsFull || block == null || block.IsDestroyed)
       {
-        invItems.Clear();
-        _invItemListStack.Push(invItems);
-
+        _invItemListStack.Return(invItems);
         return;
       }
 
-      Dictionary<string, int> missingComps;
-      if (!AiSession.Instance.MissingCompsDictStack.TryPop(out missingComps) || missingComps == null)
-      {
-        missingComps = new Dictionary<string, int>();
-      }
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
 
       bool valid = true;
 
@@ -637,12 +638,8 @@ namespace AiEnabled.Ai.Support
 
       if (!valid)
       {
-        missingComps.Clear();
-        AiSession.Instance.MissingCompsDictStack.Push(missingComps);
-
-        invItems.Clear();
-        _invItemListStack.Push(invItems);
-
+        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+        _invItemListStack.Return(invItems);
         return;
       }
 
@@ -721,11 +718,8 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      missingComps.Clear();
-      AiSession.Instance.MissingCompsDictStack.Push(missingComps);
-
-      invItems.Clear();
-      _invItemListStack.Push(invItems);
+      AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+      _invItemListStack.Return(invItems);
     }
 
     void RemoveItemsComplete(WorkData workData)

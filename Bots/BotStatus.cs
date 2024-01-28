@@ -46,12 +46,12 @@ namespace AiEnabled.Bots
         else if (bot.BotType == AiSession.BotType.Repair)
         {
           var grinder = bot.Character.EquippedTool as IMyAngleGrinder;
-          RepairBot.BuildMode buildMode = grinder != null ? RepairBot.BuildMode.Grind : RepairBot.BuildMode.Weld;
+          BotBase.BuildMode buildMode = grinder != null ? BotBase.BuildMode.Grind : BotBase.BuildMode.Weld;
 
           if (bot.Target.IsInventory)
           {
             var terminal = bot.Target.Inventory.FatBlock as IMyTerminalBlock;
-            if (buildMode == RepairBot.BuildMode.Weld)
+            if (buildMode == BotBase.BuildMode.Weld)
               Action = $"Gathering mats from {terminal.CustomName}";
             else
               Action = $"Placing mats in {terminal.CustomName}";
@@ -65,18 +65,9 @@ namespace AiEnabled.Bots
           {
             var slim = bot.Target.Entity as IMySlimBlock;
             var terminal = slim.FatBlock as IMyTerminalBlock;
-            string slimName;
-            if (terminal != null)
-            {
-              slimName = terminal.CustomName;
-            }
-            else
-            {
-              var def = slim.BlockDefinition as MyCubeBlockDefinition;
-              slimName = def.DisplayNameText;
-            }
+            var slimName = terminal?.CustomName ?? slim.BlockDefinition.DisplayNameText;
 
-            if (buildMode == RepairBot.BuildMode.Weld)
+            if (buildMode == BotBase.BuildMode.Weld)
               Action = $"Repairing {slimName}";
             else
               Action = $"Grinding {slimName}";
@@ -110,10 +101,13 @@ namespace AiEnabled.Bots
             Action = $"Following {bot.Owner.DisplayName} [Idle]";
           }
 
-          if (buildMode == RepairBot.BuildMode.Weld)
+          if (buildMode == BotBase.BuildMode.Weld)
           {
             var rBot = bot as RepairBot;
-            NeededItem = rBot?.FirstMissingItemForRepairs;
+            if (rBot != null)
+              NeededItem = $"{rBot.FirstMissingItemForRepairs} [{rBot.FirstMissingItemBlock}]";
+            else
+              NeededItem = null;
           }
           else
           {

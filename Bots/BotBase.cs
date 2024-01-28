@@ -1059,16 +1059,6 @@ namespace AiEnabled.Bots
       AllowEquipWeapon = true;
       CanOpenDoors = !(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors;
 
-      if (!AiSession.Instance.HitListStack.TryPop(out _hitListThread) || _hitListThread == null)
-        _hitListThread = new List<IHitInfo>();
-      else
-        _hitListThread.Clear();
-
-      if (!AiSession.Instance.HitListStack.TryPop(out _hitList) || _hitList == null)
-        _hitList = new List<IHitInfo>();
-      else
-        _hitList.Clear();
-
       Character.OnClosing += Character_OnClosing;
       Character.OnClose += Character_OnClosing;
       Character.CharacterDied += Character_CharacterDied;
@@ -1078,13 +1068,11 @@ namespace AiEnabled.Bots
       _pathWorkAction = new Action<WorkData>(FindPath);
       _pathWorkCallBack = new Action<WorkData>(FindPathCallBack);
 
+      _hitList = AiSession.Instance.HitListStack.Get();
+      _hitListThread = AiSession.Instance.HitListStack.Get();
       _graphWorkData = AiSession.Instance.GraphWorkPool.Get();
       _pathWorkData = AiSession.Instance.PathWorkPool.Get();
-
-      if (!AiSession.Instance.LineListStack.TryPop(out _patrolList) || _patrolList == null)
-        _patrolList = new List<Vector3I>();
-      else
-        _patrolList.Clear();
+      _patrolList = AiSession.Instance.LineListStack.Get();
     }
 
     public void ChangeCharacter(IMyCharacter newCharacter)
@@ -1343,32 +1331,27 @@ namespace AiEnabled.Bots
 
       if (_hitListThread != null)
       {
-        _hitListThread.Clear();
-        AiSession.Instance.HitListStack.Push(_hitListThread);
+        AiSession.Instance.HitListStack?.Return(_hitListThread);
       }
 
       if (_hitList != null)
       {
-        _hitList.Clear();
-        AiSession.Instance.HitListStack.Push(_hitList);
+        AiSession.Instance.HitListStack?.Return(_hitList);
       }
 
       if (_patrolList != null)
       {
-        _patrolList.Clear();
-        AiSession.Instance.LineListStack.Push(_patrolList);
+        AiSession.Instance.LineListStack?.Return(_patrolList);
       }
 
       if (_attackSounds != null)
       {
-        _attackSounds.Clear();
-        AiSession.Instance.SoundListStack.Push(_attackSounds);
+        AiSession.Instance.SoundListStack?.Return(_attackSounds);
       }
 
       if (_attackSoundStrings != null)
       {
-        _attackSoundStrings.Clear();
-        AiSession.Instance.StringListStack.Push(_attackSoundStrings);
+        AiSession.Instance.StringListStack?.Return(_attackSoundStrings);
       }
 
       Target?.Close();
@@ -1813,11 +1796,7 @@ namespace AiEnabled.Bots
 
       if (AiSession.Instance.ShieldAPILoaded && _tickCount % 2 == 0)
       {
-        List<MyEntity> entList;
-        if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
-          entList = new List<MyEntity>();
-        else
-          entList.Clear();
+        List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
 
         var center = Character.WorldAABB.Center;
         var radius = Character.LocalVolume.Radius;
@@ -1868,8 +1847,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        entList.Clear();
-        AiSession.Instance.EntListStack.Push(entList);
+        AiSession.Instance.EntListStack.Return(entList);
 
         if (BugZapped)
         {
@@ -2692,37 +2670,13 @@ namespace AiEnabled.Bots
         }
       }
 
-      List<MyEntity> blockTargets;
-      if (!AiSession.Instance.EntListStack.TryPop(out blockTargets) || blockTargets == null)
-        blockTargets = new List<MyEntity>();
-
+      List<MyEntity> blockTargets = AiSession.Instance.EntListStack.Get();
       List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
-
-      List<MyEntity> entList;
-      if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
-        entList = new List<MyEntity>();
-      else
-        entList.Clear();
-
+      List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
       List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
-
-      HashSet<long> checkedGridIDs;
-      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs) || checkedGridIDs == null)
-        checkedGridIDs = new HashSet<long>();
-      else
-        checkedGridIDs.Clear();
-
-      List<MyLineSegmentOverlapResult<MyEntity>> resultList;
-      if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
-        resultList = new List<MyLineSegmentOverlapResult<MyEntity>>();
-      else
-        resultList.Clear();
-
-      List<Vector3I> cellList;
-      if (!AiSession.Instance.LineListStack.TryPop(out cellList))
-        cellList = new List<Vector3I>();
-      else
-        cellList.Clear();
+      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashStack.Get();
+      List<MyLineSegmentOverlapResult<MyEntity>> resultList = AiSession.Instance.OverlapResultListStack.Get();
+      List<Vector3I> cellList = AiSession.Instance.LineListStack.Get();
 
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var huntingDistance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy;
@@ -3056,19 +3010,12 @@ namespace AiEnabled.Bots
           break;
       }
 
-      blockTargets.Clear();
-      gridGroups.Clear();
-      entList.Clear();
-      checkedGridIDs.Clear();
-      resultList.Clear();
-      cellList.Clear();
-
-      AiSession.Instance.EntListStack.Push(blockTargets);
+      AiSession.Instance.EntListStack.Return(blockTargets);
       AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.EntListStack.Push(entList);
-      AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
-      AiSession.Instance.OverlapResultListStack.Push(resultList);
-      AiSession.Instance.LineListStack.Push(cellList);
+      AiSession.Instance.EntListStack.Return(entList);
+      AiSession.Instance.GridCheckHashStack.Return(checkedGridIDs);
+      AiSession.Instance.OverlapResultListStack.Return(resultList);
+      AiSession.Instance.LineListStack.Return(cellList);
 
       if (useCurrent)
         return;
@@ -3331,18 +3278,8 @@ namespace AiEnabled.Bots
       }
 
       List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
-
-      List<MyLineSegmentOverlapResult<MyEntity>> rayEntities;
-      if (!AiSession.Instance.OverlapResultListStack.TryPop(out rayEntities) || rayEntities == null)
-        rayEntities = new List<MyLineSegmentOverlapResult<MyEntity>>();
-      else
-        rayEntities.Clear();
-
-      HashSet<long> checkedGridIDs;
-      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs) || checkedGridIDs == null)
-        checkedGridIDs = new HashSet<long>();
-      else
-        checkedGridIDs.Clear();
+      List<MyLineSegmentOverlapResult<MyEntity>> rayEntities = AiSession.Instance.OverlapResultListStack.Get();
+      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashStack.Get();
 
       var lineToNewGraph = new LineD(botPosition, newGraphPosition);
       var lineToTarget = new LineD(botPosition, targetPosition);
@@ -3458,12 +3395,9 @@ namespace AiEnabled.Bots
         }
       }
 
-      rayEntities.Clear();
-      checkedGridIDs.Clear();
-
       AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.OverlapResultListStack.Push(rayEntities);
-      AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
+      AiSession.Instance.OverlapResultListStack.Return(rayEntities);
+      AiSession.Instance.GridCheckHashStack.Return(checkedGridIDs);
 
       if (newGrid != null && newGrid.EntityId != gridGraph?.MainGrid?.EntityId && newGridOBB != null)
       {
@@ -3732,11 +3666,7 @@ namespace AiEnabled.Bots
 
       if (Target.Entity != null)
       {
-        List<IHitInfo> hitlist;
-        if (!AiSession.Instance.HitListStack.TryPop(out hitlist) || hitlist == null)
-          hitlist = new List<IHitInfo>();
-        else
-          hitlist.Clear();
+        List<IHitInfo> hitlist = AiSession.Instance.HitListStack.Get();
 
         MyAPIGateway.Physics.CastRay(botPos, targetPosition, hitlist, CollisionLayers.CharacterCollisionLayer);
         bool result = true;
@@ -3746,7 +3676,7 @@ namespace AiEnabled.Bots
           var hit = hitlist[i];
           var hitEnt = hit?.HitEntity;
 
-          if (hitEnt == null || hitEnt.EntityId == Character.EntityId)
+          if (hitEnt == null || hitEnt.EntityId == Character.EntityId || hitEnt.EntityId == Character.EquippedTool?.EntityId)
             continue;
 
           if (hitEnt == Target.Entity)
@@ -3905,9 +3835,7 @@ namespace AiEnabled.Bots
           break;
         }
 
-        hitlist.Clear();
-        AiSession.Instance.HitListStack.Push(hitlist);
-
+        AiSession.Instance.HitListStack.Return(hitlist);
         return result;
       }
 
@@ -3919,11 +3847,7 @@ namespace AiEnabled.Bots
       if (_pathCollection == null)
         return;
 
-      List<Vector3I> tempNodes;
-      if (!AiSession.Instance.LineListStack.TryPop(out tempNodes) || tempNodes == null)
-        tempNodes = new List<Vector3I>();
-      else
-        tempNodes.Clear();
+      List<Vector3I> tempNodes = AiSession.Instance.LineListStack.Get();
 
       foreach (var kvp in _pathCollection.DeniedDoors)
       {
@@ -3942,7 +3866,7 @@ namespace AiEnabled.Bots
         _pathCollection.DeniedDoors.Remove(node);
 
       tempNodes.Clear();
-      AiSession.Instance.LineListStack.Push(tempNodes);
+      AiSession.Instance.LineListStack.Return(tempNodes);
     }
 
     internal void FindPathForIdleMovement(Vector3D moveTo)
@@ -4238,12 +4162,8 @@ namespace AiEnabled.Bots
         {
           var tp = _currentGraph.LocalToWorld(_transitionPoint.Position);
           var sphere = new BoundingSphereD(tp, 3);
-          List<MyEntity> entList;
-          if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
-            entList = new List<MyEntity>();
-          else
-            entList.Clear();
 
+          List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
           MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
 
           var thisGrid = (_currentGraph as CubeGridMap)?.MainGrid;
@@ -4261,8 +4181,7 @@ namespace AiEnabled.Bots
             }
           }
 
-          entList.Clear();
-          AiSession.Instance.EntListStack.Push(entList);
+          AiSession.Instance.EntListStack.Return(entList);
         }
 
         if (!nextGraphOK || !transitionOk || (!targetInNext && targetInCurrent))
@@ -4840,11 +4759,7 @@ namespace AiEnabled.Bots
 
           if (addTo && _pathCollection != null)
           {
-            List<IHitInfo> hitInfoList;
-            if (!AiSession.Instance.HitListStack.TryPop(out hitInfoList) || hitInfoList == null)
-              hitInfoList = new List<IHitInfo>();
-            else
-              hitInfoList.Clear();
+            List<IHitInfo> hitInfoList = AiSession.Instance.HitListStack.Get();
 
             var botPosition = GetPosition();
             MyAPIGateway.Physics.CastRay(botPosition, botPosition + WorldMatrix.Forward * 2, hitInfoList, CollisionLayers.CharacterCollisionLayer);
@@ -4863,8 +4778,7 @@ namespace AiEnabled.Bots
               }
             }
 
-            hitInfoList.Clear();
-            AiSession.Instance.HitListStack.Push(hitInfoList);
+            AiSession.Instance.HitListStack.Return(hitInfoList);
 
             var last = lastNode != null ? lastNode.Position : current;
             var next = nextNode != null ? nextNode.Position : current;
@@ -5422,6 +5336,42 @@ namespace AiEnabled.Bots
       }
     }
 
+    bool ShouldDismountLadder()
+    {
+      if (BotInfo.GoingDownLadder)
+        return true;
+
+      Vector3D worldNode;
+      Vector3I localNode;
+
+      if (_pathCollection.HasNode)
+      {
+        localNode = _pathCollection.NextNode.Position;
+        worldNode = _currentGraph.LocalToWorld(localNode);
+      }
+      else if (_transitionPoint != null)
+      {
+        localNode = _transitionPoint.Position;
+        worldNode = _currentGraph.LocalToWorld(localNode);
+      }
+      else if (Target.Override.HasValue)
+      {
+        worldNode = Target.Override.Value;
+        localNode = _currentGraph.WorldToLocal(worldNode);
+      }
+      else
+      {
+        return false;
+      }
+
+      var botPosition = BotInfo.CurrentBotPositionAdjusted;
+      var localBot = _currentGraph.WorldToLocal(botPosition);
+      var localDiff = (localNode - localBot).RectangularLength();
+      var direction = WorldMatrix.GetClosestDirection(worldNode - botPosition);
+
+      return localDiff < 2 && direction != Base6Directions.Direction.Up && direction != Base6Directions.Direction.Down;
+    }
+
     void UpdatePathAndMove(ref float distanceToCheck, bool patrol = false)
     {
       PathFinderActive = true;
@@ -5439,8 +5389,8 @@ namespace AiEnabled.Bots
       }
 
       var botPosition = BotInfo.CurrentBotPositionAdjusted;
-      if (!NextIsLadder && BotInfo.IsOnLadder && BotInfo.GoingDownLadder)
-      {
+      if (!NextIsLadder && BotInfo.IsOnLadder && ShouldDismountLadder())
+      { 
         DismountLadder(worldNode, botPosition);
       }
 
@@ -5514,11 +5464,7 @@ namespace AiEnabled.Bots
       var botPosition = BotInfo.CurrentBotPositionActual;
       var botMatrix = WorldMatrix;
 
-      List<IHitInfo> hitList;
-      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
-        hitList = new List<IHitInfo>();
-
-      hitList.Clear();
+      List<IHitInfo> hitList = AiSession.Instance.HitListStack.Get();
       MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward * 3, hitList, CollisionLayers.CharacterCollisionLayer);
 
       bool doorFound = false;
@@ -5538,8 +5484,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      hitList.Clear();
-      AiSession.Instance.HitListStack.Push(hitList);
+      AiSession.Instance.HitListStack.Return(hitList);
 
       return doorFound;
     }
@@ -5559,11 +5504,7 @@ namespace AiEnabled.Bots
         var botPosition = BotInfo.CurrentBotPositionActual;
         var botMatrix = WorldMatrix;
 
-        List<IHitInfo> hitlist;
-        if (!AiSession.Instance.HitListStack.TryPop(out hitlist) || hitlist == null)
-          hitlist = new List<IHitInfo>();
-
-        hitlist.Clear();
+        List<IHitInfo> hitlist = AiSession.Instance.HitListStack.Get();
         MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward, hitlist, CollisionLayers.CharacterCollisionLayer);
 
         bool canUseDoors = CanOpenDoors && (!(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors);
@@ -5628,8 +5569,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        hitlist.Clear();
-        AiSession.Instance.HitListStack.Push(hitlist);
+        AiSession.Instance.HitListStack.Return(hitlist);
 
         if (swerve)
           return true;
@@ -5726,13 +5666,8 @@ namespace AiEnabled.Bots
 
           if (!gridGraph.BlockedDoors.ContainsKey(pos))
           {
-            List<Vector3I> positionList;
-            if (!AiSession.Instance.LineListStack.TryPop(out positionList))
-              positionList = new List<Vector3I>();
-            else
-              positionList.Clear();
-
-            gridGraph.FindAllPositionsForBlock(door.SlimBlock, positionList);
+            List<Vector3I> positionList = AiSession.Instance.LineListStack.Get();
+            AiUtils.FindAllPositionsForBlock(door.SlimBlock, positionList);
 
             for (int i = 0; i < positionList.Count; i++)
             {
@@ -5744,35 +5679,7 @@ namespace AiEnabled.Bots
               gridGraph.BlockedDoors[point] = door;
             }
 
-            positionList.Clear();
-            AiSession.Instance.LineListStack.Push(positionList);
-
-            //gridGraph.BlockedDoors[pos] = door;
-            //var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
-            //var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-
-            //Matrix matrix = new Matrix
-            //{
-            //  Forward = Base6Directions.GetVector(block.Orientation.Forward),
-            //  Left = Base6Directions.GetVector(block.Orientation.Left),
-            //  Up = Base6Directions.GetVector(block.Orientation.Up)
-            //};
-
-            //matrix.TransposeRotationInPlace();
-
-            //Vector3I center = cubeDef.Center;
-            //Vector3I.TransformNormal(ref center, ref matrix, out center);
-            //var adjustedPosition = block.Position - center;
-
-            //foreach (var kvp in faceDict)
-            //{
-            //  var cell = kvp.Key;
-            //  Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-            //  var position = adjustedPosition + cell;
-            //  var mainGridPosition = gridGraph.MainGrid.WorldToGridInteger(block.CubeGrid.GridIntegerToWorld(position));
-
-            //  gridGraph.BlockedDoors[mainGridPosition] = door;
-            //}
+            AiSession.Instance.LineListStack.Return(positionList);
           }
 
           var pointBehind = botPosition + botMatrix.Backward * gridGraph.CellSize;
@@ -5805,11 +5712,7 @@ namespace AiEnabled.Bots
             if (localBot != doorPos)
             {
 
-              List<MyEntity> entList;
-              if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
-                entList = new List<MyEntity>();
-              else
-                entList.Clear();
+              List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
 
               var sphere = new BoundingSphereD(doorWorldPos, 1);
               MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);
@@ -5830,8 +5733,7 @@ namespace AiEnabled.Bots
                 }
               }
 
-              entList.Clear();
-              AiSession.Instance.EntListStack.Push(entList);
+              AiSession.Instance.EntListStack.Return(entList);
 
               if (occupied)
                 return true;
@@ -6012,11 +5914,7 @@ namespace AiEnabled.Bots
 
           if (addTo && _pathCollection != null)
           {
-            List<IHitInfo> hitInfoList;
-            if (!AiSession.Instance.HitListStack.TryPop(out hitInfoList) || hitInfoList == null)
-              hitInfoList = new List<IHitInfo>();
-            else
-              hitInfoList.Clear();
+            List<IHitInfo> hitInfoList = AiSession.Instance.HitListStack.Get();
 
             var botPosition = GetPosition();
             MyAPIGateway.Physics.CastRay(botPosition, botPosition + WorldMatrix.Forward * 2, hitInfoList, CollisionLayers.CharacterCollisionLayer);
@@ -6035,8 +5933,7 @@ namespace AiEnabled.Bots
               }
             }
 
-            hitInfoList.Clear();
-            AiSession.Instance.HitListStack.Push(hitInfoList);
+            AiSession.Instance.HitListStack.Return(hitInfoList);
 
             var last = lastNode != null ? lastNode.Position : current;
             var next = nextNode != null ? nextNode.Position : current;
@@ -6339,6 +6236,10 @@ namespace AiEnabled.Bots
         if (_moveTo == null)
         {
           _moveToNode = null;
+
+          if (CheckGraphNeeded)
+            StartCheckGraph(ref botPosition);
+
           return;
         }
       }
@@ -6510,43 +6411,7 @@ namespace AiEnabled.Bots
       if (inv.ItemCount > 0)
         block.MoveItemsToConstructionStockpile(inv);
 
-      var weldAmount = toolInfo.WeldAmount;
-      var boneFixAmount = toolInfo.BoneFixAmount;
-
-      if (AiSession.Instance.ModSaveData.ObeyProjectionIntegrityForRepairs)
-      {
-        var realGrid = block.CubeGrid as MyCubeGrid;
-        if (realGrid?.Projector == null)
-        {
-          entList.Clear();
-          var worldPosition = block.CubeGrid.GridIntegerToWorld(block.Position);
-          var sphere = new BoundingSphereD(worldPosition, block.CubeGrid.GridSize * 0.5);
-          MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
-
-          for (int i = 0; i < entList.Count; i++)
-          {
-            var projGrid = entList[i] as MyCubeGrid;
-            if (projGrid?.Projector != null)
-            {
-              var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
-              var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
-
-              var blockDef = (MyCubeBlockDefinition)block.BlockDefinition;
-              var weldIntegrityAmount = weldAmount / blockDef.IntegrityPointsPerSec;
-              if (projectedBlock?.BlockDefinition.Id == blockDef.Id && block.BuildIntegrity + weldIntegrityAmount > projectedBlock.BuildIntegrity)
-              {
-                weldAmount = projectedBlock.BuildIntegrity - block.BuildIntegrity;
-                break;
-              }
-            }
-          }
-
-          if (weldAmount <= 0)
-            return false;
-        }
-      }
-
-      block.IncreaseMountLevel(weldAmount, BotIdentityId, null, boneFixAmount);
+      block.IncreaseMountLevel(toolInfo.WeldAmount, BotIdentityId, null, toolInfo.BoneFixAmount);
 
       if (isProjection)
       {

@@ -772,7 +772,7 @@ namespace AiEnabled
     public HashSet<MyDefinitionId> GratedCatwalkExpansionBlocks { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public Dictionary<MyStringHash, string> AnimationControllerDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to controller subtype
     public Dictionary<MyStringHash, string> SubtypeToSkeletonDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to skeleton type
-    public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
+    //public Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>> BlockFaceDictionary { get; protected set; } = new Dictionary<MyDefinitionId, Dictionary<Vector3I, HashSet<Vector3I>>>(MyDefinitionId.Comparer);
     public Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>> NpcSafeCoreWeaponMagazines = new Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>>(MyDefinitionId.Comparer);
 
     public ConcurrentDictionary<long, float> PlayerFollowDistanceDict = new ConcurrentDictionary<long, float>(); // player ident to follow distance
@@ -802,30 +802,183 @@ namespace AiEnabled
     public ConcurrentDictionary<long, AiSession.ControlInfo> BotToControllerInfoDict = new ConcurrentDictionary<long, ControlInfo>(); // bot entity id to controller info
     public ConcurrentQueue<GridBase> MapInitQueue = new ConcurrentQueue<GridBase>();
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
-
-    // TODO: Turn all of these into MyConcurrentPools
-    public ConcurrentStack<List<MyVoxelBase>> VoxelMapListStack = new ConcurrentStack<List<MyVoxelBase>>();
-    public ConcurrentStack<List<Vector3I>> LineListStack = new ConcurrentStack<List<Vector3I>>();
-    public ConcurrentStack<List<Vector3D>> PatrolListStack = new ConcurrentStack<List<Vector3D>>();
-    public ConcurrentStack<List<IHitInfo>> HitListStack = new ConcurrentStack<List<IHitInfo>>();
-    public ConcurrentStack<List<MyEntity>> EntListStack = new ConcurrentStack<List<MyEntity>>();
-    public ConcurrentStack<List<MySoundPair>> SoundListStack = new ConcurrentStack<List<MySoundPair>>();
-    public ConcurrentStack<List<string>> StringListStack = new ConcurrentStack<List<string>>();
-    public ConcurrentStack<HashSet<long>> GridCheckHashStack = new ConcurrentStack<HashSet<long>>();
-    public ConcurrentStack<List<MyLineSegmentOverlapResult<MyEntity>>> OverlapResultListStack = new ConcurrentStack<List<MyLineSegmentOverlapResult<MyEntity>>>();
-    public ConcurrentStack<List<CubeGridMap>> GridMapListStack = new ConcurrentStack<List<CubeGridMap>>();
     public ConcurrentStack<Vector3D[]> CornerArrayStack = new ConcurrentStack<Vector3D[]>();
-    public ConcurrentStack<HashSet<Vector3I>> LocalVectorHashStack = new ConcurrentStack<HashSet<Vector3I>>();
-    public ConcurrentStack<InventoryCache> InvCacheStack = new ConcurrentStack<InventoryCache>();
-    public ConcurrentStack<Dictionary<string, int>> MissingCompsDictStack = new ConcurrentStack<Dictionary<string, int>>();
-    public ConcurrentStack<ApiWorkData> ApiWorkDataStack = new ConcurrentStack<ApiWorkData>();
-    public ConcurrentStack<ObstacleWorkData> ObstacleWorkDataStack = new ConcurrentStack<ObstacleWorkData>();
-    public ConcurrentStack<BotStatus> BotStatusStack = new ConcurrentStack<BotStatus>();
-    public ConcurrentStack<List<BotStatus>> BotStatusListStack = new ConcurrentStack<List<BotStatus>>();
-    public ConcurrentStack<List<VoxelUpdateItem>> VoxelUpdateListStack = new ConcurrentStack<List<VoxelUpdateItem>>();
-    public ConcurrentStack<MyQueue<VoxelUpdateItem>> VoxelUpdateQueueStack = new ConcurrentStack<MyQueue<VoxelUpdateItem>>();
-    public ConcurrentStack<VoxelUpdateItem> VoxelUpdateItemStack = new ConcurrentStack<VoxelUpdateItem>();
-    public ConcurrentStack<List<IMyCharacter>> CharacterListStack = new ConcurrentStack<List<IMyCharacter>>();
+
+    public MyConcurrentPool<List<IMyCharacter>> CharacterListStack = new MyConcurrentPool<List<IMyCharacter>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<IMyCharacter>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<VoxelUpdateItem> VoxelUpdateItemStack = new MyConcurrentPool<VoxelUpdateItem>
+    (
+      defaultCapacity: 100,
+      expectedAllocations: 100,
+      activator: () => new VoxelUpdateItem(),
+      deactivator: (x) => x = null
+    );
+
+    public MyConcurrentPool<MyQueue<VoxelUpdateItem>> VoxelUpdateQueueStack = new MyConcurrentPool<MyQueue<VoxelUpdateItem>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new MyQueue<VoxelUpdateItem>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<VoxelUpdateItem>> VoxelUpdateListStack = new MyConcurrentPool<List<VoxelUpdateItem>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<VoxelUpdateItem>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<BotStatus>> BotStatusListStack = new MyConcurrentPool<List<BotStatus>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<BotStatus>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<BotStatus> BotStatusStack = new MyConcurrentPool<BotStatus>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Reset(),
+      expectedAllocations: 100,
+      activator: () => new BotStatus(),
+      deactivator: (x) => { x.Reset(); x = null; }
+    );
+
+    public MyConcurrentPool<ObstacleWorkData> ObstacleWorkDataStack = new MyConcurrentPool<ObstacleWorkData>
+    (
+      defaultCapacity: 100,
+      expectedAllocations: 100,
+      activator: () => new ObstacleWorkData(),
+      deactivator: (x) => x = null
+    );
+
+    public MyConcurrentPool<ApiWorkData> ApiWorkDataStack = new MyConcurrentPool<ApiWorkData>
+    (
+      defaultCapacity: 100,
+      expectedAllocations: 100,
+      activator: () => new ApiWorkData(),
+      deactivator: (x) =>  x = null
+    );
+
+    public MyConcurrentPool<Dictionary<string, int>> MissingCompsDictStack = new MyConcurrentPool<Dictionary<string, int>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new Dictionary<string, int>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<InventoryCache> InvCacheStack = new MyConcurrentPool<InventoryCache>
+    (
+      defaultCapacity: 100,
+      expectedAllocations: 100,
+      activator: () => new InventoryCache(),
+      deactivator: (x) => { x.Close(); x = null; }
+    );
+
+    public MyConcurrentPool<HashSet<Vector3I>> LocalVectorHashStack = new MyConcurrentPool<HashSet<Vector3I>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new HashSet<Vector3I>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<CubeGridMap>> GridMapListStack = new MyConcurrentPool<List<CubeGridMap>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<CubeGridMap>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<MyLineSegmentOverlapResult<MyEntity>>> OverlapResultListStack = new MyConcurrentPool<List<MyLineSegmentOverlapResult<MyEntity>>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<MyLineSegmentOverlapResult<MyEntity>>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<HashSet<long>> GridCheckHashStack = new MyConcurrentPool<HashSet<long>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new HashSet<long>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<string>> StringListStack = new MyConcurrentPool<List<string>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<string>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<MySoundPair>> SoundListStack = new MyConcurrentPool<List<MySoundPair>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<MySoundPair>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<MyEntity>> EntListStack = new MyConcurrentPool<List<MyEntity>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<MyEntity>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<IHitInfo>> HitListStack = new MyConcurrentPool<List<IHitInfo>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<IHitInfo>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<Vector3I>> LineListStack = new MyConcurrentPool<List<Vector3I>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<Vector3I>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
+    public MyConcurrentPool<List<MyVoxelBase>> VoxelMapListStack = new MyConcurrentPool<List<MyVoxelBase>>
+    (
+      defaultCapacity: 100,
+      clear: (x) => x.Clear(),
+      expectedAllocations: 100,
+      activator: () => new List<MyVoxelBase>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
 
     public MyConcurrentPool<List<IMyCubeGrid>> GridGroupListPool = new MyConcurrentPool<List<IMyCubeGrid>>
     (
@@ -920,6 +1073,7 @@ namespace AiEnabled
     public List<IMyUseObject> UseObjectsAPI = new List<IMyUseObject>();
     public List<IMySlimBlock> GridSeatsAPI = new List<IMySlimBlock>();
     public List<MyConsumableItemDefinition> ConsumableItemList = new List<MyConsumableItemDefinition>();
+
     public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> EmptySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>();
     public List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter> FactorySorterCache = new List<Sandbox.ModAPI.Ingame.MyInventoryItemFilter>()
     {

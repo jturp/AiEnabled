@@ -274,13 +274,9 @@ namespace AiEnabled.Bots
           }
         }
 
-        HashSet<Vector3I> hash;
-        if (!AiSession.Instance.LocalVectorHashStack.TryPop(out hash) || hash == null)
-          hash = new HashSet<Vector3I>(Vector3I.Comparer);
-        else
-          hash.Clear();
-
+        var hash = AiSession.Instance.LocalVectorHashStack.Get();
         hash.UnionWith(nodeList);
+
         for (int i = nodeList.Count - 1; i >= 0; i--)
         {
           var point = nodeList[i];
@@ -302,8 +298,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        hash.Clear();
-        AiSession.Instance.LocalVectorHashStack?.Push(hash);
+        AiSession.Instance.LocalVectorHashStack?.Return(hash);
 
         if (!apiData.AllowAirNodes && nodeList.Count > 0)
         {
@@ -345,30 +340,14 @@ namespace AiEnabled.Bots
                   bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
                   bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
 
-                  Matrix matrix = new Matrix
+                  var positionList = AiSession.Instance.LineListStack.Get();
+                  AiUtils.FindAllPositionsForBlock(block, positionList);
+
+                  foreach (var cell in positionList)
                   {
-                    Forward = Base6Directions.GetVector(block.Orientation.Forward),
-                    Left = Base6Directions.GetVector(block.Orientation.Left),
-                    Up = Base6Directions.GetVector(block.Orientation.Up)
-                  };
+                    var positionAbove = cell + normal;
 
-                  var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-
-                  if (faceDict.Count < 2)
-                    matrix.TransposeRotationInPlace();
-
-                  Vector3I side, center = cubeDef.Center;
-                  Vector3I.TransformNormal(ref normal, ref matrix, out side);
-                  Vector3I.TransformNormal(ref center, ref matrix, out center);
-                  var adjustedPosition = block.Position - center;
-
-                  foreach (var kvp in faceDict)
-                  {
-                    var cell = kvp.Key;
-                    Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-                    var positionAbove = adjustedPosition + cell + normal;
-
-                    if (positionAbove == nodePosition && (allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side) == true)))
+                    if (positionAbove == nodePosition && (allowConn || allowSolar || isCylinder || AiUtils.IsSidePressurizedForBlock(block, cell, normal)))
                     {
                       valid = true;
                       break;
@@ -451,31 +430,16 @@ namespace AiEnabled.Bots
                 bool allowConn = !allowSolar && cube.FatBlock is IMyShipConnector && def.Id.SubtypeName == "Connector";
                 bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(def.Id);
 
-                Matrix matrix = new Matrix
+                var positionList = AiSession.Instance.LineListStack.Get();
+                AiUtils.FindAllPositionsForBlock(cube, positionList);
+
+                foreach (var cell in positionList)
                 {
-                  Forward = Base6Directions.GetVector(cube.Orientation.Forward),
-                  Left = Base6Directions.GetVector(cube.Orientation.Left),
-                  Up = Base6Directions.GetVector(cube.Orientation.Up)
-                };
+                  var checkPosition = cell;
 
-                var faceDict = AiSession.Instance.BlockFaceDictionary[def.Id];
-
-                if (faceDict.Count < 2)
-                  matrix.TransposeRotationInPlace();
-
-                Vector3I side1, center = def.Center;
-                Vector3I.TransformNormal(ref normal, ref matrix, out side1);
-                Vector3I.TransformNormal(ref center, ref matrix, out center);
-                var adjustedPosition = cube.Position - center;
-                var side2 = -side1;
-
-                foreach (var kvp in faceDict)
-                {
-                  var cell = kvp.Key;
-                  Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-                  var checkPosition = adjustedPosition + cell;
-
-                  if (checkPosition == checkPoint && (allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side1) == true) || (kvp.Value?.Contains(side2) == true)))
+                  if (checkPosition == checkPoint && (allowConn || allowSolar || isCylinder 
+                    || AiUtils.IsSidePressurizedForBlock(cube, cell, normal) 
+                    || AiUtils.IsSidePressurizedForBlock(cube, cell, -normal)))
                   {
                     found = true;
                     break;
@@ -508,7 +472,7 @@ namespace AiEnabled.Bots
       if (apiData != null)
       {
         apiData.CallBack?.Invoke(apiData.Grid, apiData.NodeList);
-        AiSession.Instance?.ApiWorkDataStack?.Push(apiData);
+        AiSession.Instance?.ApiWorkDataStack?.Return(apiData);
       }
     }
 
@@ -1158,11 +1122,7 @@ namespace AiEnabled.Bots
     {
       try
       {
-        List<MyVoxelBase> vList;
-        if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
-          vList = new List<MyVoxelBase>();
-        else
-          vList.Clear();
+        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
 
         var syncRange = AiSession.Instance.SyncRange * 0.75;
         if (MyAPIGateway.Multiplayer.MultiplayerActive && grid != null && Vector3D.DistanceSquared(grid.PositionComp.WorldAABB.Center, positionAndOrientation.Position) > syncRange * syncRange)
@@ -1209,7 +1169,7 @@ namespace AiEnabled.Bots
         }
 
         vList.Clear();
-        AiSession.Instance.VoxelMapListStack.Push(vList);
+        AiSession.Instance.VoxelMapListStack.Return(vList);
 
         if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
           return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color, adminSpawned: adminSpawn, factionId: factionId);

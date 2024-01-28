@@ -81,11 +81,7 @@ namespace AiEnabled.Networking
       {
         // turning GoTo into a patrol with one waypoint if the position isn't a seat (otherwise bot should sit down)
 
-        List<MyEntity> entList;
-        if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
-          entList = new List<MyEntity>();
-        else
-          entList.Clear();
+        List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
 
         var sphere = new BoundingSphereD(GoTo.Value, 1);
         MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, entList);
@@ -145,8 +141,7 @@ namespace AiEnabled.Networking
           crewBot.AssignToCrew(cube);
         }
 
-        entList.Clear();
-        AiSession.Instance.EntListStack.Push(entList);
+        AiSession.Instance.EntListStack.Return(entList);
       }
 
       if (Stay || GoTo.HasValue)

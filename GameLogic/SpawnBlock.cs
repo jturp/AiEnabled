@@ -144,42 +144,50 @@ namespace AiEnabled.GameLogic
     {
       try
       {
-        _isServer = MyAPIGateway.Multiplayer.IsServer;
-        _isClient = !_isServer;
-
-        if (_isClient || _block?.CubeGrid?.Physics == null)
-          return;
-
-        if (string.IsNullOrEmpty(_knownLootContainers))
+        if (AiSession.Instance != null && AiSession.Instance.Registered)
         {
-          if (AiSession.Instance.KnownLootContainerIds.Count > 0)
+          _isServer = MyAPIGateway.Multiplayer.IsServer;
+          _isClient = !_isServer;
+
+          if (_isClient || _block?.CubeGrid?.Physics == null)
+            return;
+
+          if (string.IsNullOrEmpty(_knownLootContainers))
           {
-            _knownLootContainers = " " + string.Join("\n ", AiSession.Instance.KnownLootContainerIds);
-          }
-          else
-          {
-            _knownLootContainers = "";
-            foreach (var botDef in MyDefinitionManager.Static.GetBotDefinitions())
+            if (AiSession.Instance.KnownLootContainerIds.Count > 0)
             {
-              var agentDef = botDef as MyAgentDefinition;
-              if (agentDef != null)
+              _knownLootContainers = " " + string.Join("\n ", AiSession.Instance.KnownLootContainerIds);
+            }
+            else
+            {
+              _knownLootContainers = "";
+              foreach (var botDef in MyDefinitionManager.Static.GetBotDefinitions())
               {
-                _knownLootContainers += $" {agentDef.InventoryContainerTypeId.SubtypeName}\n";
+                var agentDef = botDef as MyAgentDefinition;
+                if (agentDef != null)
+                {
+                  _knownLootContainers += $" {agentDef.InventoryContainerTypeId.SubtypeName}\n";
+                }
               }
             }
+
+            _knownLootContainers.TrimEnd('\n', ' ');
           }
 
-          _knownLootContainers.TrimEnd('\n', ' ');
+          SetupIni();
+
+          //_block.CustomDataChanged += Block_CustomDataChanged;
+          NeedsUpdate = MyEntityUpdateEnum.EACH_100TH_FRAME;
         }
-
-        SetupIni();
-
-        //_block.CustomDataChanged += Block_CustomDataChanged;
-        NeedsUpdate = MyEntityUpdateEnum.EACH_100TH_FRAME;
+        else
+        {
+          NeedsUpdate = MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
+        }
       }
       catch (Exception e)
       {
         MyAPIGateway.Utilities.ShowMissionScreen("Exception Occurred", null, null,$"In UpdateOnceBeforeFrame:\n{e.Message}\n{e.StackTrace}");
+        AiSession.Instance?.Logger?.Log(e.ToString());
       }
 
       base.UpdateOnceBeforeFrame();

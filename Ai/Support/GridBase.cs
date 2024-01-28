@@ -691,9 +691,7 @@ namespace AiEnabled.Ai.Support
       Vector3I? center = null;
       Vector3I? centerLOS = null;
 
-      List<IHitInfo> hitList;
-      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
-        hitList = new List<IHitInfo>();
+      List<IHitInfo> hitList = AiSession.Instance.HitListStack.Get();
 
       for (int i = 1; i <= distanceCheck; i++)
       {
@@ -776,8 +774,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      hitList.Clear();
-      AiSession.Instance.HitListStack.Push(hitList);
+      AiSession.Instance.HitListStack.Return(hitList);
 
       if (centerLOS.HasValue)
         center = centerLOS;
@@ -1135,11 +1132,7 @@ namespace AiEnabled.Ai.Support
     {
       if (voxel == null)
       {
-        List<MyVoxelBase> vList;
-        if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
-          vList = new List<MyVoxelBase>();
-        else
-          vList.Clear();
+        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
 
         var sphere = new BoundingSphereD(worldPosition, 1);
         MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
@@ -1160,8 +1153,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        vList.Clear();
-        AiSession.Instance.VoxelMapListStack.Push(vList);
+        AiSession.Instance.VoxelMapListStack.Return(vList);
 
         if (voxel == null)
           return null;
@@ -1192,11 +1184,7 @@ namespace AiEnabled.Ai.Support
 
     public static bool GetClosestPointAboveGround(ref Vector3D worldPosition, ref Vector3D up, out MyVoxelBase voxel, int testPoints = 20)
     {
-      List<MyVoxelBase> vList;
-      if (!AiSession.Instance.VoxelMapListStack.TryPop(out vList) || vList == null)
-        vList = new List<MyVoxelBase>();
-      else
-        vList.Clear();
+      List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
 
       var sphere = new BoundingSphereD(worldPosition, 1);
       MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
@@ -1219,7 +1207,7 @@ namespace AiEnabled.Ai.Support
       }
 
       vList.Clear();
-      AiSession.Instance.VoxelMapListStack.Push(vList);
+      AiSession.Instance.VoxelMapListStack.Return(vList);
 
       float interference;
       var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out interference);

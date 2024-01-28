@@ -15,6 +15,7 @@ using VRage.Game.ModAPI;
 using VRage.Game.Models;
 using VRage.Game.Components;
 using AiEnabled.Ai.Support;
+using Sandbox.Definitions;
 
 namespace AiEnabled.Utilities
 {
@@ -24,6 +25,112 @@ namespace AiEnabled.Utilities
     public const double PiOver6 = Math.PI / 6;
 
     public static T CastHax<T>(T typeRef, object castObj) => (T)castObj;
+
+    public static Vector3I GetCellForPosition(IMySlimBlock block, Vector3I localPosition)
+    {
+      if (block == null)
+        return Vector3I.Zero;
+
+      Matrix m;
+      block.Orientation.GetMatrix(out m);
+      m.TransposeRotationInPlace();
+
+      Vector3 position = Vector3.Zero;
+      if (block.FatBlock != null)
+      {
+        position = localPosition - block.FatBlock.Position;
+      }
+
+      var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+      Vector3I cell = Vector3I.Round(Vector3.Transform(position, m) + cubeDef.Center);
+
+      return cell;
+    }
+
+    static bool? IsAirtightFromDefinition(MyCubeBlockDefinition blockDefinition, float buildLevelRatio)
+    {
+      if (blockDefinition.BuildProgressModels != null && blockDefinition.BuildProgressModels.Length != 0)
+      {
+        MyCubeBlockDefinition.BuildProgressModel buildProgressModel = blockDefinition.BuildProgressModels[blockDefinition.BuildProgressModels.Length - 1];
+        if (buildLevelRatio < buildProgressModel.BuildRatioUpperBound)
+        {
+          return false;
+        }
+      }
+      return blockDefinition.IsAirTight;
+    }
+
+    public static bool IsSidePressurizedForBlock(IMySlimBlock block, Vector3I pos, Vector3 normal)
+    {
+      if (block == null)
+        return false;
+
+      var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+      if (cubeDef == null)
+        return false;
+
+      bool? flag = IsAirtightFromDefinition(cubeDef, block.BuildLevelRatio);
+
+      if (flag.HasValue)
+      {
+        return flag.Value;
+      }
+
+      Matrix m;
+      block.Orientation.GetMatrix(out m);
+      m.TransposeRotationInPlace();
+
+      Vector3I transformedNormal = Vector3I.Round(Vector3.Transform(normal, m));
+
+      Vector3 position = Vector3.Zero;
+      if (block.FatBlock != null)
+      {
+        position = pos - block.FatBlock.Position;
+      }
+
+      Vector3I cell = Vector3I.Round(Vector3.Transform(position, m) + cubeDef.Center);
+      var result = cubeDef.IsCubePressurized[cell][transformedNormal];
+
+      return result == MyCubeBlockDefinition.MyCubePressurizationMark.PressurizedAlways;
+    }
+
+    public static void FindAllPositionsForBlock(IMySlimBlock block, List<Vector3I> positions)
+    {
+      positions.Clear();
+
+      var cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
+      if (cubeDef.IsCubePressurized.Count == 1)
+      {
+        positions.Add(block.Position);
+        return;
+      }
+
+      var grid = block.CubeGrid;
+      var queue = AiSession.Instance.LocalVectorQueuePool.Get();
+      var hash = AiSession.Instance.LocalVectorHashStack.Get();
+
+      queue.Enqueue(block.Position);
+      hash.Add(block.Position);
+
+      while (queue.Count > 0)
+      {
+        var pos = queue.Dequeue();
+
+        foreach (var dir in AiSession.Instance.CardinalDirections)
+        {
+          var newPos = pos + dir;
+          var newBlock = grid.GetCubeBlock(newPos);
+
+          if (newBlock == block && hash.Add(newPos))
+            queue.Enqueue(newPos);
+        }
+      }
+
+      positions.AddRange(hash);
+      AiSession.Instance.LocalVectorHashStack.Return(hash);
+      AiSession.Instance.LocalVectorQueuePool.Return(queue);
+    }
+
 
     public static void DrawOBB(MyOrientedBoundingBoxD obb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f, BlendTypeEnum blendType = BlendTypeEnum.Standard)
     {
@@ -116,14 +223,12 @@ namespace AiEnabled.Utilities
 
       if (returnResultList)
       {
-        if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
-          resultList = new List<MyLineSegmentOverlapResult<MyEntity>>();
+        resultList = AiSession.Instance.OverlapResultListStack.Get();
       }
 
       if (returnCellList)
       {
-        if (!AiSession.Instance.LineListStack.TryPop(out cellList))
-          cellList = new List<Vector3I>();
+        cellList = AiSession.Instance.LineListStack.Get();
       }
 
       resultList.Clear();
@@ -208,14 +313,12 @@ namespace AiEnabled.Utilities
 
       if (returnResultList)
       {
-        resultList.Clear();
-        AiSession.Instance.OverlapResultListStack.Push(resultList);
+        AiSession.Instance.OverlapResultListStack.Return(resultList);
       }
 
       if (returnCellList)
       {
-        cellList.Clear();
-        AiSession.Instance.LineListStack.Push(cellList);
+        AiSession.Instance.LineListStack.Return(cellList);
       }
 
       return result;

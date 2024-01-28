@@ -71,15 +71,8 @@ namespace AiEnabled.Bots
       WantsTarget = false;
       CanDamageGrid = false;
 
-      if (!AiSession.Instance.SoundListStack.TryPop(out _attackSounds))
-        _attackSounds = new List<MySoundPair>();
-      else
-        _attackSounds.Clear();
-
-      if (!AiSession.Instance.StringListStack.TryPop(out _attackSoundStrings))
-        _attackSoundStrings = new List<string>();
-      else
-        _attackSoundStrings.Clear();
+      _attackSounds = AiSession.Instance.SoundListStack.Get();
+      _attackSoundStrings = AiSession.Instance.StringListStack.Get();
 
       if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
       {
@@ -992,11 +985,7 @@ namespace AiEnabled.Bots
       if (faction == null)
         return;
 
-      List<MyEntity> entList;
-      if (!AiSession.Instance.EntListStack.TryPop(out entList) || entList == null)
-        entList = new List<MyEntity>();
-      else
-        entList.Clear();
+      List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
 
       var sphere = new BoundingSphereD(GetPosition(), 50);
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);
@@ -1017,8 +1006,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      entList.Clear();
-      AiSession.Instance.EntListStack.Push(entList);
+      AiSession.Instance.EntListStack.Return(entList);
     }
 
     internal override void Attack()

@@ -65,15 +65,8 @@ namespace AiEnabled.Bots
       ShouldLeadTargets = true;
       CanDamageGrid = true;
 
-      if (!AiSession.Instance.SoundListStack.TryPop(out _attackSounds))
-        _attackSounds = new List<MySoundPair>();
-      else
-        _attackSounds.Clear();
-
-      if (!AiSession.Instance.StringListStack.TryPop(out _attackSoundStrings))
-        _attackSoundStrings = new List<string>();
-      else
-        _attackSoundStrings.Clear();
+      _attackSounds = AiSession.Instance.SoundListStack.Get();
+      _attackSoundStrings = AiSession.Instance.StringListStack.Get();
 
       if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
       {
@@ -186,43 +179,14 @@ namespace AiEnabled.Bots
         }
       }
 
-      List<IHitInfo> hitList;
-      if (!AiSession.Instance.HitListStack.TryPop(out hitList))
-        hitList = new List<IHitInfo>();
-      else
-        hitList.Clear();
-
-      List<MyEntity> entities;
-      if (!AiSession.Instance.EntListStack.TryPop(out entities))
-        entities = new List<MyEntity>();
-      else
-        entities.Clear();
-
-      List<MyEntity> blockTargets;
-      if (!AiSession.Instance.EntListStack.TryPop(out blockTargets))
-        blockTargets = new List<MyEntity>();
-
+      List<IHitInfo> hitList = AiSession.Instance.HitListStack.Get();
+      List<MyEntity> entities = AiSession.Instance.EntListStack.Get();
+      List<MyEntity> blockTargets = AiSession.Instance.EntListStack.Get();
       List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
-
-      HashSet<long> checkedGridIDs;
-      if (!AiSession.Instance.GridCheckHashStack.TryPop(out checkedGridIDs))
-        checkedGridIDs = new HashSet<long>();
-      else
-        checkedGridIDs.Clear();
-
+      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashStack.Get();
       List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
-
-      List<MyLineSegmentOverlapResult<MyEntity>> resultList;
-      if (!AiSession.Instance.OverlapResultListStack.TryPop(out resultList))
-        resultList = new List<MyLineSegmentOverlapResult<MyEntity>>();
-      else
-        resultList.Clear();
-
-      List<Vector3I> cellList;
-      if (!AiSession.Instance.LineListStack.TryPop(out cellList))
-        cellList = new List<Vector3I>();
-      else
-        cellList.Clear();
+      List<MyLineSegmentOverlapResult<MyEntity>> resultList = AiSession.Instance.OverlapResultListStack.Get();
+      List<Vector3I> cellList = AiSession.Instance.LineListStack.Get();
 
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var ownerPos = ownerCharacter.WorldAABB.Center;
@@ -515,20 +479,13 @@ namespace AiEnabled.Bots
           break;
       }
 
-      hitList.Clear();
-      entities.Clear();
-      blockTargets.Clear();
-      checkedGridIDs.Clear();
-      resultList.Clear();
-      cellList.Clear();
-
-      AiSession.Instance.HitListStack.Push(hitList);
-      AiSession.Instance.EntListStack.Push(entities);
-      AiSession.Instance.EntListStack.Push(blockTargets);
+      AiSession.Instance.HitListStack.Return(hitList);
+      AiSession.Instance.EntListStack.Return(entities);
+      AiSession.Instance.EntListStack.Return(blockTargets);
       AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.GridCheckHashStack.Push(checkedGridIDs);
-      AiSession.Instance.OverlapResultListStack.Push(resultList);
-      AiSession.Instance.LineListStack.Push(cellList);
+      AiSession.Instance.GridCheckHashStack.Return(checkedGridIDs);
+      AiSession.Instance.OverlapResultListStack.Return(resultList);
+      AiSession.Instance.LineListStack.Return(cellList);
 
       if (tgt == null)
       {
@@ -644,7 +601,7 @@ namespace AiEnabled.Bots
       }
 
       var flatDistanceCheck = isFriendly ? _followDistanceSqd : distanceCheck;
-      var hasWeapon = HasWeaponOrTool && !(Character.EquippedTool is IMyAngleGrinder) && !(Character.EquippedTool is IMyWelder);
+      var hasWeapon = HasWeaponOrTool && Character.EquippedTool != null && !(Character.EquippedTool is IMyAngleGrinder) && !(Character.EquippedTool is IMyWelder);
 
       if (BotInfo.IsOnLadder)
       {

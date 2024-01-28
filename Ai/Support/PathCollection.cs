@@ -1189,29 +1189,12 @@ namespace AiEnabled.Ai.Support
           {
             DeniedDoors[localDoor] = door;
 
-            var cubeDef = door.SlimBlock.BlockDefinition as MyCubeBlockDefinition;
-            var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
+            var positionList = AiSession.Instance.LineListStack.Get();
+            AiUtils.FindAllPositionsForBlock(door.SlimBlock, positionList);
 
-            Matrix matrix = new Matrix
+            foreach (var cell in positionList)
             {
-              Forward = Base6Directions.GetVector(door.Orientation.Forward),
-              Left = Base6Directions.GetVector(door.Orientation.Left),
-              Up = Base6Directions.GetVector(door.Orientation.Up)
-            };
-
-            matrix.TransposeRotationInPlace();
-
-            Vector3I center = cubeDef.Center;
-            Vector3I.TransformNormal(ref center, ref matrix, out center);
-            var adjustedPosition = door.Position - center;
-
-            foreach (var kvpFD in faceDict)
-            {
-              var cell = kvpFD.Key;
-              Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-              var position = adjustedPosition + cell;
-
-              DeniedDoors[position] = door;
+              DeniedDoors[cell] = door;
             }
           }
           else if (Bot.Owner == null || !((MyDoorBase)door).AnyoneCanUse)

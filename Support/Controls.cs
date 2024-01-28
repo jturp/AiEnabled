@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.Ai.Support;
 using AiEnabled.API;
 using AiEnabled.Bots;
 using AiEnabled.Bots.Roles;
@@ -29,6 +30,8 @@ using VRage.ModAPI;
 using VRage.Utils;
 
 using VRageMath;
+
+using static VRage.Game.MyObjectBuilder_BehaviorTreeDecoratorNode;
 
 namespace AiEnabled.Support
 {
@@ -384,6 +387,45 @@ namespace AiEnabled.Support
       buttonDismiss.Action = DismissHelper;
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonDismiss);
       controls.Add(buttonDismiss);
+
+      var separatorThree = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator1");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separatorThree);
+      controls.Add(separatorThree);
+
+      var labelReset = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlLabel, IMyConveyorSorter>("LblResetMap");
+      labelReset.Enabled = CombineFunc.Create(labelReset.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      labelReset.Visible = CombineFunc.Create(labelReset.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      labelReset.SupportsMultipleBlocks = false;
+      labelReset.Label = MyStringId.GetOrCompute("Reset Grid Map");
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(labelReset);
+      controls.Add(labelReset);
+
+      var buttonMapRedo = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnMapRedo");
+      buttonMapRedo.Enabled = CombineFunc.Create(buttonMapRedo.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonMapRedo.Visible = CombineFunc.Create(buttonMapRedo.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonMapRedo.SupportsMultipleBlocks = false;
+      buttonMapRedo.Title = MyStringId.GetOrCompute("Reset Map");
+      buttonMapRedo.Tooltip = MyStringId.GetOrCompute("Will clean and restart the mapping process for the grid.");
+      buttonMapRedo.Action = ReworkGridMap;
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonMapRedo);
+      controls.Add(buttonMapRedo);
+    }
+
+    private static void ReworkGridMap(IMyTerminalBlock block)
+    {
+      var grid = block?.CubeGrid;
+      if (grid != null)
+      {
+        var pkt = new ResetMapPacket(grid.EntityId);
+        AiSession.Instance.Network.SendToServer(pkt);
+
+        var gameLogic = block.GameLogic.GetAs<Factory>();
+        if (gameLogic != null)
+        {
+          gameLogic.ButtonPressed = true;
+          SetContextMessage(block, "Regenerating grid map...");
+        }
+      }
     }
 
     private static void RandomizeColor(IMyTerminalBlock block)

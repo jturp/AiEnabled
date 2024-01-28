@@ -147,17 +147,42 @@ namespace AiEnabled.Bots
 
       public bool IsFriendly()
       {
-        var ent = Entity as IMyEntity;
-        if (ent == null || _base?.Owner?.Character == null || _base.Owner.Character.MarkedForClose)
+        if (_base == null || Entity == null)
           return false;
+
+        var ent = Entity as IMyEntity;
+        if (ent == null)
+        {
+          var cube = Entity as IMyCubeBlock;
+          if (cube != null)
+          {
+            ent = cube.SlimBlock.FatBlock as IMyEntity ?? cube.CubeGrid;
+          }
+
+          if (ent == null)
+          {
+            var block = Entity as IMySlimBlock;
+            if (block != null)
+            {
+              ent = block.FatBlock as IMyEntity ?? block.CubeGrid;
+            }
+
+            if (ent == null)
+            {
+              return false;
+            }
+          }
+        }
+
+        var identityId = _base.Owner?.IdentityId ?? _base.BotIdentityId;
 
         var controllingPlayer = MyAPIGateway.Players.GetPlayerControllingEntity(ent);
         if (controllingPlayer != null)
         {
-          if (controllingPlayer.IdentityId == _base.Owner.IdentityId)
+          if (controllingPlayer.IdentityId == identityId)
             return true;
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, controllingPlayer.IdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          var relation = MyIDModule.GetRelationPlayerPlayer(identityId, controllingPlayer.IdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
           return controllingPlayer.IdentityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
@@ -165,12 +190,12 @@ namespace AiEnabled.Bots
         if (cpit?.Pilot != null)
         {
           var pilot = cpit.Pilot;
-          long identityId = pilot.ControllerInfo.ControllingIdentityId;
+          long pilotIdentity = pilot.ControllerInfo?.ControllingIdentityId ?? 0L;
 
           BotBase bot;
           if (AiSession.Instance.Bots.TryGetValue(pilot.EntityId, out bot))
           {
-            identityId = bot.Owner?.IdentityId ?? bot.BotIdentityId;
+            pilotIdentity = bot.Owner?.IdentityId ?? bot.BotIdentityId;
           }
           else
           {
@@ -179,16 +204,16 @@ namespace AiEnabled.Bots
               var player = kvp.Value;
               if (player?.Character?.EntityId == pilot.EntityId)
               {
-                identityId = player.IdentityId;
+                pilotIdentity = player.IdentityId;
               }
             }
           }
 
-          if (identityId == _base.Owner.IdentityId)
+          if (pilotIdentity == identityId)
             return true;
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, identityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
-          return identityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
+          var relation = MyIDModule.GetRelationPlayerPlayer(identityId, pilotIdentity, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          return pilotIdentity == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
         var ch = ent as IMyCharacter;
@@ -211,21 +236,18 @@ namespace AiEnabled.Bots
               ownerIdentityId = p.IdentityId;
           }
 
-          var relation = MyIDModule.GetRelationPlayerPlayer(_base.Owner.IdentityId, ownerIdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
+          var relation = MyIDModule.GetRelationPlayerPlayer(identityId, ownerIdentityId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
           return ownerIdentityId == 0 || relation != MyRelationsBetweenPlayers.Enemies;
         }
 
         var grid = ent?.GetTopMostParent() as IMyCubeGrid;
-        if (grid != null)
+        if (grid?.BigOwners?.Count > 0 || grid?.SmallOwners?.Count > 0)
         {
-          if (grid.BigOwners?.Count > 0 || grid.SmallOwners?.Count > 0)
-          {
-            var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners[0];
-            var relation = MyIDModule.GetRelationPlayerBlock(owner, _base.Owner.IdentityId, MyOwnershipShareModeEnum.None, 
-              MyRelationsBetweenPlayerAndBlock.Neutral, MyRelationsBetweenFactions.Neutral, 
-              MyRelationsBetweenPlayerAndBlock.Neutral, MyRelationsBetweenPlayerAndBlock.Neutral);
-            return owner == 0 || relation != MyRelationsBetweenPlayerAndBlock.Enemies;
-          }
+          var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners[0];
+          var relation = MyIDModule.GetRelationPlayerBlock(owner, identityId, MyOwnershipShareModeEnum.None,
+            MyRelationsBetweenPlayerAndBlock.Neutral, MyRelationsBetweenFactions.Neutral,
+            MyRelationsBetweenPlayerAndBlock.Neutral, MyRelationsBetweenPlayerAndBlock.Neutral);
+          return owner == 0 || relation != MyRelationsBetweenPlayerAndBlock.Enemies;
         }
 
         return false;
@@ -603,64 +625,85 @@ namespace AiEnabled.Bots
 
         if (Inventory != null)
         {
-          var center = Inventory.Position;
-          int distanceCheck;
+          Vector3I center;
 
-          if (Inventory.FatBlock != null)
+          if (_base?._currentGraph != null)
           {
-            distanceCheck = (int)Math.Ceiling((Inventory.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 1f) / 2.5);
+            Vector3D centerWorld;
+            if (Inventory.FatBlock != null)
+              centerWorld = Inventory.FatBlock.WorldAABB.Center;
+            else
+              Inventory.ComputeWorldCenter(out centerWorld);
+
+            center = _base._currentGraph.WorldToLocal(centerWorld);
           }
           else
           {
-            BoundingBoxD box;
-            Inventory.GetWorldBoundingBox(out box, true);
-            distanceCheck = (int)Math.Ceiling((box.HalfExtents.AbsMax() + 1f) / 2.5);
+            center = Inventory.Position;
           }
 
-          Dictionary<Vector3I, HashSet<Vector3I>> blockFaces;
-          if (AiSession.Instance.BlockFaceDictionary.TryGetValue(Inventory.BlockDefinition.Id, out blockFaces) && blockFaces.Count > 1 && _base?._currentGraph != null)
+          if (_base?._currentGraph != null)
           {
+            int distanceCheck;
+            if (Inventory.FatBlock != null)
+            {
+              distanceCheck = (int)Math.Ceiling((Inventory.FatBlock.PositionComp.LocalAABB.HalfExtents.AbsMax() + 1f) / 2.5);
+            }
+            else
+            {
+              BoundingBoxD box;
+              Inventory.GetWorldBoundingBox(out box, true);
+              distanceCheck = (int)Math.Ceiling((box.HalfExtents.AbsMax() + 1f) / 2.5);
+            }
+
             var graph = _base._currentGraph;
+            var invGrid = Inventory.CubeGrid;
 
             for (int i = 1; i < distanceCheck + 1; i++)
             {
               var testPoint = center + Vector3I.Up * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              var testCube = invGrid.GetCubeBlock(testPoint);
+              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Down * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              testCube = invGrid.GetCubeBlock(testPoint);
+              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Left * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              testCube = invGrid.GetCubeBlock(testPoint);
+              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Right * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              testCube = invGrid.GetCubeBlock(testPoint);
+              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Forward * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              testCube = invGrid.GetCubeBlock(testPoint);
+              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
               }
 
               testPoint = center + Vector3I.Backward * i;
-              if (!blockFaces.ContainsKey(testPoint) && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              testCube = invGrid.GetCubeBlock(testPoint);
+              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
@@ -736,17 +779,8 @@ namespace AiEnabled.Bots
           bool foundPos = false;
           var cellSize = _base._currentGraph.CellSize;
 
-          List<MyLineSegmentOverlapResult<MyEntity>> overlapList;
-          if (!AiSession.Instance.OverlapResultListStack.TryPop(out overlapList))
-            overlapList = new List<MyLineSegmentOverlapResult<MyEntity>>();
-          else
-            overlapList.Clear();
-
-          List<Vector3I> cellList;
-          if (!AiSession.Instance.LineListStack.TryPop(out cellList))
-            cellList = new List<Vector3I>();
-          else
-            cellList.Clear();
+          List<MyLineSegmentOverlapResult<MyEntity>> overlapList = AiSession.Instance.OverlapResultListStack.Get();
+          List<Vector3I> cellList = AiSession.Instance.LineListStack.Get();
 
           var followDistance = AiSession.Instance.PlayerFollowDistanceDict.GetValueOrDefault(_base.Owner.IdentityId, 7.5f);
           int numSpaces = (int)Math.Round(followDistance / _base._currentGraph.CellSize);
@@ -819,11 +853,8 @@ namespace AiEnabled.Bots
               gotoPosition = actualPosition;
           }
 
-          overlapList.Clear();
-          cellList.Clear();
-          AiSession.Instance.OverlapResultListStack.Push(overlapList);
-          AiSession.Instance.LineListStack.Push(cellList);
-
+          AiSession.Instance.OverlapResultListStack.Return(overlapList);
+          AiSession.Instance.LineListStack.Return(cellList);
           return true;
         }
 

@@ -32,7 +32,7 @@ namespace AiEnabled.Ai.Support
   public class Node : IEqualityComparer<Node>, IComparer<Node>
   {
     public Vector3I Position;
-    public Vector3 Offset;
+    public Vector3D Offset;
     public int BlockedMask;
     public int TempBlockedMask;
     public byte MovementCost = 1;
@@ -57,7 +57,7 @@ namespace AiEnabled.Ai.Support
 
     public Node() { }
 
-    public Node(Vector3I position, Vector3 surfaceOffset, GridBase gBase, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public Node(Vector3I position, Vector3D surfaceOffset, GridBase gBase, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
       Position = position;
       Offset = surfaceOffset;
@@ -95,7 +95,7 @@ namespace AiEnabled.Ai.Support
         CalculateMovementCost(gBase);
     }
 
-    public Node(Vector3I position, Vector3 surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public Node(Vector3I position, Vector3D surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
       Position = position;
       Offset = surfaceOffset;
@@ -172,7 +172,7 @@ namespace AiEnabled.Ai.Support
       }
     }
 
-    public void Update(Node other, Vector3 surfaceOffset)
+    public void Update(Node other, Vector3D surfaceOffset)
     {
       Offset = surfaceOffset;
       Position = other.Position;
@@ -183,7 +183,7 @@ namespace AiEnabled.Ai.Support
       _ref = other._ref;
     }
 
-    public void Update(Vector3I position, Vector3 surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public void Update(Vector3I position, Vector3D surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
       Position = position;
       Offset = surfaceOffset;
