@@ -402,7 +402,7 @@ namespace AiEnabled.API
       if (grid == null || grid.MarkedForClose)
         return;
 
-      List<IMyCharacter> newBotList = AiSession.Instance.CharacterListStack.Get();
+      List<IMyCharacter> newBotList = AiSession.Instance.CharacterListPool.Get();
 
       var occupiedSeats = grid.OccupiedBlocks.ToList();
 
@@ -444,7 +444,7 @@ namespace AiEnabled.API
 
       if (newBotList != null)
       {
-        AiSession.Instance.CharacterListStack.Return(newBotList);
+        AiSession.Instance.CharacterListPool.Return(newBotList);
       }
     }
 
@@ -1207,7 +1207,7 @@ namespace AiEnabled.API
         return;
       }
 
-      ApiWorkData data = AiSession.Instance.ApiWorkDataStack.Get();
+      ApiWorkData data = AiSession.Instance.ApiWorkDataPool.Get();
 
       data.Grid = grid;
       data.NodeList = nodeList;

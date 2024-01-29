@@ -63,8 +63,8 @@ namespace AiEnabled.Bots
       WantsTarget = true;
       CanDamageGrid = true;
 
-      _attackSounds = AiSession.Instance.SoundListStack.Get();
-      _attackSoundStrings = AiSession.Instance.StringListStack.Get();
+      _attackSounds = AiSession.Instance.SoundListPool.Get();
+      _attackSoundStrings = AiSession.Instance.StringListPool.Get();
 
       if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
       {

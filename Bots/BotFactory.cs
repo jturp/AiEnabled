@@ -272,7 +272,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        var hash = AiSession.Instance.LocalVectorHashStack.Get();
+        var hash = AiSession.Instance.LocalVectorHashPool.Get();
         hash.UnionWith(nodeList);
 
         for (int i = nodeList.Count - 1; i >= 0; i--)
@@ -296,7 +296,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        AiSession.Instance.LocalVectorHashStack?.Return(hash);
+        AiSession.Instance.LocalVectorHashPool?.Return(hash);
 
         if (!apiData.AllowAirNodes && nodeList.Count > 0)
         {
@@ -501,7 +501,7 @@ namespace AiEnabled.Bots
       if (apiData != null)
       {
         apiData.CallBack?.Invoke(apiData.Grid, apiData.NodeList);
-        AiSession.Instance?.ApiWorkDataStack?.Return(apiData);
+        AiSession.Instance?.ApiWorkDataPool?.Return(apiData);
       }
     }
 
@@ -1151,7 +1151,7 @@ namespace AiEnabled.Bots
     {
       try
       {
-        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
+        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListPool.Get();
 
         var syncRange = AiSession.Instance.SyncRange * 0.75;
         if (MyAPIGateway.Multiplayer.MultiplayerActive && grid != null && Vector3D.DistanceSquared(grid.PositionComp.WorldAABB.Center, positionAndOrientation.Position) > syncRange * syncRange)
@@ -1198,7 +1198,7 @@ namespace AiEnabled.Bots
         }
 
         vList.Clear();
-        AiSession.Instance.VoxelMapListStack.Return(vList);
+        AiSession.Instance.VoxelMapListPool.Return(vList);
 
         if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
           return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color, adminSpawned: adminSpawn, factionId: factionId);

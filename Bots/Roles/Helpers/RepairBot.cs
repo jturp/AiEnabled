@@ -64,8 +64,8 @@ namespace AiEnabled.Bots.Roles.Helpers
       _blockDamagePerSecond = 0;
       _blockDamagePerAttack = 0; // he's a lover, not a fighter :)
 
-      _threadOnlyEntList = AiSession.Instance.EntListStack.Get();
-      _noThreadEntList = AiSession.Instance.EntListStack.Get();
+      _threadOnlyEntList = AiSession.Instance.EntListPool.Get();
+      _noThreadEntList = AiSession.Instance.EntListPool.Get();
     }
 
     internal override void CleanUp(bool cleanConfig = false, bool removeBot = true)
@@ -106,12 +106,12 @@ namespace AiEnabled.Bots.Roles.Helpers
         {
           if (_threadOnlyEntList != null)
           {
-            AiSession.Instance.EntListStack?.Return(_noThreadEntList);
+            AiSession.Instance.EntListPool?.Return(_noThreadEntList);
           }
 
           if (_noThreadEntList != null)
           {
-            AiSession.Instance.EntListStack?.Return(_noThreadEntList);
+            AiSession.Instance.EntListPool?.Return(_noThreadEntList);
           }
         }
         else
@@ -906,7 +906,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           _cubes.Clear();
           //entList.Clear();
-          //AiSession.Instance.EntListStack.Return(entList);
+          //AiSession.Instance.EntListPool.Return(entList);
 
           if (tgt == null)
           {
@@ -925,7 +925,7 @@ namespace AiEnabled.Bots.Roles.Helpers
             //}
 
             //entList.Clear();
-            //AiSession.Instance.EntListStack.Return(entList);
+            //AiSession.Instance.EntListPool.Return(entList);
 
             foreach (var kvp in _projectedGrids)
             {
@@ -1036,7 +1036,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 _cubes.Clear();
                 _taskPrioritiesTemp.Clear();
 
-                var entList = AiSession.Instance.EntListStack.Get();
+                var entList = AiSession.Instance.EntListPool.Get();
                 var projectedGrid = kvp.Value;
                 projectedGrid.GetBlocks(_cubes);
                 //_cubes.ShellSort(botPosition);
@@ -1150,7 +1150,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                   }
                 }
 
-                AiSession.Instance.EntListStack.Return(entList);
+                AiSession.Instance.EntListPool.Return(entList);
               }
 
               if (tgt != null || returnNow)
@@ -1185,7 +1185,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         return false;
       }
 
-      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictPool.Get();
 
       bool valid = true;
       bool returnNow = false;
@@ -1223,7 +1223,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (!valid || returnNow)
       {
-        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
         return valid;
       }
 
@@ -1263,7 +1263,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           break;
       }
 
-      AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+      AiSession.Instance.MissingCompsDictPool.Return(missingComps);
       return valid;
     }
 

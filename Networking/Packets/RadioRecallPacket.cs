@@ -44,7 +44,7 @@ namespace AiEnabled.Networking.Packets
 
         var sphere = new BoundingSphereD(headMatrix.Translation + headMatrix.Forward * 125, 150);
 
-        List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+        List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
         MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);
 
         if (entList.Count > 0)
@@ -72,7 +72,7 @@ namespace AiEnabled.Networking.Packets
           }
         }
 
-        AiSession.Instance.EntListStack.Return(entList);
+        AiSession.Instance.EntListPool.Return(entList);
       }
       catch (Exception ex)
       {

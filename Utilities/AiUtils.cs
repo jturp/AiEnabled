@@ -107,7 +107,7 @@ namespace AiEnabled.Utilities
 
       var grid = block.CubeGrid;
       var queue = AiSession.Instance.LocalVectorQueuePool.Get();
-      var hash = AiSession.Instance.LocalVectorHashStack.Get();
+      var hash = AiSession.Instance.LocalVectorHashPool.Get();
 
       queue.Enqueue(block.Position);
       hash.Add(block.Position);
@@ -127,7 +127,7 @@ namespace AiEnabled.Utilities
       }
 
       positions.AddRange(hash);
-      AiSession.Instance.LocalVectorHashStack.Return(hash);
+      AiSession.Instance.LocalVectorHashPool.Return(hash);
       AiSession.Instance.LocalVectorQueuePool.Return(queue);
     }
 
@@ -222,12 +222,12 @@ namespace AiEnabled.Utilities
 
       if (returnResultList)
       {
-        resultList = AiSession.Instance.OverlapResultListStack.Get();
+        resultList = AiSession.Instance.OverlapResultListPool.Get();
       }
 
       if (returnCellList)
       {
-        cellList = AiSession.Instance.LineListStack.Get();
+        cellList = AiSession.Instance.LineListPool.Get();
       }
 
       resultList.Clear();
@@ -312,12 +312,12 @@ namespace AiEnabled.Utilities
 
       if (returnResultList)
       {
-        AiSession.Instance.OverlapResultListStack.Return(resultList);
+        AiSession.Instance.OverlapResultListPool.Return(resultList);
       }
 
       if (returnCellList)
       {
-        AiSession.Instance.LineListStack.Return(cellList);
+        AiSession.Instance.LineListPool.Return(cellList);
       }
 
       return result;

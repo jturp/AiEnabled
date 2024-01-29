@@ -765,8 +765,8 @@ namespace AiEnabled.Bots
           bool foundPos = false;
           var cellSize = _base._currentGraph.CellSize;
 
-          List<MyLineSegmentOverlapResult<MyEntity>> overlapList = AiSession.Instance.OverlapResultListStack.Get();
-          List<Vector3I> cellList = AiSession.Instance.LineListStack.Get();
+          List<MyLineSegmentOverlapResult<MyEntity>> overlapList = AiSession.Instance.OverlapResultListPool.Get();
+          List<Vector3I> cellList = AiSession.Instance.LineListPool.Get();
 
           var followDistance = AiSession.Instance.PlayerFollowDistanceDict.GetValueOrDefault(_base.Owner.IdentityId, 7.5f);
           int numSpaces = (int)Math.Round(followDistance / _base._currentGraph.CellSize);
@@ -839,8 +839,8 @@ namespace AiEnabled.Bots
               gotoPosition = actualPosition;
           }
 
-          AiSession.Instance.OverlapResultListStack.Return(overlapList);
-          AiSession.Instance.LineListStack.Return(cellList);
+          AiSession.Instance.OverlapResultListPool.Return(overlapList);
+          AiSession.Instance.LineListPool.Return(cellList);
           return true;
         }
 

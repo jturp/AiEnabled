@@ -363,7 +363,7 @@ namespace AiEnabled.Ai.Support
         return false;
 
       bool valid = true;
-      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictPool.Get();
       missingComps.Clear();
       block.GetMissingComponents(missingComps);
 
@@ -383,7 +383,7 @@ namespace AiEnabled.Ai.Support
 
       if (!valid)
       {
-        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
         return false;
       }
 
@@ -404,7 +404,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
         return false;
       }
 
@@ -442,7 +442,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+      AiSession.Instance.MissingCompsDictPool.Return(missingComps);
       return valid;
     }
 
@@ -635,7 +635,7 @@ namespace AiEnabled.Ai.Support
         return;
       }
 
-      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictStack.Get();
+      Dictionary<string, int> missingComps = AiSession.Instance.MissingCompsDictPool.Get();
 
       bool valid = true;
 
@@ -658,7 +658,7 @@ namespace AiEnabled.Ai.Support
 
       if (!valid)
       {
-        AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
         _invItemListStack.Return(invItems);
         return;
       }
@@ -738,7 +738,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.MissingCompsDictStack.Return(missingComps);
+      AiSession.Instance.MissingCompsDictPool.Return(missingComps);
       _invItemListStack.Return(invItems);
     }
 

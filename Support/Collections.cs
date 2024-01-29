@@ -804,7 +804,7 @@ namespace AiEnabled
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
     public ConcurrentStack<Vector3D[]> CornerArrayStack = new ConcurrentStack<Vector3D[]>();
 
-    public MyConcurrentPool<List<IMyCharacter>> CharacterListStack = new MyConcurrentPool<List<IMyCharacter>>
+    public MyConcurrentPool<List<IMyCharacter>> CharacterListPool = new MyConcurrentPool<List<IMyCharacter>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -813,7 +813,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<VoxelUpdateItem> VoxelUpdateItemStack = new MyConcurrentPool<VoxelUpdateItem>
+    public MyConcurrentPool<VoxelUpdateItem> VoxelUpdateItemPool = new MyConcurrentPool<VoxelUpdateItem>
     (
       defaultCapacity: 100,
       expectedAllocations: 100,
@@ -821,7 +821,7 @@ namespace AiEnabled
       deactivator: (x) => x = null
     );
 
-    public MyConcurrentPool<MyQueue<VoxelUpdateItem>> VoxelUpdateQueueStack = new MyConcurrentPool<MyQueue<VoxelUpdateItem>>
+    public MyConcurrentPool<MyQueue<VoxelUpdateItem>> VoxelUpdateQueuePool = new MyConcurrentPool<MyQueue<VoxelUpdateItem>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -830,7 +830,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<VoxelUpdateItem>> VoxelUpdateListStack = new MyConcurrentPool<List<VoxelUpdateItem>>
+    public MyConcurrentPool<List<VoxelUpdateItem>> VoxelUpdateListPool = new MyConcurrentPool<List<VoxelUpdateItem>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -839,7 +839,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<BotStatus>> BotStatusListStack = new MyConcurrentPool<List<BotStatus>>
+    public MyConcurrentPool<List<BotStatus>> BotStatusListPool = new MyConcurrentPool<List<BotStatus>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -848,7 +848,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<BotStatus> BotStatusStack = new MyConcurrentPool<BotStatus>
+    public MyConcurrentPool<BotStatus> BotStatusPool = new MyConcurrentPool<BotStatus>
     (
       defaultCapacity: 100,
       clear: (x) => x.Reset(),
@@ -857,7 +857,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Reset(); x = null; }
     );
 
-    public MyConcurrentPool<ObstacleWorkData> ObstacleWorkDataStack = new MyConcurrentPool<ObstacleWorkData>
+    public MyConcurrentPool<ObstacleWorkData> ObstacleWorkDataPool = new MyConcurrentPool<ObstacleWorkData>
     (
       defaultCapacity: 100,
       expectedAllocations: 100,
@@ -865,7 +865,7 @@ namespace AiEnabled
       deactivator: (x) => x = null
     );
 
-    public MyConcurrentPool<ApiWorkData> ApiWorkDataStack = new MyConcurrentPool<ApiWorkData>
+    public MyConcurrentPool<ApiWorkData> ApiWorkDataPool = new MyConcurrentPool<ApiWorkData>
     (
       defaultCapacity: 100,
       expectedAllocations: 100,
@@ -873,7 +873,7 @@ namespace AiEnabled
       deactivator: (x) =>  x = null
     );
 
-    public MyConcurrentPool<Dictionary<string, int>> MissingCompsDictStack = new MyConcurrentPool<Dictionary<string, int>>
+    public MyConcurrentPool<Dictionary<string, int>> MissingCompsDictPool = new MyConcurrentPool<Dictionary<string, int>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -882,7 +882,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<InventoryCache> InvCacheStack = new MyConcurrentPool<InventoryCache>
+    public MyConcurrentPool<InventoryCache> InvCachePool = new MyConcurrentPool<InventoryCache>
     (
       defaultCapacity: 100,
       expectedAllocations: 100,
@@ -890,7 +890,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Close(); x = null; }
     );
 
-    public MyConcurrentPool<HashSet<Vector3I>> LocalVectorHashStack = new MyConcurrentPool<HashSet<Vector3I>>
+    public MyConcurrentPool<HashSet<Vector3I>> LocalVectorHashPool = new MyConcurrentPool<HashSet<Vector3I>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -899,7 +899,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<CubeGridMap>> GridMapListStack = new MyConcurrentPool<List<CubeGridMap>>
+    public MyConcurrentPool<List<CubeGridMap>> GridMapListPool = new MyConcurrentPool<List<CubeGridMap>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -908,7 +908,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<MyLineSegmentOverlapResult<MyEntity>>> OverlapResultListStack = new MyConcurrentPool<List<MyLineSegmentOverlapResult<MyEntity>>>
+    public MyConcurrentPool<List<MyLineSegmentOverlapResult<MyEntity>>> OverlapResultListPool = new MyConcurrentPool<List<MyLineSegmentOverlapResult<MyEntity>>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -917,7 +917,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<HashSet<long>> GridCheckHashStack = new MyConcurrentPool<HashSet<long>>
+    public MyConcurrentPool<HashSet<long>> GridCheckHashPool = new MyConcurrentPool<HashSet<long>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -926,7 +926,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<string>> StringListStack = new MyConcurrentPool<List<string>>
+    public MyConcurrentPool<List<string>> StringListPool = new MyConcurrentPool<List<string>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -935,7 +935,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<MySoundPair>> SoundListStack = new MyConcurrentPool<List<MySoundPair>>
+    public MyConcurrentPool<List<MySoundPair>> SoundListPool = new MyConcurrentPool<List<MySoundPair>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -944,7 +944,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<MyEntity>> EntListStack = new MyConcurrentPool<List<MyEntity>>
+    public MyConcurrentPool<List<MyEntity>> EntListPool = new MyConcurrentPool<List<MyEntity>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -953,7 +953,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<IHitInfo>> HitListStack = new MyConcurrentPool<List<IHitInfo>>
+    public MyConcurrentPool<List<IHitInfo>> HitListPool = new MyConcurrentPool<List<IHitInfo>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -962,7 +962,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<Vector3I>> LineListStack = new MyConcurrentPool<List<Vector3I>>
+    public MyConcurrentPool<List<Vector3I>> LineListPool = new MyConcurrentPool<List<Vector3I>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -971,7 +971,7 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
-    public MyConcurrentPool<List<MyVoxelBase>> VoxelMapListStack = new MyConcurrentPool<List<MyVoxelBase>>
+    public MyConcurrentPool<List<MyVoxelBase>> VoxelMapListPool = new MyConcurrentPool<List<MyVoxelBase>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
@@ -1024,18 +1024,20 @@ namespace AiEnabled
 
     public MyConcurrentPool<Node> NodePool = new MyConcurrentPool<Node>
     (
-      defaultCapacity: 1000,
-      expectedAllocations: 1000,
-      activator: () => new TempNode(),
-      deactivator: (n) => { n = null; }
+      defaultCapacity: 10000,
+      clear: (x) => x.Reset(),
+      expectedAllocations: 10000,
+      activator: () => new Node(),
+      deactivator: (n) => { n.Reset(); n = null; }
     );
 
     public MyConcurrentPool<TempNode> TempNodePool = new MyConcurrentPool<TempNode>
     (
-      defaultCapacity: 1000,
-      expectedAllocations: 1000,
+      defaultCapacity: 10000,
+      clear: (x) => x.Reset(),
+      expectedAllocations: 10000,
       activator: () => new TempNode(),
-      deactivator: (n) => { n = null; }
+      deactivator: (n) => { n.Reset(); n = null; }
     );
 
     public MyConcurrentPool<Queue<Vector3I>> LocalVectorQueuePool = new MyConcurrentPool<Queue<Vector3I>>

@@ -27,7 +27,7 @@ namespace AiEnabled.Networking.Packets
         List<BotBase> bots;
         if (playerId > 0 && AiSession.Instance.PlayerToHelperDict.TryGetValue(playerId, out bots) && bots?.Count > 0)
         {
-          List<BotStatus> stats = AiSession.Instance.BotStatusListStack.Get();
+          List<BotStatus> stats = AiSession.Instance.BotStatusListPool.Get();
 
           for (int i = 0; i < bots.Count; i++)
           {
@@ -35,12 +35,12 @@ namespace AiEnabled.Networking.Packets
             if (helper == null || helper.IsDead)
               continue;
 
-            BotStatus bs = AiSession.Instance.BotStatusStack.Get();
+            BotStatus bs = AiSession.Instance.BotStatusPool.Get();
 
             if (bs.Update(helper))
               stats.Add(bs);
             else
-              AiSession.Instance.BotStatusStack.Return(bs);
+              AiSession.Instance.BotStatusPool.Return(bs);
           }
 
           if (stats.Count > 0)
@@ -52,10 +52,10 @@ namespace AiEnabled.Networking.Packets
           for (int i = 0; i < stats.Count; i++)
           {
             var stat = stats[i];
-            AiSession.Instance.BotStatusStack.Return(stat);
+            AiSession.Instance.BotStatusPool.Return(stat);
           }
 
-          AiSession.Instance.BotStatusListStack.Return(stats);
+          AiSession.Instance.BotStatusListPool.Return(stats);
         }
       }
 

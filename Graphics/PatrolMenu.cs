@@ -349,7 +349,7 @@ namespace AiEnabled.Graphics
         {
           PlaySound(_hudClickSoundPair);
           RouteBox.DeleteSelected(ref aspectRatio);
-          AiSession.Instance.UpdateConfig(true);
+          AiSession.Instance.UpdatePlayerConfig(true);
         }
         else
         {

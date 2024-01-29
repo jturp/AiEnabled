@@ -16,17 +16,20 @@ using VRageMath;
 namespace AiEnabled.Ai.Support
 {
   [Flags]
-  public enum NodeType : byte
+  public enum NodeType : ushort
   {
-    None = 0,
-    Grid = 1,
-    Ladder = 2,
-    GridPlanet = 4,
-    GridAdditional = 8,
-    GridUnderground = 16,
-    Ground = 32,
-    Water = 64,
-    Tunnel = 128
+    None = 0x0,
+    Grid = 0x1,
+    Ladder = 0x2,
+    GridPlanet = 0x4,
+    GridAdditional = 0x8,
+    GridUnderground = 0x10,
+    Ground = 0x20,
+    Water = 0x40,
+    Tunnel = 0x80,
+    Door = 0x100,
+    Hangar = 0x200,
+    Catwalk = 0x400
   }
 
   public class Node : IEqualityComparer<Node>, IComparer<Node>
@@ -35,8 +38,8 @@ namespace AiEnabled.Ai.Support
     public Vector3D Offset;
     public int BlockedMask;
     public int TempBlockedMask;
-    public byte MovementCost = 1;
-    public byte AddedMovementCost = 0;
+    public short MovementCost = 1;
+    public short AddedMovementCost = 0;
     public NodeType NodeType;
     bool? _isSpaceNode;
     object _ref;
@@ -52,124 +55,91 @@ namespace AiEnabled.Ai.Support
     public bool IsWaterNode => (NodeType & NodeType.Water) > 0;
     public bool IsAirNode => (NodeType & NodeType.Ground) == 0;
     public bool IsTunnelNode => (NodeType & NodeType.Tunnel) > 0;
+    public bool IsDoor => (NodeType & NodeType.Door) > 0;
+    public bool IsHangarDoor => (NodeType & NodeType.Hangar) > 0;
+    public bool IsVoxelNode => IsGridNodePlanetTile || (NodeType & NodeType.Grid) == 0;
+    public bool IsCatwalk => (NodeType & NodeType.Catwalk) > 0;
     public bool IsSpaceNode(GridBase gBase) => _isSpaceNode ?? IsNodeInSpace(gBase);
     public void ResetTempBlocked() => TempBlockedMask = 0;
 
     public Node() { }
 
-    public Node(Vector3I position, Vector3D surfaceOffset, GridBase gBase, MyCubeGrid grid = null, IMySlimBlock block = null)
+    public void Reset()
     {
-      Position = position;
-      Offset = surfaceOffset;
+      Position = Vector3I.Zero;
+      Offset = Vector3D.Zero;
       NodeType = NodeType.None;
+      MovementCost = 5;
+      AddedMovementCost = 0;
       BlockedMask = 0;
-
-      if (grid != null)
-      {
-        NodeType |= NodeType.Grid;
-
-        if (block != null)
-        {
-          _ref = block;
-
-          if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
-          {
-            NodeType |= NodeType.Ladder;
-            MovementCost++;
-          }
-          else if (block.FatBlock is IMyDoor)
-          {
-            MovementCost++;
-
-            if (block.FatBlock is IMyAirtightHangarDoor)
-              MovementCost++;
-          }
-        }
-        else
-        {
-          _ref = grid;
-        }
-      }
-
-      if (IsGridNode)
-        CalculateMovementCost(gBase);
-    }
-
-    public Node(Vector3I position, Vector3D surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
-    {
-      Position = position;
-      Offset = surfaceOffset;
-      NodeType = nType;
-      BlockedMask = blockMask;
+      TempBlockedMask = 0;
       _isSpaceNode = null;
-
-      if (grid != null)
-      {
-        NodeType |= NodeType.Grid;
-
-        if (block != null)
-        {
-          _ref = block;
-
-          if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
-          {
-            NodeType |= NodeType.Ladder;
-            MovementCost++;
-          }
-          else if (block.FatBlock is IMyDoor)
-          {
-            MovementCost++;
-
-            if (block.FatBlock is IMyAirtightHangarDoor)
-              MovementCost++;
-          }
-        }
-        else
-        {
-          _ref = grid;
-        }
-      }
-
-      if (IsGridNode)
-        CalculateMovementCost(gBase);
+      _ref = null;
     }
 
     public void CalculateMovementCost(GridBase gBase)
     {
-      if (IsAirNode || IsWaterNode)
-        MovementCost++;
+      MovementCost = AiSession.Instance.MovementCostData.MovementCostDict["Base"];
 
-      if (AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+      if (IsWaterNode)
+        MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Water"];
+      else if (IsAirNode)
+        MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Air"];
+
+      if (IsVoxelNode)
+        MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Voxel"];
+
+      if (IsTunnelNode)
+        MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Tunnel"];
+
+      if (IsGridNode)
       {
-        var gridMap = gBase as CubeGridMap;
-        if (gridMap?.WeaponPositions?.Count > 0)
+        if (IsDoor)
         {
-          var grid = gridMap.MainGrid;
-          var worldPosition = grid.GridIntegerToWorld(Position) + Offset;
-          var hitInfo = AiSession.Instance.CubeGridHitInfo;
+          if (IsHangarDoor)
+            MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Door"];
+          else
+            MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Hangar"];
+        }
+        else if (IsLadder)
+          MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Ladder"];
+        else if (IsCatwalk)
+          MovementCost += AiSession.Instance.MovementCostData.MovementCostDict["Catwalk"];
 
-          var closestDistance = int.MaxValue;
-          foreach (var point in gridMap.WeaponPositions)
+        if (AiSession.Instance.ModSaveData.IncreaseNodeWeightsNearWeapons)
+        {
+          var gridMap = gBase as CubeGridMap;
+          if (gridMap?.WeaponPositions?.Count > 0)
           {
-            var worldPoint = grid.GridIntegerToWorld(point);
-            var line = new LineD(worldPoint, worldPosition);
-            bool hitSomething = grid.GetIntersectionWithLine(ref line, ref hitInfo);
+            var grid = gridMap.MainGrid;
+            var worldPosition = grid.GridIntegerToWorld(Position) + Offset;
+            var hitInfo = AiSession.Instance.CubeGridHitInfo;
 
-            if (!hitSomething || hitInfo.Position == Position)
+            var closestDistance = int.MaxValue;
+            foreach (var point in gridMap.WeaponPositions)
             {
-              var distance = (point - Position).Length();
-              if (distance < closestDistance)
+              var worldPoint = grid.GridIntegerToWorld(point);
+              var line = new LineD(worldPoint, worldPosition);
+              bool hitSomething = grid.GetIntersectionWithLine(ref line, ref hitInfo);
+
+              if (!hitSomething || hitInfo.Position == Position)
               {
-                closestDistance = distance;
+                var distance = (point - Position).Length();
+                if (distance < closestDistance)
+                {
+                  closestDistance = distance;
+                }
               }
             }
-          }
 
-          var num = 5 - (closestDistance / 7);
-          if (num > 0)
-            AddedMovementCost = (byte)(num * num);
+            var num = 5 - (closestDistance / 7);
+            if (num > 0)
+              AddedMovementCost = (byte)(num * num);
+          }
         }
       }
+
+      MovementCost = Math.Max((short)1, MovementCost);
     }
 
     public void Update(Node other, Vector3D surfaceOffset)
@@ -177,8 +147,10 @@ namespace AiEnabled.Ai.Support
       Offset = surfaceOffset;
       Position = other.Position;
       BlockedMask = other.BlockedMask;
+      TempBlockedMask = other.TempBlockedMask;
       NodeType = other.NodeType;
       MovementCost = other.MovementCost;
+      AddedMovementCost = other.AddedMovementCost;
       _isSpaceNode = other._isSpaceNode;
       _ref = other._ref;
     }
@@ -203,15 +175,16 @@ namespace AiEnabled.Ai.Support
           if (AiSession.Instance.LadderBlockDefinitions.Contains(block.BlockDefinition.Id))
           {
             NodeType |= NodeType.Ladder;
-            MovementCost++;
           }
           else if (block.FatBlock is IMyDoor)
           {
-            MovementCost++;
+            NodeType |= NodeType.Door;
 
-            if (block.FatBlock is IMyAirtightHangarDoor)
-              MovementCost++;
+            if (block.FatBlock is IMyAirtightHangarDoor || block.BlockDefinition.Id.SubtypeName.Contains("Gate"))
+              NodeType |= NodeType.Hangar;
           }
+          else if (AiSession.Instance.CatwalkBlockDefinitions.Contains(block.BlockDefinition.Id))
+            NodeType |= NodeType.Catwalk;
         }
         else
         {
@@ -219,18 +192,19 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      if (IsGridNode)
-        CalculateMovementCost(gBase);
+      CalculateMovementCost(gBase);
     }
 
-    public void SetNodeType(NodeType nType)
+    public void SetNodeType(NodeType nType, GridBase gBase)
     {
       NodeType |= nType;
+      CalculateMovementCost(gBase);
     }
 
-    public void RemoveNodeType(NodeType nType)
+    public void RemoveNodeType(NodeType nType, GridBase gBase)
     {
       NodeType &= ~nType;
+      CalculateMovementCost(gBase);
     }
 
     public bool SetBlocked(Vector3I dir)

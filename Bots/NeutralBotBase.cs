@@ -71,8 +71,8 @@ namespace AiEnabled.Bots
       WantsTarget = false;
       CanDamageGrid = false;
 
-      _attackSounds = AiSession.Instance.SoundListStack.Get();
-      _attackSoundStrings = AiSession.Instance.StringListStack.Get();
+      _attackSounds = AiSession.Instance.SoundListPool.Get();
+      _attackSoundStrings = AiSession.Instance.StringListPool.Get();
 
       if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
       {
@@ -985,7 +985,7 @@ namespace AiEnabled.Bots
       if (faction == null)
         return;
 
-      List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+      List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
 
       var sphere = new BoundingSphereD(GetPosition(), 50);
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);
@@ -1006,7 +1006,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      AiSession.Instance.EntListStack.Return(entList);
+      AiSession.Instance.EntListPool.Return(entList);
     }
 
     internal override void Attack()

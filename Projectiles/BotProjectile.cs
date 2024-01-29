@@ -135,7 +135,7 @@ namespace AiEnabled.Projectiles
         if (_firstCheck)
           LastPosition = Start - Direction;
 
-        List<MyLineSegmentOverlapResult<MyEntity>> lineList = AiSession.Instance.OverlapResultListStack.Get();
+        List<MyLineSegmentOverlapResult<MyEntity>> lineList = AiSession.Instance.OverlapResultListPool.Get();
         MyGamePruningStructure.GetTopmostEntitiesOverlappingRay(ref line, lineList, MyEntityQueryType.Dynamic);
 
         bool shieldHit = false;
@@ -164,7 +164,7 @@ namespace AiEnabled.Projectiles
           }
         }
 
-        AiSession.Instance.OverlapResultListStack.Return(lineList);
+        AiSession.Instance.OverlapResultListPool.Return(lineList);
 
         if (shieldHit)
         {

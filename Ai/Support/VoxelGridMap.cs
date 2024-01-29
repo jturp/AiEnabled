@@ -69,9 +69,9 @@ namespace AiEnabled.Ai.Support
       BoundingBox = new BoundingBoxI(-vec, vec);
       MyVoxelBase checkVoxel = null;
 
-      _tempObstaclesWorkData = AiSession.Instance.ObstacleWorkDataStack.Get();
-      _voxelUpdatesNeeded = AiSession.Instance.VoxelUpdateListStack.Get();
-      _voxelUpdatesQueue = AiSession.Instance.VoxelUpdateQueueStack.Get();
+      _tempObstaclesWorkData = AiSession.Instance.ObstacleWorkDataPool.Get();
+      _voxelUpdatesNeeded = AiSession.Instance.VoxelUpdateListPool.Get();
+      _voxelUpdatesQueue = AiSession.Instance.VoxelUpdateQueuePool.Get();
 
       float _;
       var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(botStart, out _);
@@ -84,7 +84,7 @@ namespace AiEnabled.Ai.Support
       }
       else
       {
-        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
+        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListPool.Get();
 
         var halfSize = vec * CellSize;
         var box = new BoundingBoxD(botStart - halfSize, botStart + halfSize);
@@ -110,7 +110,7 @@ namespace AiEnabled.Ai.Support
         }
 
         vList.Clear();
-        AiSession.Instance.VoxelMapListStack.Return(vList);
+        AiSession.Instance.VoxelMapListPool.Return(vList);
       }
 
       WorldMatrix = MatrixD.CreateWorld(botStart, newForward, _upVector);
@@ -379,7 +379,7 @@ namespace AiEnabled.Ai.Support
 
     public override bool GetRandomNodeNearby(BotBase bot, Vector3D targetPosition, out Vector3I localPos)
     {
-      List<Vector3I> localNodes = AiSession.Instance.LineListStack.Get();
+      List<Vector3I> localNodes = AiSession.Instance.LineListPool.Get();
 
       var botPosition = bot.BotInfo.CurrentBotPositionActual;
       var botWorldMatrix = bot.WorldMatrix;
@@ -441,7 +441,7 @@ namespace AiEnabled.Ai.Support
         result = true;
       }
 
-      AiSession.Instance.LineListStack.Return(localNodes);
+      AiSession.Instance.LineListPool.Return(localNodes);
       return result;
     }
 
@@ -645,7 +645,7 @@ namespace AiEnabled.Ai.Support
 
           if (!found)
           {
-            VoxelUpdateItem updateItem = AiSession.Instance.VoxelUpdateItemStack.Get();
+            VoxelUpdateItem updateItem = AiSession.Instance.VoxelUpdateItemPool.Get();
             updateItem.Init(ref min, ref max);
             _voxelUpdatesNeeded.Add(updateItem);
           }
@@ -731,7 +731,7 @@ namespace AiEnabled.Ai.Support
 
           if (!OBB.Contains(ref minWorld) && !OBB.Contains(ref maxWorld))
           {
-            AiSession.Instance.VoxelUpdateItemStack.Return(updateItem);
+            AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
             return;
           }
 
@@ -748,7 +748,7 @@ namespace AiEnabled.Ai.Support
           {
             if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
             {
-              AiSession.Instance.VoxelUpdateItemStack.Return(updateItem);
+              AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
               return;
             }
 
@@ -771,7 +771,7 @@ namespace AiEnabled.Ai.Support
           }
 
           CheckForPlanetTiles(ref mapMin, ref mapMax);
-          AiSession.Instance.VoxelUpdateItemStack.Return(updateItem);
+          AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
         }
 
         //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
@@ -999,7 +999,7 @@ namespace AiEnabled.Ai.Support
         Node nAbove;
         if (OpenTileDict.TryGetValue(localAbove, out nAbove) && !nAbove.IsGridNode)
         {
-          nAbove.SetNodeType(NodeType.Ground);
+          nAbove.SetNodeType(NodeType.Ground, this);
 
           var worldPoint = LocalToWorld(node.Position) + node.Offset;
           nAbove.Offset = (Vector3)(worldPoint - LocalToWorld(nAbove.Position));
@@ -1083,7 +1083,7 @@ namespace AiEnabled.Ai.Support
         MyAPIGateway.Utilities.ShowNotification($"Exception during ObstacleTask!");
       }
 
-      List<MyEntity> tempEntities = AiSession.Instance.EntListStack.Get();
+      List<MyEntity> tempEntities = AiSession.Instance.EntListPool.Get();
 
       List<IMySlimBlock> blocks = AiSession.Instance.SlimListPool.Get();
       var sphere = new BoundingSphereD(OBB.Center, OBB.HalfExtent.AbsMax());
@@ -1101,7 +1101,7 @@ namespace AiEnabled.Ai.Support
         ((IMyCubeGrid)grid).GetBlocks(blocks);
       }
 
-      AiSession.Instance.EntListStack.Return(tempEntities);
+      AiSession.Instance.EntListPool.Return(tempEntities);
 
       _tempObstaclesWorkData.Blocks = blocks;
       _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
@@ -1120,7 +1120,7 @@ namespace AiEnabled.Ai.Support
         var blocks = obstacleData.Blocks;
         _tempKVPList.Clear();
 
-        var positionList = AiSession.Instance.LineListStack.Get();
+        var positionList = AiSession.Instance.LineListPool.Get();
 
         for (int i = 0; i < blocks.Count; i++)
         {
@@ -1181,7 +1181,7 @@ namespace AiEnabled.Ai.Support
 
         }
 
-        AiSession.Instance.LineListStack.Return(positionList);
+        AiSession.Instance.LineListPool.Return(positionList);
 
         foreach (var kvp in _tempKVPList)
         {
@@ -1199,7 +1199,7 @@ namespace AiEnabled.Ai.Support
       Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
 
       var obstacleData = data as ObstacleWorkData;
-      if (obstacleData?.Blocks != null && AiSession.Instance?.ObstacleWorkDataStack != null && AiSession.Instance.Registered)
+      if (obstacleData?.Blocks != null && AiSession.Instance?.ObstacleWorkDataPool != null && AiSession.Instance.Registered)
       {
         AiSession.Instance.SlimListPool.Return(obstacleData.Blocks);
       }
@@ -1230,17 +1230,17 @@ namespace AiEnabled.Ai.Support
         {
           if (_tempObstaclesWorkData != null)
           {
-            AiSession.Instance.ObstacleWorkDataStack?.Return(_tempObstaclesWorkData);
+            AiSession.Instance.ObstacleWorkDataPool?.Return(_tempObstaclesWorkData);
           }
 
           if (_voxelUpdatesNeeded != null)
           {
-            AiSession.Instance.VoxelUpdateListStack?.Return(_voxelUpdatesNeeded);
+            AiSession.Instance.VoxelUpdateListPool?.Return(_voxelUpdatesNeeded);
           }
 
           if (_voxelUpdatesQueue != null)
           {
-            AiSession.Instance.VoxelUpdateQueueStack?.Return(_voxelUpdatesQueue);
+            AiSession.Instance.VoxelUpdateQueuePool?.Return(_voxelUpdatesQueue);
           }
         }
         else
@@ -1361,7 +1361,7 @@ namespace AiEnabled.Ai.Support
       var worldPosition = LocalToWorld(localPosition);
       var sphere = new BoundingSphereD(worldPosition, 0.25);
 
-      List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+      List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
 
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
 
@@ -1380,7 +1380,7 @@ namespace AiEnabled.Ai.Support
           break;
       }
 
-      AiSession.Instance.EntListStack.Return(entList);
+      AiSession.Instance.EntListPool.Return(entList);
       return block;
     }
   }

@@ -1068,11 +1068,11 @@ namespace AiEnabled.Bots
       _pathWorkAction = new Action<WorkData>(FindPath);
       _pathWorkCallBack = new Action<WorkData>(FindPathCallBack);
 
-      _hitList = AiSession.Instance.HitListStack.Get();
-      _hitListThread = AiSession.Instance.HitListStack.Get();
+      _hitList = AiSession.Instance.HitListPool.Get();
+      _hitListThread = AiSession.Instance.HitListPool.Get();
       _graphWorkData = AiSession.Instance.GraphWorkPool.Get();
       _pathWorkData = AiSession.Instance.PathWorkPool.Get();
-      _patrolList = AiSession.Instance.LineListStack.Get();
+      _patrolList = AiSession.Instance.LineListPool.Get();
     }
 
     public void ChangeCharacter(IMyCharacter newCharacter)
@@ -1331,27 +1331,27 @@ namespace AiEnabled.Bots
 
       if (_hitListThread != null)
       {
-        AiSession.Instance.HitListStack?.Return(_hitListThread);
+        AiSession.Instance.HitListPool?.Return(_hitListThread);
       }
 
       if (_hitList != null)
       {
-        AiSession.Instance.HitListStack?.Return(_hitList);
+        AiSession.Instance.HitListPool?.Return(_hitList);
       }
 
       if (_patrolList != null)
       {
-        AiSession.Instance.LineListStack?.Return(_patrolList);
+        AiSession.Instance.LineListPool?.Return(_patrolList);
       }
 
       if (_attackSounds != null)
       {
-        AiSession.Instance.SoundListStack?.Return(_attackSounds);
+        AiSession.Instance.SoundListPool?.Return(_attackSounds);
       }
 
       if (_attackSoundStrings != null)
       {
-        AiSession.Instance.StringListStack?.Return(_attackSoundStrings);
+        AiSession.Instance.StringListPool?.Return(_attackSoundStrings);
       }
 
       Target?.Close();
@@ -1796,7 +1796,7 @@ namespace AiEnabled.Bots
 
       if (AiSession.Instance.ShieldAPILoaded && _tickCount % 2 == 0)
       {
-        List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+        List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
 
         var center = Character.WorldAABB.Center;
         var radius = Character.LocalVolume.Radius;
@@ -1847,7 +1847,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        AiSession.Instance.EntListStack.Return(entList);
+        AiSession.Instance.EntListPool.Return(entList);
 
         if (BugZapped)
         {
@@ -2670,13 +2670,13 @@ namespace AiEnabled.Bots
         }
       }
 
-      List<MyEntity> blockTargets = AiSession.Instance.EntListStack.Get();
+      List<MyEntity> blockTargets = AiSession.Instance.EntListPool.Get();
       List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
-      List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+      List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
       List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
-      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashStack.Get();
-      List<MyLineSegmentOverlapResult<MyEntity>> resultList = AiSession.Instance.OverlapResultListStack.Get();
-      List<Vector3I> cellList = AiSession.Instance.LineListStack.Get();
+      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashPool.Get();
+      List<MyLineSegmentOverlapResult<MyEntity>> resultList = AiSession.Instance.OverlapResultListPool.Get();
+      List<Vector3I> cellList = AiSession.Instance.LineListPool.Get();
 
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var huntingDistance = AiSession.Instance.ModSaveData.MaxBotHuntingDistanceEnemy;
@@ -3010,12 +3010,12 @@ namespace AiEnabled.Bots
           break;
       }
 
-      AiSession.Instance.EntListStack.Return(blockTargets);
+      AiSession.Instance.EntListPool.Return(blockTargets);
       AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.EntListStack.Return(entList);
-      AiSession.Instance.GridCheckHashStack.Return(checkedGridIDs);
-      AiSession.Instance.OverlapResultListStack.Return(resultList);
-      AiSession.Instance.LineListStack.Return(cellList);
+      AiSession.Instance.EntListPool.Return(entList);
+      AiSession.Instance.GridCheckHashPool.Return(checkedGridIDs);
+      AiSession.Instance.OverlapResultListPool.Return(resultList);
+      AiSession.Instance.LineListPool.Return(cellList);
 
       if (useCurrent)
         return;
@@ -3278,8 +3278,8 @@ namespace AiEnabled.Bots
       }
 
       List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
-      List<MyLineSegmentOverlapResult<MyEntity>> rayEntities = AiSession.Instance.OverlapResultListStack.Get();
-      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashStack.Get();
+      List<MyLineSegmentOverlapResult<MyEntity>> rayEntities = AiSession.Instance.OverlapResultListPool.Get();
+      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashPool.Get();
 
       var lineToNewGraph = new LineD(botPosition, newGraphPosition);
       var lineToTarget = new LineD(botPosition, targetPosition);
@@ -3396,8 +3396,8 @@ namespace AiEnabled.Bots
       }
 
       AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.OverlapResultListStack.Return(rayEntities);
-      AiSession.Instance.GridCheckHashStack.Return(checkedGridIDs);
+      AiSession.Instance.OverlapResultListPool.Return(rayEntities);
+      AiSession.Instance.GridCheckHashPool.Return(checkedGridIDs);
 
       if (newGrid != null && newGrid.EntityId != gridGraph?.MainGrid?.EntityId && newGridOBB != null)
       {
@@ -3666,7 +3666,7 @@ namespace AiEnabled.Bots
 
       if (Target.Entity != null)
       {
-        List<IHitInfo> hitlist = AiSession.Instance.HitListStack.Get();
+        List<IHitInfo> hitlist = AiSession.Instance.HitListPool.Get();
 
         MyAPIGateway.Physics.CastRay(botPos, targetPosition, hitlist, CollisionLayers.CharacterCollisionLayer);
         bool result = true;
@@ -3835,7 +3835,7 @@ namespace AiEnabled.Bots
           break;
         }
 
-        AiSession.Instance.HitListStack.Return(hitlist);
+        AiSession.Instance.HitListPool.Return(hitlist);
         return result;
       }
 
@@ -3847,7 +3847,7 @@ namespace AiEnabled.Bots
       if (_pathCollection == null)
         return;
 
-      List<Vector3I> tempNodes = AiSession.Instance.LineListStack.Get();
+      List<Vector3I> tempNodes = AiSession.Instance.LineListPool.Get();
 
       foreach (var kvp in _pathCollection.DeniedDoors)
       {
@@ -3866,7 +3866,7 @@ namespace AiEnabled.Bots
         _pathCollection.DeniedDoors.Remove(node);
 
       tempNodes.Clear();
-      AiSession.Instance.LineListStack.Return(tempNodes);
+      AiSession.Instance.LineListPool.Return(tempNodes);
     }
 
     internal void FindPathForIdleMovement(Vector3D moveTo)
@@ -4163,7 +4163,7 @@ namespace AiEnabled.Bots
           var tp = _currentGraph.LocalToWorld(_transitionPoint.Position);
           var sphere = new BoundingSphereD(tp, 3);
 
-          List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+          List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
           MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
 
           var thisGrid = (_currentGraph as CubeGridMap)?.MainGrid;
@@ -4181,7 +4181,7 @@ namespace AiEnabled.Bots
             }
           }
 
-          AiSession.Instance.EntListStack.Return(entList);
+          AiSession.Instance.EntListPool.Return(entList);
         }
 
         if (!nextGraphOK || !transitionOk || (!targetInNext && targetInCurrent))
@@ -4759,7 +4759,7 @@ namespace AiEnabled.Bots
 
           if (addTo && _pathCollection != null)
           {
-            List<IHitInfo> hitInfoList = AiSession.Instance.HitListStack.Get();
+            List<IHitInfo> hitInfoList = AiSession.Instance.HitListPool.Get();
 
             var botPosition = GetPosition();
             MyAPIGateway.Physics.CastRay(botPosition, botPosition + WorldMatrix.Forward * 2, hitInfoList, CollisionLayers.CharacterCollisionLayer);
@@ -4778,7 +4778,7 @@ namespace AiEnabled.Bots
               }
             }
 
-            AiSession.Instance.HitListStack.Return(hitInfoList);
+            AiSession.Instance.HitListPool.Return(hitInfoList);
 
             var last = lastNode != null ? lastNode.Position : current;
             var next = nextNode != null ? nextNode.Position : current;
@@ -5090,7 +5090,6 @@ namespace AiEnabled.Bots
       //edges = startNode.GetBlockedEdges(_sb);
       //AiSession.Instance.Logger.Log($"Blocked Edges for {endNode.Position}: {edges}");
 
-
       _task = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
 
       // testing only
@@ -5098,6 +5097,9 @@ namespace AiEnabled.Bots
       //FindPath(_pathWorkData);
       //Reset();
     }
+
+    // debug only
+    //StringBuilder _sb = new StringBuilder(1024);
 
     bool BlockIsOnSameGrid()
     {
@@ -5129,7 +5131,7 @@ namespace AiEnabled.Bots
       //{
       //  AiSession.Instance.Logger.Log($"Path to target:");
       //  foreach (var node in _pathCollection.PathToTarget)
-      //    AiSession.Instance.Logger.Log($" -> {node.Position}");
+      //    AiSession.Instance.Logger.Log($" {node.Position} | {node.NodeType}");
       //}
       //AiSession.Instance.InPathFinder = false;
       Reset();
@@ -5464,7 +5466,7 @@ namespace AiEnabled.Bots
       var botPosition = BotInfo.CurrentBotPositionActual;
       var botMatrix = WorldMatrix;
 
-      List<IHitInfo> hitList = AiSession.Instance.HitListStack.Get();
+      List<IHitInfo> hitList = AiSession.Instance.HitListPool.Get();
       MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward * 3, hitList, CollisionLayers.CharacterCollisionLayer);
 
       bool doorFound = false;
@@ -5484,7 +5486,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      AiSession.Instance.HitListStack.Return(hitList);
+      AiSession.Instance.HitListPool.Return(hitList);
 
       return doorFound;
     }
@@ -5504,7 +5506,7 @@ namespace AiEnabled.Bots
         var botPosition = BotInfo.CurrentBotPositionActual;
         var botMatrix = WorldMatrix;
 
-        List<IHitInfo> hitlist = AiSession.Instance.HitListStack.Get();
+        List<IHitInfo> hitlist = AiSession.Instance.HitListPool.Get();
         MyAPIGateway.Physics.CastRay(botPosition, botPosition + botMatrix.Forward, hitlist, CollisionLayers.CharacterCollisionLayer);
 
         bool canUseDoors = CanOpenDoors && (!(this is NeutralBotBase) || AiSession.Instance.ModSaveData.AllowNeutralsToOpenDoors);
@@ -5569,7 +5571,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        AiSession.Instance.HitListStack.Return(hitlist);
+        AiSession.Instance.HitListPool.Return(hitlist);
 
         if (swerve)
           return true;
@@ -5666,7 +5668,7 @@ namespace AiEnabled.Bots
 
           if (!gridGraph.BlockedDoors.ContainsKey(pos))
           {
-            List<Vector3I> positionList = AiSession.Instance.LineListStack.Get();
+            List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
             AiUtils.FindAllPositionsForBlock(door.SlimBlock, positionList);
 
             for (int i = 0; i < positionList.Count; i++)
@@ -5679,7 +5681,7 @@ namespace AiEnabled.Bots
               gridGraph.BlockedDoors[point] = door;
             }
 
-            AiSession.Instance.LineListStack.Return(positionList);
+            AiSession.Instance.LineListPool.Return(positionList);
           }
 
           var pointBehind = botPosition + botMatrix.Backward * gridGraph.CellSize;
@@ -5712,7 +5714,7 @@ namespace AiEnabled.Bots
             if (localBot != doorPos)
             {
 
-              List<MyEntity> entList = AiSession.Instance.EntListStack.Get();
+              List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
 
               var sphere = new BoundingSphereD(doorWorldPos, 1);
               MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);
@@ -5733,7 +5735,7 @@ namespace AiEnabled.Bots
                 }
               }
 
-              AiSession.Instance.EntListStack.Return(entList);
+              AiSession.Instance.EntListPool.Return(entList);
 
               if (occupied)
                 return true;
@@ -5914,7 +5916,7 @@ namespace AiEnabled.Bots
 
           if (addTo && _pathCollection != null)
           {
-            List<IHitInfo> hitInfoList = AiSession.Instance.HitListStack.Get();
+            List<IHitInfo> hitInfoList = AiSession.Instance.HitListPool.Get();
 
             var botPosition = GetPosition();
             MyAPIGateway.Physics.CastRay(botPosition, botPosition + WorldMatrix.Forward * 2, hitInfoList, CollisionLayers.CharacterCollisionLayer);
@@ -5933,7 +5935,7 @@ namespace AiEnabled.Bots
               }
             }
 
-            AiSession.Instance.HitListStack.Return(hitInfoList);
+            AiSession.Instance.HitListPool.Return(hitInfoList);
 
             var last = lastNode != null ? lastNode.Position : current;
             var next = nextNode != null ? nextNode.Position : current;
@@ -6465,11 +6467,7 @@ namespace AiEnabled.Bots
         var distance = Vector3D.DistanceSquared(actualPosition, botPosition);
 
         var cube = Target.Entity as IMyCubeBlock;
-        var slim = cube?.SlimBlock;
-
-        if (slim == null)
-          slim = Target.Entity as IMySlimBlock;
-
+        var slim = (cube?.SlimBlock) ?? Target.Entity as IMySlimBlock;
         if (_currentGraph.IsGridGraph)
         {
           if (directToBlock)

@@ -280,27 +280,22 @@ namespace AiEnabled.Ai
               bool isHangar = door is IMyAirtightHangarDoor || door.BlockDefinition.SubtypeName.Contains("Gate");
               bool isOpen = door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open;
 
-              if (!isOpen)
+              if (door.SlimBlock.IsBlockUnbuilt())
               {
-                if (door.SlimBlock.IsBlockUnbuilt())
-                {
-                  isOpen = true;
-                }
-                else if (!checkDoors)
-                {
-                  continue;
-                }
-                else
-                {
-                  currentCost += isHangar ? 25 : 2;
-                }
+                isOpen = true;
+                var doorType = isHangar ? "Hangar" : "Door";
+                currentCost -= AiSession.Instance.MovementCostData.MovementCostDict[doorType];
+              }
+              else if (!checkDoors)
+              {
+                continue;
               }
 
               if (bot.Owner == null)
               {
                 if (!isOpen && (collection.DeniedDoors.ContainsKey(current) || gridGraph.BlockedDoors.ContainsKey(current)))
                 {
-                  currentCost += isHangar ? 40 : 15;
+                  currentCost += isHangar ? 40 : 20;
                 }
 
                 checkDoors &= (relation == MyRelationsBetweenPlayers.Allies || relation == MyRelationsBetweenPlayers.Self);
@@ -312,6 +307,8 @@ namespace AiEnabled.Ai
             }
           }
         }
+
+        currentCost = Math.Max(1, currentCost);
 
         //AiSession.Instance.Logger.AddLine($" -> Checking Neighbors: Prev = {previous}, Cur = {current}");
         foreach (var next in graph.Neighbors(bot, previous, current, botPosition, checkDoors))
@@ -458,7 +455,7 @@ namespace AiEnabled.Ai
           Node pathNode;
           if (graph.TryGetNodeForPosition(localVec, out pathNode))
           {
-            path.Enqueue(pathNode);
+            AddNodeToPath(path, pathNode);
           }
         }
 
@@ -580,7 +577,7 @@ namespace AiEnabled.Ai
           {
             if (n.IsGridNodePlanetTile)
             {
-              path.Enqueue(n);
+              AddNodeToPath(path, n);
               continue;
             }
 
@@ -800,7 +797,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -817,7 +814,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -834,7 +831,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -912,7 +909,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -936,7 +933,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -974,7 +971,7 @@ namespace AiEnabled.Ai
 
                   TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                   tempNode.Update(node, offset ?? Vector3D.Zero);
-                  path.Enqueue(tempNode);
+                  AddNodeToPath(path, tempNode);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -999,7 +996,7 @@ namespace AiEnabled.Ai
 
                 TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                 tempNode.Update(node, offset ?? Vector3D.Zero);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1017,7 +1014,7 @@ namespace AiEnabled.Ai
 
                   TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                   tempNode.Update(node, offset ?? Vector3D.Zero);
-                  path.Enqueue(tempNode);
+                  AddNodeToPath(path, tempNode);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1035,7 +1032,7 @@ namespace AiEnabled.Ai
 
                     TempNode tempNode = AiSession.Instance.TempNodePool.Get();
                     tempNode.Update(node, offset ?? Vector3D.Zero);
-                    path.Enqueue(tempNode);
+                    AddNodeToPath(path, tempNode);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1058,7 +1055,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1092,7 +1089,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1161,7 +1158,7 @@ namespace AiEnabled.Ai
               }
 
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1185,7 +1182,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1219,7 +1216,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1280,7 +1277,7 @@ namespace AiEnabled.Ai
 
                     TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                     tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                    path.Enqueue(tempNode2);
+                    AddNodeToPath(path, tempNode2);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1311,7 +1308,7 @@ namespace AiEnabled.Ai
 
                 TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                 tempNode2.Update(node2, node2.Offset);
-                path.Enqueue(tempNode2);
+                AddNodeToPath(path, tempNode2);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1361,7 +1358,7 @@ namespace AiEnabled.Ai
               }
 
               tempNode.Update(node, offset ?? Vector3D.Zero);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1412,7 +1409,7 @@ namespace AiEnabled.Ai
 
                 TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                 tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                path.Enqueue(tempNode2);
+                AddNodeToPath(path, tempNode2);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1505,7 +1502,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, offset ?? Vector3D.Zero);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1543,7 +1540,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, offset ?? Vector3D.Zero);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1576,7 +1573,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, offset ?? Vector3D.Zero);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1627,7 +1624,7 @@ namespace AiEnabled.Ai
 
                   TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                   tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                  path.Enqueue(tempNode2);
+                  AddNodeToPath(path, tempNode2);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1651,7 +1648,7 @@ namespace AiEnabled.Ai
 
               TempNode tempNode = AiSession.Instance.TempNodePool.Get();
               tempNode.Update(node, offset.Value);
-              path.Enqueue(tempNode);
+              AddNodeToPath(path, tempNode);
 
               if (nextIsCatwalkExpansion)
                 AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1671,7 +1668,7 @@ namespace AiEnabled.Ai
 
                 TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                 tempNode2.Update(node2, offset.Value);
-                path.Enqueue(tempNode2);
+                AddNodeToPath(path, tempNode2);
 
                 if (nextIsCatwalkExpansion)
                   AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1726,7 +1723,7 @@ namespace AiEnabled.Ai
 
                     TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                     tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                    path.Enqueue(tempNode2);
+                    AddNodeToPath(path, tempNode2);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1761,7 +1758,7 @@ namespace AiEnabled.Ai
 
                     TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                     tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                    path.Enqueue(tempNode2);
+                    AddNodeToPath(path, tempNode2);
 
                     if (nextIsCatwalkExpansion)
                       AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1782,7 +1779,7 @@ namespace AiEnabled.Ai
 
                   TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
                   tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                  path.Enqueue(tempNode2);
+                  AddNodeToPath(path, tempNode2);
 
                   if (nextIsCatwalkExpansion)
                     AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -1840,7 +1837,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, extra);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
               }
 
               if (!thisIsHalfStair && afterNextIsHalfStair)
@@ -1920,7 +1917,7 @@ namespace AiEnabled.Ai
                     extra = dir * gridSize * 0.25;
 
                     tempNode.Update(node, extra);
-                    path.Enqueue(tempNode);
+                    AddNodeToPath(path, tempNode);
                   }
                 }
 
@@ -1947,7 +1944,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, extra);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
               }
 
               if (!thisIsHalfStair && nextIsHalfStair)
@@ -2002,7 +1999,7 @@ namespace AiEnabled.Ai
             }
 
             tempNode2.Update(node2, offset ?? Vector3D.Zero);
-            path.Enqueue(tempNode2);
+            AddNodeToPath(path, tempNode2);
           }
           else if (halfSlopeCheck)
           {
@@ -2051,7 +2048,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, extra);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
               }
 
               if (!thisisHalfPanelSlope && afterNextIsHalfPanelSlope)
@@ -2131,7 +2128,7 @@ namespace AiEnabled.Ai
                     extra = dir * gridSize * 0.25;
 
                     tempNode.Update(node, extra);
-                    path.Enqueue(tempNode);
+                    AddNodeToPath(path, tempNode);
                   }
                 }
 
@@ -2158,7 +2155,7 @@ namespace AiEnabled.Ai
                 }
 
                 tempNode.Update(node, extra);
-                path.Enqueue(tempNode);
+                AddNodeToPath(path, tempNode);
               }
 
               if (!thisisHalfPanelSlope && nextIsHalfPanelSlope)
@@ -2213,7 +2210,7 @@ namespace AiEnabled.Ai
             }
 
             tempNode2.Update(node2, offset ?? Vector3D.Zero);
-            path.Enqueue(tempNode2);
+            AddNodeToPath(path, tempNode2);
 
             if (nextIsCatwalkExpansion)
               AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
@@ -2225,7 +2222,7 @@ namespace AiEnabled.Ai
 
             TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
             tempNode2.Update(node2, offset ?? Vector3D.Zero);
-            path.Enqueue(tempNode2);
+            AddNodeToPath(path, tempNode2);
 
             if (nextIsCatwalkExpansion)
             {
@@ -2610,12 +2607,12 @@ namespace AiEnabled.Ai
       {
         TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
         tempNode2.Update(node, Vector3D.Zero);
-        path.Enqueue(tempNode2);
+        AddNodeToPath(path, tempNode2);
       }
 
       TempNode tempNode = AiSession.Instance.TempNodePool.Get();
       tempNode.Update(node, offset ?? Vector3D.Zero);
-      path.Enqueue(tempNode);
+      AddNodeToPath(path, tempNode);
     }
 
     static void AddOffsetForNextCatwalk(IMySlimBlock nextBlock, CubeGridMap gridGraph, MyQueue<Node> path,
@@ -2909,8 +2906,30 @@ namespace AiEnabled.Ai
 
         TempNode tempNode = AiSession.Instance.TempNodePool.Get();
         tempNode.Update(node, offset.Value);
-        path.Enqueue(tempNode);
+        AddNodeToPath(path, tempNode);
       }
+    }
+
+    static void AddNodeToPath(MyQueue<Node> path, Node node)
+    {
+      //if (path.Count == 0)
+      //  AiSession.Instance.Logger.Log($"~~~~ Path Start ~~~~");
+
+      //if (node.Position == Vector3I.Zero && node.NodeType == NodeType.None)
+      //{
+      //  AiSession.Instance.Logger.Log($" !! Node is empty !!");
+      //}
+
+      //Vector3I diff = Vector3I.Zero;
+      //if (path.Count > 1)
+      //{
+      //  var prev = path[path.Count - 1];
+      //  diff = node.Position - prev.Position;
+      //}
+
+      //AiSession.Instance.Logger.Log($" {node.Position} | {node.NodeType} | Diff = {diff}");
+
+      path.Enqueue(node);
     }
   }
 }

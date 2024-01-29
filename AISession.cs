@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.7.17";
+    public const string VERSION = "v1.8.0";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -127,6 +127,7 @@ namespace AiEnabled
     public PlayerMenu PlayerMenu;
     public NetworkHandler Network;
     public SaveData ModSaveData;
+    public MovementCostData MovementCostData;
     public BotPricing ModPriceData;
     public PlayerData PlayerData;
     public Inputs Input;
@@ -547,18 +548,19 @@ namespace AiEnabled
       Input?.Close();
       HudAPI?.Close();
       Projectiles?.Close();
+      MovementCostData?.Close();
       Network?.Unregister();
       ProjectileConstants.Close();
 
       AllCoreWeaponDefinitions?.Clear();
-      InvCacheStack?.Clean();
-      GridMapListStack?.Clean();
-      OverlapResultListStack?.Clean();
-      GridCheckHashStack?.Clean();
-      StringListStack?.Clean();
-      SoundListStack?.Clean();
-      EntListStack?.Clean();
-      HitListStack?.Clean();
+      InvCachePool?.Clean();
+      GridMapListPool?.Clean();
+      OverlapResultListPool?.Clean();
+      GridCheckHashPool?.Clean();
+      StringListPool?.Clean();
+      SoundListPool?.Clean();
+      EntListPool?.Clean();
+      HitListPool?.Clean();
       Players?.Clear();
       Bots?.Clear();
       CatwalkRailDirections?.Clear();
@@ -591,24 +593,24 @@ namespace AiEnabled
       ItemOBDict?.Clear();
       AllGameDefinitions?.Clear();
       ScavengerItemList?.Clear();
-      MissingCompsDictStack?.Clean();
+      MissingCompsDictPool?.Clean();
       EmptySorterCache?.Clear();
       FactorySorterCache?.Clear();
-      ApiWorkDataStack?.Clean();
-      LocalVectorHashStack?.Clean();
+      ApiWorkDataPool?.Clean();
+      LocalVectorHashPool?.Clean();
       ConsumableItemList?.Clear();
       CrewAnimations?.Clear();
-      BotStatusStack?.Clean();
-      BotStatusListStack?.Clean();
+      BotStatusPool?.Clean();
+      BotStatusListPool?.Clean();
       PendingBotRespawns?.Clear();
       ScaffoldBlockDefinitions?.Clear();
       GratedCatwalkExpansionBlocks?.Clear();
-      ObstacleWorkDataStack?.Clean();
-      VoxelUpdateListStack?.Clean();
-      VoxelUpdateItemStack?.Clean();
-      VoxelUpdateQueueStack?.Clean();
+      ObstacleWorkDataPool?.Clean();
+      VoxelUpdateListPool?.Clean();
+      VoxelUpdateItemPool?.Clean();
+      VoxelUpdateQueuePool?.Clean();
       BotToControllerInfoDict?.Clear();
-      CharacterListStack?.Clean();
+      CharacterListPool?.Clean();
       KnownLootContainerIds?.Clear();
       BotModelDict?.Clear();
       BotModelList?.Clear();
@@ -632,8 +634,8 @@ namespace AiEnabled
       RepairWorkPool?.Clean();
       SlimListPool?.Clean();
       GridGroupListPool?.Clean();
-      VoxelMapListStack?.Clean();
-      LineListStack?.Clean();
+      VoxelMapListPool?.Clean();
+      LineListPool?.Clean();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -676,17 +678,17 @@ namespace AiEnabled
       PathWorkPool = null;
       BlockRepairDelays = null;
       MapInitQueue = null;
-      InvCacheStack = null;
+      InvCachePool = null;
       CornerArrayStack = null;
       SlimListPool = null;
-      GridMapListStack = null;
-      OverlapResultListStack = null;
-      GridCheckHashStack = null;
-      StringListStack = null;
-      SoundListStack = null;
-      EntListStack = null;
-      HitListStack = null;
-      LineListStack = null;
+      GridMapListPool = null;
+      OverlapResultListPool = null;
+      GridCheckHashPool = null;
+      StringListPool = null;
+      SoundListPool = null;
+      EntListPool = null;
+      HitListPool = null;
+      LineListPool = null;
       GridGroupListPool = null;
       Players = null;
       Bots = null;
@@ -745,31 +747,31 @@ namespace AiEnabled
       AcceptedItemDict = null;
       ItemOBDict = null;
       ShieldAPI = null;
-      VoxelMapListStack = null;
+      VoxelMapListPool = null;
       BotComponents = null;
       AllGameDefinitions = null;
       ScavengerItemList = null;
-      MissingCompsDictStack = null;
+      MissingCompsDictPool = null;
       EmptySorterCache = null;
       FactorySorterCache = null;
-      ApiWorkDataStack = null;
-      LocalVectorHashStack = null;
+      ApiWorkDataPool = null;
+      LocalVectorHashPool = null;
       DirArray = null;
       ConsumableItemList = null;
       CrewAnimations = null;
-      BotStatusStack = null;
-      BotStatusListStack = null;
+      BotStatusPool = null;
+      BotStatusListPool = null;
       PendingBotRespawns = null;
       ScaffoldBlockDefinitions = null;
       GratedCatwalkExpansionBlocks = null;
-      ObstacleWorkDataStack = null;
-      VoxelUpdateItemStack = null;
-      VoxelUpdateListStack = null;
-      VoxelUpdateQueueStack = null;
+      ObstacleWorkDataPool = null;
+      VoxelUpdateItemPool = null;
+      VoxelUpdateListPool = null;
+      VoxelUpdateQueuePool = null;
       NodePool = null;
       TempNodePool = null;
       BotToControllerInfoDict = null;
-      CharacterListStack = null;
+      CharacterListPool = null;
       KnownLootContainerIds = null;
       BotModelDict = null;
       BotModelList = null;
@@ -1030,6 +1032,15 @@ namespace AiEnabled
             Logger.Log($"APIGateway.Session was null in BeforeStart", MessageType.WARNING);
 
           VoxelGraphDict = new ConcurrentDictionary<ulong, VoxelGridMap>();
+
+          MovementCostData = Config.ReadFileFromWorldStorage<MovementCostData>("MovementCosts.cfg", typeof(MovementCostData), Logger);
+          if (MovementCostData == null)
+          {
+            MovementCostData = new MovementCostData();
+          }
+
+          MovementCostData.Update();
+          Config.WriteFileToWorldStorage("MovementCosts.cfg", typeof(MovementCostData), MovementCostData, Logger);
 
           ModPriceData = Config.ReadFileFromWorldStorage<BotPricing>("BotPricing.cfg", typeof(BotPricing), Logger);
           if (ModPriceData == null)
@@ -1932,7 +1943,7 @@ namespace AiEnabled
       _updateCounterSettingSync = 0;
     }
 
-    public void UpdateConfig(bool force = false)
+    public void UpdatePlayerConfig(bool force = false)
     {
       try
       {
@@ -4293,7 +4304,7 @@ namespace AiEnabled
           SaveModData(true);
 
         if (!MyAPIGateway.Utilities.IsDedicated)
-          UpdateConfig(true);
+          UpdatePlayerConfig(true);
       }
       catch (Exception ex)
       {
@@ -4429,7 +4440,7 @@ namespace AiEnabled
           DoTick100();
 
         if (_needsUpdate)
-          UpdateConfig();
+          UpdatePlayerConfig();
 
         if (_needsAdminUpdate)
           UpdateAdminConfig();

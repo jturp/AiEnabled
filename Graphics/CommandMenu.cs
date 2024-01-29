@@ -152,7 +152,7 @@ namespace AiEnabled.Graphics
       AiSession.Instance.ShowMessage($"Patrol starting with {count} waypoints", MyFontEnum.Debug);
 
       _patrolMenu.RouteBox.AddRoute(_patrolListWorld, _patrolListLocal, name, _patrolGrid);
-      AiSession.Instance.UpdateConfig(true);
+      AiSession.Instance.UpdatePlayerConfig(true);
     }
 
     void OnRouteRename_Submitted(string name)
@@ -162,7 +162,7 @@ namespace AiEnabled.Graphics
 
       var ratio = AspectRatio;
       _patrolMenu.RenameRoute(name, ref ratio);
-      AiSession.Instance.UpdateConfig(true);
+      AiSession.Instance.UpdatePlayerConfig(true);
     }
 
     public void SubmitRouteName()

@@ -1039,7 +1039,9 @@ namespace AiEnabled.Ai.Support
     {
       var temp = LastNode as TempNode;
       if (temp != null)
+      {
         AiSession.Instance.TempNodePool.Return(temp);
+      }
 
       if (includelast)
       {
@@ -1103,11 +1105,15 @@ namespace AiEnabled.Ai.Support
 
           var temp = NextNode as TempNode;
           if (temp != null)
+          {
             AiSession.Instance.TempNodePool.Return(temp);
+          }
 
           temp = LastNode as TempNode;
           if (temp != null)
+          {
             AiSession.Instance.TempNodePool.Return(temp);
+          }
 
           NextNode = null;
           LastNode = null;
@@ -1189,7 +1195,7 @@ namespace AiEnabled.Ai.Support
           {
             DeniedDoors[localDoor] = door;
 
-            var positionList = AiSession.Instance.LineListStack.Get();
+            var positionList = AiSession.Instance.LineListPool.Get();
             AiUtils.FindAllPositionsForBlock(door.SlimBlock, positionList);
 
             foreach (var cell in positionList)
@@ -1213,7 +1219,9 @@ namespace AiEnabled.Ai.Support
         {
           var pn = queue[i] as TempNode;
           if (pn != null)
+          {
             AiSession.Instance.TempNodePool.Return(pn);
+          }
         }
       }
     }

@@ -65,8 +65,8 @@ namespace AiEnabled.Bots
       ShouldLeadTargets = true;
       CanDamageGrid = true;
 
-      _attackSounds = AiSession.Instance.SoundListStack.Get();
-      _attackSoundStrings = AiSession.Instance.StringListStack.Get();
+      _attackSounds = AiSession.Instance.SoundListPool.Get();
+      _attackSoundStrings = AiSession.Instance.StringListPool.Get();
 
       if (RequiresJetpack && jetpack != null && !jetpack.TurnedOn)
       {
@@ -179,14 +179,14 @@ namespace AiEnabled.Bots
         }
       }
 
-      List<IHitInfo> hitList = AiSession.Instance.HitListStack.Get();
-      List<MyEntity> entities = AiSession.Instance.EntListStack.Get();
-      List<MyEntity> blockTargets = AiSession.Instance.EntListStack.Get();
+      List<IHitInfo> hitList = AiSession.Instance.HitListPool.Get();
+      List<MyEntity> entities = AiSession.Instance.EntListPool.Get();
+      List<MyEntity> blockTargets = AiSession.Instance.EntListPool.Get();
       List<IMyCubeGrid> gridGroups = AiSession.Instance.GridGroupListPool.Get();
-      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashStack.Get();
+      HashSet<long> checkedGridIDs = AiSession.Instance.GridCheckHashPool.Get();
       List<IMySlimBlock> blockList = AiSession.Instance.SlimListPool.Get();
-      List<MyLineSegmentOverlapResult<MyEntity>> resultList = AiSession.Instance.OverlapResultListStack.Get();
-      List<Vector3I> cellList = AiSession.Instance.LineListStack.Get();
+      List<MyLineSegmentOverlapResult<MyEntity>> resultList = AiSession.Instance.OverlapResultListPool.Get();
+      List<Vector3I> cellList = AiSession.Instance.LineListPool.Get();
 
       var onPatrol = PatrolMode && _patrolList?.Count > 0;
       var ownerPos = ownerCharacter.WorldAABB.Center;
@@ -479,13 +479,13 @@ namespace AiEnabled.Bots
           break;
       }
 
-      AiSession.Instance.HitListStack.Return(hitList);
-      AiSession.Instance.EntListStack.Return(entities);
-      AiSession.Instance.EntListStack.Return(blockTargets);
+      AiSession.Instance.HitListPool.Return(hitList);
+      AiSession.Instance.EntListPool.Return(entities);
+      AiSession.Instance.EntListPool.Return(blockTargets);
       AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.GridCheckHashStack.Return(checkedGridIDs);
-      AiSession.Instance.OverlapResultListStack.Return(resultList);
-      AiSession.Instance.LineListStack.Return(cellList);
+      AiSession.Instance.GridCheckHashPool.Return(checkedGridIDs);
+      AiSession.Instance.OverlapResultListPool.Return(resultList);
+      AiSession.Instance.LineListPool.Return(cellList);
 
       if (tgt == null)
       {

@@ -691,7 +691,7 @@ namespace AiEnabled.Ai.Support
       Vector3I? center = null;
       Vector3I? centerLOS = null;
 
-      List<IHitInfo> hitList = AiSession.Instance.HitListStack.Get();
+      List<IHitInfo> hitList = AiSession.Instance.HitListPool.Get();
 
       for (int i = 1; i <= distanceCheck; i++)
       {
@@ -774,7 +774,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.HitListStack.Return(hitList);
+      AiSession.Instance.HitListPool.Return(hitList);
 
       if (centerLOS.HasValue)
         center = centerLOS;
@@ -1135,7 +1135,7 @@ namespace AiEnabled.Ai.Support
     {
       if (voxel == null)
       {
-        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
+        List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListPool.Get();
 
         var sphere = new BoundingSphereD(worldPosition, 1);
         MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
@@ -1156,7 +1156,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.VoxelMapListStack.Return(vList);
+        AiSession.Instance.VoxelMapListPool.Return(vList);
 
         if (voxel == null)
           return null;
@@ -1187,7 +1187,7 @@ namespace AiEnabled.Ai.Support
 
     public static bool GetClosestPointAboveGround(ref Vector3D worldPosition, ref Vector3D up, out MyVoxelBase voxel, int testPoints = 20)
     {
-      List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListStack.Get();
+      List<MyVoxelBase> vList = AiSession.Instance.VoxelMapListPool.Get();
 
       var sphere = new BoundingSphereD(worldPosition, 1);
       MyGamePruningStructure.GetAllVoxelMapsInSphere(ref sphere, vList);
@@ -1210,7 +1210,7 @@ namespace AiEnabled.Ai.Support
       }
 
       vList.Clear();
-      AiSession.Instance.VoxelMapListStack.Return(vList);
+      AiSession.Instance.VoxelMapListPool.Return(vList);
 
       float interference;
       var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out interference);
