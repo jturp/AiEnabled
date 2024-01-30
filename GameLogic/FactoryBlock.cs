@@ -49,6 +49,7 @@ namespace AiEnabled.GameLogic
     public RemoteBotAPI.TargetPriorities TargetPriorities;
     public KeyValuePair<string, bool> SelectedRepairPriority;
     public KeyValuePair<string, bool> SelectedTargetPriority;
+    public KeyValuePair<string, bool> SelectedIgnoreItem;
     public bool ShowRepairPriorities = true;
 
     public bool ButtonPressed
@@ -111,153 +112,191 @@ namespace AiEnabled.GameLogic
 
     public override void UpdateOnceBeforeFrame()
     {
-      base.UpdateOnceBeforeFrame();
-      if (AiSession.Instance?.Registered != true)
+      try
       {
-        NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
-        return;
-      }
+        base.UpdateOnceBeforeFrame();
+        if (AiSession.Instance?.Registered != true)
+        {
+          NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
+          return;
+        }
 
-      if (_block == null)
-        return;
+        if (_block == null)
+          return;
 
-      if (!AiSession.Instance.CanSpawnBot(SelectedRole))
-      {
-        if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Scavenger))
-          SelectedRole = AiSession.BotType.Scavenger;
-        else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Combat))
-          SelectedRole = AiSession.BotType.Combat;
-        else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Crew))
-          SelectedRole = AiSession.BotType.Crew;
+        if (!AiSession.Instance.CanSpawnBot(SelectedRole))
+        {
+          if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Scavenger))
+            SelectedRole = AiSession.BotType.Scavenger;
+          else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Combat))
+            SelectedRole = AiSession.BotType.Combat;
+          else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Crew))
+            SelectedRole = AiSession.BotType.Crew;
+          else
+            AiSession.Instance.Logger.Log($"FactoryBlock.UpdateBeforeFrame: Unable to set role to an allowed type!", MessageType.WARNING);
+        }
+
+        var ent = _block as MyEntity;
+        if (ent.EntityStorage == null)
+          ent.EntityStorage = new MyEntityStorageComponent();
+
+        var repList = ent.EntityStorage.ReadStringList("AiEnabled_RepairPriorityList");
+        var tgtList = ent.EntityStorage.ReadStringList("AiEnabled_TargetPriorityList");
+        var ignList = ent.EntityStorage.ReadStringList("AiEnabled_IgnoreList");
+        var tgtDmgCheck = ent.EntityStorage.ReadBool("AiEnabled_DamageToDisable");
+        var repWeldCheck = ent.EntityStorage.ReadBool("AiEnabled_WeldBeforeGrind");
+        var priListKVP = new List<KeyValuePair<string, bool>>();
+
+        if (repList?.Count > 0)
+        {
+          priListKVP.Clear();
+          foreach (var item in repList)
+          {
+            var idx = item.IndexOf("]");
+            if (idx >= 0)
+            {
+              var enabled = item.StartsWith("[X]");
+              var name = item.Substring(idx + 1).Trim();
+
+              priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
+            }
+          }
+
+          RepairPriorities = new RemoteBotAPI.RepairPriorities(priListKVP)
+          {
+            WeldBeforeGrind = repWeldCheck
+          };
+        }
         else
-          AiSession.Instance.Logger.Log($"FactoryBlock.UpdateBeforeFrame: Unable to set role to an allowed type!", MessageType.WARNING);
-      }
-
-      var ent = _block as MyEntity;
-      if (ent.EntityStorage == null)
-        ent.EntityStorage = new MyEntityStorageComponent();
-
-      var repList = ent.EntityStorage.ReadStringList("AiEnabled_RepairPriorityList");
-      var tgtList = ent.EntityStorage.ReadStringList("AiEnabled_TargetPriorityList");
-      var tgtDmgCheck = ent.EntityStorage.ReadBool("AiEnabled_DamageToDisable");
-      var repWeldCheck = ent.EntityStorage.ReadBool("AiEnabled_WeldBeforeGrind");
-      var priListKVP = new List<KeyValuePair<string, bool>>();
-
-      if (repList != null)
-      {
-        priListKVP.Clear();
-        foreach (var item in repList)
         {
-          var idx = item.IndexOf("]");
-          if (idx >= 0)
+          RepairPriorities = new RemoteBotAPI.RepairPriorities()
           {
-            var enabled = item.StartsWith("[X]");
-            var name = item.Substring(idx + 1).Trim();
+            WeldBeforeGrind = true
+          };
 
-            priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
-          }
-        }
-
-        RepairPriorities = new RemoteBotAPI.RepairPriorities(priListKVP)
-        {
-          WeldBeforeGrind = repWeldCheck
-        };
-      }
-      else
-      {
-        _priListTemp.Clear();
-        foreach (var item in RepairPriorities.PriorityTypes)
-        {
-          var prefix = item.Value ? "[X]" : "[  ]";
-          _priListTemp.Add($"{prefix} {item.Key}");
-        }
-
-        RepairPriorities = new RemoteBotAPI.RepairPriorities()
-        {
-          WeldBeforeGrind = true
-        };
-
-        ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
-        ent.EntityStorage.Write("AiEnabled_WeldBeforeGrind", true);
-      }
-
-      if (tgtList != null)
-      {
-        priListKVP.Clear();
-        foreach (var item in tgtList)
-        {
-          var idx = item.IndexOf("]");
-          if (idx >= 0)
+          _priListTemp.Clear();
+          foreach (var item in RepairPriorities.PriorityTypes)
           {
-            var enabled = item.StartsWith("[X]");
-            var name = item.Substring(idx + 1).Trim();
-
-            priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
+            var prefix = item.Value ? "[X]" : "[  ]";
+            _priListTemp.Add($"{prefix} {item.Key}");
           }
+
+          ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
+          ent.EntityStorage.Write("AiEnabled_WeldBeforeGrind", true);
         }
 
-        TargetPriorities = new RemoteBotAPI.TargetPriorities(priListKVP)
+        if (tgtList?.Count > 0)
         {
-          DamageToDisable = tgtDmgCheck
-        };
-      }
-      else
-      {
-        _priListTemp.Clear();
-        foreach (var item in TargetPriorities.PriorityTypes)
+          priListKVP.Clear();
+          foreach (var item in tgtList)
+          {
+            var idx = item.IndexOf("]");
+            if (idx >= 0)
+            {
+              var enabled = item.StartsWith("[X]");
+              var name = item.Substring(idx + 1).Trim();
+
+              priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
+            }
+          }
+
+          TargetPriorities = new RemoteBotAPI.TargetPriorities(priListKVP)
+          {
+            DamageToDisable = tgtDmgCheck
+          };
+        }
+        else
         {
-          var prefix = item.Value ? "[X]" : "[  ]";
-          _priListTemp.Add($"{prefix} {item.Key}");
+          TargetPriorities = new RemoteBotAPI.TargetPriorities()
+          {
+            DamageToDisable = tgtDmgCheck
+          };
+
+          _priListTemp.Clear();
+          foreach (var item in TargetPriorities.PriorityTypes)
+          {
+            var prefix = item.Value ? "[X]" : "[  ]";
+            _priListTemp.Add($"{prefix} {item.Key}");
+          }
+
+          ent.EntityStorage.Write("AiEnabled_TargetPriorityList", _priListTemp);
+          ent.EntityStorage.Write("AiEnabled_DamageToDisable", tgtDmgCheck);
         }
 
-        TargetPriorities = new RemoteBotAPI.TargetPriorities()
+        if (ignList?.Count > 0)
         {
-          DamageToDisable = tgtDmgCheck
-        };
+          priListKVP.Clear();
+          foreach (var item in ignList)
+          {
+            var idx = item.IndexOf("]");
+            if (idx >= 0)
+            {
+              var enabled = item.StartsWith("[X]");
+              var name = item.Substring(idx + 1).Trim();
 
-        ent.EntityStorage.Write("AiEnabled_TargetPriorityList", _priListTemp);
-        ent.EntityStorage.Write("AiEnabled_DamageToDisable", tgtDmgCheck);
+              priListKVP.Add(new KeyValuePair<string, bool>(name, enabled));
+            }
+          }
+
+          RepairPriorities.UpdateIgnoreList(priListKVP);
+        }
+        else
+        {
+          _priListTemp.Clear();
+          foreach (var item in RepairPriorities.IgnoreList)
+          {
+            var prefix = item.Value ? "[X]" : "[  ]";
+            _priListTemp.Add($"{prefix} {item.Key}");
+          }
+
+          ent.EntityStorage.Write("AiEnabled_IgnoreList", _priListTemp);
+        }
+
+        var inv = _block.GetInventory() as MyInventory;
+
+        if (inv.Constraint == null)
+        {
+          inv.Constraint = new MyInventoryConstraint("AiEnabled_Constraint");
+        }
+        else
+        {
+          inv.Constraint.Clear();
+          inv.Constraint.IsWhitelist = true;
+        }
+
+        _sorterEnabled = ent.EntityStorage.ReadBool("AiEnabled_SorterEnabled");
+        var sorter = _block as IMyConveyorSorter;
+        sorter.DrainAll = _sorterEnabled;
+
+        // Workaround - using SetFilter with a list of items causes CTD on DS due to SE trying to serialize the MyDefinitionIds, which aren't serializable
+        sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, AiSession.Instance.EmptySorterCache);
+
+        foreach (var itemFilter in AiSession.Instance.FactorySorterCache)
+        {
+          inv.Constraint.Add(itemFilter.ItemType);
+          sorter.AddItem(itemFilter);
+        }
+
+        _block.AppendingCustomInfo += AppendingCustomInfo;
+        _block.OnMarkForClose += OnMarkForClose;
+        _block.OnClosing += OnMarkForClose;
+        _block.OnClose += OnMarkForClose;
+
+        if (AiSession.Instance.FactoryControlsHooked)
+          return;
+
+        Controls.CreateControls(_block);
+        Controls.CreateActions(_block);
+        AiSession.Instance.FactoryControlsHooked = true;
       }
-
-      var inv = _block.GetInventory() as MyInventory;
-
-      if (inv.Constraint == null)
+      catch (Exception ex)
       {
-        inv.Constraint = new MyInventoryConstraint("AiEnabled_Constraint");
+        AiSession.Instance.Logger.Log(ex.ToString());
+        NeedsUpdate = MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
       }
-      else
-      {
-        inv.Constraint.Clear();
-        inv.Constraint.IsWhitelist = true;
-      }
-
-      _sorterEnabled = ent.EntityStorage.ReadBool("AiEnabled_SorterEnabled");
-      var sorter = _block as IMyConveyorSorter;
-      sorter.DrainAll = _sorterEnabled;
-
-      // Workaround - using SetFilter with a list of items causes CTD on DS due to SE trying to serialize the MyDefinitionIds, which aren't serializable
-      sorter.SetFilter(Sandbox.ModAPI.Ingame.MyConveyorSorterMode.Whitelist, AiSession.Instance.EmptySorterCache);
-
-      foreach (var itemFilter in AiSession.Instance.FactorySorterCache)
-      {
-        inv.Constraint.Add(itemFilter.ItemType);  
-        sorter.AddItem(itemFilter);
-      }
-
-      _block.AppendingCustomInfo += AppendingCustomInfo;
-      _block.OnMarkForClose += OnMarkForClose;
-      _block.OnClosing += OnMarkForClose;
-      _block.OnClose += OnMarkForClose;
-
-      if (AiSession.Instance.FactoryControlsHooked)
-        return;
-
-      Controls.CreateControls(_block);
-      Controls.CreateActions(_block);
-      AiSession.Instance.FactoryControlsHooked = true;
     }
 
-    public void UpdatePriorityLists(bool updateRepairList, bool updateBoth = false)
+    public void UpdatePriorityLists(bool updateRepairList, bool updateTargetList, bool updateIgnoreList)
     {
       var ent = _block as MyEntity;
       if (ent != null)
@@ -274,8 +313,7 @@ namespace AiEnabled.GameLogic
           ent.EntityStorage.Write("AiEnabled_RepairPriorityList", _priListTemp);
           ent.EntityStorage.Write("AiEnabled_WeldBeforeGrind", RepairPriorities.WeldBeforeGrind);
         }
-
-        if (!updateRepairList || updateBoth)
+        else if (updateTargetList)
         {
           _priListTemp.Clear();
           foreach (var item in TargetPriorities.PriorityTypes)
@@ -288,11 +326,24 @@ namespace AiEnabled.GameLogic
           ent.EntityStorage.Write("AiEnabled_DamageToDisable", TargetPriorities.DamageToDisable);
         }
 
+        else if (updateIgnoreList)
+        {
+          _priListTemp.Clear();
+          foreach (var item in RepairPriorities.IgnoreList)
+          {
+            var prefix = item.Value ? "[X]" : "[  ]";
+            _priListTemp.Add($"{prefix} {item.Key}");
+          }
+
+          ent.EntityStorage.Write("AiEnabled_IgnoreList", _priListTemp);
+        }
+
         if (AiSession.Instance != null && !AiSession.Instance.IsServer)
         {
+          var ignList = updateIgnoreList ? RepairPriorities.IgnoreList : null;
           var repList = updateRepairList ? RepairPriorities.PriorityTypes : null;
-          var tgtList = (!updateRepairList || updateBoth) ? TargetPriorities.PriorityTypes : null;
-          var pkt = new FactorySyncPacket(_block.EntityId, TargetPriorities.DamageToDisable, repList, tgtList);
+          var tgtList = updateTargetList ? TargetPriorities.PriorityTypes : null;
+          var pkt = new FactorySyncPacket(_block.EntityId, TargetPriorities.DamageToDisable, RepairPriorities.WeldBeforeGrind, repList, tgtList, ignList);
           AiSession.Instance.Network.SendToServer(pkt);
         }
       }

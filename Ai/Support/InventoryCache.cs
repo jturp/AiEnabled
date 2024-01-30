@@ -517,10 +517,10 @@ namespace AiEnabled.Ai.Support
         var item = invItems[i];
 
         VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
-        if (!AiSession.Instance.ComponentInfoDict.TryGetValue(item.Type, out itemInfo))
+        if (!AiSession.Instance.ItemInfoDict.TryGetValue(item.Type, out itemInfo))
         {
           itemInfo = VRage.Game.ModAPI.Ingame.MyPhysicalInventoryItemExtensions_ModAPI.GetItemInfo(item.Type);
-          AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
+          AiSession.Instance.ItemInfoDict[item.Type] = itemInfo;
         }
 
         if (itemInfo.IsTool && rBot != null && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
@@ -561,10 +561,10 @@ namespace AiEnabled.Ai.Support
         var item = invItems[i];
 
         VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
-        if (!AiSession.Instance.ComponentInfoDict.TryGetValue(item.Type, out itemInfo))
+        if (!AiSession.Instance.ItemInfoDict.TryGetValue(item.Type, out itemInfo))
         {
           itemInfo = VRage.Game.ModAPI.Ingame.MyPhysicalInventoryItemExtensions_ModAPI.GetItemInfo(item.Type);
-          AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
+          AiSession.Instance.ItemInfoDict[item.Type] = itemInfo;
         }
 
         if (itemInfo.IsTool && rBot != null && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))

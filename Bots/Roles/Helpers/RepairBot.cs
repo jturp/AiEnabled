@@ -482,6 +482,10 @@ namespace AiEnabled.Bots.Roles.Helpers
             if (floater?.Physics == null || floater.IsPreview || floater.Item.Content == null || GridBase.PointInsideVoxel(floater.PositionComp.WorldAABB.Center, _currentGraph.RootVoxel))
               continue;
 
+            var name = floater.DisplayNameText ?? floater.DisplayName;
+            if (name != null && RepairPriorities.GetEnabled(name))
+              continue;
+
             if (searchRadius > 0 && !IsWithinSearchRadius(floater.PositionComp.WorldAABB.Center, ref _lastRadius, _patrolOBBs))
               continue;
 
@@ -1240,10 +1244,10 @@ namespace AiEnabled.Bots.Roles.Helpers
             if (amount < 1)
             {
               VRage.Game.ModAPI.Ingame.MyItemInfo itemInfo;
-              if (!AiSession.Instance.ComponentInfoDict.TryGetValue(item.Type, out itemInfo))
+              if (!AiSession.Instance.ItemInfoDict.TryGetValue(item.Type, out itemInfo))
               {
                 itemInfo = VRage.Game.ModAPI.Ingame.MyPhysicalInventoryItemExtensions_ModAPI.GetItemInfo(item.Type);
-                AiSession.Instance.ComponentInfoDict[item.Type] = itemInfo;
+                AiSession.Instance.ItemInfoDict[item.Type] = itemInfo;
               }
 
               if (itemInfo.IsComponent)

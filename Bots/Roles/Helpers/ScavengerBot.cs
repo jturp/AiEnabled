@@ -9,6 +9,7 @@ using Sandbox.Definitions;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character.Components;
+using Sandbox.Game.Entities.Inventory;
 using Sandbox.ModAPI;
 
 using System;
@@ -63,31 +64,40 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal override void CleanUp(bool cleanConfig = false, bool removeBot = true)
     {
-      if (AiSession.Instance?.Registered == true)
+      try
       {
-        if (_threadOnlyEntList != null)
+        if (AiSession.Instance?.Registered == true)
         {
-          AiSession.Instance.EntListPool?.Return(_noThreadEntList);
+          if (_threadOnlyEntList != null)
+          {
+            AiSession.Instance.EntListPool?.Return(_noThreadEntList);
+          }
+
+          if (_noThreadEntList != null)
+          {
+            AiSession.Instance.EntListPool?.Return(_noThreadEntList);
+          }
+        }
+        else
+        {
+          _threadOnlyEntList?.Clear();
+          _noThreadEntList?.Clear();
+
+          _threadOnlyEntList = null;
+          _noThreadEntList = null;
         }
 
-        if (_noThreadEntList != null)
-        {
-          AiSession.Instance.EntListPool?.Return(_noThreadEntList);
-        }
+        _patrolOBBs?.Clear();
+        _patrolOBBs = null;
       }
-      else
+      catch (Exception ex)
       {
-        _threadOnlyEntList?.Clear();
-        _noThreadEntList?.Clear();
-
-        _threadOnlyEntList = null;
-        _noThreadEntList = null;
+        AiSession.Instance.Logger.Log(ex.ToString());
       }
-
-      _patrolOBBs?.Clear();
-      _patrolOBBs = null;
-
-      base.CleanUp(cleanConfig, removeBot);
+      finally
+      {
+        base.CleanUp(cleanConfig, removeBot);
+      }
     }
 
     internal override bool Update()
@@ -338,7 +348,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           var searchRadius = AiSession.Instance.PlayerToRepairRadius.GetValueOrDefault(Owner.IdentityId, 0f);
           _threadOnlyEntList.Clear();
-          MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _threadOnlyEntList);
+          MyGamePruningStructure.GetAllEntitiesInOBB(ref _currentGraph.OBB, _threadOnlyEntList, MyEntityQueryType.Dynamic);
 
           _threadOnlyEntList.ShellSort(botPosition, true);
 
@@ -381,7 +391,11 @@ namespace AiEnabled.Bots.Roles.Helpers
             var floater = ent as MyFloatingObject;
             if (floater != null)
             {
-              if (floater.Physics == null || floater.Item.Content == null)
+              if (floater.Physics == null || floater.IsPreview || floater.Item.Content == null)
+                continue;
+
+              var name = floater.DisplayNameText ?? floater.DisplayName;
+              if (name != null && RepairPriorities.GetEnabled(name))
                 continue;
 
               if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))

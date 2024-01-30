@@ -56,13 +56,15 @@ namespace AiEnabled.ConfigData
     [ProtoMember(112)] public List<SerializableVector3I> PatrolRoute;
     [ProtoMember(113)] public string PatrolName;
     [ProtoMember(114)] public List<string> Priorities;
+    [ProtoMember(119)] public List<string> IgnoreList;
     [ProtoMember(115)] public bool DamageToDisable;
+    [ProtoMember(120)] public bool WeldBeforeGrind;
     [ProtoMember(116)] public bool AdminSpawned;
     [ProtoMember(118)] public bool RemainInPlace;
 
     public HelperInfo() { }
 
-    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, bool disableOnly, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null, bool remainStill = false)
+    public HelperInfo(IMyCharacter bot, AiSession.BotType botType, List<string> priList, List<string> ignList, bool disableOnly, bool weldFirst, MyCubeGrid grid = null, List<Vector3I> route = null, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null, bool remainStill = false)
     {
       HelperId = bot.EntityId;
       GridEntityId = grid?.EntityId ?? 0L;
@@ -74,6 +76,7 @@ namespace AiEnabled.ConfigData
       IsActiveHelper = true;
       Role = (int)botType;
       Priorities = priList;
+      IgnoreList = ignList;
       DamageToDisable = disableOnly;
       AdminSpawned = adminSpawn;
       RemainInPlace = remainStill;
@@ -134,7 +137,7 @@ namespace AiEnabled.ConfigData
       Helpers = new List<HelperInfo>();
     }
 
-    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, List<KeyValuePair<string, bool>> priList, bool damageOnly, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null)
+    public void AddHelper(IMyCharacter helper, AiSession.BotType botType, List<KeyValuePair<string, bool>> priList, List<KeyValuePair<string, bool>> ignList, bool damageOnly, bool weldFirst, MyCubeGrid grid, List<Vector3I> patrolRoute, CrewBot.CrewType? crewRole = null, bool adminSpawn = false, string patrolName = null)
     {
       if (Helpers == null)
         Helpers = new List<HelperInfo>();
@@ -153,7 +156,17 @@ namespace AiEnabled.ConfigData
         pris = botType == AiSession.BotType.Repair ? API.RemoteBotAPI.GetDefaultRepairPriorities() : API.RemoteBotAPI.GetDefaultTargetPriorities();
       }
 
-      Helpers.Add(new HelperInfo(helper, botType, pris, damageOnly, grid, patrolRoute, crewRole, adminSpawn, patrolName));
+      List<string> ignoreList = new List<string>();
+      if (ignList != null)
+      {
+        foreach ( var item in ignList)
+        {
+          if (item.Value)
+            ignoreList.Add($"[X] {item.Key}");
+        }
+      }
+
+      Helpers.Add(new HelperInfo(helper, botType, pris, ignoreList, damageOnly, weldFirst, grid, patrolRoute, crewRole, adminSpawn, patrolName));
     }
 
     public bool RemoveHelper(long id)

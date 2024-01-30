@@ -300,6 +300,8 @@ namespace AiEnabled.Bots
 
         if (!apiData.AllowAirNodes && nodeList.Count > 0)
         {
+          var positionList = AiSession.Instance.LineListPool.Get();
+
           for (int i = nodeList.Count - 1; i >= 0; i--)
           {
             var nodePosition = nodeList[i];
@@ -338,30 +340,15 @@ namespace AiEnabled.Bots
                   bool allowConn = !allowSolar && block.FatBlock is IMyShipConnector && cubeDef.Id.SubtypeName == "Connector";
                   bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(cubeDef.Id);
 
-                  Matrix matrix = new Matrix
+                  positionList.Clear();
+                  AiUtils.FindAllPositionsForBlock(block, positionList);
+
+                  foreach (var cell in positionList)
                   {
-                    Forward = Base6Directions.GetVector(block.Orientation.Forward),
-                    Left = Base6Directions.GetVector(block.Orientation.Left),
-                    Up = Base6Directions.GetVector(block.Orientation.Up)
-                  };
+                    var positionAbove = cell + normal;
 
-                  var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-
-                  if (faceDict.Count < 2)
-                    matrix.TransposeRotationInPlace();
-
-                  Vector3I side, center = cubeDef.Center;
-                  Vector3I.TransformNormal(ref normal, ref matrix, out side);
-                  Vector3I.TransformNormal(ref center, ref matrix, out center);
-                  var adjustedPosition = block.Position - center;
-
-                  foreach (var kvp in faceDict)
-                  {
-                    var cell = kvp.Key;
-                    Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-                    var positionAbove = adjustedPosition + cell + normal;
-
-                    if (positionAbove == nodePosition && (allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side) == true)))
+                    if (positionAbove == nodePosition
+                      && (allowConn || allowSolar || isCylinder || AiUtils.IsSidePressurizedForBlock(block, cell, normal)))
                     {
                       valid = true;
                       break;
@@ -396,7 +383,11 @@ namespace AiEnabled.Bots
 
     public static bool IsInside(Vector3I point, ref BoundingBoxI box, ref int maxDistance, ref int minEnclosure, ref bool airtightOnly, List<IMyCubeGrid> gridList, MyCubeGrid mainGrid)
     {
+      if (AiSession.Instance == null || !AiSession.Instance.Registered)
+        return false;
+
       int numBlocksFound = 0;
+      var positionList = AiSession.Instance.LineListPool.Get();
 
       for (int i = 0; i < AiSession.DirArray.Length; i++)
       {
@@ -414,9 +405,6 @@ namespace AiEnabled.Bots
 
           foreach (var grid in gridList)
           {
-            if (AiSession.Instance == null || !AiSession.Instance.Registered)
-              return false;
-
             if (grid == null || grid.Closed || grid.MarkedForClose || grid.GridSizeEnum == MyCubeSize.Small)
               continue;
 
@@ -444,31 +432,14 @@ namespace AiEnabled.Bots
                 bool allowConn = !allowSolar && cube.FatBlock is IMyShipConnector && def.Id.SubtypeName == "Connector";
                 bool isCylinder = !allowConn && AiSession.Instance.PipeBlockDefinitions.ContainsItem(def.Id);
 
-                Matrix matrix = new Matrix
+                positionList.Clear();
+                AiUtils.FindAllPositionsForBlock(cube, positionList);
+
+                foreach (var checkPosition in positionList)
                 {
-                  Forward = Base6Directions.GetVector(cube.Orientation.Forward),
-                  Left = Base6Directions.GetVector(cube.Orientation.Left),
-                  Up = Base6Directions.GetVector(cube.Orientation.Up)
-                };
-
-                var faceDict = AiSession.Instance.BlockFaceDictionary[def.Id];
-
-                if (faceDict.Count < 2)
-                  matrix.TransposeRotationInPlace();
-
-                Vector3I side1, center = def.Center;
-                Vector3I.TransformNormal(ref normal, ref matrix, out side1);
-                Vector3I.TransformNormal(ref center, ref matrix, out center);
-                var adjustedPosition = cube.Position - center;
-                var side2 = -side1;
-
-                foreach (var kvp in faceDict)
-                {
-                  var cell = kvp.Key;
-                  Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-                  var checkPosition = adjustedPosition + cell;
-
-                  if (checkPosition == checkPoint && (allowConn || allowSolar || isCylinder || (kvp.Value?.Contains(side1) == true) || (kvp.Value?.Contains(side2) == true)))
+                  if (checkPosition == checkPoint && (allowConn || allowSolar || isCylinder
+                    || AiUtils.IsSidePressurizedForBlock(cube, checkPosition, normal)
+                    || AiUtils.IsSidePressurizedForBlock(cube, checkPosition, -normal)))
                   {
                     found = true;
                     break;
@@ -492,6 +463,7 @@ namespace AiEnabled.Bots
           break;
       }
 
+      AiSession.Instance.LineListPool.Return(positionList);
       return numBlocksFound >= minEnclosure;
     }
 
@@ -605,7 +577,6 @@ namespace AiEnabled.Bots
 
         MyEntities.Add((MyEntity)newChar, true);
         AiSession.Instance.Scheduler.Schedule(() => TrySeatBot(bot, seat));
-        //MyAPIGateway.Utilities.InvokeOnGameThread(() => TrySeatBot(bot, seat), "AiEnabled");
       }
 
       return newChar;

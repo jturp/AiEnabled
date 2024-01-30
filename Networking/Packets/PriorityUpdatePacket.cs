@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using AiEnabled.Bots;
+using AiEnabled.Bots.Roles.Helpers;
 
 using ProtoBuf;
 
@@ -15,14 +16,16 @@ namespace AiEnabled.Networking.Packets
   {
     [ProtoMember(1)] readonly List<KeyValuePair<string, bool>> _repairPriorities;
     [ProtoMember(2)] readonly List<KeyValuePair<string, bool>> _targetPriorities;
+    [ProtoMember(3)] readonly List<KeyValuePair<string, bool>> _ignoreList;
     [ProtoMember(3)] readonly bool _damageToDisable;
     [ProtoMember(4)] readonly long _ownerId;
     [ProtoMember(5)] readonly bool _weldBeforeGrind;
 
     public PriorityUpdatePacket() { }
 
-    public PriorityUpdatePacket(long ownerIdentityId, List<KeyValuePair<string, bool>> repList, List<KeyValuePair<string, bool>> tgtList, bool disableOnly, bool weldBeforeGrind)
+    public PriorityUpdatePacket(long ownerIdentityId, List<KeyValuePair<string, bool>> ignList, List<KeyValuePair<string, bool>> repList, List<KeyValuePair<string, bool>> tgtList, bool disableOnly, bool weldBeforeGrind)
     {
+      _ignoreList = ignList;
       _repairPriorities = repList;
       _targetPriorities = tgtList;
       _damageToDisable = disableOnly;
@@ -53,6 +56,9 @@ namespace AiEnabled.Networking.Packets
                 helper.RepairPriorities.PriorityTypes.Clear();
                 helper.RepairPriorities.PriorityTypes.AddList(_repairPriorities);
               }
+
+              if (helper is RepairBot || helper is ScavengerBot)
+                helper.RepairPriorities.UpdateIgnoreList(_ignoreList);
 
               if (helper.TargetPriorities == null)
               {

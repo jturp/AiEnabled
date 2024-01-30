@@ -29,18 +29,22 @@ namespace AiEnabled.Networking.Packets
   public class FactorySyncPacket : PacketBase
   {
     [ProtoMember(1)] readonly bool DamageToDisable;
-    [ProtoMember(2)] readonly List<KeyValuePair<string, bool>> RepairPriorities;
-    [ProtoMember(3)] readonly List<KeyValuePair<string, bool>> TargetPriorities;
-    [ProtoMember(4)] readonly long BlockEntityId;
+    [ProtoMember(2)] readonly bool WeldBeforeGrind;
+    [ProtoMember(3)] readonly List<KeyValuePair<string, bool>> RepairPriorities;
+    [ProtoMember(4)] readonly List<KeyValuePair<string, bool>> TargetPriorities;
+    [ProtoMember(5)] readonly List<KeyValuePair<string, bool>> IgnoreList;
+    [ProtoMember(6)] readonly long BlockEntityId;
 
     public FactorySyncPacket() { }
 
-    public FactorySyncPacket(long blockId, bool dmg2Disable, List<KeyValuePair<string, bool>> repList, List<KeyValuePair<string, bool>> tgtList)
+    public FactorySyncPacket(long blockId, bool dmg2Disable, bool weldFirst, List<KeyValuePair<string, bool>> repList, List<KeyValuePair<string, bool>> tgtList, List<KeyValuePair<string, bool>> ignList)
     {
       BlockEntityId = blockId;
       DamageToDisable = dmg2Disable;
+      WeldBeforeGrind = weldFirst;
       RepairPriorities = repList;
       TargetPriorities = tgtList;
+      IgnoreList = ignList;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -61,6 +65,8 @@ namespace AiEnabled.Networking.Packets
             logic.RepairPriorities.PriorityTypes.Clear();
             logic.RepairPriorities.PriorityTypes.AddList(RepairPriorities);
           }
+
+          logic.RepairPriorities.WeldBeforeGrind = WeldBeforeGrind;
         }
 
         if (TargetPriorities != null)
@@ -78,7 +84,17 @@ namespace AiEnabled.Networking.Packets
           logic.TargetPriorities.DamageToDisable = DamageToDisable;
         }
 
-        logic.UpdatePriorityLists(true, true);
+        if (IgnoreList != null)
+        {
+          if (logic.RepairPriorities == null)
+          {
+            logic.RepairPriorities = new RemoteBotAPI.RepairPriorities(RepairPriorities);
+          }
+
+          logic.RepairPriorities.UpdateIgnoreList(IgnoreList);
+        }
+
+        logic.UpdatePriorityLists(true, true, true);
         return true;
       }
 

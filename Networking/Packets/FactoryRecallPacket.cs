@@ -25,15 +25,17 @@ namespace AiEnabled.Networking
     [ProtoMember(2)] readonly long _botEntityId;
     [ProtoMember(3)] readonly long _ownerIdentityId;
     [ProtoMember(4)] readonly List<KeyValuePair<string, bool>> _priorities;
+    [ProtoMember(5)] readonly List<KeyValuePair<string, bool>> _ignoreList;
 
     public FactoryRecallPacket() { }
 
-    public FactoryRecallPacket(long blockId, long botId, long ownerId, List<KeyValuePair<string, bool>> priorityList)
+    public FactoryRecallPacket(long blockId, long botId, long ownerId, List<KeyValuePair<string, bool>> priorityList, List<KeyValuePair<string, bool>> ignoreList)
     {
       _factoryBlockId = blockId;
       _botEntityId = botId;
       _ownerIdentityId = ownerId;
       _priorities = priorityList;
+      _ignoreList = ignoreList;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -121,6 +123,20 @@ namespace AiEnabled.Networking
                     {
                       var prefix = item.Value ? "[X]" : "[  ]";
                       helper.Priorities.Add($"{prefix} {item.Key}");
+                    }
+                  }
+
+                  if (_ignoreList != null)
+                  {
+                    if (helper.IgnoreList == null)
+                      helper.IgnoreList = new List<string>();
+                    else
+                      helper.IgnoreList.Clear();
+
+                    foreach (var item in _ignoreList)
+                    {
+                      if (item.Value)
+                        helper.IgnoreList.Add($"[X] {item.Key}");
                     }
                   }
 

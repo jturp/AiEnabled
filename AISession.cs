@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.0";
+    public const string VERSION = "v1.8.1";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -293,8 +293,7 @@ namespace AiEnabled
       pc.CleanUp(true, true);
       pc.Bot = null;
 
-      if (_pathCollections != null)
-        _pathCollections.Push(pc);
+      _pathCollections?.Push(pc);
     }
 
     public void ReturnWeaponInfo(WeaponInfo info)
@@ -449,22 +448,6 @@ namespace AiEnabled
         ModSaveData.PlayerHelperData.Clear();
       }
 
-      if (BlockFaceDictionary != null)
-      {
-        foreach (var kvp in BlockFaceDictionary)
-        {
-          if (kvp.Value == null)
-            continue;
-
-          foreach (var kvp2 in kvp.Value)
-            kvp2.Value?.Clear();
-
-          kvp.Value?.Clear();
-        }
-
-        BlockFaceDictionary.Clear();
-      }
-
       if (PlayerToHelperIdentity != null)
       {
         foreach (var kvp in PlayerToHelperIdentity)
@@ -586,7 +569,7 @@ namespace AiEnabled
       UseObjectsAPI?.Clear();
       BotToSeatRelativePosition?.Clear();
       BotToSeatShareMode?.Clear();
-      ComponentInfoDict?.Clear();
+      ItemInfoDict?.Clear();
       AllowedBotRoles?.Clear();
       StorageStack?.Clear();
       AcceptedItemDict?.Clear();
@@ -707,7 +690,6 @@ namespace AiEnabled
       HalfStairBlockDefinitions = null;
       HalfStairMirroredDefinitions = null;
       LadderBlockDefinitions = null;
-      BlockFaceDictionary = null;
       PassageBlockDefinitions = null;
       PassageIntersectionDefinitions = null;
       ArmorPanelFullDefinitions = null;
@@ -739,7 +721,7 @@ namespace AiEnabled
       PlayerMenu = null;
       BotToSeatRelativePosition = null;
       BotToSeatShareMode = null;
-      ComponentInfoDict = null;
+      ItemInfoDict = null;
       AllowedBotRoles = null;
       StorageStack = null;
       VoxelGraphDict = null;
@@ -903,7 +885,6 @@ namespace AiEnabled
                 if (!MyAPIGateway.Utilities.IsDedicated)
                 {
                   Logger.Log($"EEM Mod found. Spawns will be delayed until EEM faction validation passes.");
-                  //MyAPIGateway.Utilities.ShowMessage("AiEnabled", "Spawns will be delayed until EEM faction validation passes.");
                 }
               }
             }
@@ -1630,36 +1611,10 @@ namespace AiEnabled
           foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
           {
             var cubeDef = def as MyCubeBlockDefinition;
-            if (cubeDef == null || _ignoreTypes.ContainsItem(cubeDef.Id.TypeId))
+            if (cubeDef == null || cubeDef.CubeSize != MyCubeSize.Large || _ignoreTypes.ContainsItem(cubeDef.Id.TypeId))
               continue;
 
             var blockDef = cubeDef.Id;
-            if (cubeDef.IsCubePressurized != null && !BlockFaceDictionary.ContainsKey(blockDef))
-            {
-              var cubeDict = new Dictionary<Vector3I, HashSet<Vector3I>>();
-
-              foreach (var kvp in cubeDef.IsCubePressurized)
-              {
-                HashSet<Vector3I> faceHash;
-                if (!cubeDict.TryGetValue(kvp.Key, out faceHash))
-                {
-                  faceHash = new HashSet<Vector3I>();
-                  cubeDict[kvp.Key] = faceHash;
-                }
-
-                foreach (var kvp2 in kvp.Value)
-                {
-                  if (kvp2.Value == MyCubeBlockDefinition.MyCubePressurizationMark.PressurizedAlways)
-                    faceHash.Add(kvp2.Key);
-                }
-              }
-
-              BlockFaceDictionary[blockDef] = cubeDict;
-            }
-
-            if (cubeDef.CubeSize != MyCubeSize.Large)
-              continue;
-
             var blockSubtype = blockDef.SubtypeName;
             bool isSlopedBlock = _validSlopedBlockDefs.ContainsItem(blockDef) || blockSubtype.EndsWith("HalfSlopeArmorBlock");
             bool isStairBlock = !isSlopedBlock && blockSubtype != "LargeStairs" && blockSubtype.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -3193,8 +3148,10 @@ namespace AiEnabled
                     }
 
                     var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
+                    var weldFirst = bot.RepairPriorities?.WeldBeforeGrind ?? true;
                     var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-                    playerData.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, false, bot._patrolName);
+                    var ignList = bot.RepairPriorities?.IgnoreList;
+                    playerData.AddHelper(bot.Character, botType, priList, ignList, damageOnly, weldFirst, grid, bot._patrolList, crewType, false, bot._patrolName);
                   }
 
                   bot.Close();
@@ -3221,8 +3178,10 @@ namespace AiEnabled
                 }
 
                 var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
+                var weldFirst = bot.RepairPriorities?.WeldBeforeGrind ?? true;
                 var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-                playerData.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, false, bot._patrolName);
+                var ignList = bot.RepairPriorities?.IgnoreList;
+                playerData.AddHelper(bot.Character, botType, priList, ignList, damageOnly, weldFirst, grid, bot._patrolList, crewType, false, bot._patrolName);
                 bot.Close();
               }
 
@@ -4354,17 +4313,35 @@ namespace AiEnabled
           else
             helperData.SeatEntityId = 0L;
 
-          var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
+          bool isRepair = bot is RepairBot;
+          var priList = isRepair ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
 
           if (helperData.Priorities == null)
             helperData.Priorities = new List<string>();
-          else
+          else if (priList != null)
+          {
             helperData.Priorities.Clear();
 
-          foreach (var item in priList)
+            foreach (var item in priList)
+            {
+              var prefix = item.Value ? "[X]" : "[  ]";
+              helperData.Priorities.Add($"{prefix} {item.Key}");
+            }
+          }
+
+          if (isRepair || bot is ScavengerBot)
           {
-            var prefix = item.Value ? "[X]" : "[  ]";
-            helperData.Priorities.Add($"{prefix} {item.Key}");
+            var ignList = bot.RepairPriorities?.IgnoreList;
+            if (ignList?.Count > 0)
+            {
+              foreach (var item in ignList)
+              {
+                if (item.Value)
+                {
+                  helperData.IgnoreList.Add($"[X] {item.Key}");
+                }
+              }
+            }
           }
 
           var inventory = botChar.GetInventory() as MyInventory;
@@ -5488,6 +5465,12 @@ namespace AiEnabled
                     botBase.TargetPriorities = new RemoteBotAPI.TargetPriorities();
                   }
 
+                  if (info.IgnoreList != null && (botBase is RepairBot || botBase is ScavengerBot))
+                  {
+                    botBase.RepairPriorities.UpdateIgnoreList(info.IgnoreList);
+                  }
+
+                  botBase.RepairPriorities.WeldBeforeGrind = info.WeldBeforeGrind;
                   botBase.TargetPriorities.DamageToDisable = info.DamageToDisable;
 
                   if (botBase.ToolDefinition != null && !(botBase is CrewBot))
@@ -6161,8 +6144,10 @@ namespace AiEnabled
               var crewType = crewBot?.CrewFunction;
 
               var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
+              var weldFirst = bot.RepairPriorities?.WeldBeforeGrind ?? true;
               var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-              helperData.AddHelper(bot.Character, bot.BotType, priList, damageOnly, grid, bot._patrolList, crewType, adminSpawn, bot._patrolName);
+              var ignList = bot.RepairPriorities?.IgnoreList;
+              helperData.AddHelper(bot.Character, bot.BotType, priList, ignList, damageOnly, weldFirst, grid, bot._patrolList, crewType, adminSpawn, bot._patrolName);
             }
 
             var pkt = new ClientHelperPacket(helperData.Helpers);
@@ -6182,8 +6167,10 @@ namespace AiEnabled
           var crewType = crewBot?.CrewFunction;
 
           var damageOnly = bot.TargetPriorities?.DamageToDisable ?? false;
+          var weldFirst = bot.RepairPriorities?.WeldBeforeGrind ?? true;
           var priList = bot is RepairBot ? bot.RepairPriorities?.PriorityTypes : bot.TargetPriorities?.PriorityTypes;
-          data.AddHelper(bot.Character, botType, priList, damageOnly, grid, bot._patrolList, crewType, adminSpawn, bot._patrolName);
+          var ignList = bot.RepairPriorities?.IgnoreList;
+          data.AddHelper(bot.Character, botType, priList, ignList, damageOnly, weldFirst, grid, bot._patrolList, crewType, adminSpawn, bot._patrolName);
           ModSaveData.PlayerHelperData.Add(data);
 
           var pkt = new ClientHelperPacket(data.Helpers);

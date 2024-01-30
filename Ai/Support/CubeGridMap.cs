@@ -2830,30 +2830,15 @@ namespace AiEnabled.Ai.Support
       }
       else if (AiSession.Instance.RampBlockDefinitions.Contains(cubeDef.Id))
       {
-        Matrix matrix = new Matrix
-        {
-          Forward = Base6Directions.GetVector(block.Orientation.Forward),
-          Left = Base6Directions.GetVector(block.Orientation.Left),
-          Up = Base6Directions.GetVector(block.Orientation.Up)
-        };
+        List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
+        AiUtils.FindAllPositionsForBlock(block, positionList);
 
-        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-        if (faceDict.Count < 2)
-          matrix.TransposeRotationInPlace();
-
-        var dotUp = Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref upVec);
-        var dotFwd = Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref upVec);
-
-        Vector3I center = cubeDef.Center;
-        Vector3I.TransformNormal(ref center, ref matrix, out center);
-        var adjustedPosition = block.Position - center;
         var blockOr = block.Orientation;
+        var dotUp = Base6Directions.GetIntVector(blockOr.Up).Dot(ref upVec);
+        var dotFwd = Base6Directions.GetIntVector(blockOr.Forward).Dot(ref upVec);
 
-        foreach (var kvp in faceDict)
+        foreach (var cell in positionList)
         {
-          Vector3I offset = kvp.Key;
-          Vector3I.TransformNormal(ref offset, ref matrix, out offset);
-          var cell = adjustedPosition + offset;
           var positionAbove = cell + upVec;
           mainGridPosition = cell;
 
@@ -3037,10 +3022,6 @@ namespace AiEnabled.Ai.Support
               {
                 var node = AiSession.Instance.NodePool.Get();
                 node.Update(adjacentPos, Vector3.Zero, this, NodeType.Ground, 0, MainGrid, adjacentBlock);
-
-                //var node = new Node(adjacentPos, Vector3.Zero, this, MainGrid, adjacentBlock);
-                //node.SetNodeType(NodeType.Ground);
-                //OpenTileDict[adjacentPos] = node;
                 AddTileToMap(adjacentPos, node);
                 ExemptNodesSide.Add(adjacentPos);
               }
@@ -3074,6 +3055,8 @@ namespace AiEnabled.Ai.Support
             }
           }
         }
+
+        AiSession.Instance.LineListPool.Return(positionList);
       }
       else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id))
       {
@@ -3083,27 +3066,12 @@ namespace AiEnabled.Ai.Support
         else
           sideWithPane = Base6Directions.GetOppositeDirection(block.Orientation.Left);
 
-        Matrix matrix = new Matrix
-        {
-          Forward = Base6Directions.GetVector(block.Orientation.Forward),
-          Left = Base6Directions.GetVector(block.Orientation.Left),
-          Up = Base6Directions.GetVector(block.Orientation.Up)
-        };
-
-        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-        if (faceDict.Count < 2)
-          matrix.TransposeRotationInPlace();
-
-        Vector3I center = cubeDef.Center;
-        Vector3I.TransformNormal(ref center, ref matrix, out center);
-        var adjustedPosition = block.Position - center;
+        List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
+        AiUtils.FindAllPositionsForBlock(block, positionList);
         var downDir = Base6Directions.GetOppositeDirection(upDir);
 
-        foreach (var kvp in faceDict)
+        foreach (var cell in positionList)
         {
-          Vector3I offset = kvp.Key;
-          Vector3I.TransformNormal(ref offset, ref matrix, out offset);
-          var cell = adjustedPosition + offset;
           mainGridPosition = cell; // connectedIsMain ? cell : MainGrid.WorldToGridInteger(connectedGrid.GridIntegerToWorld(cell));
 
           if (sideWithPane == downDir || (cubeDef.Id.SubtypeName.StartsWith("HalfWindowCorner") && block.Orientation.Forward == downDir))
@@ -3113,31 +3081,17 @@ namespace AiEnabled.Ai.Support
             AddTileToMap(mainGridPosition, node);
           }
         }
+
+        AiSession.Instance.LineListPool.Return(positionList);
       }
       else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(cubeDef.Id))
       {
-        Matrix matrix = new Matrix
-        {
-          Forward = Base6Directions.GetVector(block.Orientation.Forward),
-          Left = Base6Directions.GetVector(block.Orientation.Left),
-          Up = Base6Directions.GetVector(block.Orientation.Up)
-        };
-
-        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-        if (faceDict.Count < 2)
-          matrix.TransposeRotationInPlace();
-
-        Vector3I center = cubeDef.Center;
-        Vector3I.TransformNormal(ref center, ref matrix, out center);
-        var adjustedPosition = block.Position - center;
-
         bool isEdgeWindow = cubeDef.Id.SubtypeName == "LargeWindowEdge";
+        List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
+        AiUtils.FindAllPositionsForBlock(block, positionList);
 
-        foreach (var kvp in faceDict)
+        foreach (var cell in positionList)
         {
-          Vector3I offset = kvp.Key;
-          Vector3I.TransformNormal(ref offset, ref matrix, out offset);
-          var cell = adjustedPosition + offset;
           var positionAbove = cell + upVec;
           mainGridPosition = cell;
 
@@ -3191,47 +3145,25 @@ namespace AiEnabled.Ai.Support
             }
           }
         }
+
+        AiSession.Instance.LineListPool.Return(positionList);
       }
       else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
       {
         bool validSolar = block.BlockDefinition.Id.SubtypeName.IndexOf("colorable", StringComparison.OrdinalIgnoreCase) < 0;
         if (validSolar && block.Orientation.Forward == Base6Directions.GetOppositeDirection(upDir))
         {
-          Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
-          if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(cubeDef.Id, out faceDict))
+          List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
+          AiUtils.FindAllPositionsForBlock(block, positionList);
+
+          foreach (var cellPosition in positionList)
           {
-            AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {block.CubeGrid.DisplayName}, Position = {block.Position})", MessageType.WARNING);
+            Node node = AiSession.Instance.NodePool.Get();
+            node.Update(cellPosition, Vector3.Zero, this, NodeType.Ground, 0, MainGrid, block);
+            AddTileToMap(cellPosition, node);
           }
-          else
-          {
 
-            Matrix matrix = new Matrix
-            {
-              Forward = Base6Directions.GetVector(block.Orientation.Forward),
-              Left = Base6Directions.GetVector(block.Orientation.Left),
-              Up = Base6Directions.GetVector(block.Orientation.Up)
-            };
-
-            if (faceDict.Count < 2)
-              matrix.TransposeRotationInPlace();
-
-            Vector3I side, center = cubeDef.Center;
-            Vector3I.TransformNormal(ref upVec, ref matrix, out side);
-            Vector3I.TransformNormal(ref center, ref matrix, out center);
-            var adjustedPosition = block.Position - center;
-
-            foreach (var kvp in faceDict)
-            {
-              var cell = kvp.Key;
-              Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-              var cellPosition = adjustedPosition + cell;
-
-              Node node = AiSession.Instance.NodePool.Get();
-              node.Update(cellPosition, Vector3.Zero, this, NodeType.Ground, 0, MainGrid, block);
-              //OpenTileDict[cellPosition] = node;
-              AddTileToMap(cellPosition, node);
-            }
-          }
+          AiSession.Instance.LineListPool.Return(positionList);
         }
       }
       else if (/*isDigiLadder ||*/ cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
@@ -4550,12 +4482,12 @@ namespace AiEnabled.Ai.Support
       if (cubeDef == null)
         cubeDef = block.BlockDefinition as MyCubeBlockDefinition;
 
-      Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
-      if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(cubeDef.Id, out faceDict))
-      {
-        AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {block.CubeGrid.DisplayName}, Position = {block.Position})", MessageType.WARNING);
-        return;
-      }
+      //Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
+      //if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(cubeDef.Id, out faceDict))
+      //{
+      //  AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {block.CubeGrid.DisplayName}, Position = {block.Position})", MessageType.WARNING);
+      //  return;
+      //}
 
       bool isPassageStair = cubeDef.Context.ModName == "PassageIntersections" && cubeDef.Id.SubtypeName.EndsWith("PassageStairs_Large");
       if (isPassageStair && normal != Base6Directions.GetIntVector(block.Orientation.Up))
@@ -4605,30 +4537,16 @@ namespace AiEnabled.Ai.Support
       var grid = block.CubeGrid as MyCubeGrid;
       bool needsPositionAdjusted = grid.EntityId != MainGrid.EntityId;
 
-      Matrix matrix = new Matrix
+      List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
+      AiUtils.FindAllPositionsForBlock(block, positionList);
+
+      foreach (var cell in positionList)
       {
-        Forward = Base6Directions.GetVector(block.Orientation.Forward),
-        Left = Base6Directions.GetVector(block.Orientation.Left),
-        Up = Base6Directions.GetVector(block.Orientation.Up)
-      };
-
-      if (faceDict.Count < 2)
-        matrix.TransposeRotationInPlace();
-
-      Vector3I side, center = cubeDef.Center;
-      Vector3I.TransformNormal(ref normal, ref matrix, out side);
-      Vector3I.TransformNormal(ref center, ref matrix, out center);
-      var adjustedPosition = block.Position - center;
-
-      foreach (var kvp in faceDict)
-      {
-        var cell = kvp.Key;
-        Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-        var position = adjustedPosition + cell;
+        var position = cell;
 
         if (isPassageStair)
         {
-          var cellKey = kvp.Key;
+          var cellKey = AiUtils.GetCellForPosition(block, position);
           if (cellKey != new Vector3I(1, 0, 0))
           {
             if (needsPositionAdjusted)
@@ -4650,9 +4568,6 @@ namespace AiEnabled.Ai.Support
 
             var node = AiSession.Instance.NodePool.Get();
             node.Update(position, offset, this, NodeType.Ground, 0, grid, block);
-            //var node = new Node(position, offset, this, grid, block);
-            //node.SetNodeType(NodeType.Ground);
-            //OpenTileDict[position] = node;
             AddTileToMap(position, node);
           }
 
@@ -4668,7 +4583,8 @@ namespace AiEnabled.Ai.Support
         bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
         bool aboveIsConveyorCap = cubeAbove != null && AiSession.Instance.ConveyorEndCapDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
         bool aboveisAutomatonsFlat = cubeAbove != null && AiSession.Instance.AutomatonsFlatBlockDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
-        bool checkAbove = !exclude && (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor || (kvp.Value?.Contains(side) ?? false));
+        bool checkAbove = !exclude && (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor
+          || AiUtils.IsSidePressurizedForBlock(block, position, normal) /*(kvp.Value?.Contains(side) ?? false)*/);
 
         if (cubeAboveEmpty)
         {
@@ -4676,15 +4592,13 @@ namespace AiEnabled.Ai.Support
           {
             if (allowSolar && block.BlockDefinition.Id.SubtypeName.IndexOf("colorablesolarpanelcorner", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-              var cellKey = kvp.Key;
+              var cellKey = AiUtils.GetCellForPosition(block, position);
               var xVal = block.BlockDefinition.Id.SubtypeName.EndsWith("Inverted") ? 1 : 0;
               
               if (cellKey == new Vector3I(xVal, 0, 0) || cellKey == new Vector3I(xVal, 1, 0))
               {
                 var node = AiSession.Instance.NodePool.Get();
                 node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-                //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-                //node.SetNodeType(NodeType.Ground);
                 AddTileToMap(mainGridPosition, node);
               }
             }
@@ -4692,8 +4606,6 @@ namespace AiEnabled.Ai.Support
             {
               var node = AiSession.Instance.NodePool.Get();
               node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-              //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-              //node.SetNodeType(NodeType.Ground);
               AddTileToMap(mainGridPosition, node);
             }
           }
@@ -4706,8 +4618,6 @@ namespace AiEnabled.Ai.Support
               {
                 var node = AiSession.Instance.NodePool.Get();
                 node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-                //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-                //node.SetNodeType(NodeType.Ground);
                 AddTileToMap(mainGridPosition, node);
               }
             }
@@ -4717,8 +4627,6 @@ namespace AiEnabled.Ai.Support
               {
                 var node = AiSession.Instance.NodePool.Get();
                 node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-                //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-                //node.SetNodeType(NodeType.Ground);
                 AddTileToMap(mainGridPosition, node);
               }
             }
@@ -4726,8 +4634,6 @@ namespace AiEnabled.Ai.Support
             {
               var node = AiSession.Instance.NodePool.Get();
               node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-              //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-              //node.SetNodeType(NodeType.Ground);
               AddTileToMap(mainGridPosition, node);
             }
           }
@@ -4737,8 +4643,6 @@ namespace AiEnabled.Ai.Support
             {
               var node = AiSession.Instance.NodePool.Get();
               node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-              //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-              //node.SetNodeType(NodeType.Ground);
               AddTileToMap(mainGridPosition, node);
             }
           }
@@ -4755,8 +4659,6 @@ namespace AiEnabled.Ai.Support
               {
                 var node = AiSession.Instance.NodePool.Get();
                 node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-                //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-                //node.SetNodeType(NodeType.Ground);
                 AddTileToMap(mainGridPosition, node);
               }
             }
@@ -4764,8 +4666,6 @@ namespace AiEnabled.Ai.Support
             {
               var node = AiSession.Instance.NodePool.Get();
               node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-              //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-              //node.SetNodeType(NodeType.Ground);
               AddTileToMap(mainGridPosition, node);
             }
             else if (block.BlockDefinition.Id.SubtypeName.StartsWith("HalfWindowCorner")
@@ -4773,8 +4673,6 @@ namespace AiEnabled.Ai.Support
             {
               var node = AiSession.Instance.NodePool.Get();
               node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-              //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-              //node.SetNodeType(NodeType.Ground);
               AddTileToMap(mainGridPosition, node);
             }
           }
@@ -4786,8 +4684,6 @@ namespace AiEnabled.Ai.Support
 
             var node = AiSession.Instance.NodePool.Get();
             node.Update(mainGridPosition, Vector3.Zero, this, NodeType.Ground, 0, grid);
-            //var node = new Node(mainGridPosition, Vector3.Zero, this, grid);
-            //node.SetNodeType(NodeType.Ground);
             var up = Base6Directions.GetIntVector(block.Orientation.Up);
             var bwd = -Base6Directions.GetIntVector(block.Orientation.Forward);
             node.SetBlocked(up);
@@ -5053,6 +4949,8 @@ namespace AiEnabled.Ai.Support
           }
         }
       }
+
+      AiSession.Instance.LineListPool.Return(positionList);
     }
 
     void AddTileToMap(Vector3I mainGridPosition, Node node)
@@ -8624,12 +8522,14 @@ namespace AiEnabled.Ai.Support
       //AiSession.Instance.Logger.Log($"{this}.UpdateTempObstaclesAsync: Start");
 
       var obstacleData = data as ObstacleWorkData;
-      if (obstacleData != null && AiSession.Instance?.BlockFaceDictionary != null && AiSession.Instance.Registered)
+      if (obstacleData != null && AiSession.Instance.Registered)
       {
         ObstacleNodesTemp.Clear();
         var blocks = obstacleData.Blocks;
         var tempEntities = obstacleData.Entities;
         _tempKVPList.Clear();
+
+        List<Vector3I> positionList = AiSession.Instance.LineListPool.Get();
 
         for (int i = 0; i < blocks.Count; i++)
         {
@@ -8637,35 +8537,12 @@ namespace AiEnabled.Ai.Support
           if (b?.CubeGrid == null || b.IsDestroyed || b.CubeGrid.MarkedForClose)
             continue;
 
-          var cubeDef = b.BlockDefinition as MyCubeBlockDefinition;
-          Dictionary<Vector3I, HashSet<Vector3I>> faceDict;
-          if (!AiSession.Instance.BlockFaceDictionary.TryGetValue(b.BlockDefinition.Id, out faceDict))
-          {
-            AiSession.Instance.Logger.Log($"There was no cube face dictionary found for {cubeDef.Id} (Size = {cubeDef.CubeSize}, Grid = {b.CubeGrid.DisplayName}, Position = {b.Position})", MessageType.WARNING);
-            continue;
-          }
-
-          Matrix matrix = new Matrix
-          {
-            Forward = Base6Directions.GetVector(b.Orientation.Forward),
-            Left = Base6Directions.GetVector(b.Orientation.Left),
-            Up = Base6Directions.GetVector(b.Orientation.Up)
-          };
-
-          if (faceDict.Count < 2)
-            matrix.TransposeRotationInPlace();
-
-          Vector3I center = cubeDef.Center;
-          Vector3I.TransformNormal(ref center, ref matrix, out center);
-          var adjustedPosition = b.Position - center;
+          positionList.Clear();
+          AiUtils.FindAllPositionsForBlock(b, positionList);
           var grid = b.CubeGrid;
 
-          foreach (var kvp in faceDict)
+          foreach (var position in positionList)
           {
-            var cell = kvp.Key;
-            Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-            var position = adjustedPosition + cell;
-
             var worldPoint = b.CubeGrid.GridIntegerToWorld(position);
             if (!OBB.Contains(ref worldPoint))
               continue;
@@ -8689,13 +8566,14 @@ namespace AiEnabled.Ai.Support
 
                 if (sphere.Contains(otherSphere) != ContainmentType.Disjoint)
                 {
-                  //ObstacleNodesTemp[otherLocal] = new KeyValuePair<IMyCubeGrid, bool>(grid, true);
                   _tempKVPList.Add(new KeyValuePair<IMySlimBlock, Vector3I>(b, otherLocal));
                 }
               }
             }
           }
         }
+
+        AiSession.Instance.LineListPool.Return(positionList);
 
         foreach (var kvp in _tempKVPList)
         {

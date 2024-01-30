@@ -5180,6 +5180,12 @@ namespace AiEnabled.Bots
         var ladder = UseObject.Owner as MyCubeBlock;
         if (ladder != null)
         {
+          //if (QueueForLadder(ladder.SlimBlock, AfterNextIsLadder))
+          //{
+          //  needToWait = true;
+          //  return false;
+          //}
+
           bool inVoxel, charBlocked;
           if (_pathCollection.IsLadderBlocked(ladder, out inVoxel, out charBlocked, force))
           {
@@ -5188,10 +5194,7 @@ namespace AiEnabled.Bots
               var up = Base6Directions.GetIntVector(ladder.CubeGrid.WorldMatrix.GetClosestDirection(botMatrix.Up));
               var gridWorld = ladder.CubeGrid.GridIntegerToWorld(ladder.Position + up);
               var graphLocal = _currentGraph.WorldToLocal(gridWorld);
-              var blockAbove = _currentGraph.GetBlockAtPosition(graphLocal);
-              if (blockAbove == null)
-                blockAbove = ladder.CubeGrid.GetCubeBlock(ladder.Position + up) as IMySlimBlock;
-
+              var blockAbove = _currentGraph.GetBlockAtPosition(graphLocal) ?? ladder.CubeGrid.GetCubeBlock(ladder.Position + up) as IMySlimBlock;
               if (blockAbove != null && AiSession.Instance.LadderBlockDefinitions.Contains(blockAbove.BlockDefinition.Id))
               {
                 ladder = blockAbove.FatBlock as MyCubeBlock;
@@ -5278,6 +5281,113 @@ namespace AiEnabled.Bots
       Character.MoveAndRotate(Vector3.Zero, rotation, 0);
       return false;
     }
+
+    //bool QueueForLadder(IMySlimBlock ladder, bool goingDown)
+    //{
+    //  if (ladder == null || !AiSession.Instance.LadderBlockDefinitions.Contains(ladder.BlockDefinition.Id))
+    //    return false;
+
+    //  bool result = false;
+    //  List<IMySlimBlock> slimList = AiSession.Instance.SlimListPool.Get();
+    //  List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
+
+    //  var ladderGrid = ladder.CubeGrid;
+
+    //  Matrix m;
+    //  ladder.Orientation.GetMatrix(out m);
+    //  var upVec = Base6Directions.GetIntVector(ladderGrid.WorldMatrix.GetClosestDirection(m.Up));
+    //  MyCharacterMovementEnum moveEnum;
+
+    //  if (goingDown)
+    //  {
+    //    moveEnum = MyCharacterMovementEnum.LadderUp;
+
+    //    var pointUp = ladder.Position + upVec;
+    //    var blockUp = ladderGrid.GetCubeBlock(pointUp);
+    //    if (blockUp != null && AiSession.Instance.LadderBlockDefinitions.Contains(blockUp.BlockDefinition.Id))
+    //    {
+    //      slimList.Add(blockUp);
+    //    }
+
+    //    for (int num = 1; ; num++)
+    //    {
+    //      var pointDown = ladder.Position - upVec * num;
+    //      var blockDown = ladderGrid.GetCubeBlock(pointDown);
+    //      if (blockDown != null && AiSession.Instance.LadderBlockDefinitions.Contains(blockDown.BlockDefinition.Id))
+    //      {
+    //        slimList.Add(blockDown);
+    //      }
+    //      else
+    //      {
+    //        break;
+    //      }
+    //    }
+    //  }
+    //  else
+    //  {
+    //    moveEnum = MyCharacterMovementEnum.LadderDown;
+
+    //    var pointDown = ladder.Position - upVec;
+    //    var blockDown = ladderGrid.GetCubeBlock(pointDown);
+    //    if (blockDown != null && AiSession.Instance.LadderBlockDefinitions.Contains(blockDown.BlockDefinition.Id))
+    //    {
+    //      slimList.Add(blockDown);
+    //    }
+
+    //    for (int num = 1; ; num++)
+    //    {
+    //      var pointUp = ladder.Position + upVec;
+    //      var blockUp = ladderGrid.GetCubeBlock(pointUp);
+    //      if (blockUp != null && AiSession.Instance.LadderBlockDefinitions.Contains(blockUp.BlockDefinition.Id))
+    //      {
+    //        slimList.Add(blockUp);
+    //      }
+    //      else
+    //      {
+    //        break;
+    //      }
+    //    }
+
+    //  }
+
+    //  foreach (var item in slimList)
+    //  {
+    //    var cube = item.FatBlock as MyCubeBlock;
+    //    var center = cube.PositionComp.WorldAABB.Center;
+    //    var orienation = Quaternion.CreateFromRotationMatrix(cube.WorldMatrix);
+    //    var box = new MyOrientedBoundingBoxD(center, cube.PositionComp.LocalAABB.HalfExtents * 0.9f, orienation);
+
+    //    MyGamePruningStructure.GetAllEntitiesInOBB(ref box, entList);
+
+    //    for (int i = 0; i < entList.Count; i++)
+    //    {
+    //      var ent = entList[i];
+    //      orienation = Quaternion.CreateFromRotationMatrix(ent.WorldMatrix);
+    //      var entBox = new MyOrientedBoundingBoxD(ent.PositionComp.WorldAABB.Center, ent.PositionComp.LocalAABB.HalfExtents, orienation);
+
+    //      if (!box.Intersects(ref entBox))
+    //        continue;
+
+    //      var ch = ent as IMyCharacter;
+    //      if (ch != null && ch.EntityId != Character?.EntityId)
+    //      {
+    //        var state = ch.CurrentMovementState.GetMode();
+    //        if (state == MyCharacterMovement.Ladder)
+    //        {
+    //          if (ch.CurrentMovementState == moveEnum)
+    //          {
+    //            result = true;
+    //            break;
+    //          }
+    //        }
+    //      }
+    //    }
+    //  }
+
+    //  AiSession.Instance.SlimListPool.Return(slimList);
+    //  AiSession.Instance.EntListPool.Return(entList);
+    //  return result;
+    //}
 
     internal void DismountLadder(Vector3D worldNode, Vector3D botPosition)
     {

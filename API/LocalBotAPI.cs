@@ -1338,6 +1338,7 @@ namespace AiEnabled.API
 
       var normal = Base6Directions.GetIntVector(biggestGrid.WorldMatrix.GetClosestDirection(upVector.Value));
       var blocks = biggestGrid.GetBlocks().ToList();
+      var positionList = AiSession.Instance.LineListPool.Get();
 
       foreach (IMySlimBlock block in blocks)
       {
@@ -1393,32 +1394,14 @@ namespace AiEnabled.API
         bool exclude = isScaffold && (cubeDef.Id.SubtypeName.EndsWith("Open") || cubeDef.Id.SubtypeName.EndsWith("Structure"));
         bool isPlatform = isScaffold && !exclude && cubeDef.Id.SubtypeName.EndsWith("Unsupported");
 
-        Matrix matrix = new Matrix
-        {
-          Forward = Base6Directions.GetVector(block.Orientation.Forward),
-          Left = Base6Directions.GetVector(block.Orientation.Left),
-          Up = Base6Directions.GetVector(block.Orientation.Up)
-        };
+        positionList.Clear();
+        AiUtils.FindAllPositionsForBlock(block, positionList);
 
-        var faceDict = AiSession.Instance.BlockFaceDictionary[cubeDef.Id];
-
-        if (faceDict.Count < 2)
-          matrix.TransposeRotationInPlace();
-
-        Vector3I side, center = cubeDef.Center;
-        Vector3I.TransformNormal(ref normal, ref matrix, out side);
-        Vector3I.TransformNormal(ref center, ref matrix, out center);
-        var adjustedPosition = block.Position - center;
-
-        foreach (var kvp in faceDict)
+        foreach (var position in positionList)
         {
           if (nodeList.Count >= numberOfNodesNeeded)
             break;
 
-          var cell = kvp.Key;
-          Vector3I.TransformNormal(ref cell, ref matrix, out cell);
-
-          var position = adjustedPosition + cell;
           var positionAbove = position + normal;
           var worldPosition = biggestGrid.GridIntegerToWorld(positionAbove);
           var cubeAbove = biggestGrid.GetCubeBlock(positionAbove) as IMySlimBlock;
@@ -1428,7 +1411,8 @@ namespace AiEnabled.API
           bool aboveIsPassageStair = cubeAbove != null && cubeAbove.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
           bool aboveIsConveyorCap = cubeAbove != null && AiSession.Instance.ConveyorEndCapDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
           bool aboveisAutomatonsFlat = cubeAbove != null && AiSession.Instance.AutomatonsFlatBlockDefinitions.ContainsItem(cubeAbove.BlockDefinition.Id);
-          bool checkAbove = !exclude && (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor || (kvp.Value?.Contains(side) ?? false));
+          bool checkAbove = !exclude && (airTight || allowSolar || isCylinder || aboveisScaffold || isAllowedConveyor
+            || AiUtils.IsSidePressurizedForBlock(block, position, normal) /*(kvp.Value?.Contains(side) ?? false)*/);
 
           if (cubeAboveEmpty)
           {
@@ -1436,7 +1420,7 @@ namespace AiEnabled.API
             {
               if (allowSolar && block.BlockDefinition.Id.SubtypeName.IndexOf("colorablesolarpanelcorner", StringComparison.OrdinalIgnoreCase) >= 0)
               {
-                var cellKey = kvp.Key;
+                var cellKey = AiUtils.GetCellForPosition(block, position);
                 var xVal = block.BlockDefinition.Id.SubtypeName.EndsWith("Inverted") ? 1 : 0;
 
                 if (cellKey == new Vector3I(xVal, 0, 0) || cellKey == new Vector3I(xVal, 1, 0))
@@ -1744,6 +1728,8 @@ namespace AiEnabled.API
           }
         }
       }
+
+      AiSession.Instance.LineListPool.Return(positionList);
     }
 
     /// <summary>

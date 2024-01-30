@@ -13,6 +13,7 @@ using ProtoBuf;
 using VRage.Utils;
 using Sandbox.Definitions;
 using VRage.ObjectBuilders;
+using System.Collections;
 
 namespace AiEnabled.API
 {
@@ -216,11 +217,25 @@ namespace AiEnabled.API
     public abstract class Priorities
     {
       [ProtoMember(1)] public List<KeyValuePair<string, bool>> PriorityTypes;
+      [ProtoMember(2)] public List<KeyValuePair<string, bool>> IgnoreList;
 
       public Priorities() { }
 
-      internal void AssignDefaults()
+      internal void AssignDefaults(bool onlyIgnoreList = false)
       {
+        IgnoreList = new List<KeyValuePair<string, bool>>();
+
+        foreach (var def in MyDefinitionManager.Static.GetInventoryItemDefinitions())
+        {
+          if (def?.DisplayNameText != null && def.Public && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0)
+          {
+            IgnoreList.Add(new KeyValuePair<string, bool>(def.DisplayNameText, false));
+          }
+        }
+
+        if (onlyIgnoreList)
+          return;
+
         PriorityTypes = new List<KeyValuePair<string, bool>>()
         {
           new KeyValuePair<string, bool>("IMyUserControllableGun", true),
@@ -244,12 +259,62 @@ namespace AiEnabled.API
           PriorityTypes.Insert(0, new KeyValuePair<string, bool>("IMyCharacter", true));
       }
 
+      internal void UpdateIgnoreList(List<string> ignoreList)
+      {
+        if (ignoreList == null || ignoreList.Count == 0) 
+          return;
+
+        var list = new List<KeyValuePair<string, bool>>();
+        foreach (var item in ignoreList)
+        {
+          var idx = item.IndexOf("]");
+          if (idx >= 0)
+          {
+            var enabled = item.StartsWith("[X]");
+            var name = item.Substring(idx + 1).Trim();
+
+            list.Add(new KeyValuePair<string, bool>(name, enabled));
+          }
+        }
+
+        UpdateIgnoreList(list);
+        list.Clear();
+      }
+
+      internal void UpdateIgnoreList(List<KeyValuePair<string, bool>> ignoreList)
+      {
+        if (ignoreList == null)
+          return;
+
+        var allInvItems = MyDefinitionManager.Static.GetInventoryItemDefinitions();
+        var sameCount = ignoreList.Count == allInvItems.Count;
+
+        if (IgnoreList == null)
+          IgnoreList = new List<KeyValuePair<string, bool>>(allInvItems.Count);
+        else
+          IgnoreList.Clear();
+  
+        IgnoreList.AddRange(ignoreList);
+
+        if (!sameCount)
+        {
+          foreach (var def in allInvItems)
+          {
+            if (def != null && def.Public && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+              if (IndexOf(def.DisplayNameText) < 0)
+                IgnoreList.Add(new KeyValuePair<string, bool>(def.DisplayNameText, false));
+            }
+          }
+        }
+      }
+
       internal int GetBlockPriority(object item)
       {
         for (int i = 0; i < PriorityTypes.Count; i++)
         {
           var pri = PriorityTypes[i];
-          var priName = GetPriorityName(pri.Key);
+          var priName = GetName(pri.Key);
 
           if (CheckTypeFromString(item, priName))
             return pri.Value ? i : -1;
@@ -258,13 +323,19 @@ namespace AiEnabled.API
         return -1;
       }
 
-      internal int IndexOf(string priority)
+      internal int IndexOf(string itemOrPriority)
       {
-        var pri = GetPriorityName(priority);
+        var pri = GetName(itemOrPriority);
 
         for (int i = 0; i < PriorityTypes.Count; i++)
         {
           if (PriorityTypes[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
+            return i;
+        }
+
+        for (int i = 0; i < IgnoreList.Count; i++)
+        {
+          if (IgnoreList[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
             return i;
         }
 
@@ -297,6 +368,27 @@ namespace AiEnabled.API
         return false;
       }
 
+      internal bool ContainsIgnoreItem(string item)
+      {
+        if (string.IsNullOrEmpty(item))
+          return false;
+
+        var idx = item.IndexOf("]");
+
+        if (idx >= 0)
+          item = item.Substring(idx + 1);
+
+        item = item.Trim();
+
+        for (int i = 0; i < IgnoreList.Count; i++)
+        {
+          if (IgnoreList[i].Key.Equals(item, StringComparison.OrdinalIgnoreCase))
+            return true;
+        }
+
+        return false;
+      }
+
       internal void AddPriority(string priority, bool enabled)
       {
         if (!ContainsPriority(priority))
@@ -305,32 +397,49 @@ namespace AiEnabled.API
         }
       }
 
-      internal bool GetEnabled(string priority)
+      internal void AddIgnore(string item, bool enabled)
       {
-        var idx = priority.IndexOf("]");
+        if (!ContainsIgnoreItem(item))
+        {
+          IgnoreList.Add(new KeyValuePair<string, bool>(item.Trim(), enabled));
+        }
+      }
+
+      internal bool GetEnabled(string itemOrPriority)
+      {
+        itemOrPriority = itemOrPriority.Trim();
+
+        if (itemOrPriority.StartsWith("[X]"))
+          return true;
+
+        var idx = itemOrPriority.IndexOf("]");
 
         if (idx >= 0)
-          priority = priority.Substring(idx + 1);
-
-        priority = priority.Trim();
+          itemOrPriority = itemOrPriority.Substring(idx + 1).Trim();
 
         foreach (var pri in PriorityTypes)
         {
-          if (pri.Key.Equals(priority, StringComparison.OrdinalIgnoreCase))
+          if (pri.Key.Equals(itemOrPriority, StringComparison.OrdinalIgnoreCase))
             return pri.Value;
+        }
+
+        foreach (var item in IgnoreList)
+        {
+          if (item.Key.Equals(itemOrPriority, StringComparison.OrdinalIgnoreCase))
+            return item.Value;
         }
 
         return false;
       }
 
-      internal string GetPriorityName(string priority)
+      internal string GetName(string item)
       {
-        var idx = priority.IndexOf("]");
+        var idx = item.IndexOf("]");
 
         if (idx >= 0)
-          priority = priority.Substring(idx + 1);
+          item = item.Substring(idx + 1);
 
-        return priority.Trim();
+        return item.Trim();
       }
 
       bool CheckTypeFromString(object item, string priType)
@@ -391,6 +500,9 @@ namespace AiEnabled.API
         if (pris?.Count > 0)
         {
           PriorityTypes = new List<KeyValuePair<string, bool>>(pris);
+
+          if (IgnoreList == null)
+            AssignDefaults(true);
         }
         else
         {
@@ -412,7 +524,7 @@ namespace AiEnabled.API
             if (idx >= 0)
             {
               var enabled = p.Trim().StartsWith("[X]");
-              var name = GetPriorityName(p);
+              var name = GetName(p);
 
               PriorityTypes.Add(new KeyValuePair<string, bool>(name, enabled));
             }
@@ -471,7 +583,7 @@ namespace AiEnabled.API
             if (idx >= 0)
             {
               var enabled = p.Trim().StartsWith("[X]");
-              var name = GetPriorityName(p);
+              var name = GetName(p);
 
               PriorityTypes.Add(new KeyValuePair<string, bool>(name, enabled));
             }

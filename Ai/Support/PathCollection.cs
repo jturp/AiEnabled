@@ -985,10 +985,9 @@ namespace AiEnabled.Ai.Support
         var ch = ent as IMyCharacter;
         if (ch != null)
         {
-
           if (ch.EntityId != Bot?.Character?.EntityId)
           {
-            var name = string.IsNullOrWhiteSpace(ch.DisplayName) ? ch.Name : ch.DisplayName;
+            //var name = string.IsNullOrWhiteSpace(ch.DisplayName) ? ch.Name : ch.DisplayName;
             blockedByChar = true;
 
             var state = ch.CurrentMovementState.GetMode();

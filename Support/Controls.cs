@@ -135,7 +135,7 @@ namespace AiEnabled.Support
       repairPriorityBox.VisibleRowsCount = 15;
       repairPriorityBox.Multiselect = false;
       repairPriorityBox.Title = MyStringId.GetOrCompute("Repair Priorities");
-      repairPriorityBox.Tooltip = MyStringId.GetOrCompute("Adjust your helper's repair priorities.");
+      repairPriorityBox.Tooltip = MyStringId.GetOrCompute("Adjust your helpers' repair priorities.");
       repairPriorityBox.ListContent = (Block, lst1, lst2) => RepairBoxListContent(Block, lst1, lst2);
       repairPriorityBox.ItemSelected = (Block, selectedItems) => RepairBox_ItemSelected(Block, selectedItems);
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(repairPriorityBox);
@@ -193,7 +193,7 @@ namespace AiEnabled.Support
       targetPriorityBox.VisibleRowsCount = 16;
       targetPriorityBox.Multiselect = false;
       targetPriorityBox.Title = MyStringId.GetOrCompute("Target Priorities");
-      targetPriorityBox.Tooltip = MyStringId.GetOrCompute("Adjust your helper's target priorities.");
+      targetPriorityBox.Tooltip = MyStringId.GetOrCompute("Adjust your helpers' target priorities.");
       targetPriorityBox.ListContent = (Block, lst1, lst2) => TargetBoxListContent(Block, lst1, lst2);
       targetPriorityBox.ItemSelected = (Block, selectedItems) => TargetBox_ItemSelected(Block, selectedItems);
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(targetPriorityBox);
@@ -240,6 +240,30 @@ namespace AiEnabled.Support
       updatePriBtn.Action = Block => UpdatePriorities_Submitted(Block);
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(updatePriBtn);
       controls.Add(updatePriBtn);
+
+      var ignoreListBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("IgnoreListBox");
+      ignoreListBox.Visible = CombineFunc.Create(ignoreListBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      ignoreListBox.SupportsMultipleBlocks = false;
+      ignoreListBox.VisibleRowsCount = 10;
+      ignoreListBox.Multiselect = false;
+      ignoreListBox.Title = MyStringId.GetOrCompute("Pickup Ignore List");
+      ignoreListBox.Tooltip = MyStringId.GetOrCompute("Adjust your helpers' ignore settings for item pickup. Use Update Priorities button to propagate changes.");
+      ignoreListBox.ListContent = (Block, listItems, selectedItems) => IgnoreBox_ListContent(Block, listItems, selectedItems);
+      ignoreListBox.ItemSelected = (Block, selectedItems) => IgnoreBox_ItemSelected(Block, selectedItems);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(ignoreListBox);
+      controls.Add(ignoreListBox);
+
+      var ignoreBtnOnOff = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnOnOffTgtPri");
+      ignoreBtnOnOff.Visible = CombineFunc.Create(ignoreBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      ignoreBtnOnOff.SupportsMultipleBlocks = false;
+      ignoreBtnOnOff.Title = MyStringId.GetOrCompute("Toggle Ignore Type");
+      ignoreBtnOnOff.Tooltip = MyStringId.GetOrCompute("Toggles the selected type On/Off (On = Ignore).");
+      ignoreBtnOnOff.OnText = MyStringId.GetOrCompute("Enable");
+      ignoreBtnOnOff.OffText = MyStringId.GetOrCompute("Disable");
+      ignoreBtnOnOff.Setter = (Block, enabled) => IgnoreBoxOnOff_Setter(Block, enabled);
+      ignoreBtnOnOff.Getter = (Block) => IgnoreBoxOnOff_Getter(Block);
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(ignoreBtnOnOff);
+      controls.Add(ignoreBtnOnOff);
 
       var separatorOne = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator1");
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separatorOne);
@@ -388,7 +412,7 @@ namespace AiEnabled.Support
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonDismiss);
       controls.Add(buttonDismiss);
 
-      var separatorThree = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator1");
+      var separatorThree = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyConveyorSorter>("Separator3");
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(separatorThree);
       controls.Add(separatorThree);
 
@@ -476,7 +500,7 @@ namespace AiEnabled.Support
         logic.RepairPriorities = new RemoteBotAPI.RepairPriorities();
 
       logic.RepairPriorities.WeldBeforeGrind = enabled;
-      logic.UpdatePriorityLists(true);
+      logic.UpdatePriorityLists(true, false, false);
       RefreshTerminalControls(block);
     }
 
@@ -525,14 +549,35 @@ namespace AiEnabled.Support
       if (player == null)
         return;
 
+      var ignList = logic.RepairPriorities.IgnoreList;
       var repList = logic.RepairPriorities.PriorityTypes;
       var tgtList = logic.TargetPriorities.PriorityTypes;
 
-      var pkt = new PriorityUpdatePacket(player.IdentityId, repList, tgtList, logic.TargetPriorities.DamageToDisable, logic.RepairPriorities.WeldBeforeGrind);
+      var pkt = new PriorityUpdatePacket(player.IdentityId, ignList, repList, tgtList, logic.TargetPriorities.DamageToDisable, logic.RepairPriorities.WeldBeforeGrind);
       AiSession.Instance.Network.SendToServer(pkt);
 
       logic.ButtonPressed = true;
       SetContextMessage(block, "Updates sent!");
+    }
+
+    private static void IgnoreBox_ItemSelected(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> selectedItems)
+    {
+      if (selectedItems == null || selectedItems.Count == 0)
+        return;
+
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var item = selectedItems[0].Text.String;
+      var enabled = item.StartsWith("[X]");
+
+      var idx = item.IndexOf("]");
+      if (idx >= 0)
+        item = item.Substring(idx + 1).Trim();
+
+      logic.SelectedIgnoreItem = new KeyValuePair<string, bool>(item, enabled);
+      RefreshTerminalControls(block);
     }
 
     private static void RepairBox_ItemSelected(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> selectedItems)
@@ -590,7 +635,7 @@ namespace AiEnabled.Support
       if (index > 0)
       {
         logic.TargetPriorities.PriorityTypes.Move(index, index - 1);
-        logic.UpdatePriorityLists(false);
+        logic.UpdatePriorityLists(false, true, false);
         RefreshTerminalControls(block);
       }
     }
@@ -610,7 +655,7 @@ namespace AiEnabled.Support
       if (index >= 0 && index < logic.TargetPriorities.PriorityTypes.Count - 1)
       {
         logic.TargetPriorities.PriorityTypes.Move(index, index + 1);
-        logic.UpdatePriorityLists(false);
+        logic.UpdatePriorityLists(false, true, false);
         RefreshTerminalControls(block);
       }
     }
@@ -644,7 +689,41 @@ namespace AiEnabled.Support
         var kvp = new KeyValuePair<string, bool>(selected.Key, enabled);
         logic.TargetPriorities.PriorityTypes[index] = kvp;
         logic.SelectedTargetPriority = kvp;
-        logic.UpdatePriorityLists(false);
+        logic.UpdatePriorityLists(false, true, false);
+        RefreshTerminalControls(block);
+      }
+    }
+
+    private static bool IgnoreBoxOnOff_Getter(IMyTerminalBlock block)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return false;
+
+      var selected = logic.SelectedIgnoreItem;
+      if (string.IsNullOrEmpty(selected.Key))
+        return false;
+
+      return selected.Value;
+    }
+
+    private static void IgnoreBoxOnOff_Setter(IMyTerminalBlock block, bool enabled)
+    {
+      var logic = block.GameLogic.GetAs<Factory>();
+      if (logic == null)
+        return;
+
+      var selected = logic.SelectedIgnoreItem;
+      if (string.IsNullOrEmpty(selected.Key))
+        return;
+
+      var index = logic.RepairPriorities.IndexOf(selected.Key);
+      if (index >= 0)
+      {
+        var kvp = new KeyValuePair<string, bool>(selected.Key, enabled);
+        logic.RepairPriorities.IgnoreList[index] = kvp;
+        logic.SelectedIgnoreItem = kvp;
+        logic.UpdatePriorityLists(false, false, true);
         RefreshTerminalControls(block);
       }
     }
@@ -664,7 +743,7 @@ namespace AiEnabled.Support
       if (index >= 0 && index < logic.RepairPriorities.PriorityTypes.Count - 1)
       {
         logic.RepairPriorities.PriorityTypes.Move(index, index + 1);
-        logic.UpdatePriorityLists(true);
+        logic.UpdatePriorityLists(true, false, false);
         RefreshTerminalControls(block);
       }
     }
@@ -684,7 +763,7 @@ namespace AiEnabled.Support
       if (index > 0)
       {
         logic.RepairPriorities.PriorityTypes.Move(index, index - 1);
-        logic.UpdatePriorityLists(true);
+        logic.UpdatePriorityLists(true, false, false);
         RefreshTerminalControls(block);
       }
     }
@@ -718,8 +797,32 @@ namespace AiEnabled.Support
         var kvp = new KeyValuePair<string, bool>(selected.Key, enabled);
         logic.RepairPriorities.PriorityTypes[index] = kvp;
         logic.SelectedRepairPriority = kvp;
-        logic.UpdatePriorityLists(true);
+        logic.UpdatePriorityLists(true, false, false);
         RefreshTerminalControls(block);
+      }
+    }
+
+    private static void IgnoreBox_ListContent(IMyTerminalBlock block, List<MyTerminalControlListBoxItem> listItems, List<MyTerminalControlListBoxItem> selectedItems)
+    {
+      var gameLogic = block?.GameLogic.GetAs<Factory>();
+      if (gameLogic?.RepairPriorities == null)
+        return;
+
+      listItems.Clear();
+      selectedItems.Clear();
+
+      foreach (var pt in gameLogic.RepairPriorities.IgnoreList)
+      {
+        var prefix = pt.Value ? "[X]" : "[  ]";
+        var name = $"{prefix} {pt.Key}";
+        var id = MyStringId.GetOrCompute(name);
+        var item = new MyTerminalControlListBoxItem(id, MyStringId.NullOrEmpty, null);
+        listItems.Add(item);
+
+        if (pt.Key == gameLogic.SelectedIgnoreItem.Key)
+        {
+          selectedItems.Add(item);
+        }
       }
     }
 
@@ -1251,7 +1354,8 @@ namespace AiEnabled.Support
       else
         pris = gameLogic.RepairPriorities?.PriorityTypes;
 
-      var pkt = new FactoryRecallPacket(block.EntityId, helperInfo.HelperId, player.IdentityId, pris);
+      var ignList = gameLogic.RepairPriorities?.IgnoreList;
+      var pkt = new FactoryRecallPacket(block.EntityId, helperInfo.HelperId, player.IdentityId, pris, ignList);
       AiSession.Instance.Network.SendToServer(pkt);
       SetContextMessage(block, "Recalling helper...");
     }
