@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.1";
+    public const string VERSION = "v1.8.2";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -619,6 +619,7 @@ namespace AiEnabled
       GridGroupListPool?.Clean();
       VoxelMapListPool?.Clean();
       LineListPool?.Clean();
+      IgnoreTypeDictionary?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -654,6 +655,7 @@ namespace AiEnabled
       _commandInfo?.Clear();
       _activeHelpersToUpkeep?.Clear();
 
+      IgnoreTypeDictionary = null;
       Scheduler = null;
       AllCoreWeaponDefinitions = null;
       RepairWorkPool = null;
@@ -835,6 +837,14 @@ namespace AiEnabled
         _controllerCacheNum = Math.Max(20, Math.Min(50, MyAPIGateway.Session.MaxPlayers * 2));
 
         Scheduler.Schedule(() => _firstFrameTime = MyAPIGateway.Session.ElapsedPlayTime);
+
+        foreach (var def in MyDefinitionManager.Static.GetInventoryItemDefinitions())
+        {
+          if (def?.DisplayNameText != null && def.Public && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0)
+          {
+            IgnoreTypeDictionary[def.DisplayNameText] = new KeyValuePair<string, bool>(def.DisplayNameText, false);
+          }
+        }
 
         bool sessionOK = MyAPIGateway.Session != null;
         if (sessionOK)

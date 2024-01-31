@@ -14,6 +14,7 @@ using VRage.Utils;
 using Sandbox.Definitions;
 using VRage.ObjectBuilders;
 using System.Collections;
+using System.Security.Cryptography;
 
 namespace AiEnabled.API
 {
@@ -225,12 +226,9 @@ namespace AiEnabled.API
       {
         IgnoreList = new List<KeyValuePair<string, bool>>();
 
-        foreach (var def in MyDefinitionManager.Static.GetInventoryItemDefinitions())
+        foreach (var kvp in AiSession.Instance.IgnoreTypeDictionary)
         {
-          if (def?.DisplayNameText != null && def.Public && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0)
-          {
-            IgnoreList.Add(new KeyValuePair<string, bool>(def.DisplayNameText, false));
-          }
+          IgnoreList.Add(kvp.Value);
         }
 
         if (onlyIgnoreList)

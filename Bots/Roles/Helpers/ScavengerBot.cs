@@ -395,6 +395,9 @@ namespace AiEnabled.Bots.Roles.Helpers
                 continue;
 
               var name = floater.DisplayNameText ?? floater.DisplayName;
+              if (name?.IndexOf("(") >= 0)
+                name = name.Split('(')[0].Trim();
+
               if (name != null && RepairPriorities.GetEnabled(name))
                 continue;
 
