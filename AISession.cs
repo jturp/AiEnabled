@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.2";
+    public const string VERSION = "v1.8.3";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -1559,7 +1559,7 @@ namespace AiEnabled
                   if (kvpMember.Value.IsFounder)
                     continue;
 
-                  if (!leaderOK && kvpMember.Value.IsLeader)
+                  if (!leaderOK && kvpMember.Value.IsLeader && !faction.Name.StartsWith("[AiE]"))
                   {
                     leaderOK = true;
                     continue;

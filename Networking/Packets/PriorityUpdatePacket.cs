@@ -17,9 +17,9 @@ namespace AiEnabled.Networking.Packets
     [ProtoMember(1)] readonly List<KeyValuePair<string, bool>> _repairPriorities;
     [ProtoMember(2)] readonly List<KeyValuePair<string, bool>> _targetPriorities;
     [ProtoMember(3)] readonly List<KeyValuePair<string, bool>> _ignoreList;
-    [ProtoMember(3)] readonly bool _damageToDisable;
-    [ProtoMember(4)] readonly long _ownerId;
-    [ProtoMember(5)] readonly bool _weldBeforeGrind;
+    [ProtoMember(4)] readonly bool _damageToDisable;
+    [ProtoMember(5)] readonly long _ownerId;
+    [ProtoMember(6)] readonly bool _weldBeforeGrind;
 
     public PriorityUpdatePacket() { }
 

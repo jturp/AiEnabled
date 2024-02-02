@@ -408,6 +408,7 @@ namespace AiEnabled.Ai.Support
         return false;
       }
 
+      bool atLeastOne = false;
       foreach (var kvp in missingComps)
       {
         float needed = kvp.Value;
@@ -437,9 +438,11 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          valid = false;
+          valid = atLeastOne || num > 0;
           break;
         }
+
+        atLeastOne = true;
       }
 
       AiSession.Instance.MissingCompsDictPool.Return(missingComps);

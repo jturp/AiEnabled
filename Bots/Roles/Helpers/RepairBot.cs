@@ -219,84 +219,108 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal void GetValidActions()
     {
-      _validToolDefinitions.Clear();
-      AllowedBuildModes = BuildMode.None;
-
-      var botInv = Character.GetInventory();
-      if (botInv != null)
+      try
       {
-        MyPhysicalItemDefinition currentWelder = null;
-        MyPhysicalItemDefinition currentGrinder = null;
+        _validToolDefinitions.Clear();
+        AllowedBuildModes = BuildMode.None;
 
-        _invItems.Clear();
-        botInv.GetItems(_invItems);
-
-        for (int i = _invItems.Count - 1; i >= 0; i--)
+        var botInv = Character.GetInventory();
+        if (botInv != null)
         {
-          var item = _invItems[i];
-          var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Type);
-          if (handItemDef != null)
+          MyPhysicalItemDefinition currentWelder = null;
+          MyPhysicalItemDefinition currentGrinder = null;
+
+          _invItems.Clear();
+          botInv.GetItems(_invItems);
+
+          for (int i = _invItems.Count - 1; i >= 0; i--)
           {
-            var physicalItem = MyDefinitionManager.Static.GetPhysicalItemForHandItem(handItemDef.Id);
-
-            if (handItemDef.Id.SubtypeName.Contains("Welder"))
+            var item = _invItems[i];
+            var handItemDef = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Type);
+            if (handItemDef != null)
             {
-              var curLevel = 0;
-              if (currentWelder != null)
-                curLevel = GetItemLevel(currentWelder.Id.SubtypeName, "Welder");
+              var physicalItem = MyDefinitionManager.Static.GetPhysicalItemForHandItem(handItemDef.Id);
 
-              var lvl = GetItemLevel(handItemDef.Id.SubtypeName, "Welder");
-              if (lvl > curLevel)
-                currentWelder = physicalItem;
-            }
-            else if (handItemDef.Id.SubtypeName.Contains("Grinder"))
-            {
-              var curLevel = 0;
-              if (currentGrinder != null)
-                curLevel = GetItemLevel(currentGrinder.Id.SubtypeName, "Grinder");
+              if (handItemDef.Id.SubtypeName.Contains("Welder"))
+              {
+                var curLevel = 0;
+                if (currentWelder != null)
+                  curLevel = GetItemLevel(currentWelder.Id.SubtypeName, "Welder");
 
-              var lvl = GetItemLevel(handItemDef.Id.SubtypeName, "Grinder");
-              if (lvl > curLevel)
-                currentGrinder = physicalItem;
+                var lvl = GetItemLevel(handItemDef.Id.SubtypeName, "Welder");
+                if (lvl > curLevel)
+                  currentWelder = physicalItem;
+              }
+              else if (handItemDef.Id.SubtypeName.Contains("Grinder"))
+              {
+                var curLevel = 0;
+                if (currentGrinder != null)
+                  curLevel = GetItemLevel(currentGrinder.Id.SubtypeName, "Grinder");
+
+                var lvl = GetItemLevel(handItemDef.Id.SubtypeName, "Grinder");
+                if (lvl > curLevel)
+                  currentGrinder = physicalItem;
+              }
             }
           }
-        }
 
-        if (currentGrinder != null)
-        {
-          AllowedBuildModes |= BuildMode.Grind;
-          _validToolDefinitions.Add(currentGrinder);
-        }
+          if (currentGrinder != null)
+          {
+            AllowedBuildModes |= BuildMode.Grind;
+            _validToolDefinitions.Add(currentGrinder);
+          }
 
-        if (currentWelder != null)
-        {
-          AllowedBuildModes |= BuildMode.Weld;
-          _validToolDefinitions.Add(currentWelder);
+          if (currentWelder != null)
+          {
+            AllowedBuildModes |= BuildMode.Weld;
+            _validToolDefinitions.Add(currentWelder);
+          }
         }
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance.Logger.Log(ex.ToString());
+        AllowedBuildModes = BuildMode.None;
       }
     }
 
     int GetItemLevel(string item, string toLookFor)
     {
-      var idx = item.IndexOf(toLookFor);
-      if (idx < 0)
-        return -1;
+      try
+      {
+        var idx = item.IndexOf(toLookFor);
+        if (idx < 0)
+          return -1;
 
-      var num = item[idx + toLookFor.Length];
-      return char.IsDigit(num) ? int.Parse(num.ToString()) : 1;
+        var num = item[idx + toLookFor.Length];
+        return char.IsDigit(num) ? int.Parse(num.ToString()) : 1;
+      }
+      catch(Exception ex)
+      {
+        AiSession.Instance.Logger.Log(ex.ToString());
+        return 1;
+      }
     }
 
     public override bool RunPreTargetChecks()
     {
-      GetValidActions();
-
-      if (AllowedBuildModes == BuildMode.None)
+      try
       {
-        CurrentBuildMode = BuildMode.None;
+        GetValidActions();
+
+        if (AllowedBuildModes == BuildMode.None)
+        {
+          CurrentBuildMode = BuildMode.None;
+          return false;
+        }
+
+        return true;
+      }
+      catch( Exception ex )
+      {
+        AiSession.Instance.Logger.Log(ex.ToString());
         return false;
       }
-
-      return true;
     }
 
     internal override void SetTargetInternal()
