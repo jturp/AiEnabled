@@ -649,7 +649,8 @@ namespace AiEnabled.Bots
             {
               var testPoint = center + Vector3I.Up * i;
               var testCube = invGrid.GetCubeBlock(testPoint);
-              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              if (testCube != Inventory && (testCube == null || !AiSession.Instance.SlopeBlockDefinitions.Contains(testCube.BlockDefinition.Id))
+                && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
@@ -657,7 +658,8 @@ namespace AiEnabled.Bots
 
               testPoint = center + Vector3I.Down * i;
               testCube = invGrid.GetCubeBlock(testPoint);
-              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              if (testCube != Inventory && (testCube == null || !AiSession.Instance.SlopeBlockDefinitions.Contains(testCube.BlockDefinition.Id))
+                && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
@@ -665,7 +667,8 @@ namespace AiEnabled.Bots
 
               testPoint = center + Vector3I.Left * i;
               testCube = invGrid.GetCubeBlock(testPoint);
-              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              if (testCube != Inventory && (testCube == null || !AiSession.Instance.SlopeBlockDefinitions.Contains(testCube.BlockDefinition.Id))
+                && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
@@ -673,7 +676,8 @@ namespace AiEnabled.Bots
 
               testPoint = center + Vector3I.Right * i;
               testCube = invGrid.GetCubeBlock(testPoint);
-              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              if (testCube != Inventory && (testCube == null || !AiSession.Instance.SlopeBlockDefinitions.Contains(testCube.BlockDefinition.Id))
+                && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
@@ -681,7 +685,8 @@ namespace AiEnabled.Bots
 
               testPoint = center + Vector3I.Forward * i;
               testCube = invGrid.GetCubeBlock(testPoint);
-              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              if (testCube != Inventory && (testCube == null || !AiSession.Instance.SlopeBlockDefinitions.Contains(testCube.BlockDefinition.Id))
+                && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;
@@ -689,7 +694,8 @@ namespace AiEnabled.Bots
 
               testPoint = center + Vector3I.Backward * i;
               testCube = invGrid.GetCubeBlock(testPoint);
-              if (testCube != Inventory && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
+              if (testCube != Inventory && (testCube == null || !AiSession.Instance.SlopeBlockDefinitions.Contains(testCube.BlockDefinition.Id))
+                && graph.IsOpenTile(testPoint) && !graph.IsObstacle(testPoint, _base, true))
               {
                 center = testPoint;
                 break;

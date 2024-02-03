@@ -54,7 +54,7 @@ namespace AiEnabled.Support
         "ShowInToolbarConfig",
         //"Name",
         //"ShowOnHUD",
-        "CustomData",
+        //"CustomData",
         "DrainAll",
         "blacklistWhitelist",
         "CurrentList",
@@ -1427,12 +1427,13 @@ namespace AiEnabled.Support
             invalidModel = true;
           }
         }
-        else if (gameLogic.SelectedRole == AiSession.BotType.Repair)
+        else // if (gameLogic.SelectedRole == AiSession.BotType.Repair) --> should apply to Repair, Combat, and Crew
         {
           var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
           var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
           var animController = AiSession.Instance.AnimationControllerDictionary[botSubtype];
-          if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" && animController != "Plushie_Astronaut"))
+          if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" 
+            && animController != "Plushie_Astronaut" && animController != "Robo_Plushie"))
           {
             gameLogic.SelectedModel = AiSession.Instance.MODEL_DEFAULT;
             invalidModel = true;
@@ -1477,12 +1478,13 @@ namespace AiEnabled.Support
               invalidModel = true;
             }
           }
-          else if (gameLogic.SelectedRole == AiSession.BotType.Repair)
+          else // if (gameLogic.SelectedRole == AiSession.BotType.Repair) --> should apply to Repair, Combat, and Crew
           {
             var botSubtype = MyStringHash.GetOrCompute(AiSession.Instance.BotModelDict[botModel]);
             var skeleton = AiSession.Instance.SubtypeToSkeletonDictionary[botSubtype];
             var animController = AiSession.Instance.AnimationControllerDictionary[botSubtype];
-            if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton" && animController != "Plushie_Astronaut"))
+            if (skeleton != "Humanoid" || (!animController.StartsWith("Default_Astronaut") && animController != "Space_Skeleton"
+              && animController != "Plushie_Astronaut" && animController != "Robo_Plushie"))
             {
               botModel = AiSession.Instance.MODEL_DEFAULT;
               invalidModel = true;

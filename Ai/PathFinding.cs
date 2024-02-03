@@ -58,11 +58,12 @@ namespace AiEnabled.Ai
         }
 
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
-        var maxTimeMS = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000;
+        var maxTimeMS = (AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000) / Math.Max(0.1f, Math.Min(1f, MyAPIGateway.Physics.ServerSimulationRatio));
+
         if (collection.Dirty || currentMS > maxTimeMS)
         {
           if (currentMS > maxTimeMS)
-            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded {maxTimeMS} ms pathing to {goal}", MessageType.WARNING);
+            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded {maxTimeMS / 1000:0.####} s pathing to {goal}", MessageType.WARNING);
           pathFound = false;
         }
 

@@ -2564,7 +2564,8 @@ namespace AiEnabled.Bots
       }
 
       // Testing only!
-      //_targetAction?.Invoke();
+      //if (RunPreTargetChecks())
+      //  _targetAction?.Invoke();
     }
 
     internal virtual void SetTargetInternal()
@@ -4862,9 +4863,6 @@ namespace AiEnabled.Bots
       {
         return;
       }
-
-      //if (_currentGraph.NeedsTempCleared)
-      //  _currentGraph.ClearTempObstacles();
 
       _stuckTimer = 0;
       _stuckCounter = 0;

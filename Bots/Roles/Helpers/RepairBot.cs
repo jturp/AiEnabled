@@ -179,34 +179,25 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     public void UpdateWeaponInfoAndEquip()
     {
-      if (CurrentBuildMode == BuildMode.Weld)
-      {
-        foreach (var item in _validToolDefinitions)
-        {
-          if (item.DisplayNameText.EndsWith("Welder"))
-          {
-            var handItem = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Id);
-            ToolDefinition = handItem;
-            break;
-          }
-        }
-      }
-      else if (CurrentBuildMode == BuildMode.Grind)
-      {
-        foreach (var item in _validToolDefinitions)
-        {
-          if (item.DisplayNameText.EndsWith("Grinder"))
-          {
-            var handItem = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Id);
-            ToolDefinition = handItem;
-            break;
-          }
-        }
-      }
+      if (CurrentBuildMode == BuildMode.None)
+        return;
 
-      var currentTool = Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>;
-      if (currentTool == null || currentTool.DefinitionId.SubtypeId != ToolDefinition?.PhysicalItemId.SubtypeId)
-        base.EquipWeapon();
+      var toCheckFor = CurrentBuildMode == BuildMode.Weld ? "Welder" : "Grinder";
+
+      foreach (var item in _validToolDefinitions)
+      {
+        if (item.Id.SubtypeName.IndexOf(toCheckFor, StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          var handItem = MyDefinitionManager.Static.TryGetHandItemForPhysicalItem(item.Id);
+          ToolDefinition = handItem;
+
+          var currentTool = Character.EquippedTool as IMyHandheldGunObject<MyDeviceBase>;
+          if (currentTool == null || currentTool.DefinitionId.SubtypeId != ToolDefinition?.PhysicalItemId.SubtypeId)
+            base.EquipWeapon();
+
+          break;
+        }
+      }
     }
 
     List<MyOrientedBoundingBoxD> _patrolOBBs = new List<MyOrientedBoundingBoxD>();
@@ -291,6 +282,9 @@ namespace AiEnabled.Bots.Roles.Helpers
         var idx = item.IndexOf(toLookFor);
         if (idx < 0)
           return -1;
+
+        if (item.EndsWith(toLookFor, StringComparison.OrdinalIgnoreCase))
+          return 1;
 
         var num = item[idx + toLookFor.Length];
         return char.IsDigit(num) ? int.Parse(num.ToString()) : 1;
@@ -412,7 +406,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
       }
 
-      if ((AllowedBuildModes & (BuildMode.Weld | BuildMode.Grind)) > 0)
+      if ((AllowedBuildModes & BuildMode.Weld) > 0 && (AllowedBuildModes & BuildMode.Grind) > 0)
       {
         if (WeldBeforeGrind) // prioritize welding
         {
@@ -442,16 +436,16 @@ namespace AiEnabled.Bots.Roles.Helpers
         tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
         CurrentBuildMode = BuildMode.Weld;
       }
-      else // canGrind
+      else if ((AllowedBuildModes & BuildMode.Grind) > 0)
       {
         tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
         CurrentBuildMode = BuildMode.Grind;
       }
-
-      //if (CurrentBuildMode == BuildMode.Weld)
-      //  tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
-      //else if (CurrentBuildMode == BuildMode.Grind && invRatioOK)
-      //  tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
+      else
+      {
+        // can't do anything
+        return;
+      }
 
       if (returnNow)
         return;

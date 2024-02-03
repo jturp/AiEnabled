@@ -34,6 +34,7 @@ using AiEnabled.API;
 using Sandbox.Game.EntityComponents;
 using AiEnabled.Networking.Packets;
 using System.Linq.Expressions;
+using Sandbox.Game.Components;
 
 namespace AiEnabled.GameLogic
 {
@@ -107,7 +108,47 @@ namespace AiEnabled.GameLogic
     {
       _block = Entity as Sandbox.ModAPI.IMyTerminalBlock;
       NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME | MyEntityUpdateEnum.EACH_100TH_FRAME;
-      base.Init(objectBuilder);
+
+      // Digi's LCD Fix - thanks for letting me steal it! <3
+      try
+      {
+        if (MyAPIGateway.Session.IsServer && MyAPIGateway.Utilities.IsDedicated)
+          return; // DS doesn't need to render'em anyway
+
+        var block = Entity as MyCubeBlock;
+        var def = block?.BlockDefinition as MyFunctionalBlockDefinition;
+        if (def == null)
+          return;
+
+        if (def.ScreenAreas == null || def.ScreenAreas.Count <= 0)
+          return; // doesn't need LCDs
+
+        if (block.Render is MyRenderComponentScreenAreas)
+          return; // already has LCD support
+
+        var oldRender = block.Render;
+
+        var newRender = new MyRenderComponentScreenAreas(block);
+        block.Render = newRender;
+
+        // preserve color, skin, etc
+        block.Render.ColorMaskHsv = oldRender.ColorMaskHsv;
+        block.Render.EnableColorMaskHsv = oldRender.EnableColorMaskHsv;
+        block.Render.TextureChanges = oldRender.TextureChanges;
+        block.Render.MetalnessColorable = oldRender.MetalnessColorable;
+        block.Render.PersistentFlags = oldRender.PersistentFlags;
+
+        // fix for LCDs not working when block spawns instead of placed
+        block.Components.Get<MyMultiTextPanelComponent>()?.SetRender(newRender);
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance?.Logger?.Log($"Error trying to set block render for screen usage: {ex}");
+      }
+      finally
+      {
+        base.Init(objectBuilder);
+      }
     }
 
     public override void UpdateOnceBeforeFrame()

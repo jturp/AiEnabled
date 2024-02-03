@@ -37,6 +37,7 @@ using ParallelTasks;
 using Sandbox.Game.Entities.Blocks;
 using AiEnabled.Bots.Roles.Helpers;
 using static VRage.Game.MyObjectBuilder_SessionComponentMission;
+using static VRage.Game.MyObjectBuilder_CurveDefinition;
 
 namespace AiEnabled.Ai.Support
 {
@@ -1267,8 +1268,9 @@ namespace AiEnabled.Ai.Support
               //    return true;
               //}
 
-              if (GetClosestNodeInternal(bot, current, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes, preferGroundNode))
-                return true;
+              if (GetClosestNodeInternal(bot, current, out localPosition, up, isSlimBlock, currentIsDenied, allowAirNodes, preferGroundNode)
+                && TryGetNodeForPosition(localPosition, out node) && node.Block?.BlockDefinition.Id.SubtypeName.Contains("Stair") != true)
+                  return true;
             }
 
             return false;
