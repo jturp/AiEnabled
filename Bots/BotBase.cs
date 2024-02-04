@@ -5795,14 +5795,20 @@ namespace AiEnabled.Bots
           var pointBehind = botPosition + botMatrix.Backward * gridGraph.CellSize;
           var newPosition = gridGraph.GetLastValidNodeOnLine(pointBehind, botMatrix.Backward, 10);
           var localPoint = gridGraph.WorldToLocal(newPosition);
+          if (!gridGraph.IsOpenTile(localPoint))
+            gridGraph.GetClosestValidNode(this, localPoint, out localPoint);
+
           _stuckTimer = 0;
 
           lock (_pathCollection.PathToTarget)
           {
             CleanPath();
 
-            var node = gridGraph.OpenTileDict[localPoint];
-            _pathCollection.PathToTarget.Enqueue(node);
+            if (gridGraph.IsOpenTile(localPoint))
+            {
+              var node = gridGraph.OpenTileDict[localPoint];
+              _pathCollection.PathToTarget.Enqueue(node);
+            }
           }
 
           return false;

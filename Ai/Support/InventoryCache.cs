@@ -239,6 +239,8 @@ namespace AiEnabled.Ai.Support
         }
       }
 
+      var gridGraph = AiSession.Instance.GridGraphDict.GetValueOrDefault(Grid.EntityId, null);
+
       foreach (var kvp in _inventoryPositions)
       {
         var block = kvp.Value.SlimBlock;
@@ -250,8 +252,31 @@ namespace AiEnabled.Ai.Support
           continue;
 
         var connector = kvp.Value as IMyShipConnector;
-        if (connector != null && connector.ThrowOut)
-          continue;
+        if (connector != null)
+        {
+          if (connector.ThrowOut)
+            continue;
+
+          if (connector.IsConnected && gridGraph?.IsValid == true && gridGraph.Ready)
+          {
+            MatrixI m = new MatrixI(connector.Orientation);
+
+            var left = connector.Position + m.LeftVector;
+            var right = connector.Position + m.RightVector;
+            var fwd = connector.Position + m.ForwardVector;
+            var bwd = connector.Position + m.BackwardVector;
+
+            bool isValid = (gridGraph.IsOpenTile(left) && !gridGraph.IsObstacle(left, bot, false))
+              || (gridGraph.IsOpenTile(right) && !gridGraph.IsObstacle(right, bot, false))
+              || (gridGraph.IsOpenTile(fwd) && !gridGraph.IsObstacle(fwd, bot, false))
+              || (gridGraph.IsOpenTile(bwd) && !gridGraph.IsObstacle(bwd, bot, false));
+
+            if (!isValid)
+              continue;
+          }
+          else
+            continue;
+        }
 
         if (grindColor != null)
         {
