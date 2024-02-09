@@ -259,8 +259,15 @@ namespace AiEnabled.API
 
       internal void UpdateIgnoreList(List<string> ignoreList)
       {
-        if (ignoreList == null || ignoreList.Count == 0) 
+        if (ignoreList == null || ignoreList.Count == 0)
+        {
+          if (IgnoreList == null)
+            IgnoreList = new List<KeyValuePair<string, bool>>();
+          else
+            IgnoreList.Clear();
+
           return;
+        }
 
         var list = new List<KeyValuePair<string, bool>>();
         foreach (var item in ignoreList)
@@ -281,20 +288,19 @@ namespace AiEnabled.API
 
       internal void UpdateIgnoreList(List<KeyValuePair<string, bool>> ignoreList)
       {
-        if (ignoreList == null)
-          return;
-
         var allInvItems = MyDefinitionManager.Static.GetInventoryItemDefinitions();
-        var sameCount = ignoreList.Count == allInvItems.Count;
 
         if (IgnoreList == null)
           IgnoreList = new List<KeyValuePair<string, bool>>(allInvItems.Count);
         else
           IgnoreList.Clear();
+
+        if (ignoreList == null)
+          return;
   
         IgnoreList.AddRange(ignoreList);
 
-        if (!sameCount)
+        if (ignoreList.Count != allInvItems.Count)
         {
           foreach (var def in allInvItems)
           {
@@ -325,16 +331,22 @@ namespace AiEnabled.API
       {
         var pri = GetName(itemOrPriority);
 
-        for (int i = 0; i < PriorityTypes.Count; i++)
+        if (PriorityTypes?.Count > 0)
         {
-          if (PriorityTypes[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
-            return i;
+          for (int i = 0; i < PriorityTypes.Count; i++)
+          {
+            if (PriorityTypes[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
+              return i;
+          }
         }
 
-        for (int i = 0; i < IgnoreList.Count; i++)
+        if (IgnoreList?.Count > 0)
         {
-          if (IgnoreList[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
-            return i;
+          for (int i = 0; i < IgnoreList.Count; i++)
+          {
+            if (IgnoreList[i].Key?.Equals(pri, StringComparison.OrdinalIgnoreCase) == true)
+              return i;
+          }
         }
 
         return -1;
@@ -389,6 +401,9 @@ namespace AiEnabled.API
 
       internal void AddPriority(string priority, bool enabled)
       {
+        if (PriorityTypes == null)
+          PriorityTypes = new List<KeyValuePair<string, bool>>();
+
         if (!ContainsPriority(priority))
         {
           PriorityTypes.Add(new KeyValuePair<string, bool>(priority.Trim(), enabled));
@@ -397,6 +412,9 @@ namespace AiEnabled.API
 
       internal void AddIgnore(string item, bool enabled)
       {
+        if (IgnoreList == null)
+          IgnoreList = new List<KeyValuePair<string, bool>>();
+
         if (!ContainsIgnoreItem(item))
         {
           IgnoreList.Add(new KeyValuePair<string, bool>(item.Trim(), enabled));
@@ -405,29 +423,44 @@ namespace AiEnabled.API
 
       internal bool GetEnabled(string itemOrPriority)
       {
-        itemOrPriority = itemOrPriority.Trim();
-
-        if (itemOrPriority.StartsWith("[X]"))
-          return true;
-
-        var idx = itemOrPriority.IndexOf("]");
-
-        if (idx >= 0)
-          itemOrPriority = itemOrPriority.Substring(idx + 1).Trim();
-
-        foreach (var pri in PriorityTypes)
+        try
         {
-          if (pri.Key.Equals(itemOrPriority, StringComparison.OrdinalIgnoreCase))
-            return pri.Value;
-        }
+          if (string.IsNullOrEmpty(itemOrPriority))
+            return false;
 
-        foreach (var item in IgnoreList)
-        {
-          if (item.Key.Equals(itemOrPriority, StringComparison.OrdinalIgnoreCase))
-            return item.Value;
-        }
+          itemOrPriority = itemOrPriority.Trim();
 
-        return false;
+          if (itemOrPriority.StartsWith("[X]"))
+            return true;
+
+          var idx = itemOrPriority.IndexOf("]");
+
+          if (idx >= 0)
+            itemOrPriority = itemOrPriority.Substring(idx + 1).Trim();
+
+          if (PriorityTypes?.Count > 0)
+          {
+            for (int i = 0; i < PriorityTypes.Count; i++)
+            {
+              var pri = PriorityTypes[i];
+              if (pri.Key.Equals(itemOrPriority, StringComparison.OrdinalIgnoreCase))
+                return pri.Value;
+            }
+          }
+
+          if (IgnoreList?.Count > 0)
+          {
+            for (int i = 0; i < IgnoreList.Count; i++)
+            {
+              var item = IgnoreList[i];
+              if (item.Key.Equals(itemOrPriority, StringComparison.OrdinalIgnoreCase))
+                return item.Value;
+            }
+          }
+
+          return false;
+        }
+        catch { return false; }
       }
 
       internal string GetName(string item)

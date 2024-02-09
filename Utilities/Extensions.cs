@@ -140,20 +140,30 @@ namespace AiEnabled.Utilities
         var sphere = new BoundingSphereD(worldPosition, slim.CubeGrid.GridSize * 0.5);
         MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
 
-        for (int i = 0; i < entList.Count; i++)
+        try
         {
-          var projGrid = entList[i] as MyCubeGrid;
-          if (projGrid?.Projector != null)
+          for (int i = entList.Count - 1; i >= 0; i--)
           {
-            var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
-            var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
+            if (i >= entList.Count)
+              continue;
 
-            if (projectedBlock?.BlockDefinition.Id == slim.BlockDefinition.Id && slim.BuildIntegrity >= projectedBlock.BuildIntegrity)
+            var projGrid = entList[i] as MyCubeGrid;
+            if (projGrid?.Projector != null)
             {
-              health = 1;
-              break;
+              var projectedPosition = projGrid.WorldToGridInteger(worldPosition);
+              var projectedBlock = projGrid.GetCubeBlock(projectedPosition) as IMySlimBlock;
+
+              if (projectedBlock?.BlockDefinition.Id == slim.BlockDefinition.Id && slim.BuildIntegrity >= projectedBlock.BuildIntegrity)
+              {
+                health = 1;
+                break;
+              }
             }
           }
+        }
+        catch
+        {
+          health = 1;
         }
       }
 
@@ -370,7 +380,7 @@ namespace AiEnabled.Utilities
       return slim.CubeGrid.GridIntegerToWorld(slim.Position);
     }
 
-    public static void PrioritySort(this List<object> list, SortedDictionary<int, List<object>> taskPriorities, RemoteBotAPI.Priorities priorities, Vector3D botPosition)
+    public static void PrioritySort(this List<object> list, SortedDictionary<int, List<object>> taskPriorities, RemoteBotAPI.Priorities priorities, Vector3D botPosition, bool ignoreMES = false)
     {
       foreach (var kvp in taskPriorities)
         kvp.Value.Clear();
@@ -383,15 +393,16 @@ namespace AiEnabled.Utilities
           if (obj == null)
             continue;
 
-          var cube = obj as IMyCubeBlock;
-          var block = cube?.SlimBlock;
-          if (block == null)
-            block = obj as IMySlimBlock;
-
           var character = obj as IMyCharacter;
           if (character == null)
           {
+            var cube = obj as IMyCubeBlock;
+            var block = (cube?.SlimBlock) ?? obj as IMySlimBlock;
+
             if (block?.CubeGrid == null || (block.IsDestroyed && block.StockpileEmpty))
+              continue;
+
+            if (ignoreMES && AiSession.Instance.MESBlockIds.Contains(block.BlockDefinition.Id))
               continue;
 
             if (((MyCubeGrid)block.CubeGrid).BlocksCount == 1)

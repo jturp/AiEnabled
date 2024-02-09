@@ -136,7 +136,11 @@ namespace AiEnabled.Networking
                     foreach (var item in _ignoreList)
                     {
                       if (item.Value)
-                        helper.IgnoreList.Add($"[X] {item.Key}");
+                      {
+                        var entry = $"[X] {item.Key}";
+                        if (!helper.IgnoreList.Contains(entry))
+                          helper.IgnoreList.Add(entry);
+                      }
                     }
                   }
 

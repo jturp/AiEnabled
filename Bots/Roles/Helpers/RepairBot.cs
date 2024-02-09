@@ -401,7 +401,19 @@ namespace AiEnabled.Bots.Roles.Helpers
       if (isGridGraph)
       {
         var grid = graph.MainGrid;
-        var owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
+
+        long owner;
+        try
+        {
+          // because sometimes even though you check that there are owners, there are not (when used in a thread)
+
+          owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
+        }
+        catch
+        {
+          owner = 0L;
+        }
+
         var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
         isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
       }
@@ -806,14 +818,24 @@ namespace AiEnabled.Bots.Roles.Helpers
             if (!sameGrid && (mainGrid.Physics.LinearVelocity - checkGrid.Physics.LinearVelocity).LengthSquared() > 10)
               continue;
 
-            var owner = checkGrid.BigOwners?.Count > 0 ? checkGrid.BigOwners[0] : checkGrid.SmallOwners?.Count > 0 ? checkGrid.SmallOwners[0] : 0L;
-
-            if (owner < 0)
+            long owner;
+            try
             {
-              if (sameGrid)
-                owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
-              else
-                owner = 0L;
+              // because sometimes even though you check that there are owners, there are not (when used in a thread)
+
+              owner = checkGrid.BigOwners?.Count > 0 ? checkGrid.BigOwners[0] : checkGrid.SmallOwners?.Count > 0 ? checkGrid.SmallOwners[0] : -1L;
+
+              if (owner < 0)
+              {
+                if (sameGrid)
+                  owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
+                else
+                  owner = 0L;
+              }
+            }
+            catch
+            {
+              owner = 0L;
             }
 
             var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
@@ -846,7 +868,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           //_cubes.ShellSort(botPosition);
           _taskPrioritiesTemp.AddRange(_cubes);
-          _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition);
+          _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition, true);
 
           bool ignoreDeformation = AiSession.Instance.ModSaveData.IgnoreArmorDeformation;
 
@@ -960,14 +982,25 @@ namespace AiEnabled.Bots.Roles.Helpers
 
               if (projector.CubeGrid.EntityId != mainGrid.EntityId)
               {
-                var owner = projector.CubeGrid.BigOwners?.Count > 0 ? projector.CubeGrid.BigOwners[0] : projector.CubeGrid.SmallOwners?.Count > 0 ? projector.CubeGrid.SmallOwners[0] : -1L;
-
-                if (owner < 0)
+                long owner;
+                try
                 {
-                  if (projector.CubeGrid.IsSameConstructAs(mainGrid))
-                    owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
-                  else
-                    owner = 0L;
+                  // because sometimes even though you check that there are owners, there are not (when used in a thread)
+
+                  var projGrid = projector.CubeGrid;
+                  owner = projGrid.BigOwners?.Count > 0 ? projGrid.BigOwners[0] : projGrid.SmallOwners?.Count > 0 ? projGrid.SmallOwners[0] : -1L;
+
+                  if (owner < 0)
+                  {
+                    if (projGrid.IsSameConstructAs(mainGrid))
+                      owner = mainGrid.BigOwners?.Count > 0 ? mainGrid.BigOwners[0] : mainGrid.SmallOwners?.Count > 0 ? mainGrid.SmallOwners[0] : 0L;
+                    else
+                      owner = 0L;
+                  }
+                }
+                catch
+                {
+                  owner = 0L;
                 }
 
                 var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
@@ -979,9 +1012,8 @@ namespace AiEnabled.Bots.Roles.Helpers
                 _taskPrioritiesTemp.Clear();
 
                 projector.CubeGrid.GetBlocks(_cubes);
-                //_cubes.ShellSort(botPosition);
                 _taskPrioritiesTemp.AddRange(_cubes);
-                _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition);
+                _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition, true);
 
                 foreach (var priKvp in _taskPriorities)
                 {
@@ -1066,7 +1098,7 @@ namespace AiEnabled.Bots.Roles.Helpers
                 projectedGrid.GetBlocks(_cubes);
                 //_cubes.ShellSort(botPosition);
                 _taskPrioritiesTemp.AddRange(_cubes);
-                _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition);
+                _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition, true);
 
                 foreach (var priKvp in _taskPriorities)
                 {

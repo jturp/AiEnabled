@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.6";
+    public const string VERSION = "v1.8.9";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -620,6 +620,7 @@ namespace AiEnabled
       VoxelMapListPool?.Clean();
       LineListPool?.Clean();
       IgnoreTypeDictionary?.Clear();
+      MESBlockIds?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -655,6 +656,7 @@ namespace AiEnabled
       _commandInfo?.Clear();
       _activeHelpersToUpkeep?.Clear();
 
+      MESBlockIds = null;
       IgnoreTypeDictionary = null;
       Scheduler = null;
       AllCoreWeaponDefinitions = null;
@@ -840,7 +842,12 @@ namespace AiEnabled
 
         foreach (var def in MyDefinitionManager.Static.GetInventoryItemDefinitions())
         {
-          if (def?.DisplayNameText != null && def.Public && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0)
+          if (def?.DisplayNameText != null && def.Public /*&& def.Context.ModId != "1521905890"*/
+            && !def.Id.SubtypeName.StartsWith("MES", StringComparison.OrdinalIgnoreCase)
+            && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0
+            && def.Id.SubtypeName.IndexOf("Inhibitor", StringComparison.OrdinalIgnoreCase) < 0
+            && def.Id.SubtypeName.IndexOf("Proprietary", StringComparison.OrdinalIgnoreCase) < 0
+            && def.Id.SubtypeName.IndexOf("UraniumB", StringComparison.OrdinalIgnoreCase) < 0)
           {
             IgnoreTypeDictionary[def.DisplayNameText] = new KeyValuePair<string, bool>(def.DisplayNameText, false);
           }
@@ -855,7 +862,7 @@ namespace AiEnabled
           {
             foreach (var mod in MyAPIGateway.Session.Mods)
             {
-              if (mod.PublishedFileId == 1365616918 || mod.PublishedFileId == 2372872458
+              if (mod.PublishedFileId == 1365616918 || mod.PublishedFileId == 2372872458 || mod.PublishedFileId == 3154379105
                 || mod.GetPath().Contains("AppData\\Roaming\\SpaceEngineers\\Mods\\DefenseShields"))
               {
                 ShieldAPILoaded = ShieldAPI.Load();
@@ -870,7 +877,7 @@ namespace AiEnabled
               {
                 Logger.Log($"Water Mod v{WaterAPI.ModAPIVersion} found");
               }
-              else if (mod.PublishedFileId == 1918681825)
+              else if (mod.PublishedFileId == 1918681825 || mod.PublishedFileId == 3154371364)
               {
                 try
                 {
@@ -937,7 +944,16 @@ namespace AiEnabled
 
           var consumable = def as MyConsumableItemDefinition;
           if (consumable != null)
+          {
             ConsumableItemList.Add(consumable);
+            continue;
+          }
+
+          var cubeDef = def as MyCubeBlockDefinition;
+          if (cubeDef != null && !cubeDef.Context.IsBaseGame && cubeDef.Context.ModId == "1521905890")
+          { 
+            MESBlockIds.Add(cubeDef.Id);
+          }
 
           // Thanks to Digi for showing me how to figure out what is craftable :)
           var prodDef = def as MyProductionBlockDefinition;
@@ -2586,7 +2602,17 @@ namespace AiEnabled
                 if (shareMode != MyOwnershipShareModeEnum.All)
                 {
                   var owner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
-                  var gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.SlimBlock.BuiltBy;
+                  long gridOwner;
+                  try
+                  {
+                    // because sometimes even though you check that there are owners, there are not (when used in a thread)
+
+                    gridOwner = seat.CubeGrid.BigOwners?.Count > 0 ? seat.CubeGrid.BigOwners[0] : seat.CubeGrid.SmallOwners?.Count > 0 ? seat.CubeGrid.SmallOwners[0] : seat.OwnerId;
+                  }
+                  catch
+                  {
+                    gridOwner = seat.OwnerId;
+                  }
 
                   var relation = MyIDModule.GetRelationPlayerPlayer(owner, gridOwner, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
                   if (relation != MyRelationsBetweenPlayers.Enemies)
@@ -2678,7 +2704,7 @@ namespace AiEnabled
           return;
         }
 
-        var checkFriendlyFire = !MyAPIGateway.Utilities.IsDedicated ||!MyAPIGateway.Session.SessionSettings.EnableFriendlyFire;
+        var checkFriendlyFire = !MyAPIGateway.Utilities.IsDedicated || !MyAPIGateway.Session.SessionSettings.EnableFriendlyFire;
 
         BotBase bot;
         bool targetIsBot = false;
@@ -2689,6 +2715,13 @@ namespace AiEnabled
           if (bot != null && !bot.IsDead)
           {
             targetIsBot = true;
+
+            if (bot.Owner != null && ModSaveData.DisableEnvironmentDamageForHelpers)
+            {
+              info.Amount = 0;
+              return;
+            }
+
             if (bot.Behavior?.PainSounds?.Count > 0)
               bot.Behavior.ApplyPain();
           }
@@ -4344,11 +4377,15 @@ namespace AiEnabled
             var ignList = bot.RepairPriorities?.IgnoreList;
             if (ignList?.Count > 0)
             {
+              helperData.IgnoreList.Clear();
+
               foreach (var item in ignList)
               {
                 if (item.Value)
                 {
-                  helperData.IgnoreList.Add($"[X] {item.Key}");
+                  var entry = $"[X] {item.Key}";
+                  if (!helperData.IgnoreList.Contains(entry))
+                    helperData.IgnoreList.Add(entry);
                 }
               }
             }

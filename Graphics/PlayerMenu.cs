@@ -55,7 +55,7 @@ namespace AiEnabled.Graphics
     internal MenuItem AllowHelmetVisorChanges, IgnoreArmorDeformation, ShowHealthWhenFull, AllowTokenProduction;
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
     internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
-    internal MenuItem AllowNeutralsToOpenDoors, ChargePlayersForBotUpkeep;
+    internal MenuItem AllowNeutralsToOpenDoors, ChargePlayersForBotUpkeep, DisableEnvironmentDamageForHelpers;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
@@ -152,6 +152,7 @@ namespace AiEnabled.Graphics
       AllowCombatBot = CreateMenuItemToggle(AdminMenu, data.AllowCombatBot, "Allow CombatBot helpers", AllowCombatBot_Clicked);
       AllowScavengerBot = CreateMenuItemToggle(AdminMenu, data.AllowScavengerBot, "Allow ScavengerBot helpers", AllowScavengerBot_Clicked);
       AllowCrewBot = CreateMenuItemToggle(AdminMenu, data.AllowCrewBot, "Allow CrewBot helpers", AllowCrewBot_Clicked);
+      DisableEnvironmentDamageForHelpers = CreateMenuItemToggle(AdminMenu, data.DisableEnvironmentDamageForHelpers, "Disable Environment Dmg for Helpers", DisableEnvDmg_Clicked);
       AllowTokenProduction = CreateMenuItemToggle(AdminMenu, data.AllowHelperTokenBuilding, "Allow build token production (requires restart)", AllowTokenBuilding_Clicked);
       IncreaseNodeWeightsNearWeapons = CreateMenuItemToggle(AdminMenu, data.IncreaseNodeWeightsNearWeapons, "Increase path cost near weapons (requires restart)", IncreaseNodeCost_Clicked);
       AllowBotMusic = CreateMenuItemToggle(AdminMenu, data.AllowBotMusic, "Allow bot music", AllowBotMusic_Clicked);
@@ -306,6 +307,14 @@ namespace AiEnabled.Graphics
           DisableCollisionOnDeath.OnClick = null;
           DisableCollisionOnDeath.BackingObject = null;
           DisableCollisionOnDeath = null;
+        }
+
+        if (DisableEnvironmentDamageForHelpers != null)
+        {
+          DisableEnvironmentDamageForHelpers.Text = null;
+          DisableEnvironmentDamageForHelpers.OnClick = null;
+          DisableEnvironmentDamageForHelpers.BackingObject = null;
+          DisableEnvironmentDamageForHelpers = null;
         }
 
         if (IncreaseNodeWeightsNearWeapons != null)
@@ -1215,6 +1224,18 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartSettingSyncCounter();
     }
 
+    internal void DisableEnvDmg_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.DisableEnvironmentDamageForHelpers;
+      AiSession.Instance.ModSaveData.DisableEnvironmentDamageForHelpers = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableEnvironmentDamageForHelpers.Text = $"Disable environment damage for helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
     internal void AllowCrewBot_Clicked()
     {
       var newValue = !AiSession.Instance.ModSaveData.AllowCrewBot;
@@ -1483,6 +1504,10 @@ namespace AiEnabled.Graphics
       newValue = data.DisableCharacterCollisionOnBotDeath;
       color = newValue ? "<color=orange>" : "<color=yellow>";
       DisableCollisionOnDeath.Text = $"Disable character collision on bot death: {color}{newValue}";
+
+      newValue = data.DisableEnvironmentDamageForHelpers;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableEnvironmentDamageForHelpers.Text = $"Disable environment damage for helpers: {color}{newValue}";
 
       newValue = data.IncreaseNodeWeightsNearWeapons;
       color = newValue ? "<color=orange>" : "<color=yellow>";

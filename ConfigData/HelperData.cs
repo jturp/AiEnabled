@@ -80,6 +80,7 @@ namespace AiEnabled.ConfigData
       DamageToDisable = disableOnly;
       AdminSpawned = adminSpawn;
       RemainInPlace = remainStill;
+      WeldBeforeGrind = weldFirst;
       
       if (bot.Parent is IMyCockpit)
         SeatEntityId = bot.Parent.EntityId;

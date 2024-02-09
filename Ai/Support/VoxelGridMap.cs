@@ -1084,27 +1084,43 @@ namespace AiEnabled.Ai.Support
       }
 
       List<MyEntity> tempEntities = AiSession.Instance.EntListPool.Get();
-
       List<IMySlimBlock> blocks = AiSession.Instance.SlimListPool.Get();
+
       var sphere = new BoundingSphereD(OBB.Center, OBB.HalfExtent.AbsMax());
       MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, tempEntities);
 
       for (int i = tempEntities.Count - 1; i >= 0; i--)
       {
-        var grid = tempEntities[i] as MyCubeGrid;
-        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
-          continue;
+        try
+        {
+          if (i >= tempEntities.Count)
+            continue;
 
-        if (grid.IsStatic && grid.GridSizeEnum == MyCubeSize.Large && grid.BlocksCount > 5)
-          continue;
+          var grid = tempEntities[i] as MyCubeGrid;
+          if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose)
+            continue;
 
-        ((IMyCubeGrid)grid).GetBlocks(blocks);
+          if (grid.IsStatic && grid.GridSizeEnum == MyCubeSize.Large && grid.BlocksCount > 5)
+            continue;
+
+          ((IMyCubeGrid)grid).GetBlocks(blocks);
+        }
+        catch { }
       }
 
-      AiSession.Instance.EntListPool.Return(tempEntities);
+      tempEntities.Clear();
 
-      _tempObstaclesWorkData.Blocks = blocks;
-      _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
+      if (blocks.Count > 0)
+      {
+        _tempObstaclesWorkData.Blocks = blocks;
+        _tempObstaclesWorkData.Entities = tempEntities;
+        _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
+      }
+      else
+      {
+        AiSession.Instance.EntListPool.Return(tempEntities);
+        AiSession.Instance.SlimListPool.Return(blocks);
+      }
     }
 
     List<KeyValuePair<IMySlimBlock, Vector3I>> _tempKVPList = new List<KeyValuePair<IMySlimBlock, Vector3I>>();
@@ -1178,7 +1194,6 @@ namespace AiEnabled.Ai.Support
             //    _tempKVPList.Add(new KeyValuePair<IMySlimBlock, Vector3I>(b, otherLocal));
             //}
           }
-
         }
 
         AiSession.Instance.LineListPool.Return(positionList);
@@ -1198,10 +1213,20 @@ namespace AiEnabled.Ai.Support
     {
       Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
 
-      var obstacleData = data as ObstacleWorkData;
-      if (obstacleData?.Blocks != null && AiSession.Instance?.ObstacleWorkDataPool != null && AiSession.Instance.Registered)
+      if (AiSession.Instance?.ObstacleWorkDataPool != null && AiSession.Instance.Registered)
       {
-        AiSession.Instance.SlimListPool.Return(obstacleData.Blocks);
+        var obstacleData = data as ObstacleWorkData;
+        if (obstacleData?.Blocks != null)
+        {
+          AiSession.Instance.SlimListPool.Return(obstacleData.Blocks);
+          obstacleData.Blocks = null;
+        }
+
+        if (obstacleData?.Entities != null)
+        {
+          AiSession.Instance.EntListPool.Return(obstacleData.Entities);
+          obstacleData.Entities = null;
+        }
       }
     }
 

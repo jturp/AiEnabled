@@ -398,7 +398,7 @@ namespace AiEnabled.Bots.Roles.Helpers
               if (name?.IndexOf("(") >= 0)
                 name = name.Split('(')[0].Trim();
 
-              if (name != null && RepairPriorities.GetEnabled(name))
+              if (name != null && RepairPriorities?.GetEnabled(name) == true)
                 continue;
 
               if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))

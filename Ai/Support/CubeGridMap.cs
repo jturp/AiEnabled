@@ -1400,7 +1400,16 @@ namespace AiEnabled.Ai.Support
             continue;
 
           var grid = door.CubeGrid;
-          var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+          long gridOwner;
+          try
+          {
+            gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+          }
+          catch
+          {
+            gridOwner = door.OwnerId;
+          }
+
           var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
 
           var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
@@ -1609,7 +1618,16 @@ namespace AiEnabled.Ai.Support
           return false;
 
         var grid = door.CubeGrid;
-        var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+        long gridOwner;
+        try
+        {
+          gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+        }
+        catch
+        {
+          gridOwner = door.OwnerId;
+        }
+
         var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
 
         var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
@@ -8492,7 +8510,6 @@ namespace AiEnabled.Ai.Support
       }
 
       List<MyEntity> tempEntities = AiSession.Instance.EntListPool.Get();
-
       List<IMySlimBlock> blocks = AiSession.Instance.SlimListPool.Get();
 
       var sphere = new BoundingSphereD(OBB.Center, OBB.HalfExtent.AbsMax());
@@ -8500,21 +8517,33 @@ namespace AiEnabled.Ai.Support
 
       for (int i = tempEntities.Count - 1; i >= 0; i--)
       {
-        var grid = tempEntities[i] as MyCubeGrid;
-        if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.EntityId == MainGrid?.EntityId)
-          continue;
-
         try
         {
+          if (i >= tempEntities.Count)
+            continue;
+
+          var grid = tempEntities[i] as MyCubeGrid;
+          if (grid?.Physics == null || grid.IsPreview || grid.MarkedForClose || grid.EntityId == MainGrid?.EntityId)
+            continue;
+
           ((IMyCubeGrid)grid).GetBlocks(blocks);
         }
         catch { }
       }
 
       tempEntities.Clear();
-      _tempObstaclesWorkData.Blocks = blocks;
-      _tempObstaclesWorkData.Entities = tempEntities;
-      _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
+
+      if (blocks.Count > 0)
+      {
+        _tempObstaclesWorkData.Blocks = blocks;
+        _tempObstaclesWorkData.Entities = tempEntities;
+        _obstacleTask = MyAPIGateway.Parallel.Start(UpdateTempObstaclesAsync, UpdateTempObstaclesCallback, _tempObstaclesWorkData);
+      }
+      else
+      {
+        AiSession.Instance.EntListPool.Return(tempEntities);
+        AiSession.Instance.SlimListPool.Return(blocks);
+      }
     }
 
     List<KeyValuePair<IMySlimBlock, Vector3I>> _tempKVPList = new List<KeyValuePair<IMySlimBlock, Vector3I>>();
@@ -8713,7 +8742,16 @@ namespace AiEnabled.Ai.Support
             return false;
 
           var grid = door.CubeGrid;
-          var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+          long gridOwner;
+          try
+          {
+            gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+          }
+          catch
+          {
+            gridOwner = door.OwnerId;
+          }
+
           var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
 
           var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
@@ -8972,7 +9010,16 @@ namespace AiEnabled.Ai.Support
           return false;
 
         var grid = door.CubeGrid;
-        var gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+        long gridOwner;
+        try
+        {
+          gridOwner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : door.OwnerId;
+        }
+        catch
+        {
+          gridOwner = door.OwnerId;
+        }
+
         var botOwner = bot.Owner?.IdentityId ?? bot.BotIdentityId;
 
         var rel = MyIDModule.GetRelationPlayerPlayer(gridOwner, botOwner);
@@ -9070,7 +9117,16 @@ namespace AiEnabled.Ai.Support
         return MyRelationsBetweenPlayers.Neutral;
 
       var botOwnerId = bot.Owner?.IdentityId ?? bot.BotIdentityId;
-      var gridOwnerId = MainGrid.BigOwners.Count > 0 ? MainGrid.BigOwners[0] : MainGrid.SmallOwners.Count > 0 ? MainGrid.SmallOwners[0] : 0L;
+      long gridOwnerId;
+      try
+      {
+        gridOwnerId = MainGrid.BigOwners.Count > 0 ? MainGrid.BigOwners[0] : MainGrid.SmallOwners.Count > 0 ? MainGrid.SmallOwners[0] : 0L;
+      }
+      catch
+      {
+        gridOwnerId = 0L;
+      }
+
       return MyIDModule.GetRelationPlayerPlayer(botOwnerId, gridOwnerId, MyRelationsBetweenFactions.Neutral, MyRelationsBetweenPlayers.Neutral);
     }
   }

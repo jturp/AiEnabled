@@ -755,6 +755,7 @@ namespace AiEnabled
 
     public HashSet<long> EconomyGrids { get; protected set; } = new HashSet<long>();
     public HashSet<string> KnownLootContainerIds { get; protected set; } = new HashSet<string>();
+    public HashSet<MyDefinitionId> MESBlockIds { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> AllCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> NpcSafeCoreWeaponDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> CatwalkBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);

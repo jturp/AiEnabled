@@ -346,7 +346,7 @@ namespace AiEnabled.Bots.Roles.Helpers
           Vector3D checkVector = _moveTo.Value;
           if (_pathCollection?.HasPath == true)
           {
-            var lastNode = _pathCollection.PathToTarget[_pathCollection.PathToTarget.Count - 1];
+            var lastNode = _pathCollection.PathToTarget.Count > 0 ? _pathCollection.PathToTarget[_pathCollection.PathToTarget.Count - 1] : _pathCollection.NextNode;
 
             if (_currentGraph.WorldToLocal(_moveTo.Value) == lastNode.Position)
               checkVector = _currentGraph.LocalToWorld(lastNode.Position) + lastNode.Offset;
