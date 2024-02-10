@@ -110,7 +110,7 @@ namespace AiEnabled.Ai.Support
         }
 
         vList.Clear();
-        AiSession.Instance.VoxelMapListPool.Return(vList);
+        AiSession.Instance.VoxelMapListPool?.Return(ref vList);
       }
 
       WorldMatrix = MatrixD.CreateWorld(botStart, newForward, _upVector);
@@ -441,7 +441,7 @@ namespace AiEnabled.Ai.Support
         result = true;
       }
 
-      AiSession.Instance.LineListPool.Return(localNodes);
+      AiSession.Instance.LineListPool?.Return(ref localNodes);
       return result;
     }
 
@@ -686,7 +686,7 @@ namespace AiEnabled.Ai.Support
 
           if (_updateTask.IsComplete)
           {
-            if (_updateTask.Exceptions != null)
+            if (IsValid && _updateTask.Exceptions != null)
             {
               AiSession.Instance.Logger.ClearCached();
               AiSession.Instance.Logger.AddLine($"Exceptions found during voxel update task!\n");
@@ -731,7 +731,7 @@ namespace AiEnabled.Ai.Support
 
           if (!OBB.Contains(ref minWorld) && !OBB.Contains(ref maxWorld))
           {
-            AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+            AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
             return;
           }
 
@@ -748,7 +748,7 @@ namespace AiEnabled.Ai.Support
           {
             if (Dirty || RootVoxel == null || RootVoxel.MarkedForClose)
             {
-              AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+              AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
               return;
             }
 
@@ -760,7 +760,7 @@ namespace AiEnabled.Ai.Support
             {
               if (node != null)
               {
-                AiSession.Instance.NodePool?.Return(node);
+                AiSession.Instance.NodePool?.Return(ref node);
               }
 
               OpenTileDict.Remove(current);
@@ -771,7 +771,7 @@ namespace AiEnabled.Ai.Support
           }
 
           CheckForPlanetTiles(ref mapMin, ref mapMax);
-          AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+          AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
         }
 
         //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
@@ -1072,7 +1072,7 @@ namespace AiEnabled.Ai.Support
       if (!_obstacleTask.IsComplete)
         return;
 
-      if (_obstacleTask.Exceptions != null)
+      if (IsValid && _obstacleTask.Exceptions != null)
       {
         AiSession.Instance.Logger.ClearCached();
         AiSession.Instance.Logger.AddLine($"Exceptions found during pathfinder task!\n");
@@ -1118,8 +1118,8 @@ namespace AiEnabled.Ai.Support
       }
       else
       {
-        AiSession.Instance.EntListPool.Return(tempEntities);
-        AiSession.Instance.SlimListPool.Return(blocks);
+        AiSession.Instance.EntListPool?.Return(ref tempEntities);
+        AiSession.Instance.SlimListPool?.Return(ref blocks);
       }
     }
 
@@ -1196,7 +1196,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.LineListPool.Return(positionList);
+        AiSession.Instance.LineListPool?.Return(ref positionList);
 
         foreach (var kvp in _tempKVPList)
         {
@@ -1211,20 +1211,20 @@ namespace AiEnabled.Ai.Support
 
     void UpdateTempObstaclesCallback(WorkData data)
     {
-      Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
-
-      if (AiSession.Instance?.ObstacleWorkDataPool != null && AiSession.Instance.Registered)
+      if (AiSession.Instance?.Registered == true)
       {
+        Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
+
         var obstacleData = data as ObstacleWorkData;
         if (obstacleData?.Blocks != null)
         {
-          AiSession.Instance.SlimListPool.Return(obstacleData.Blocks);
+          AiSession.Instance.SlimListPool?.Return(ref obstacleData.Blocks);
           obstacleData.Blocks = null;
         }
 
         if (obstacleData?.Entities != null)
         {
-          AiSession.Instance.EntListPool.Return(obstacleData.Entities);
+          AiSession.Instance.EntListPool?.Return(ref obstacleData.Entities);
           obstacleData.Entities = null;
         }
       }
@@ -1255,17 +1255,17 @@ namespace AiEnabled.Ai.Support
         {
           if (_tempObstaclesWorkData != null)
           {
-            AiSession.Instance.ObstacleWorkDataPool?.Return(_tempObstaclesWorkData);
+            AiSession.Instance.ObstacleWorkDataPool?.Return(ref _tempObstaclesWorkData);
           }
 
           if (_voxelUpdatesNeeded != null)
           {
-            AiSession.Instance.VoxelUpdateListPool?.Return(_voxelUpdatesNeeded);
+            AiSession.Instance.VoxelUpdateListPool?.Return(ref _voxelUpdatesNeeded);
           }
 
           if (_voxelUpdatesQueue != null)
           {
-            AiSession.Instance.VoxelUpdateQueuePool?.Return(_voxelUpdatesQueue);
+            AiSession.Instance.VoxelUpdateQueuePool?.Return(ref _voxelUpdatesQueue);
           }
         }
         else
@@ -1405,7 +1405,7 @@ namespace AiEnabled.Ai.Support
           break;
       }
 
-      AiSession.Instance.EntListPool.Return(entList);
+      AiSession.Instance.EntListPool?.Return(ref entList);
       return block;
     }
   }

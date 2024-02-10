@@ -444,7 +444,7 @@ namespace AiEnabled.API
 
       if (newBotList != null)
       {
-        AiSession.Instance.CharacterListPool.Return(newBotList);
+        AiSession.Instance.CharacterListPool?.Return(ref newBotList);
       }
     }
 
@@ -1729,7 +1729,7 @@ namespace AiEnabled.API
         }
       }
 
-      AiSession.Instance.LineListPool.Return(positionList);
+      AiSession.Instance.LineListPool?.Return(ref positionList);
     }
 
     /// <summary>

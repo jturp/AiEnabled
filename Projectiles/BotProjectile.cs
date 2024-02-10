@@ -164,7 +164,7 @@ namespace AiEnabled.Projectiles
           }
         }
 
-        AiSession.Instance.OverlapResultListPool.Return(lineList);
+        AiSession.Instance.OverlapResultListPool?.Return(ref lineList);
 
         if (shieldHit)
         {

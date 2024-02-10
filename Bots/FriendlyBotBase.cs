@@ -426,7 +426,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      AiSession.Instance.SlimListPool.Return(blockList);
+      AiSession.Instance.SlimListPool?.Return(ref blockList);
 
       _taskPrioritiesTemp.PrioritySort(_taskPriorities, TargetPriorities, botPosition);
       bool damageToDisable = TargetPriorities.DamageToDisable;
@@ -479,13 +479,13 @@ namespace AiEnabled.Bots
           break;
       }
 
-      AiSession.Instance.HitListPool.Return(hitList);
-      AiSession.Instance.EntListPool.Return(entities);
-      AiSession.Instance.EntListPool.Return(blockTargets);
-      AiSession.Instance.GridGroupListPool.Return(gridGroups);
-      AiSession.Instance.GridCheckHashPool.Return(checkedGridIDs);
-      AiSession.Instance.OverlapResultListPool.Return(resultList);
-      AiSession.Instance.LineListPool.Return(cellList);
+      AiSession.Instance.HitListPool?.Return(ref hitList);
+      AiSession.Instance.EntListPool?.Return(ref entities);
+      AiSession.Instance.EntListPool?.Return(ref blockTargets);
+      AiSession.Instance.GridGroupListPool?.Return(ref gridGroups);
+      AiSession.Instance.GridCheckHashPool?.Return(ref checkedGridIDs);
+      AiSession.Instance.OverlapResultListPool?.Return(ref resultList);
+      AiSession.Instance.LineListPool?.Return(ref cellList);
 
       if (tgt == null)
       {

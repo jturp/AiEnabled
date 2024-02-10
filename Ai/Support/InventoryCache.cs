@@ -79,11 +79,10 @@ namespace AiEnabled.Ai.Support
     ConcurrentDictionary<Vector3I, IMyTerminalBlock> _inventoryPositions = new ConcurrentDictionary<Vector3I, IMyTerminalBlock>(Vector3I.Comparer);
     Dictionary<string, float> _itemCounts = new Dictionary<string, float>(); // component subtype to count
     HashSet<Vector3I> _terminals = new HashSet<Vector3I>(Vector3I.Comparer);
-    ParallelTasks.Task _task;
     internal bool _needsUpdate = true;
     bool _refreshInvList;
     bool _closed;
-    ParallelTasks.Task _repairTask;
+    ParallelTasks.Task _repairTask, _updateTask;
     Action<WorkData> _workAction, _workCallBack;
     RepairWorkData _workData;
     List<InventoryAddRemove> _inventoryItemsToAddRemove = new List<InventoryAddRemove>();
@@ -171,7 +170,7 @@ namespace AiEnabled.Ai.Support
       _closed = true;
 
       if (_workData != null)
-        AiSession.Instance.RepairWorkPool.Return(_workData);
+        AiSession.Instance.RepairWorkPool?.Return(ref _workData);
 
       ItemCounts?.Clear();
       ItemCounts = null;
@@ -408,7 +407,7 @@ namespace AiEnabled.Ai.Support
 
       if (!valid)
       {
-        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
         return false;
       }
 
@@ -429,7 +428,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
         return false;
       }
 
@@ -470,7 +469,7 @@ namespace AiEnabled.Ai.Support
         atLeastOne = true;
       }
 
-      AiSession.Instance.MissingCompsDictPool.Return(missingComps);
+      AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
       return valid;
     }
 
@@ -686,7 +685,7 @@ namespace AiEnabled.Ai.Support
 
       if (!valid)
       {
-        AiSession.Instance.MissingCompsDictPool.Return(missingComps);
+        AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
         _invItemListStack.Return(invItems);
         return;
       }
@@ -766,7 +765,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.MissingCompsDictPool.Return(missingComps);
+      AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
       _invItemListStack.Return(invItems);
     }
 
@@ -825,7 +824,7 @@ namespace AiEnabled.Ai.Support
     {
       _inventoryRefresh |= refreshInventories;
 
-      if (!_task.IsComplete || (!_needsUpdate && !_inventoryRefresh))
+      if (!_updateTask.IsComplete || (!_needsUpdate && !_inventoryRefresh))
         return;
 
       _needsUpdate = false;
@@ -834,7 +833,7 @@ namespace AiEnabled.Ai.Support
         _refreshInvList = true;
 
       _inventoryRefresh = false;
-      _task = MyAPIGateway.Parallel.Start(CheckGrids);
+      _updateTask = MyAPIGateway.Parallel.Start(CheckGrids);
     }
 
     void CheckGrids()
@@ -854,7 +853,7 @@ namespace AiEnabled.Ai.Support
           CheckInventories(grid);
       }
 
-      AiSession.Instance.GridGroupListPool.Return(gridList);
+      AiSession.Instance.GridGroupListPool?.Return(ref gridList);
 
       _refreshInvList = false;
 
@@ -959,7 +958,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.SlimListPool.Return(blockList);
+      AiSession.Instance.SlimListPool?.Return(ref blockList);
     }
 
     private void InventoryCache_ContentsChanged(MyInventoryBase obj)

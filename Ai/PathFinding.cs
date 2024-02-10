@@ -58,12 +58,13 @@ namespace AiEnabled.Ai
         }
 
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
-        var maxTimeMS = (AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds * 1000) / Math.Max(0.1f, Math.Min(1f, MyAPIGateway.Physics.ServerSimulationRatio));
+        var maxTime = AiSession.Instance.ModSaveData.MaxPathfindingTimeInSeconds;
+        var maxTimeMS = (maxTime * 1000) / Math.Max(0.1f, Math.Min(1f, MyAPIGateway.Physics.ServerSimulationRatio));
 
         if (collection.Dirty || currentMS > maxTimeMS)
         {
           if (currentMS > maxTimeMS && bot?.Character?.Name != null)
-            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded {maxTimeMS / 1000:0.####} s pathing to {goal}", MessageType.WARNING);
+            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded {maxTime} s pathing to {goal}", MessageType.WARNING);
           pathFound = false;
         }
 
@@ -166,7 +167,7 @@ namespace AiEnabled.Ai
       {
         if (collection != null)
         {
-          if (collection.Graph != null && collection.Bot != null)
+          if (collection.Graph != null && collection.Bot != null && !collection.Bot.IsDead)
           {
             if (MyAPIGateway.Session?.Player != null)
               MyAPIGateway.Utilities.ShowNotification($"Exception in AiEnabled.FindPath: {ex.Message}", 10000);

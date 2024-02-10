@@ -774,7 +774,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.HitListPool.Return(hitList);
+      AiSession.Instance.HitListPool?.Return(ref hitList);
 
       if (centerLOS.HasValue)
         center = centerLOS;
@@ -1021,7 +1021,7 @@ namespace AiEnabled.Ai.Support
             biggest = g;
         }
 
-        AiSession.Instance.GridGroupListPool.Return(gridList);
+        AiSession.Instance.GridGroupListPool?.Return(ref gridList);
 
         return (biggest?.GridSize > 1) ? biggest : null;
       }
@@ -1156,7 +1156,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.VoxelMapListPool.Return(vList);
+        AiSession.Instance.VoxelMapListPool?.Return(ref vList);
 
         if (voxel == null)
           return null;
@@ -1210,7 +1210,7 @@ namespace AiEnabled.Ai.Support
       }
 
       vList.Clear();
-      AiSession.Instance.VoxelMapListPool.Return(vList);
+      AiSession.Instance.VoxelMapListPool?.Return(ref vList);
 
       float interference;
       var gravity = MyAPIGateway.Physics.CalculateNaturalGravityAt(worldPosition, out interference);
@@ -1463,7 +1463,7 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          AiSession.Instance.GridGroupListPool.Return(gridList);
+          AiSession.Instance.GridGroupListPool?.Return(ref gridList);
           return airtight;
         }
       }

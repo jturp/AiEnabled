@@ -854,8 +854,8 @@ namespace AiEnabled.Bots
               gotoPosition = actualPosition;
           }
 
-          AiSession.Instance.OverlapResultListPool.Return(overlapList);
-          AiSession.Instance.LineListPool.Return(cellList);
+          AiSession.Instance.OverlapResultListPool?.Return(ref overlapList);
+          AiSession.Instance.LineListPool?.Return(ref cellList);
           return true;
         }
 

@@ -141,7 +141,7 @@ namespace AiEnabled.Networking
           crewBot.AssignToCrew(cube);
         }
 
-        AiSession.Instance.EntListPool.Return(entList);
+        AiSession.Instance.EntListPool?.Return(ref entList);
       }
 
       if (Stay || GoTo.HasValue)

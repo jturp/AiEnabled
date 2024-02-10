@@ -40,7 +40,7 @@ namespace AiEnabled.Networking.Packets
             if (bs.Update(helper))
               stats.Add(bs);
             else
-              AiSession.Instance.BotStatusPool.Return(bs);
+              AiSession.Instance.BotStatusPool?.Return(ref bs);
           }
 
           if (stats.Count > 0)
@@ -52,10 +52,10 @@ namespace AiEnabled.Networking.Packets
           for (int i = 0; i < stats.Count; i++)
           {
             var stat = stats[i];
-            AiSession.Instance.BotStatusPool.Return(stat);
+            AiSession.Instance.BotStatusPool?.Return(ref stat);
           }
 
-          AiSession.Instance.BotStatusListPool.Return(stats);
+          AiSession.Instance.BotStatusListPool?.Return(ref stats);
         }
       }
 

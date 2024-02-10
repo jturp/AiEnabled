@@ -72,7 +72,7 @@ namespace AiEnabled.Networking.Packets
           }
         }
 
-        AiSession.Instance.EntListPool.Return(entList);
+        AiSession.Instance.EntListPool?.Return(ref entList);
       }
       catch (Exception ex)
       {

@@ -70,12 +70,12 @@ namespace AiEnabled.Bots.Roles.Helpers
         {
           if (_threadOnlyEntList != null)
           {
-            AiSession.Instance.EntListPool?.Return(_noThreadEntList);
+            AiSession.Instance.EntListPool?.Return(ref _noThreadEntList);
           }
 
           if (_noThreadEntList != null)
           {
-            AiSession.Instance.EntListPool?.Return(_noThreadEntList);
+            AiSession.Instance.EntListPool?.Return(ref _noThreadEntList);
           }
         }
         else

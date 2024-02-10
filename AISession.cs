@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.11";
+    public const string VERSION = "v1.8.12";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -2536,7 +2536,7 @@ namespace AiEnabled
           });
         }
 
-        GridGroupListPool.Return(gridGroup);
+        GridGroupListPool?.Return(ref gridGroup);
 
         if (gridSeats.Count > 0)
         {
@@ -2642,7 +2642,7 @@ namespace AiEnabled
           }
         }
 
-        SlimListPool.Return(gridSeats);
+        SlimListPool?.Return(ref gridSeats);
       }
       catch (Exception ex)
       {

@@ -177,7 +177,7 @@ namespace AiEnabled.Ai.Support
 
         if (GridCollection.Count == 0)
         {
-          AiSession.Instance.GridGroupListPool.Return(GridCollection);
+          AiSession.Instance.GridGroupListPool?.Return(ref GridCollection);
 
           AiSession.Instance.Logger.Log($"CubeGridMap.ctor: GridCollection was empty for '{grid.DisplayName}'", MessageType.WARNING);
           return;
@@ -543,12 +543,12 @@ namespace AiEnabled.Ai.Support
             InventoryCache.SetGrid(null);
             InventoryCache._needsUpdate = false;
 
-            AiSession.Instance.InvCachePool?.Return(InventoryCache);
+            AiSession.Instance.InvCachePool?.Return(ref InventoryCache);
           }
 
           if (_additionalMaps2 != null)
           {
-            AiSession.Instance.GridMapListPool?.Return(_additionalMaps2);
+            AiSession.Instance.GridMapListPool?.Return(ref _additionalMaps2);
           }
 
           if (GridCollection != null)
@@ -560,47 +560,47 @@ namespace AiEnabled.Ai.Support
                 CloseGrid(grid);
             }
 
-            AiSession.Instance.GridGroupListPool?.Return(GridCollection);
+            AiSession.Instance.GridGroupListPool?.Return(ref GridCollection);
           }
 
           if (_gridsToAdd != null)
           {
-            AiSession.Instance.GridGroupListPool?.Return(_gridsToAdd);
+            AiSession.Instance.GridGroupListPool?.Return(ref _gridsToAdd);
           }
 
           if (_gridsToRemove != null)
           {
-            AiSession.Instance.GridGroupListPool?.Return(_gridsToRemove);
+            AiSession.Instance.GridGroupListPool?.Return(ref _gridsToRemove);
           }
 
           if (InteriorNodeList != null)
           {
-            AiSession.Instance.LineListPool?.Return(InteriorNodeList);
+            AiSession.Instance.LineListPool?.Return(ref InteriorNodeList);
           }
 
           if (_tempObstaclesWorkData != null)
           {
-            AiSession.Instance.ObstacleWorkDataPool?.Return(_tempObstaclesWorkData);
+            AiSession.Instance.ObstacleWorkDataPool?.Return(ref _tempObstaclesWorkData);
           }
 
           if (_voxelUpdatesNeeded != null)
           {
-            AiSession.Instance.VoxelUpdateListPool?.Return(_voxelUpdatesNeeded);
+            AiSession.Instance.VoxelUpdateListPool?.Return(ref _voxelUpdatesNeeded);
           }
 
           if (_voxelUpdatesQueue != null)
           {
-            AiSession.Instance.VoxelUpdateQueuePool?.Return(_voxelUpdatesQueue);
+            AiSession.Instance.VoxelUpdateQueuePool?.Return(ref _voxelUpdatesQueue);
           }
 
           if (_blockUpdateHash != null)
           {
-            AiSession.Instance.LocalVectorHashPool?.Return(_blockUpdateHash);
+            AiSession.Instance.LocalVectorHashPool?.Return(ref _blockUpdateHash);
           }
 
           if (_blockApplyHash != null)
           {
-            AiSession.Instance.LocalVectorHashPool?.Return(_blockApplyHash);
+            AiSession.Instance.LocalVectorHashPool?.Return(ref _blockApplyHash);
           }
         }
         else
@@ -979,7 +979,7 @@ namespace AiEnabled.Ai.Support
       if (!_asyncTileTask.IsComplete)
         return;
 
-      if (_asyncTileTask.Exceptions != null)
+      if (IsValid && _asyncTileTask.Exceptions != null)
       {
         AiSession.Instance.Logger.ClearCached();
         AiSession.Instance.Logger.AddLine($"Exceptions found during RemovePlanetTiles task!\n");
@@ -1108,12 +1108,14 @@ namespace AiEnabled.Ai.Support
       {
         foreach (var kvp in OpenTileDict)
         {
-          AiSession.Instance.NodePool.Return(kvp.Value);
+          var val = kvp.Value;
+          AiSession.Instance.NodePool?.Return(ref val);
         }
 
         foreach (var kvp in PlanetTileDictionary)
         {
-          AiSession.Instance.NodePool.Return(kvp.Value);
+          var val = kvp.Value;
+          AiSession.Instance.NodePool?.Return(ref val);
         }
       }
 
@@ -1449,7 +1451,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.EntListPool.Return(entList);
+      AiSession.Instance.EntListPool?.Return(ref entList);
 
       if (preferGroundNode && closestGround.HasValue)
         localPosition = closestGround.Value;
@@ -1718,7 +1720,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.HitListPool.Return(hitInfoList);
+        AiSession.Instance.HitListPool?.Return(ref hitInfoList);
         return result;
       }
 
@@ -1878,7 +1880,7 @@ namespace AiEnabled.Ai.Support
         data.CallBack = null;
 
         BotFactory.GetInteriorNodes(data);
-        AiSession.Instance.ApiWorkDataPool.Return(data);
+        AiSession.Instance.ApiWorkDataPool?.Return(ref data);
         InteriorNodesReady = true;
 
         List<IMySlimBlock> blocks = AiSession.Instance.SlimListPool.Get();
@@ -1923,7 +1925,7 @@ namespace AiEnabled.Ai.Support
           InitBlock(block, ref upVec, ref upDir, ref cellSize, ref halfCellSize, cubeDef);
         }
 
-        AiSession.Instance.SlimListPool.Return(blocks);
+        AiSession.Instance.SlimListPool?.Return(ref blocks);
 
         if (Dirty || Remake)
           return;
@@ -2023,7 +2025,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.VoxelMapListPool.Return(voxelMaps);
+        AiSession.Instance.VoxelMapListPool?.Return(ref voxelMaps);
 
         upDir = MainGrid.WorldMatrix.GetClosestDirection(WorldMatrix.Up);
         upVec = Base6Directions.GetIntVector(upDir);
@@ -3076,7 +3078,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.LineListPool.Return(positionList);
+        AiSession.Instance.LineListPool?.Return(ref positionList);
       }
       else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id))
       {
@@ -3102,7 +3104,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.LineListPool.Return(positionList);
+        AiSession.Instance.LineListPool?.Return(ref positionList);
       }
       else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(cubeDef.Id))
       {
@@ -3166,7 +3168,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.LineListPool.Return(positionList);
+        AiSession.Instance.LineListPool?.Return(ref positionList);
       }
       else if (cubeDef.Id.TypeId == typeof(MyObjectBuilder_SolarPanel))
       {
@@ -3183,7 +3185,7 @@ namespace AiEnabled.Ai.Support
             AddTileToMap(cellPosition, node);
           }
 
-          AiSession.Instance.LineListPool.Return(positionList);
+          AiSession.Instance.LineListPool?.Return(ref positionList);
         }
       }
       else if (/*isDigiLadder ||*/ cubeDef.Id.TypeId == typeof(MyObjectBuilder_Ladder2))
@@ -3261,7 +3263,7 @@ namespace AiEnabled.Ai.Support
           if (GraphLocked || !Ready || !_updateTask.IsComplete)
             return;
 
-          if (_updateTask.Exceptions != null)
+          if (IsValid && _updateTask.Exceptions != null)
           {
             AiSession.Instance.Logger.ClearCached();
             AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
@@ -3404,12 +3406,12 @@ namespace AiEnabled.Ai.Support
             if (PlanetTileDictionary.TryGetValue(pos, out n))
             {
               PlanetTileDictionary.Remove(pos);
-              AiSession.Instance.NodePool.Return(n);
+              AiSession.Instance.NodePool?.Return(ref n);
             }
             else if (OpenTileDict.TryGetValue(pos, out n))
             {
               OpenTileDict.Remove(pos);
-              AiSession.Instance.NodePool.Return(n);
+              AiSession.Instance.NodePool?.Return(ref n);
             }
           }
 
@@ -3482,7 +3484,7 @@ namespace AiEnabled.Ai.Support
     {
       if (_interiorNodesTask.IsComplete)
       {
-        if (_interiorNodesTask.Exceptions != null)
+        if (IsValid && _interiorNodesTask.Exceptions != null)
         {
           AiSession.Instance.Logger.ClearCached();
           AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
@@ -3625,7 +3627,7 @@ namespace AiEnabled.Ai.Support
               BlockedDoors.TryRemove(point, out _);
             }
 
-            AiSession.Instance.LineListPool.Return(positionList);
+            AiSession.Instance.LineListPool?.Return(ref positionList);
           }
         }
         else if (!door.Enabled && !BlockedDoors.ContainsKey(pos))
@@ -3643,7 +3645,7 @@ namespace AiEnabled.Ai.Support
             BlockedDoors[point] = door;
           }
 
-          AiSession.Instance.LineListPool.Return(positionList);
+          AiSession.Instance.LineListPool?.Return(ref positionList);
         }
       }
       catch (Exception ex)
@@ -3675,7 +3677,7 @@ namespace AiEnabled.Ai.Support
           addMaps.Add(gridMap);
       }
 
-      AiSession.Instance.EntListPool.Return(tempEntities);
+      AiSession.Instance.EntListPool?.Return(ref tempEntities);
 
       int countMS = 0;
       int maxMS = MyUtils.GetRandomInt(1000, 2000);
@@ -3736,7 +3738,7 @@ namespace AiEnabled.Ai.Support
           break;
       }
 
-      AiSession.Instance.GridMapListPool.Return(addMaps);
+      AiSession.Instance.GridMapListPool?.Return(ref addMaps);
     }
 
     void CheckForPlanetTiles(ref BoundingBoxI box, ref Vector3 gravityNorm, ref Vector3I upVec)
@@ -4372,7 +4374,7 @@ namespace AiEnabled.Ai.Support
 
           if (_updateTask.IsComplete)
           {
-            if (_updateTask.Exceptions != null)
+            if (IsValid && _updateTask.Exceptions != null)
             {
               AiSession.Instance.Logger.ClearCached();
               AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
@@ -4416,7 +4418,7 @@ namespace AiEnabled.Ai.Support
 
           if (!OBB.Contains(ref minWorld) && !OBB.Contains(ref maxWorld))
           {
-            AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+            AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
             return;
           }
 
@@ -4433,7 +4435,7 @@ namespace AiEnabled.Ai.Support
           {
             if (Dirty || Remake || RootVoxel == null || RootVoxel.MarkedForClose)
             {
-              AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+              AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
               return;
             }
 
@@ -4445,7 +4447,7 @@ namespace AiEnabled.Ai.Support
             {
               if (node != null)
               {
-                AiSession.Instance.NodePool.Return(node);
+                AiSession.Instance.NodePool?.Return(ref node);
               }
 
               PlanetTileDictionary.Remove(current);
@@ -4472,7 +4474,7 @@ namespace AiEnabled.Ai.Support
           {
             if (Dirty || Remake || RootVoxel == null || RootVoxel.MarkedForClose)
             {
-              AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+              AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
               return;
             }
 
@@ -4486,7 +4488,7 @@ namespace AiEnabled.Ai.Support
             }
           }
 
-          AiSession.Instance.VoxelUpdateItemPool.Return(updateItem);
+          AiSession.Instance.VoxelUpdateItemPool?.Return(ref updateItem);
         }
 
         //AiSession.Instance.Logger.Log($"{this}.ApplyVoxelChanges: Finished");
@@ -4970,7 +4972,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      AiSession.Instance.LineListPool.Return(positionList);
+      AiSession.Instance.LineListPool?.Return(ref positionList);
     }
 
     void AddTileToMap(Vector3I mainGridPosition, Node node)
@@ -8349,7 +8351,7 @@ namespace AiEnabled.Ai.Support
         result = true;
       }
 
-      AiSession.Instance.LineListPool.Return(localNodes);
+      AiSession.Instance.LineListPool?.Return(ref localNodes);
       return result;
     }
 
@@ -8442,8 +8444,8 @@ namespace AiEnabled.Ai.Support
 
       nodeList.Clear();
       testList.Clear();
-      AiSession.Instance.LineListPool.Return(nodeList);
-      AiSession.Instance.LineListPool.Return(testList);
+      AiSession.Instance.LineListPool?.Return(ref nodeList);
+      AiSession.Instance.LineListPool?.Return(ref testList);
 
       return node != null;
     }
@@ -8496,7 +8498,7 @@ namespace AiEnabled.Ai.Support
       if (!_obstacleTask.IsComplete)
         return;
 
-      if (_obstacleTask.Exceptions != null)
+      if (IsValid && _obstacleTask.Exceptions != null)
       {
         AiSession.Instance.Logger.ClearCached();
         AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
@@ -8541,8 +8543,8 @@ namespace AiEnabled.Ai.Support
       }
       else
       {
-        AiSession.Instance.EntListPool.Return(tempEntities);
-        AiSession.Instance.SlimListPool.Return(blocks);
+        AiSession.Instance.EntListPool?.Return(ref tempEntities);
+        AiSession.Instance.SlimListPool?.Return(ref blocks);
       }
     }
 
@@ -8604,7 +8606,7 @@ namespace AiEnabled.Ai.Support
           }
         }
 
-        AiSession.Instance.LineListPool.Return(positionList);
+        AiSession.Instance.LineListPool?.Return(ref positionList);
 
         foreach (var kvp in _tempKVPList)
         {
@@ -8619,20 +8621,21 @@ namespace AiEnabled.Ai.Support
 
     void UpdateTempObstaclesCallback(WorkData data)
     {
-      Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
-
-      if (AiSession.Instance != null && AiSession.Instance.Registered)
+      if (AiSession.Instance?.Registered == true)
       {
-        var obstacleData = data as ObstacleWorkData;
+        Interlocked.CompareExchange(ref ObstacleNodes, ObstacleNodesTemp, ObstacleNodes);
 
-        if (obstacleData?.Blocks != null && AiSession.Instance.ObstacleWorkDataPool != null)
+        var obstacleData = data as ObstacleWorkData;
+        if (obstacleData?.Blocks != null)
         {
-          AiSession.Instance.SlimListPool.Return(obstacleData.Blocks);
+          AiSession.Instance.SlimListPool?.Return(ref obstacleData.Blocks);
+          obstacleData.Blocks = null;
         }
 
-        if (obstacleData?.Entities != null && AiSession.Instance.EntListPool != null)
+        if (obstacleData?.Entities != null)
         {
-          AiSession.Instance.EntListPool.Return(obstacleData.Entities);
+          AiSession.Instance.EntListPool?.Return(ref obstacleData.Entities);
+          obstacleData.Entities = null;
         }
       }
     }
@@ -8717,7 +8720,7 @@ namespace AiEnabled.Ai.Support
       }
 
       nodeList.Clear();
-      AiSession.Instance.LineListPool.Return(nodeList);
+      AiSession.Instance.LineListPool?.Return(ref nodeList);
       return result;
     }
 
@@ -9068,7 +9071,7 @@ namespace AiEnabled.Ai.Support
             break;
         }
 
-        AiSession.Instance.EntListPool.Return(entList);
+        AiSession.Instance.EntListPool?.Return(ref entList);
       }
 
       if (block != null)

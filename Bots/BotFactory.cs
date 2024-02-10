@@ -296,7 +296,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        AiSession.Instance.LocalVectorHashPool?.Return(hash);
+        AiSession.Instance.LocalVectorHashPool?.Return(ref hash);
 
         if (!apiData.AllowAirNodes && nodeList.Count > 0)
         {
@@ -373,7 +373,7 @@ namespace AiEnabled.Bots
           }
         }
 
-        AiSession.Instance.GridGroupListPool.Return(gridList);
+        AiSession.Instance.GridGroupListPool?.Return(ref gridList);
       }
       catch (Exception ex)
       {
@@ -463,7 +463,7 @@ namespace AiEnabled.Bots
           break;
       }
 
-      AiSession.Instance.LineListPool.Return(positionList);
+      AiSession.Instance.LineListPool?.Return(ref positionList);
       return numBlocksFound >= minEnclosure;
     }
 
@@ -473,7 +473,7 @@ namespace AiEnabled.Bots
       if (apiData != null)
       {
         apiData.CallBack?.Invoke(apiData.Grid, apiData.NodeList);
-        AiSession.Instance?.ApiWorkDataPool?.Return(apiData);
+        AiSession.Instance?.ApiWorkDataPool?.Return(ref apiData);
       }
     }
 
@@ -1169,7 +1169,7 @@ namespace AiEnabled.Bots
         }
 
         vList.Clear();
-        AiSession.Instance.VoxelMapListPool.Return(vList);
+        AiSession.Instance.VoxelMapListPool?.Return(ref vList);
 
         if (owner > 0 && AiSession.Instance.Players.ContainsKey(owner.Value))
           return SpawnHelper(subtype, displayName, owner.Value, positionAndOrientation, grid, role, null, color, adminSpawned: adminSpawn, factionId: factionId);

@@ -127,8 +127,8 @@ namespace AiEnabled.Utilities
       }
 
       positions.AddRange(hash);
-      AiSession.Instance.LocalVectorHashPool.Return(hash);
-      AiSession.Instance.LocalVectorQueuePool.Return(queue);
+      AiSession.Instance.LocalVectorHashPool?.Return(ref hash);
+      AiSession.Instance.LocalVectorQueuePool?.Return(ref queue);
     }
 
     public static void DrawOBB(MyOrientedBoundingBoxD obb, Color color, MySimpleObjectRasterizer raster = MySimpleObjectRasterizer.Wireframe, float thickness = 0.01f, BlendTypeEnum blendType = BlendTypeEnum.Standard)
@@ -312,12 +312,12 @@ namespace AiEnabled.Utilities
 
       if (returnResultList)
       {
-        AiSession.Instance.OverlapResultListPool.Return(resultList);
+        AiSession.Instance.OverlapResultListPool?.Return(ref resultList);
       }
 
       if (returnCellList)
       {
-        AiSession.Instance.LineListPool.Return(cellList);
+        AiSession.Instance.LineListPool?.Return(ref cellList);
       }
 
       return result;

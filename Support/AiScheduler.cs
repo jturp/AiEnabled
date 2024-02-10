@@ -44,7 +44,7 @@ namespace AiEnabled.Support
         if (future.TickDelay <= 0)
         {
           future.Action?.Invoke();
-          _actionPool.Return(future);
+          _actionPool?.Return(future);
         }
         else
         {

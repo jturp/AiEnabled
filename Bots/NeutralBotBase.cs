@@ -1006,7 +1006,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      AiSession.Instance.EntListPool.Return(entList);
+      AiSession.Instance.EntListPool?.Return(ref entList);
     }
 
     internal override void Attack()

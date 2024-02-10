@@ -43,7 +43,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     public CrewType CrewFunction;
     public MyCubeBlock AttachedBlock { get; private set; }
 
-    readonly List<IMySlimBlock> _goToBlocks;
+    List<IMySlimBlock> _goToBlocks;
     bool _refetchBlocks = true;
     long _lastGridId;
 
@@ -87,7 +87,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     {
       if (_goToBlocks != null && AiSession.Instance?.SlimListPool != null)
       {
-        AiSession.Instance.SlimListPool.Return(_goToBlocks);
+        AiSession.Instance.SlimListPool?.Return(ref _goToBlocks);
       }
 
       base.Close(cleanConfig, removeBot);

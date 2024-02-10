@@ -273,6 +273,9 @@ namespace AiEnabled.Utilities
         for (int i = h; i < length; i += 1)
         {
           var tempValue = list[i];
+          if (tempValue?.PositionComp == null)
+            continue;
+
           double temp;
           var pos = tempValue.PositionComp.WorldAABB.Center;
           Vector3D.DistanceSquared(ref pos, ref checkPosition, out temp);
@@ -310,6 +313,9 @@ namespace AiEnabled.Utilities
         for (int i = h; i < length; i += 1)
         {
           var tempValue = list[i];
+          if (tempValue == null)
+            continue;
+
           double temp;
           var pos = tempValue.CubeGrid.GridIntegerToWorld(tempValue.Position);
           Vector3D.DistanceSquared(ref pos, ref checkPosition, out temp);
@@ -347,6 +353,9 @@ namespace AiEnabled.Utilities
         for (int i = h; i < length; i += 1)
         {
           var tempValue = list[i];
+          if (tempValue == null)
+            continue;
+
           double temp;
           var ent = tempValue as IMyEntity;
           var slim = tempValue as IMySlimBlock;
