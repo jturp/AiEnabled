@@ -302,7 +302,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal override void SetTargetInternal()
     {
-      if (!WantsTarget || _currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null)
+      if (!WantsTarget || _currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || IsDead)
         return;
 
       var character = Owner?.Character;
@@ -810,6 +810,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         }
       }
 
+      CheckFire(rifleAttack, fistAttack, ref movement, ref rotation, ref roll);
       MoveToPoint(movement, rotation, roll);
     }
   }

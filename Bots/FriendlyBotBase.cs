@@ -99,7 +99,7 @@ namespace AiEnabled.Bots
     internal override void SetTargetInternal()
     {
       var ownerCharacter = Owner?.Character;
-      if (ownerCharacter == null || !WantsTarget)
+      if (ownerCharacter == null || !WantsTarget || IsDead || Target == null)
       {
         return;
       }

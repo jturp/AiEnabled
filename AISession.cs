@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.9";
+    public const string VERSION = "v1.8.11";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -2716,7 +2716,7 @@ namespace AiEnabled
           {
             targetIsBot = true;
 
-            if (bot.Owner != null && ModSaveData.DisableEnvironmentDamageForHelpers)
+            if (bot.Owner != null && ModSaveData.DisableEnvironmentDamageForHelpers && info.Type == MyDamageType.Environment)
             {
               info.Amount = 0;
               return;

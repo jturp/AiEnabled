@@ -62,8 +62,8 @@ namespace AiEnabled.Ai
 
         if (collection.Dirty || currentMS > maxTimeMS)
         {
-          if (currentMS > maxTimeMS)
-            AiSession.Instance.Logger.Log($"{collection.Bot.Character.Name} - PathTimer exceeded {maxTimeMS / 1000:0.####} s pathing to {goal}", MessageType.WARNING);
+          if (currentMS > maxTimeMS && bot?.Character?.Name != null)
+            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded {maxTimeMS / 1000:0.####} s pathing to {goal}", MessageType.WARNING);
           pathFound = false;
         }
 
@@ -86,16 +86,19 @@ namespace AiEnabled.Ai
 
           if (graph.IsGridGraph && bot is RepairBot)
           {
-            isInventory = bot.Target.IsInventory;
-            invBlock = bot.Target.Inventory;
+            if (bot.Target != null)
+            {
+              isInventory = bot.Target.IsInventory;
+              invBlock = bot.Target.Inventory;
 
-            if (!isInventory && !bot.Target.IsSlimBlock)
-            {
-              bot._noPathCounter++;
-            }
-            else
-            {
-              bot.Target.RemoveTarget();
+              if (!isInventory && !bot.Target.IsSlimBlock)
+              {
+                bot._noPathCounter++;
+              }
+              else
+              {
+                bot.Target.RemoveTarget();
+              }
             }
           }
           else
@@ -119,23 +122,26 @@ namespace AiEnabled.Ai
               collection.Obstacles[goal] = new byte();
             }
 
-            var cube = bot.Target.Entity as IMyCubeBlock;
-            var slim = (cube?.SlimBlock) ?? bot.Target.Entity as IMySlimBlock;
-
-            if (slim?.CubeGrid != null && graph.IsPositionValid(slim.CubeGrid.GridIntegerToWorld(slim.Position)))
+            if (bot.Target != null)
             {
-              var gridGraph = graph as CubeGridMap;
+              var cube = bot.Target.Entity as IMyCubeBlock;
+              var slim = (cube?.SlimBlock) ?? bot.Target.Entity as IMySlimBlock;
 
-              var gridSize = slim.CubeGrid.GridSizeEnum;
-              if (gridSize == MyCubeSize.Small)
+              if (slim?.CubeGrid != null && graph.IsPositionValid(slim.CubeGrid.GridIntegerToWorld(slim.Position)))
               {
-                bot.Target.RemoveTarget();
-                collection.AddBlockedObstacle(slim);
-              }
-              else if (gridGraph != null && slim.CubeGrid.IsSameConstructAs(gridGraph.MainGrid))
-              {
-                bot.Target.RemoveTarget();
-                collection.AddBlockedObstacle(slim);
+                var gridGraph = graph as CubeGridMap;
+
+                var gridSize = slim.CubeGrid.GridSizeEnum;
+                if (gridSize == MyCubeSize.Small)
+                {
+                  bot.Target.RemoveTarget();
+                  collection.AddBlockedObstacle(slim);
+                }
+                else if (gridGraph != null && slim.CubeGrid.IsSameConstructAs(gridGraph.MainGrid))
+                {
+                  bot.Target.RemoveTarget();
+                  collection.AddBlockedObstacle(slim);
+                }
               }
             }
           }
@@ -169,7 +175,7 @@ namespace AiEnabled.Ai
           }
 
           collection.Locked = false;
-          collection.Bot.CleanPath();
+          collection.Bot?.CleanPath();
         }
       }
     }

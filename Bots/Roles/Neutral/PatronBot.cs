@@ -105,6 +105,9 @@ namespace AiEnabled.Bots.Roles
 
     internal override void SetTargetInternal()
     {
+      if (IsDead || Target == null)
+        return;
+
       if (Target.HasTarget)
       {
         if (_lastSeat?.Pilot != null && _lastSeat.Pilot.EntityId != Character.EntityId)

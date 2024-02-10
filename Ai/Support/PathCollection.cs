@@ -61,7 +61,17 @@ namespace AiEnabled.Ai.Support
     /// The bot that is navigating to the target.
     /// Set this BEFORE calling FindPath!
     /// </summary>
-    public BotBase Bot;
+    public BotBase Bot
+    {
+      get { return _bot; }
+      set
+      {
+        if (value != null || !Locked)
+          _bot = value; 
+      }
+    }
+
+    BotBase _bot;
 
     /// <summary>
     /// True if there are any waypoints left to move to

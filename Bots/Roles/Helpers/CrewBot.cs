@@ -255,6 +255,9 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal override void SetTargetInternal()
     {
+      if (IsDead || Target == null)
+        return;
+
       if (Owner?.Character != null)
       {
         var character = Owner.Character;

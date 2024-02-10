@@ -319,7 +319,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
     internal override void SetTargetInternal()
     {
-      if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || !WantsTarget)
+      if (_currentGraph == null || !_currentGraph.IsValid || _currentGraph.Dirty || Target == null || !WantsTarget || IsDead)
         return;
 
       var character = Owner?.Character;

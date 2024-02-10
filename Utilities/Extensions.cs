@@ -278,12 +278,14 @@ namespace AiEnabled.Utilities
           Vector3D.DistanceSquared(ref pos, ref checkPosition, out temp);
 
           int j;
-          for (j = i; j >= h && Vector3D.DistanceSquared(list[j - h].PositionComp.WorldAABB.Center, checkPosition) > temp; j -= h)
+          for (j = i; j >= h && Vector3D.DistanceSquared(GetObjectPosition(list[j - h]), checkPosition) > temp; j -= h)
           {
-            list[j] = list[j - h];
+            if (list.IsValidIndex(j) && list.IsValidIndex(j-h))
+              list[j] = list[j - h];
           }
 
-          list[j] = tempValue;
+          if (list.IsValidIndex(j))
+            list[j] = tempValue;
         }
       }
 
@@ -313,12 +315,14 @@ namespace AiEnabled.Utilities
           Vector3D.DistanceSquared(ref pos, ref checkPosition, out temp);
 
           int j;
-          for (j = i; j >= h && Vector3D.DistanceSquared(list[j - h].CubeGrid.GridIntegerToWorld(list[j - h].Position), checkPosition) > temp; j -= h)
+          for (j = i; j >= h && Vector3D.DistanceSquared(GetObjectPosition(list[j - h]), checkPosition) > temp; j -= h)
           {
-            list[j] = list[j - h];
+            if (list.IsValidIndex(j) && list.IsValidIndex(j - h))
+              list[j] = list[j - h];
           }
 
-          list[j] = tempValue;
+          if (list.IsValidIndex(j))
+            list[j] = tempValue;
         }
       }
 
@@ -352,10 +356,12 @@ namespace AiEnabled.Utilities
           int j;
           for (j = i; j >= h && Vector3D.DistanceSquared(GetObjectPosition(list[j - h]), checkPosition) > temp; j -= h)
           {
-            list[j] = list[j - h];
+            if (list.IsValidIndex(j) && list.IsValidIndex(j - h))
+              list[j] = list[j - h];
           }
 
-          list[j] = tempValue;
+          if (list.IsValidIndex(j))
+            list[j] = tempValue;
         }
       }
 
@@ -372,12 +378,15 @@ namespace AiEnabled.Utilities
 
     static Vector3D GetObjectPosition(object a)
     {
+      if (a == null)
+        return Vector3D.Zero;
+
       var ent = a as IMyEntity;
       if (ent != null)
         return ent.GetPosition();
 
       var slim = a as IMySlimBlock;
-      return slim.CubeGrid.GridIntegerToWorld(slim.Position);
+      return slim?.CubeGrid.GridIntegerToWorld(slim.Position) ?? Vector3D.Zero;
     }
 
     public static void PrioritySort(this List<object> list, SortedDictionary<int, List<object>> taskPriorities, RemoteBotAPI.Priorities priorities, Vector3D botPosition, bool ignoreMES = false)

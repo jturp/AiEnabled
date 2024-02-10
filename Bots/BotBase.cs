@@ -2570,6 +2570,9 @@ namespace AiEnabled.Bots
 
     internal virtual void SetTargetInternal()
     {
+      if (IsDead || Target == null)
+        return;
+
       if (!WantsTarget)
       {
         if (!UseAPITargets && PatrolMode && _patrolList?.Count > 0)
