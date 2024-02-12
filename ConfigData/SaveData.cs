@@ -48,6 +48,9 @@ namespace AiEnabled.ConfigData
     [ProtoMember(33)] public int BotUpkeepTimeInMinutes = 30;
 
     [XmlArrayItem("Subtype", typeof(string))]
+    [ProtoIgnore] public List<string> InventoryItemsToKeep = null;
+
+    [XmlArrayItem("Subtype", typeof(string))]
     [ProtoIgnore] public List<string> AllowedHelperSubtypes = null;
 
     [XmlArrayItem("Subtype", typeof(string))]

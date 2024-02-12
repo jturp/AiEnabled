@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.12";
+    public const string VERSION = "v1.8.14";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -842,12 +842,16 @@ namespace AiEnabled
 
         foreach (var def in MyDefinitionManager.Static.GetInventoryItemDefinitions())
         {
+          var subtype = def.Id.SubtypeName;
           if (def?.DisplayNameText != null && def.Public /*&& def.Context.ModId != "1521905890"*/
-            && !def.Id.SubtypeName.StartsWith("MES", StringComparison.OrdinalIgnoreCase)
-            && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0
-            && def.Id.SubtypeName.IndexOf("Inhibitor", StringComparison.OrdinalIgnoreCase) < 0
-            && def.Id.SubtypeName.IndexOf("Proprietary", StringComparison.OrdinalIgnoreCase) < 0
-            && def.Id.SubtypeName.IndexOf("UraniumB", StringComparison.OrdinalIgnoreCase) < 0)
+            && !subtype.StartsWith("MES", StringComparison.OrdinalIgnoreCase)
+            && subtype.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0
+            && subtype.IndexOf("Inhibitor", StringComparison.OrdinalIgnoreCase) < 0
+            && subtype.IndexOf("Proprietary", StringComparison.OrdinalIgnoreCase) < 0
+            && subtype.IndexOf("UraniumB", StringComparison.OrdinalIgnoreCase) < 0
+            && subtype.IndexOf("EEMPilotSoul", StringComparison.OrdinalIgnoreCase) < 0
+            && subtype.IndexOf("NPC_Component", StringComparison.OrdinalIgnoreCase) < 0
+            && subtype.IndexOf("NPC_Token", StringComparison.OrdinalIgnoreCase) < 0)
           {
             IgnoreTypeDictionary[def.DisplayNameText] = new KeyValuePair<string, bool>(def.DisplayNameText, false);
           }
@@ -1268,6 +1272,17 @@ namespace AiEnabled
           {
             ModSaveData.BotUpkeepTimeInMinutes = 0;
             ModSaveData.ChargePlayersForBotUpkeep = false;
+          }
+
+          if (ModSaveData.InventoryItemsToKeep == null)
+          {
+            ModSaveData.InventoryItemsToKeep = new List<string>()
+            {
+              "Medkit",
+              "Powerkit",
+              "EngineerShield",
+              "PocketShield"
+            };
           }
 
           if (ModSaveData.AllowedHelperSubtypes == null || ModSaveData.AllowedHelperSubtypes.Count == 0)

@@ -172,7 +172,7 @@ namespace AiEnabled.Ai
             if (MyAPIGateway.Session?.Player != null)
               MyAPIGateway.Utilities.ShowNotification($"Exception in AiEnabled.FindPath: {ex.Message}", 10000);
 
-            AiSession.Instance.Logger.Log($"Exception in AiEnabled.Pathfinder.FindPath: {ex.Message}\n{ex.StackTrace}\n", MessageType.ERROR);
+            AiSession.Instance.Logger.Log($"Exception in AiEnabled.Pathfinder.FindPath: {ex.ToString()}\n", MessageType.ERROR);
           }
 
           collection.Locked = false;
@@ -322,6 +322,13 @@ namespace AiEnabled.Ai
         foreach (var next in graph.Neighbors(bot, previous, current, botPosition, checkDoors))
         {
           //AiSession.Instance.Logger.AddLine($"  -> Next = {next}");
+
+          if (next == previous)
+          {
+            //AiSession.Instance.Logger.AddLine($"  -> Next == Previous");
+            continue;
+          }
+
           Node node;
           if (!graph.TryGetNodeForPosition(next, out node))
           {

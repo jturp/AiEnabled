@@ -16,6 +16,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -88,11 +89,10 @@ namespace AiEnabled.Ai.Support
     List<InventoryAddRemove> _inventoryItemsToAddRemove = new List<InventoryAddRemove>();
     Stack<InventoryAddRemove> _invItemPool = new Stack<InventoryAddRemove>();
 
-    MyConcurrentPool<List<MyInventoryItem>> _invItemListStack = new MyConcurrentPool<List<MyInventoryItem>>
+    AiEPool<List<MyInventoryItem>> _invItemListStack = new AiEPool<List<MyInventoryItem>>
     (
       defaultCapacity: 100,
       clear: (x) => x.Clear(),
-      expectedAllocations: 100,
       activator: () => new List<MyInventoryItem>(),
       deactivator: (x) => { x.Clear(); x = null; }
     );
@@ -473,6 +473,23 @@ namespace AiEnabled.Ai.Support
       return valid;
     }
 
+    public bool ShouldKeepItem(MyInventoryItem item)
+    {
+      var def = item.Type;
+
+      if (AiSession.Instance?.Registered == true && AiSession.Instance.ModSaveData?.InventoryItemsToKeep?.Count > 0)
+      {
+        for (int i = 0; i < AiSession.Instance.ModSaveData.InventoryItemsToKeep.Count; i++)
+        {
+          var keeper = AiSession.Instance.ModSaveData.InventoryItemsToKeep[i];
+          if (keeper.StartsWith(def.SubtypeId, StringComparison.OrdinalIgnoreCase))
+            return true;
+        }
+      }
+
+      return false;
+    }
+
     public bool ShouldKeepTool(MyInventoryItem item, List<MyInventoryItem> botItems)
     {
       var subtype = item.Type.SubtypeId;
@@ -535,7 +552,7 @@ namespace AiEnabled.Ai.Support
       botInv.GetItems(invItems);
 
       var tool = bot.ToolDefinition?.PhysicalItemId.SubtypeName;
-      var grindMode = rBot == null || rBot.CurrentBuildMode == RepairBot.BuildMode.Grind;
+      var grindMode = rBot == null || rBot.CurrentBuildMode == BotBase.BuildMode.Grind;
 
       bool sendToUnload = false;
 
@@ -553,6 +570,9 @@ namespace AiEnabled.Ai.Support
         if (itemInfo.IsTool && rBot != null && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
           continue;
 
+        if (ShouldKeepItem(item))
+          continue;
+
         if (grindMode || itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent)
         {
           sendToUnload = true;
@@ -560,8 +580,7 @@ namespace AiEnabled.Ai.Support
         }
       }
 
-      _invItemListStack.Return(invItems);
-
+      _invItemListStack.Return(ref invItems);
       return sendToUnload;
     }
 
@@ -580,7 +599,7 @@ namespace AiEnabled.Ai.Support
 
       botInv.GetItems(invItems);
       var tool = data.Bot.ToolDefinition?.PhysicalItemId.SubtypeName;
-      var grindMode = rBot == null || rBot.CurrentBuildMode == RepairBot.BuildMode.Grind;
+      var grindMode = rBot == null || rBot.CurrentBuildMode == BotBase.BuildMode.Grind;
       _inventoryItemsToAddRemove.Clear();
 
       for (int i = invItems.Count - 1; i >= 0; i--)
@@ -595,6 +614,9 @@ namespace AiEnabled.Ai.Support
         }
 
         if (itemInfo.IsTool && rBot != null && (item.Type.SubtypeId == tool || ShouldKeepTool(item, invItems)))
+          continue;
+
+        if (ShouldKeepItem(item))
           continue;
 
         if (grindMode || itemInfo.IsOre || itemInfo.IsIngot || itemInfo.IsComponent)
@@ -658,7 +680,7 @@ namespace AiEnabled.Ai.Support
 
       if (grindMode || botInv.IsFull || block == null || block.IsDestroyed)
       {
-        _invItemListStack.Return(invItems);
+        _invItemListStack.Return(ref invItems);
         return;
       }
 
@@ -686,7 +708,7 @@ namespace AiEnabled.Ai.Support
       if (!valid)
       {
         AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
-        _invItemListStack.Return(invItems);
+        _invItemListStack.Return(ref invItems);
         return;
       }
 
@@ -766,7 +788,7 @@ namespace AiEnabled.Ai.Support
       }
 
       AiSession.Instance.MissingCompsDictPool?.Return(ref missingComps);
-      _invItemListStack.Return(invItems);
+      _invItemListStack.Return(ref invItems);
     }
 
     void RemoveItemsComplete(WorkData workData)

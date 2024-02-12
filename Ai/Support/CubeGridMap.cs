@@ -666,7 +666,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.Close: {ex}", MessageType.ERROR);
       }
       finally
       {

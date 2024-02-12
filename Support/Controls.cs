@@ -420,7 +420,7 @@ namespace AiEnabled.Support
       labelReset.Enabled = CombineFunc.Create(labelReset.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       labelReset.Visible = CombineFunc.Create(labelReset.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       labelReset.SupportsMultipleBlocks = false;
-      labelReset.Label = MyStringId.GetOrCompute("Reset Grid Map");
+      labelReset.Label = MyStringId.GetOrCompute("Map Management");
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(labelReset);
       controls.Add(labelReset);
 

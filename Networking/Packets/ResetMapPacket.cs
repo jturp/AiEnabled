@@ -25,9 +25,18 @@ namespace AiEnabled.Networking.Packets
     public override bool Received(NetworkHandler netHandler)
     {
       CubeGridMap map = null;
-      if (AiSession.Instance?.GridGraphDict?.TryRemove(MapId, out map) == true)
+      if (AiSession.Instance?.GridGraphDict?.TryGetValue(MapId, out map) == true)
       {
-        map?.Close();
+        if (map?.IsValid == true)
+        {
+          map.GraphLocked = false;
+          map.Init();
+        }
+        else
+        {
+          map?.Close();
+          AiSession.Instance.GridGraphDict.Remove(MapId);
+        }
       }
 
       return false;
