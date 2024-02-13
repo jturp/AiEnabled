@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.14";
+    public const string VERSION = "v1.8.15";
     const int MIN_SPAWN_COUNT = 3;
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
@@ -853,7 +853,7 @@ namespace AiEnabled
             && subtype.IndexOf("NPC_Component", StringComparison.OrdinalIgnoreCase) < 0
             && subtype.IndexOf("NPC_Token", StringComparison.OrdinalIgnoreCase) < 0)
           {
-            IgnoreTypeDictionary[def.DisplayNameText] = new KeyValuePair<string, bool>(def.DisplayNameText, false);
+            IgnoreTypeDictionary[MyStringId.GetOrCompute(def.DisplayNameText)] = new KeyValuePair<string, bool>(def.DisplayNameText, false);
           }
         }
 
@@ -5512,19 +5512,19 @@ namespace AiEnabled
                   {
                     if (botBase is RepairBot)
                     {
-                      botBase.RepairPriorities = new RemoteBotAPI.RepairPriorities(info.Priorities);
-                      botBase.TargetPriorities = new RemoteBotAPI.TargetPriorities();
+                      botBase.RepairPriorities = new RepairPriorities(info.Priorities);
+                      botBase.TargetPriorities = new TargetPriorities();
                     }
                     else
                     {
-                      botBase.RepairPriorities = new RemoteBotAPI.RepairPriorities();
-                      botBase.TargetPriorities = new RemoteBotAPI.TargetPriorities(info.Priorities);
+                      botBase.RepairPriorities = new RepairPriorities();
+                      botBase.TargetPriorities = new TargetPriorities(info.Priorities);
                     }
                   }
                   else
                   {
-                    botBase.RepairPriorities = new RemoteBotAPI.RepairPriorities();
-                    botBase.TargetPriorities = new RemoteBotAPI.TargetPriorities();
+                    botBase.RepairPriorities = new RepairPriorities();
+                    botBase.TargetPriorities = new TargetPriorities();
                   }
 
                   if (info.IgnoreList != null && (botBase is RepairBot || botBase is ScavengerBot))

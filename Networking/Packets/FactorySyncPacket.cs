@@ -58,7 +58,7 @@ namespace AiEnabled.Networking.Packets
         {
           if (logic.RepairPriorities == null)
           {
-            logic.RepairPriorities = new RemoteBotAPI.RepairPriorities(RepairPriorities);
+            logic.RepairPriorities = new RepairPriorities(RepairPriorities);
           }
           else
           {
@@ -73,7 +73,7 @@ namespace AiEnabled.Networking.Packets
         {
           if (logic.TargetPriorities == null)
           {
-            logic.TargetPriorities = new RemoteBotAPI.TargetPriorities(TargetPriorities);
+            logic.TargetPriorities = new TargetPriorities(TargetPriorities);
           }
           else
           {
@@ -88,7 +88,7 @@ namespace AiEnabled.Networking.Packets
         {
           if (logic.RepairPriorities == null)
           {
-            logic.RepairPriorities = new RemoteBotAPI.RepairPriorities(RepairPriorities);
+            logic.RepairPriorities = new RepairPriorities(RepairPriorities);
           }
 
           logic.RepairPriorities.UpdateIgnoreList(IgnoreList);

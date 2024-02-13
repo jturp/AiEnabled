@@ -49,7 +49,7 @@ namespace AiEnabled.Networking.Packets
 
               if (helper.RepairPriorities == null)
               {
-                helper.RepairPriorities = new API.RemoteBotAPI.RepairPriorities(_repairPriorities);
+                helper.RepairPriorities = new RepairPriorities(_repairPriorities);
               }
               else
               {
@@ -62,7 +62,7 @@ namespace AiEnabled.Networking.Packets
 
               if (helper.TargetPriorities == null)
               {
-                helper.TargetPriorities = new API.RemoteBotAPI.TargetPriorities(_targetPriorities);
+                helper.TargetPriorities = new TargetPriorities(_targetPriorities);
               }
               else
               {

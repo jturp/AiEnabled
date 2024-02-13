@@ -226,7 +226,7 @@ namespace AiEnabled.Networking
 
         if (gameLogic.RepairPriorities?.PriorityTypes == null)
         {
-          gameLogic.RepairPriorities = new API.RemoteBotAPI.RepairPriorities(RepairPriorities);
+          gameLogic.RepairPriorities = new RepairPriorities(RepairPriorities);
         }
         else if (RepairPriorities?.Count > 0)
         {
@@ -240,7 +240,7 @@ namespace AiEnabled.Networking
 
         if (gameLogic.TargetPriorities?.PriorityTypes == null)
         {
-          gameLogic.TargetPriorities = new API.RemoteBotAPI.TargetPriorities(TargetPriorities);
+          gameLogic.TargetPriorities = new TargetPriorities(TargetPriorities);
         }
         else if (TargetPriorities?.Count > 0)
         {

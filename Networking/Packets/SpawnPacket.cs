@@ -99,8 +99,8 @@ namespace AiEnabled.Networking
             if (b.ToolDefinition != null)
               b.AddWeapon();
   
-            b.RepairPriorities = new API.RemoteBotAPI.RepairPriorities();
-            b.TargetPriorities = new API.RemoteBotAPI.TargetPriorities();
+            b.RepairPriorities = new RepairPriorities();
+            b.TargetPriorities = new TargetPriorities();
           }
         }
       }

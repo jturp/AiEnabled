@@ -1,6 +1,7 @@
 ﻿using AiEnabled.Bots;
 using AiEnabled.Bots.Roles.Helpers;
 using AiEnabled.Parallel;
+using AiEnabled.Support;
 using AiEnabled.Utilities;
 
 using ParallelTasks;

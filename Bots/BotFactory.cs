@@ -1092,20 +1092,20 @@ namespace AiEnabled.Bots
 
           if (spawnData.RepairPriorities?.Count > 0)
           {
-            bot.RepairPriorities = new RemoteBotAPI.RepairPriorities(spawnData.RepairPriorities);
+            bot.RepairPriorities = new RepairPriorities(spawnData.RepairPriorities);
           }
           else
           {
-            bot.RepairPriorities = new RemoteBotAPI.RepairPriorities();
+            bot.RepairPriorities = new RepairPriorities();
           }
 
           if (spawnData.TargetPriorities?.Count > 0)
           {
-            bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(spawnData.TargetPriorities);
+            bot.TargetPriorities = new TargetPriorities(spawnData.TargetPriorities);
           }
           else
           {
-            bot.TargetPriorities = new RemoteBotAPI.TargetPriorities();
+            bot.TargetPriorities = new TargetPriorities();
           }
         }
 

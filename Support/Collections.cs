@@ -772,7 +772,7 @@ namespace AiEnabled
     public HashSet<MyDefinitionId> ArmorPanelAllDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> ScaffoldBlockDefinitions { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
     public HashSet<MyDefinitionId> GratedCatwalkExpansionBlocks { get; protected set; } = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
-    public SortedDictionary<string, KeyValuePair<string, bool>> IgnoreTypeDictionary { get; protected set; } = new SortedDictionary<string, KeyValuePair<string, bool>>();
+    public SortedDictionary<MyStringId, KeyValuePair<string, bool>> IgnoreTypeDictionary { get; protected set; } = new SortedDictionary<MyStringId, KeyValuePair<string, bool>>(MyStringId.Comparer);
     public Dictionary<MyStringHash, string> AnimationControllerDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to controller subtype
     public Dictionary<MyStringHash, string> SubtypeToSkeletonDictionary { get; protected set; } = new Dictionary<MyStringHash, string>(MyStringHash.Comparer); // char subtype to skeleton type
     public Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>> NpcSafeCoreWeaponMagazines = new Dictionary<MyDefinitionId, List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>>>(MyDefinitionId.Comparer);

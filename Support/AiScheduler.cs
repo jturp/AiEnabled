@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using VRage.Collections;
 using ParallelTasks;
 using Sandbox.ModAPI;
+using AiEnabled.Utilities;
 
 namespace AiEnabled.Support
 {
@@ -24,7 +25,14 @@ namespace AiEnabled.Support
       }
     }
 
-    MyConcurrentPool<FutureActionItem> _actionPool = new MyConcurrentPool<FutureActionItem>(25, f => f.Clear(), 100, () => new FutureActionItem(), f => f.Clear());
+    AiEPool<FutureActionItem> _actionPool = new AiEPool<FutureActionItem>
+    (
+      defaultCapacity: 25, 
+      clear: f => f.Clear(), 
+      deactivator: f => f.Clear(),
+      activator: () => new FutureActionItem()
+    );
+
     MyQueue<FutureActionItem> _futureActions = new MyQueue<FutureActionItem>();
     List<FutureActionItem> _actionsToAdd = new List<FutureActionItem>();
 
@@ -44,7 +52,7 @@ namespace AiEnabled.Support
         if (future.TickDelay <= 0)
         {
           future.Action?.Invoke();
-          _actionPool?.Return(future);
+          _actionPool?.Return(ref future);
         }
         else
         {

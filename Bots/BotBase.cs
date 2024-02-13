@@ -119,8 +119,8 @@ namespace AiEnabled.Bots
     public MyHandItemDefinition ToolDefinition;
     public AiSession.BotType BotType;
     public AiSession.ControlInfo BotControlInfo;
-    public RemoteBotAPI.RepairPriorities RepairPriorities;
-    public RemoteBotAPI.TargetPriorities TargetPriorities;
+    public RepairPriorities RepairPriorities;
+    public TargetPriorities TargetPriorities;
 
     public string Role => this.GetType().Name;
 
@@ -1034,8 +1034,8 @@ namespace AiEnabled.Bots
       Target = new TargetInfo(this);
       UsePathFinder = gridBase != null;
       BotControlInfo = ctrlInfo;
-      //RepairPriorities = new RemoteBotAPI.RepairPriorities();
-      //TargetPriorities = new RemoteBotAPI.TargetPriorities();
+      //RepairPriorities = new RepairPriorities();
+      //TargetPriorities = new TargetPriorities();
 
       BotInfo = new BotState(this);
       _currentGraph = gridBase;
@@ -6137,7 +6137,7 @@ namespace AiEnabled.Bots
         }
       }
 
-      if (WaitForStuckTimer)
+      if (WaitForStuckTimer) // TODO: Check all 6 directions for where blocks are and and move in opposite direction to get unstuck
       {
         _stuckTimer = 0;
 

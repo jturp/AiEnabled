@@ -85,7 +85,7 @@ namespace AiEnabled.GameLogic
     MyShipController _fakeBlock = new MyShipController();
     MyIni _ini = new MyIni();
     CubeGridMap _gridMap;
-    RemoteBotAPI.TargetPriorities _targetPriorities;
+    TargetPriorities _targetPriorities;
     string _lastConfig, _knownLootContainers;
     int _nextSpawnTime = 1000, _spawnTimer, _currentSpawnCount;
 
@@ -221,7 +221,7 @@ namespace AiEnabled.GameLogic
       _soldierColor = _zombieColor = _grinderColor = _nomadColor = _enforcerColor = hexColor;
 
       if (_targetPriorities == null)
-        _targetPriorities = new RemoteBotAPI.TargetPriorities();
+        _targetPriorities = new TargetPriorities();
       else
         _targetPriorities.AssignDefaults();
 
@@ -624,7 +624,7 @@ namespace AiEnabled.GameLogic
       }
 
       if (_targetPriorities == null)
-        _targetPriorities = new RemoteBotAPI.TargetPriorities();
+        _targetPriorities = new TargetPriorities();
 
       _targetPriorities.DamageToDisable = ini.Get("Target Priorities", "Only Damage to Disable").ToBoolean(true);
 
@@ -1165,14 +1165,14 @@ namespace AiEnabled.GameLogic
             _priorities.Add(pri.Key);
         }
 
-        bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(_priorities)
+        bot.TargetPriorities = new TargetPriorities(_priorities)
         {
           DamageToDisable = _targetPriorities.DamageToDisable
         };
       }
       else
       {
-        bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(_defaultPriorities)
+        bot.TargetPriorities = new TargetPriorities(_defaultPriorities)
         {
           DamageToDisable = true
         };

@@ -2151,20 +2151,20 @@ namespace AiEnabled.API
 
         if (spawnData.RepairPriorities?.Count > 0)
         {
-          newBot.RepairPriorities = new RemoteBotAPI.RepairPriorities(spawnData.RepairPriorities);
+          newBot.RepairPriorities = new RepairPriorities(spawnData.RepairPriorities);
         }
         else
         {
-          newBot.RepairPriorities = bot.RepairPriorities ?? new RemoteBotAPI.RepairPriorities();
+          newBot.RepairPriorities = bot.RepairPriorities ?? new RepairPriorities();
         }
 
         if (spawnData.TargetPriorities?.Count > 0)
         {
-          newBot.TargetPriorities = new RemoteBotAPI.TargetPriorities(spawnData.TargetPriorities);
+          newBot.TargetPriorities = new TargetPriorities(spawnData.TargetPriorities);
         }
         else
         {
-          newBot.TargetPriorities = bot.TargetPriorities ?? new RemoteBotAPI.TargetPriorities();
+          newBot.TargetPriorities = bot.TargetPriorities ?? new TargetPriorities();
         }
       }
 

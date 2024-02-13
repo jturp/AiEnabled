@@ -398,7 +398,7 @@ namespace AiEnabled.Utilities
       return slim?.CubeGrid.GridIntegerToWorld(slim.Position) ?? Vector3D.Zero;
     }
 
-    public static void PrioritySort(this List<object> list, SortedDictionary<int, List<object>> taskPriorities, RemoteBotAPI.Priorities priorities, Vector3D botPosition, bool ignoreMES = false)
+    public static void PrioritySort(this List<object> list, SortedDictionary<int, List<object>> taskPriorities, Priorities priorities, Vector3D botPosition, bool ignoreMES = false)
     {
       foreach (var kvp in taskPriorities)
         kvp.Value.Clear();
@@ -430,7 +430,7 @@ namespace AiEnabled.Utilities
                 continue;
             }
 
-            var tgtPriorities = priorities as RemoteBotAPI.TargetPriorities;
+            var tgtPriorities = priorities as TargetPriorities;
             if (tgtPriorities?.DamageToDisable == true && block.FatBlock != null)
             {
               var funcBlock = block.FatBlock as IMyFunctionalBlock;

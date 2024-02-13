@@ -433,6 +433,16 @@ namespace AiEnabled.Support
       buttonMapRedo.Action = ReworkGridMap;
       MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonMapRedo);
       controls.Add(buttonMapRedo);
+
+      var buttonObstacles = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnObstacles");
+      buttonObstacles.Enabled = CombineFunc.Create(buttonObstacles.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonObstacles.Visible = CombineFunc.Create(buttonObstacles.Visible, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
+      buttonObstacles.SupportsMultipleBlocks = false;
+      buttonObstacles.Title = MyStringId.GetOrCompute("Clear Obstacles");
+      buttonObstacles.Tooltip = MyStringId.GetOrCompute("Will clear currently blocked paths for the grid map.");
+      buttonObstacles.Action = ClearObstacles;
+      MyAPIGateway.TerminalControls.AddControl<IMyConveyorSorter>(buttonObstacles);
+      controls.Add(buttonObstacles);
     }
 
     private static void ReworkGridMap(IMyTerminalBlock block)
@@ -451,6 +461,24 @@ namespace AiEnabled.Support
         }
       }
     }
+
+    private static void ClearObstacles(IMyTerminalBlock block)
+    {
+      var grid = block?.CubeGrid;
+      if (grid != null)
+      {
+        var pkt = new ResetMapPacket(grid.EntityId, true);
+        AiSession.Instance.Network.SendToServer(pkt);
+
+        var gameLogic = block.GameLogic.GetAs<Factory>();
+        if (gameLogic != null)
+        {
+          gameLogic.ButtonPressed = true;
+          SetContextMessage(block, "Clearing blocked paths...");
+        }
+      }
+    }
+
 
     private static void RandomizeColor(IMyTerminalBlock block)
     {
@@ -497,7 +525,7 @@ namespace AiEnabled.Support
         return;
 
       if (logic.RepairPriorities == null)
-        logic.RepairPriorities = new RemoteBotAPI.RepairPriorities();
+        logic.RepairPriorities = new RepairPriorities();
 
       logic.RepairPriorities.WeldBeforeGrind = enabled;
       logic.UpdatePriorityLists(true, false, false);
@@ -517,7 +545,7 @@ namespace AiEnabled.Support
         return;
 
       if (logic.TargetPriorities == null)
-        logic.TargetPriorities = new RemoteBotAPI.TargetPriorities();
+        logic.TargetPriorities = new TargetPriorities();
 
       logic.TargetPriorities.DamageToDisable = enabled;
       RefreshTerminalControls(block);

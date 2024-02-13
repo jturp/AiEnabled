@@ -46,8 +46,8 @@ namespace AiEnabled.GameLogic
     public HelperInfo SelectedHelper;
     public StringBuilder BotName;
     public Color? BotColor;
-    public RemoteBotAPI.RepairPriorities RepairPriorities;
-    public RemoteBotAPI.TargetPriorities TargetPriorities;
+    public RepairPriorities RepairPriorities;
+    public TargetPriorities TargetPriorities;
     public KeyValuePair<string, bool> SelectedRepairPriority;
     public KeyValuePair<string, bool> SelectedTargetPriority;
     public KeyValuePair<string, bool> SelectedIgnoreItem;
@@ -173,6 +173,8 @@ namespace AiEnabled.GameLogic
             SelectedRole = AiSession.BotType.Combat;
           else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Crew))
             SelectedRole = AiSession.BotType.Crew;
+          else if (AiSession.Instance.CanSpawnBot(AiSession.BotType.Repair)) // this shouldn't be needed, but just in case
+            SelectedRole = AiSession.BotType.Repair;
           else
             AiSession.Instance.Logger.Log($"FactoryBlock.UpdateBeforeFrame: Unable to set role to an allowed type!", MessageType.WARNING);
         }
@@ -196,8 +198,8 @@ namespace AiEnabled.GameLogic
             var idx = item.IndexOf("]");
             if (idx >= 0)
             {
-              var enabled = item.StartsWith("[X]");
               var name = item.Substring(idx + 1).Trim();
+              var enabled = item.StartsWith("[X]");
               var entry = new KeyValuePair<string, bool>(name, enabled);
 
               if (!priListKVP.Contains(entry))
@@ -205,14 +207,14 @@ namespace AiEnabled.GameLogic
             }
           }
 
-          RepairPriorities = new RemoteBotAPI.RepairPriorities(priListKVP)
+          RepairPriorities = new RepairPriorities(priListKVP)
           {
             WeldBeforeGrind = repWeldCheck
           };
         }
         else
         {
-          RepairPriorities = new RemoteBotAPI.RepairPriorities()
+          RepairPriorities = new RepairPriorities()
           {
             WeldBeforeGrind = true
           };
@@ -248,14 +250,14 @@ namespace AiEnabled.GameLogic
             }
           }
 
-          TargetPriorities = new RemoteBotAPI.TargetPriorities(priListKVP)
+          TargetPriorities = new TargetPriorities(priListKVP)
           {
             DamageToDisable = tgtDmgCheck
           };
         }
         else
         {
-          TargetPriorities = new RemoteBotAPI.TargetPriorities()
+          TargetPriorities = new TargetPriorities()
           {
             DamageToDisable = tgtDmgCheck
           };
@@ -276,32 +278,58 @@ namespace AiEnabled.GameLogic
 
         if (ignList?.Count > 0)
         {
+          bool rewrite = false;
           priListKVP.Clear();
           foreach (var item in ignList)
           {
             var idx = item.IndexOf("]");
             if (idx >= 0)
             {
-              var enabled = item.StartsWith("[X]");
               var name = item.Substring(idx + 1).Trim();
-              var entry = new KeyValuePair<string, bool>(name, enabled);
+              if (AiSession.Instance.IgnoreTypeDictionary.ContainsKey(MyStringId.GetOrCompute(name)))
+              {
+                var enabled = item.StartsWith("[X]");
+                var entry = new KeyValuePair<string, bool>(name, enabled);
 
-              if (!priListKVP.Contains(entry))
-                priListKVP.Add(entry);
+                if (!priListKVP.Contains(entry))
+                  priListKVP.Add(entry);
+              }
+              else
+                rewrite = true;
             }
+            else
+              rewrite = true;
           }
 
           RepairPriorities.UpdateIgnoreList(priListKVP);
+
+          if (rewrite)
+          {
+            _priListTemp.Clear();
+            foreach (var item in priListKVP)
+            {
+              var prefix = item.Value ? "[X]" : "[  ]";
+              var entry = $"{prefix} {item.Key}";
+
+              if (!_priListTemp.Contains(entry))
+                _priListTemp.Add(entry);
+            }
+
+            ent.EntityStorage.Write("AiEnabled_IgnoreList", _priListTemp);
+          }
         }
         else
         {
           _priListTemp.Clear();
           foreach (var item in RepairPriorities.IgnoreList)
           {
-            var prefix = item.Value ? "[X]" : "[  ]";
-            var entry = $"{prefix} {item.Key}";
-            if (!_priListTemp.Contains(entry))
-              _priListTemp.Add(entry);
+            if (AiSession.Instance.IgnoreTypeDictionary.ContainsKey(MyStringId.GetOrCompute(item.Key)))
+            {
+              var prefix = item.Value ? "[X]" : "[  ]";
+              var entry = $"{prefix} {item.Key}";
+              if (!_priListTemp.Contains(entry))
+                _priListTemp.Add(entry);
+            }
           }
 
           ent.EntityStorage.Write("AiEnabled_IgnoreList", _priListTemp);
@@ -652,8 +680,8 @@ namespace AiEnabled.GameLogic
 
     void AssignPriorities(BotBase bot)
     {
-      bot.RepairPriorities = new RemoteBotAPI.RepairPriorities(RepairPriorities?.PriorityTypes);
-      bot.TargetPriorities = new RemoteBotAPI.TargetPriorities(TargetPriorities?.PriorityTypes);
+      bot.RepairPriorities = new RepairPriorities(RepairPriorities?.PriorityTypes);
+      bot.TargetPriorities = new TargetPriorities(TargetPriorities?.PriorityTypes);
     }
 
     private void OnMarkForClose(IMyEntity obj)

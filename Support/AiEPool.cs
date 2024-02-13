@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace AiEnabled.Utilities
+namespace AiEnabled.Support
 {
   public class AiEPool<T> where T : class, new()
   {
@@ -23,7 +23,7 @@ namespace AiEnabled.Utilities
 
       if (defaultCapacity > 0) 
       {
-        for (int i = 0; i < defaultCapacity; i++) 
+        for (int i = 0; i < defaultCapacity; i++)
         {
           _stack.Push(new T());
         }
