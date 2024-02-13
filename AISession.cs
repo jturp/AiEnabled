@@ -74,8 +74,9 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.15";
+    public const string VERSION = "v1.8.17";
     const int MIN_SPAWN_COUNT = 3;
+    public static KVPComparer IgnoreListComparer = new KVPComparer();
 
     public uint GlobalSpawnTimer, GlobalSpeakTimer, GlobalMapInitTimer;
 
@@ -373,6 +374,7 @@ namespace AiEnabled
       finally
       {
         Instance = null;
+        IgnoreListComparer = null;
         base.UnloadData();
       }
     }
@@ -775,6 +777,7 @@ namespace AiEnabled
       HealingHash = null;
       AnalyzeHash = null;
       LocalVectorQueuePool = null;
+      IgnoreListComparer = null;
 
       _nameArray = null;
       _nameSB = null;

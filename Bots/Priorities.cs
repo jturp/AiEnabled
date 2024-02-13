@@ -88,7 +88,7 @@ namespace AiEnabled.Bots
 
     internal void UpdateIgnoreList(List<KeyValuePair<string, bool>> ignoreList)
     {
-      var allInvItems = MyDefinitionManager.Static.GetInventoryItemDefinitions();
+      var allInvItems = AiSession.Instance.IgnoreTypeDictionary;
 
       if (IgnoreList == null)
         IgnoreList = new List<KeyValuePair<string, bool>>(allInvItems.Count);
@@ -102,14 +102,13 @@ namespace AiEnabled.Bots
 
       if (ignoreList.Count != allInvItems.Count)
       {
-        foreach (var def in allInvItems)
+        foreach (var kvp in allInvItems)
         {
-          if (def != null && def.Public && def.Id.SubtypeName.IndexOf("Admin", StringComparison.OrdinalIgnoreCase) < 0)
-          {
-            if (IndexOf(def.DisplayNameText) < 0)
-              IgnoreList.Add(new KeyValuePair<string, bool>(def.DisplayNameText, false));
-          }
+          if (IndexOf(kvp.Key.String) < 0)
+            IgnoreList.Add(kvp.Value);
         }
+
+        IgnoreList.Sort(AiSession.IgnoreListComparer);
       }
     }
 
@@ -434,6 +433,14 @@ namespace AiEnabled.Bots
       {
         AssignDefaults();
       }
+    }
+  }
+
+  public class KVPComparer : IComparer<KeyValuePair<string, bool>>
+  {
+    public int Compare(KeyValuePair<string, bool> x, KeyValuePair<string, bool> y)
+    {
+      return x.Key.CompareTo(y.Key);
     }
   }
 }
