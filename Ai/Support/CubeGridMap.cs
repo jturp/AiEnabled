@@ -161,14 +161,14 @@ namespace AiEnabled.Ai.Support
       {
         if (grid?.Physics == null || grid.MarkedForClose)
         {
-          AiSession.Instance.Logger.Log($"CubeGridMap.ctor: Grid '{grid?.DisplayName ?? "NULL"}' was null or marked for close in constructor!", MessageType.WARNING);
+          AiSession.Instance.Logger.Warning($"CubeGridMap.ctor: Grid '{grid?.DisplayName ?? "NULL"}' was null or marked for close in constructor!");
           return;
         }
 
         var gridGroup = grid.GetGridGroup(GridLinkTypeEnum.Mechanical);
         if (gridGroup == null)
         {
-          AiSession.Instance.Logger.Log($"CubeGridMap.ctor: GridGroup was null for '{grid.DisplayName}'", MessageType.WARNING);
+          AiSession.Instance.Logger.Warning($"CubeGridMap.ctor: GridGroup was null for '{grid.DisplayName}'");
           return;
         }
 
@@ -179,7 +179,7 @@ namespace AiEnabled.Ai.Support
         {
           AiSession.Instance.GridGroupListPool?.Return(ref GridCollection);
 
-          AiSession.Instance.Logger.Log($"CubeGridMap.ctor: GridCollection was empty for '{grid.DisplayName}'", MessageType.WARNING);
+          AiSession.Instance.Logger.Warning($"CubeGridMap.ctor: GridCollection was empty for '{grid.DisplayName}'");
           return;
         }
 
@@ -375,7 +375,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.ctor: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.ctor: {ex}");
       }
     }
 
@@ -402,7 +402,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.GridGroup_OnGridRemoved: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.GridGroup_OnGridRemoved: {ex}");
       }
     }
 
@@ -429,7 +429,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.GridGroup_OnGridAdded: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.GridGroup_OnGridAdded: {ex}");
       }
     }
 
@@ -480,7 +480,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.GridGroup_OnReleased: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.GridGroup_OnReleased: {ex}");
       }
     }
 
@@ -526,7 +526,7 @@ namespace AiEnabled.Ai.Support
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.UpdateGridCollection: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.UpdateGridCollection: {ex}");
       }
     }
 
@@ -666,7 +666,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.Close: {ex}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.Close: {ex}");
       }
       finally
       {
@@ -692,7 +692,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.HookEventsForGrid: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.HookEventsForGrid: {ex}");
       }
     }
 
@@ -792,7 +792,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.UnhookEventsForGrid: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.UnhookEventsForGrid: {ex}");
       }
     }
 
@@ -834,7 +834,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.UpdateMainGrid: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.UpdateMainGrid: {ex}");
       }
     }
 
@@ -853,7 +853,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.OnGridPositionChanged: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.OnGridPositionChanged: {ex}");
       }
     }
 
@@ -970,7 +970,7 @@ namespace AiEnabled.Ai.Support
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.CloseGrid: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.CloseGrid: {ex}");
       }
     }
 
@@ -984,7 +984,7 @@ namespace AiEnabled.Ai.Support
         AiSession.Instance.Logger.ClearCached();
         AiSession.Instance.Logger.AddLine($"Exceptions found during RemovePlanetTiles task!\n");
         foreach (var ex in _asyncTileTask.Exceptions)
-          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+          AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
         AiSession.Instance.Logger.LogAll();
         MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
@@ -1039,7 +1039,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.RemovePlanetTilesAsync: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.RemovePlanetTilesAsync: {ex}");
       }
     }
 
@@ -2069,7 +2069,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception during InitGridArea: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception during InitGridArea: {ex}");
       }
     }
 
@@ -3268,7 +3268,7 @@ namespace AiEnabled.Ai.Support
             AiSession.Instance.Logger.ClearCached();
             AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
             foreach (var ex in _updateTask.Exceptions)
-              AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+              AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
             AiSession.Instance.Logger.LogAll();
             MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
@@ -3286,7 +3286,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.ProcessBlockChanges: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.ProcessBlockChanges: {ex}");
       }
     }
 
@@ -3476,7 +3476,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception during block update task: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception during block update task: {ex}");
       }
     }
 
@@ -3489,7 +3489,7 @@ namespace AiEnabled.Ai.Support
           AiSession.Instance.Logger.ClearCached();
           AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
           foreach (var ex in _interiorNodesTask.Exceptions)
-            AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+            AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
           AiSession.Instance.Logger.LogAll();
           MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
@@ -3575,11 +3575,10 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        var msg = $"Exception in CubeGridMap.Door_OnMarkForClose: {ex.Message}\n{ex.StackTrace}";
-        AiSession.Instance.Logger.Log(msg, MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.Door_OnMarkForClose: {ex}");
 
         if (MyAPIGateway.Session?.Player != null)
-          AiSession.Instance.ShowMessage(msg);
+          AiSession.Instance.ShowMessage($"Exception in CubeGridMap.Door_OnMarkForClose: {ex.Message}");
       }
     }
 
@@ -3650,11 +3649,10 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        var msg = $"Exception in CubeGridMap.Door_EnabledChanged: {ex.Message}\n{ex.StackTrace}";
-        AiSession.Instance.Logger.Log(msg, MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CubeGridMap.Door_EnabledChanged: {ex}");
 
         if (MyAPIGateway.Session?.Player != null)
-          AiSession.Instance.ShowMessage(msg);
+          AiSession.Instance.ShowMessage($"Exception in CubeGridMap.Door_EnabledChanged: {ex.Message}");
       }
     }
 
@@ -4343,7 +4341,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.Planet_RangeChanged: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.Planet_RangeChanged: {ex}");
       }
     }
 
@@ -4379,7 +4377,7 @@ namespace AiEnabled.Ai.Support
               AiSession.Instance.Logger.ClearCached();
               AiSession.Instance.Logger.AddLine($"Exceptions found during update task!\n");
               foreach (var ex in _updateTask.Exceptions)
-                AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+                AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
               AiSession.Instance.Logger.LogAll();
               MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
@@ -4397,7 +4395,7 @@ namespace AiEnabled.Ai.Support
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.UpdateVoxels: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in CubeGridMap.UpdateVoxels: {ex}");
       }
     }
 
@@ -4495,7 +4493,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in ApplyVoxelChanges: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in ApplyVoxelChanges: {ex}");
       }
     }
 

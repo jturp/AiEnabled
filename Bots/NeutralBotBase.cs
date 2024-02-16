@@ -119,7 +119,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in NeutralBotBase.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in NeutralBotBase.Close: {ex}");
       }
       finally
       {

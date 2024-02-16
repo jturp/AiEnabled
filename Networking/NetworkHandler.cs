@@ -58,7 +58,7 @@ namespace AiEnabled.Networking
       }
       catch (Exception e)
       {
-        SessionComp?.Logger?.Log($"Error in Networking.ReceivedPacket:\n{e.Message}\n{e.StackTrace}", MessageType.ERROR);
+        SessionComp?.Logger?.Error($"Error in Networking.ReceivedPacket:\n{e}");
 
         if (MyAPIGateway.Session?.Player != null)
           MyAPIGateway.Utilities.ShowNotification($"[ERROR: {GetType().FullName}: {e.Message} | Send log to mod author]", 10000, MyFontEnum.Red);
@@ -124,8 +124,7 @@ namespace AiEnabled.Networking
       }
       catch(Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in RelayToClients: Packet type = {packet?.GetType().FullName ?? "NULL"}", MessageType.ERROR);
-        AiSession.Instance.Logger.Log($"Exception: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in RelayToClients: Packet type = {packet?.GetType().FullName ?? "NULL"}\n{ex}");
         return;
       }
 

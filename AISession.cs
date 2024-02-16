@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.17";
+    public const string VERSION = "v1.8.18";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -1886,7 +1886,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger?.Log($"Exception in AiSession.BeforeStart: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger?.Error($"Exception in AiSession.BeforeStart: {ex}");
         UnloadModData();
       }
       finally
@@ -1968,7 +1968,7 @@ namespace AiEnabled
       }
       catch (Exception e)
       {
-        Logger?.Log($"Exception in UpdateConfig: {e.Message}\n{e.StackTrace}\n", MessageType.ERROR);
+        Logger?.Error($"Exception in UpdateConfig: {e}\n");
       }
     }
 
@@ -2010,7 +2010,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in HudAPICallback: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in HudAPICallback: {ex}");
       }
     }
 
@@ -2026,7 +2026,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionAutoAcceptChanged: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in Factions_FactionAutoAcceptChanged: {ex}");
       }
     }
 
@@ -2062,7 +2062,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionStateChanged: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in Factions_FactionStateChanged: {ex}");
       }
     }
 
@@ -2114,7 +2114,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionEdited: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in Factions_FactionEdited: {ex}");
       }
     }
 
@@ -2154,7 +2154,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in Factions_FactionCreated: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in Factions_FactionCreated: {ex}");
       }
     }
 
@@ -2475,7 +2475,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerLeftCockpitDelayed: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in PlayerLeftCockpitDelayed: {ex}");
       }
     }
 
@@ -2494,7 +2494,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerLeftCockpit: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in PlayerLeftCockpit: {ex}" );
       }
     }
 
@@ -2664,7 +2664,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerEnteredCockpitDelayed: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in PlayerEnteredCockpitDelayed: {ex}");
       }
     }
 
@@ -2683,7 +2683,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in PlayerEnteredCockpit: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in PlayerEnteredCockpit: {ex}");
       }
     }
 
@@ -3025,7 +3025,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in BeforeDamageHandler: Target = {target?.GetType().FullName ?? "NULL"}, Info = {info.Type}x{info.Amount} by {info.AttackerId}\nExeption: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in BeforeDamageHandler: Target = {target?.GetType().FullName ?? "NULL"}, Info = {info.Type}x{info.Amount} by {info.AttackerId}\nExeption: {ex}");
       }
     }
 
@@ -3262,7 +3262,7 @@ namespace AiEnabled
       }
       catch(Exception ex)
       {
-        Logger.Log($"Exception in AiSession.PlayerDisconnected: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in AiSession.PlayerDisconnected: {ex}");
       }
     }
 
@@ -3458,29 +3458,12 @@ namespace AiEnabled
           if (_botsToClose.Count == 0)
           {
             _controllerSet = true;
-
-            if (!_firstCacheComplete && CanSpawn)
-            {
-              _firstCacheComplete = true;
-              var elapsed = MyAPIGateway.Session.ElapsedPlayTime - _firstFrameTime;
-              var hours = elapsed.Hours;
-              var mins = elapsed.Minutes - (60 * hours);
-              var secs = Math.Round(elapsed.TotalSeconds - (60 * mins), 3);
-
-              if (secs >= 60)
-              {
-                mins++;
-                secs -= 60;
-              }
-
-              Logger.Log($"Mod setup completed in {hours}H {mins}M {secs:0.###}S");
-            }
           }
         }
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in AiSession.OnEntityRemove: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in AiSession.OnEntityRemove: {ex}");
       }
     }
 
@@ -3645,7 +3628,7 @@ namespace AiEnabled
       }
       catch (Exception e)
       {
-        Logger?.Log($"Exception occurred in AiEnabled.AiSession.MyEntities_OnEntityAdd:\n{e.Message}\n{e.StackTrace}", MessageType.ERROR);
+        Logger?.Error($"Exception occurred in AiEnabled.AiSession.MyEntities_OnEntityAdd:\n{e}");
       }
     }
 
@@ -3868,7 +3851,7 @@ namespace AiEnabled
       catch (Exception ex)
       {
         ShowMessage($"Error during command execution: {ex.Message}");
-        Logger.Log($"Exception during command execution: '{messageText}'\n {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception during command execution: '{messageText}'\n {ex}");
       }
     }
 
@@ -4112,7 +4095,7 @@ namespace AiEnabled
       }
       catch(Exception ex)
       {
-        Logger.Log($"Exception in AiSession.HandleInput: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in AiSession.HandleInput: {ex}");
       }
       finally
       {
@@ -4182,7 +4165,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in AiSession.Draw: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in AiSession.Draw: {ex}");
       }
       finally
       {
@@ -4328,7 +4311,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in AiSession.SaveData(): {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in AiSession.SaveData(): {ex}");
       }
       finally
       {
@@ -4493,7 +4476,7 @@ namespace AiEnabled
       catch (Exception ex)
       {
         ShowMessage($"Error in UpdateBeforeSim: {ex.Message}", timeToLive: 5000);
-        Logger.Log($"Exception in AiSession.UpdateBeforeSim: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        Logger.Error($"Exception in AiSession.UpdateBeforeSim: {ex}");
         //UnloadModData();
       }
       finally
@@ -4855,7 +4838,7 @@ namespace AiEnabled
       }
       catch(Exception ex)
       {
-        Logger.Log($"Exception in DoTickNow.IsClient: {ex.ToString()}", MessageType.ERROR);
+        Logger.Error($"Exception in DoTickNow.IsClient: {ex}");
         return;
       }
 
@@ -5028,7 +5011,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log($"Exception in DoTickNow.ServerStuff: {ex.ToString()}", MessageType.ERROR);
+        Logger.Error($"Exception in DoTickNow.ServerStuff: {ex}");
       }
     }
 
@@ -5074,7 +5057,7 @@ namespace AiEnabled
       }
       catch (Exception ex)
       {
-        Logger.Log(ex.ToString(), MessageType.ERROR);
+        Logger.Error(ex.ToString());
       }
     }
 
@@ -5407,6 +5390,23 @@ namespace AiEnabled
     {
       if (IsServer)
       {
+        if (!_firstCacheComplete && CanSpawn)
+        {
+          _firstCacheComplete = true;
+          var elapsed = MyAPIGateway.Session.ElapsedPlayTime - _firstFrameTime;
+          var hours = elapsed.Hours;
+          var mins = elapsed.Minutes - (60 * hours);
+          var secs = Math.Round(elapsed.TotalSeconds - (60 * mins), 3);
+
+          if (secs >= 60)
+          {
+            mins++;
+            secs -= 60;
+          }
+
+          Logger.Log($"Mod setup completed in {hours}H {mins}M {secs:0.###}S");
+        }
+
         if (_gpsUpdatesAvailable)
           SendGPSEntriesToPlayers();
 
@@ -6432,7 +6432,7 @@ namespace AiEnabled
         }
         catch (Exception ex)
         {
-          Logger.Log($"Error trying to update faction safezones: {ex.ToString()}", MessageType.ERROR);
+          Logger.Error($"Error trying to update faction safezones: {ex}");
         }
       }
 

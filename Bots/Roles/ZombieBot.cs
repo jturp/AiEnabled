@@ -82,7 +82,7 @@ namespace AiEnabled.Bots.Roles
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in ZombieBot.CleanUp: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in ZombieBot.CleanUp: {ex}");
       }
       finally
       {

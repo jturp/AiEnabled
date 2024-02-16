@@ -76,7 +76,7 @@ namespace AiEnabled.Networking.Packets
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Error in RadioRecallPacket.Received: {ex.ToString()}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Error in RadioRecallPacket.Received: {ex}");
       }
 
       return false;

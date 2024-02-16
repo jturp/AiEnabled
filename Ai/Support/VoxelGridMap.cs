@@ -655,7 +655,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in VoxelGridMap.Planet_RangeChanged: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in VoxelGridMap.Planet_RangeChanged: {ex}");
       }
     }
 
@@ -691,7 +691,7 @@ namespace AiEnabled.Ai.Support
               AiSession.Instance.Logger.ClearCached();
               AiSession.Instance.Logger.AddLine($"Exceptions found during voxel update task!\n");
               foreach (var ex in _updateTask.Exceptions)
-                AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+                AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
               AiSession.Instance.Logger.LogAll();
               MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
@@ -709,7 +709,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in VoxelGridMap.UpdateVoxels: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in VoxelGridMap.UpdateVoxels: {ex}");
       }
     }
 
@@ -778,7 +778,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in ApplyVoxelChanges: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in ApplyVoxelChanges: {ex}");
       }
     }
 
@@ -821,7 +821,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in InitGridArea ({Key}): {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in InitGridArea ({Key}): {ex}");
         throw;
       }
     }
@@ -1077,7 +1077,7 @@ namespace AiEnabled.Ai.Support
         AiSession.Instance.Logger.ClearCached();
         AiSession.Instance.Logger.AddLine($"Exceptions found during pathfinder task!\n");
         foreach (var ex in _obstacleTask.Exceptions)
-          AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+          AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
         AiSession.Instance.Logger.LogAll();
         MyAPIGateway.Utilities.ShowNotification($"Exception during ObstacleTask!");
@@ -1280,7 +1280,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in {this.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in {this.GetType().FullName}: {ex}");
       }
       finally
       {

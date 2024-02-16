@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
 using VRage.Utils;
+using AiEnabled.Utilities;
 
 namespace AiEnabled.Bots.Behaviors
 {
@@ -98,7 +99,7 @@ namespace AiEnabled.Bots.Behaviors
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotBehavior.Speak: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotBehavior.Speak: {ex}");
       }
     }
 
@@ -147,7 +148,7 @@ namespace AiEnabled.Bots.Behaviors
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotBehavior.Sing: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotBehavior.Sing: {ex}");
       }
     }
 
@@ -183,7 +184,7 @@ namespace AiEnabled.Bots.Behaviors
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotBehavior.Perform: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotBehavior.Perform: {ex}");
       }
     }
 
@@ -228,7 +229,7 @@ namespace AiEnabled.Bots.Behaviors
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotBehavior.ApplyPain: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotBehavior.ApplyPain: {ex}");
       }
     }
 

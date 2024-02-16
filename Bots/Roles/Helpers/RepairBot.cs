@@ -90,7 +90,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in RepairBot.CleanUp: {ex}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in RepairBot.CleanUp: {ex}");
       }
       finally
       {
@@ -145,7 +145,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in RepairBot.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in RepairBot.Close: {ex}");
       }
       finally
       {
@@ -524,7 +524,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
             if (!inv.CanItemsBeAdded(1, floater.ItemDefinition.Id))
             {
-              if (isFriendlyMap)
+              if (isGridGraph && isFriendlyMap && graph.InventoryCache.ShouldSendToUnload(this))
               {
                 // inv too full, send bot to drop off current stock
 

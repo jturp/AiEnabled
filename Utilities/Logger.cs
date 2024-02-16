@@ -86,7 +86,7 @@ namespace AiEnabled.Utilities
         else
           text = IndentifyText(text);
 
-        _writer.Write($"{DateTimeNow} [T{System.Environment.CurrentManagedThreadId}] [DS={MyAPIGateway.Utilities.IsDedicated}] {msgType} | {text}");
+        _writer.Write($"{DateTimeNow} [T{Environment.CurrentManagedThreadId}] [DS={MyAPIGateway.Utilities.IsDedicated}] {msgType} | {text}");
 
         if (_builder.Length > 0)
         {
@@ -106,15 +106,35 @@ namespace AiEnabled.Utilities
 
       lock (_writer)
       {
-        _writer.Write($"{DateTimeNow} [T{System.Environment.CurrentManagedThreadId}] [DS={MyAPIGateway.Utilities.IsDedicated}] {msgType} | {text}\n");
+        _writer.Write($"{DateTimeNow} [T{Environment.CurrentManagedThreadId}] [DS={MyAPIGateway.Utilities.IsDedicated}] {msgType} | {text}\n");
         _writer.Flush();
       }
     }
 
-    public void Log(StringBuilder text, MessageType msgType = MessageType.DEBUG)
+    public void Log(StringBuilder text, MessageType msgType = MessageType.INFO)
     {
       if (!_isClosed)
         Log(text.ToString(), msgType);
+    }
+
+    public void Info(string text)
+    {
+      Log(text, MessageType.INFO);
+    }
+
+    public void Debug(string text)
+    {
+      Log(text, MessageType.DEBUG);
+    }
+
+    public void Warning(string text) 
+    {
+      Log(text, MessageType.WARNING);
+    }
+
+    public void Error(string text)
+    {
+      Log(text, MessageType.ERROR);
     }
 
     string IndentifyText(string text)
@@ -175,5 +195,5 @@ namespace AiEnabled.Utilities
     }
   }
 
-  public enum MessageType { ERROR, WARNING, DEBUG }
+  public enum MessageType { ERROR, WARNING, DEBUG, INFO }
 }

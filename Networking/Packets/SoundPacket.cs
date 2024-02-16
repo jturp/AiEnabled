@@ -50,7 +50,7 @@ namespace AiEnabled.Networking
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in SoundPacket.Received: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in SoundPacket.Received: {ex}");
       }
 
       return false;

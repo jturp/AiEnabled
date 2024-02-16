@@ -248,7 +248,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.DrawRadialMenu: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.DrawRadialMenu: {ex}");
       }
     }
 
@@ -304,7 +304,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.DrawInteractMessage: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.DrawInteractMessage: {ex}");
       }
     }
 
@@ -377,7 +377,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception e)
       {
-        AiSession.Instance.Logger.Log($"Exception in UpdateBlackList: {e.Message}\n{e.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in UpdateBlackList: {e}");
         return false;
       }
     }
@@ -458,7 +458,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.Close: {ex}");
       }
     }
 
@@ -494,7 +494,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.CloseMenu: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.CloseMenu: {ex}");
       }
     }
 
@@ -511,7 +511,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.CloseInteractMessage: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.CloseInteractMessage: {ex}");
       }
     }
 
@@ -1394,7 +1394,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.ActivateInventory: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.ActivateInventory: {ex}");
       }
     }
 
@@ -1941,7 +1941,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.HideInventoryScreen: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.HideInventoryScreen: {ex}");
       }
     }
 
@@ -1971,7 +1971,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.GuiControlRemoved: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.GuiControlRemoved: {ex}");
       }
     }
 
@@ -2496,7 +2496,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CommandMenu.Init: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CommandMenu.Init: {ex}");
         return false;
       }
 

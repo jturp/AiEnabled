@@ -1226,7 +1226,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotBase.InitDeadBodyPhysics: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotBase.InitDeadBodyPhysics: {ex}");
       }
     }
 
@@ -4558,7 +4558,7 @@ namespace AiEnabled.Bots
           AiSession.Instance.Logger.ClearCached();
           AiSession.Instance.Logger.AddLine($"Exceptions found during pathfinder task!\n");
           foreach (var ex in _pathingTask.Exceptions)
-            AiSession.Instance.Logger.AddLine($" -> {ex.Message}\n{ex.StackTrace}\n");
+            AiSession.Instance.Logger.AddLine($" -> {ex}\n");
 
           AiSession.Instance.Logger.LogAll();
           MyAPIGateway.Utilities.ShowNotification($"Exception during task!");
@@ -4758,7 +4758,7 @@ namespace AiEnabled.Bots
         if (MyAPIGateway.Session?.Player != null)
           MyAPIGateway.Utilities.ShowNotification($"Exception in UsePathFinder: {ex.Message}", 10000);
 
-        AiSession.Instance.Logger.LogAll($"Exception in AiEnabled.BotBase.UsePathFinder: {ex.Message}\n{ex.StackTrace}\n", MessageType.ERROR);
+        AiSession.Instance.Logger.LogAll($"Exception in AiEnabled.BotBase.UsePathFinder: {ex}\n", MessageType.ERROR);
       }
     }
 
@@ -5999,7 +5999,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Error checking for obstacles: {ex.Message}\n{ex.StackTrace}\n", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Error checking for obstacles: {ex}\n");
       }
 
       return false;
@@ -6147,23 +6147,44 @@ namespace AiEnabled.Bots
           WaitForStuckTimer = false;
         }
 
+        Vector3 newMovement = Vector3.Zero;
         if (JetpackEnabled)
         {
-          if (_stuckTimerReset <= 30)
-          {
-            movement *= 0.5f;
+          GetUnstuckMovement(ref newMovement, true);
 
-            if (_stuckCounter == 1)
-              movement += Vector3.Up * 0.5f;
-            else if (_stuckTimer == 2)
-              movement += Vector3.Down * 0.5f;
+          if (newMovement == Vector3.Zero)
+          {
+            if (_stuckTimerReset <= 30)
+            {
+              movement *= 0.5f;
+
+              if (_stuckCounter == 1)
+                movement += Vector3.Up * 0.5f;
+              else if (_stuckTimer == 2)
+                movement += Vector3.Down * 0.5f;
+            }
+            else
+              movement = Vector3.Forward * 0.5f;
           }
           else
-            movement = Vector3.Forward * 0.5f;
+          {
+            movement = newMovement;
+            rotation = Vector2.Zero;
+          }
         }
         else
         {
-          rotation *= -1;
+          GetUnstuckMovement(ref newMovement, false);
+
+          if (newMovement == Vector3.Zero)
+          {
+            rotation *= -1;
+          }
+          else
+          {
+            movement = newMovement;
+            rotation = Vector2.Zero;
+          }
 
           if (_stuckTimerReset > 40)
           {
@@ -6185,6 +6206,207 @@ namespace AiEnabled.Bots
       }
 
       Character.MoveAndRotate(movement, rotation, roll);
+    }
+
+    void GetUnstuckMovement(ref Vector3 movement, bool isFlight)
+    {
+      try
+      {
+        var hitList = AiSession.Instance.HitListPool.Get();
+
+        var botPosition = Character.WorldAABB.Center;
+        var botHead = botPosition + WorldMatrix.Up * 0.75;
+        var botFeet = botPosition + WorldMatrix.Down * 0.75;
+        var fwdVec = WorldMatrix.Forward * 2.5;
+        var bwdVec = WorldMatrix.Backward * 2.5;
+        var lftVec = WorldMatrix.Left * 2.5;
+        var rgtVec = WorldMatrix.Right * 2.5;
+
+        movement = Vector3.Zero;
+        bool up = false, down = false, front = false, back = false, left = false, right = false;
+
+        if (isFlight)
+        {
+          // Check all 6 directions
+
+          var upVec = WorldMatrix.Up * 2.5;
+          var dwnVec = WorldMatrix.Down * 2.5;
+
+          // up - head stuck?
+          MyAPIGateway.Physics.CastRay(botPosition, botPosition + upVec, hitList, CollisionLayers.CharacterCollisionLayer);
+          for (int i = 0; i < hitList.Count; i++)
+          {
+            var hit = hitList[i];
+            if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+            {
+              up = true;
+            }
+          }
+
+          // down - feet stuck?
+          if (up)
+          {
+            hitList.Clear();
+            MyAPIGateway.Physics.CastRay(botPosition, botPosition + dwnVec, hitList, CollisionLayers.CharacterCollisionLayer);
+            for (int i = 0; i < hitList.Count; i++)
+            {
+              var hit = hitList[i];
+              if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+              {
+                down = true;
+              }
+            }
+          }
+        }
+
+        // front
+        hitList.Clear();
+        MyAPIGateway.Physics.CastRay(botHead, botHead + fwdVec, hitList, CollisionLayers.CharacterCollisionLayer);
+        for (int i = 0; i < hitList.Count; i++)
+        {
+          var hit = hitList[i];
+          if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+          {
+            front = true;
+          }
+        }
+
+        if (!front)
+        {
+          hitList.Clear();
+          MyAPIGateway.Physics.CastRay(botFeet, botFeet + fwdVec, hitList, CollisionLayers.CharacterCollisionLayer);
+          for (int i = 0; i < hitList.Count; i++)
+          {
+            var hit = hitList[i];
+            if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+            {
+              front = true;
+            }
+          }
+        }
+
+        // back
+        if (front)
+        {
+          hitList.Clear();
+          MyAPIGateway.Physics.CastRay(botHead, botHead + bwdVec, hitList, CollisionLayers.CharacterCollisionLayer);
+          for (int i = 0; i < hitList.Count; i++)
+          {
+            var hit = hitList[i];
+            if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+            {
+              back = true;
+            }
+          }
+
+          if (!back)
+          {
+            hitList.Clear();
+            MyAPIGateway.Physics.CastRay(botFeet, botFeet + bwdVec, hitList, CollisionLayers.CharacterCollisionLayer);
+            for (int i = 0; i < hitList.Count; i++)
+            {
+              var hit = hitList[i];
+              if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+              {
+                back = true;
+              }
+            }
+          }
+        }
+
+        // left
+        hitList.Clear();
+        MyAPIGateway.Physics.CastRay(botHead, botHead + lftVec, hitList, CollisionLayers.CharacterCollisionLayer);
+        for (int i = 0; i < hitList.Count; i++)
+        {
+          var hit = hitList[i];
+          if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+          {
+            left = true;
+          }
+        }
+
+        if (!left)
+        {
+          hitList.Clear();
+          MyAPIGateway.Physics.CastRay(botFeet, botFeet + lftVec, hitList, CollisionLayers.CharacterCollisionLayer);
+          for (int i = 0; i < hitList.Count; i++)
+          {
+            var hit = hitList[i];
+            if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+            {
+              left = true;
+            }
+          }
+        }
+
+        // right
+        if (left)
+        {
+          hitList.Clear();
+          MyAPIGateway.Physics.CastRay(botHead, botHead + rgtVec, hitList, CollisionLayers.CharacterCollisionLayer);
+          for (int i = 0; i < hitList.Count; i++)
+          {
+            var hit = hitList[i];
+            if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+            {
+              right = true;
+            }
+          }
+
+          if (!left)
+          {
+            hitList.Clear();
+            MyAPIGateway.Physics.CastRay(botFeet, botFeet + rgtVec, hitList, CollisionLayers.CharacterCollisionLayer);
+            for (int i = 0; i < hitList.Count; i++)
+            {
+              var hit = hitList[i];
+              if (hit?.HitEntity != null && hit.HitEntity.EntityId != Character.EntityId && hit.HitEntity.EntityId != Character.EquippedTool?.EntityId)
+              {
+                right = true;
+              }
+            }
+          }
+        }
+
+        var upOrDown = up || down;
+
+        if (up)
+        {
+          if (!down)
+            movement += (Vector3)WorldMatrix.Down;
+        }
+        else if (down || isFlight)
+        {
+          movement += (Vector3)WorldMatrix.Up;
+        }
+
+        if (front)
+        {
+          if (!back)
+            movement += (Vector3)WorldMatrix.Backward * (upOrDown ? 0.5f : 1f);
+        }
+        else if (back)
+        {
+          movement += (Vector3)WorldMatrix.Forward * (upOrDown ? 0.5f : 1f);
+        }
+
+        if (left)
+        {
+          if (!right)
+            movement += (Vector3)WorldMatrix.Right * (upOrDown ? 0.5f : 1f);
+        }
+        else if (right)
+        {
+          movement += (Vector3)WorldMatrix.Left * (upOrDown ? 0.5f : 1f);
+        }
+
+        AiSession.Instance.HitListPool.Return(ref hitList);
+      }
+      catch(Exception ex)
+      {
+        AiSession.Instance.Logger.Error(ex.ToString());
+      }
     }
 
     internal virtual void SimulateIdleMovement(bool getMoving, bool towardOwner = false, double distanceCheck = 3)

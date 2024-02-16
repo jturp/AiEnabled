@@ -34,9 +34,29 @@ namespace AiEnabled.Networking.Packets
       {
         if (map?.IsValid == true)
         {
-          if (ObstaclesOnly)
+          if (ObstaclesOnly && map.MainGrid != null)
           {
             map.ClearTempObstacles();
+
+            List<BotBase> helpers = null;
+            var playerId = MyAPIGateway.Players.TryGetIdentityId(SenderId);
+
+            if (playerId > 0 && AiSession.Instance?.PlayerToHelperDict?.TryGetValue(playerId, out helpers) == true && helpers?.Count > 0)
+            {
+              for (int i = 0; i < helpers.Count; i++)
+              {
+                try
+                {
+                  var bot = helpers[i];
+                  var gridGraph = bot?._currentGraph as CubeGridMap;
+                  if (gridGraph?.MainGrid?.EntityId == map.MainGrid.EntityId)
+                  {
+                    bot._pathCollection?.ClearObstacles(true);
+                  }
+                }
+                catch { }
+              }
+            }
           }
           else
           {
@@ -48,29 +68,6 @@ namespace AiEnabled.Networking.Packets
         {
           map?.Close();
           AiSession.Instance.GridGraphDict.Remove(MapId);
-        }
-      }
-
-      if (ObstaclesOnly && map?.MainGrid != null)
-      {
-        List<BotBase> helpers = null;
-        var playerId = MyAPIGateway.Players.TryGetIdentityId(SenderId);
-
-        if (playerId > 0 && AiSession.Instance?.PlayerToHelperDict?.TryGetValue(playerId, out helpers) == true && helpers?.Count > 0)
-        {
-          for (int i = 0; i < helpers.Count; i++)
-          {
-            try
-            {
-              var bot = helpers[i];
-              var gridGraph = bot?._currentGraph as CubeGridMap;
-              if (gridGraph?.MainGrid?.EntityId == map.MainGrid.EntityId)
-              {
-                bot._pathCollection?.ClearObstacles(true);
-              }
-            }
-            catch { }
-          }
         }
       }
 

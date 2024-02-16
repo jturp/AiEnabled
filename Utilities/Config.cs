@@ -27,8 +27,8 @@ namespace AiEnabled.Utilities
       }
       catch (Exception e)
       {
-        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.ReadFileFromLocalStorage: {e.Message}\n{e.StackTrace}");
-        log?.LogAll($"Error reading the file '{filename}' from local storage\n{e.Message}\n\n{e.StackTrace}", MessageType.ERROR);
+        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.ReadFileFromLocalStorage: {e}");
+        log?.LogAll($"Error reading the file '{filename}' from local storage\n{e}", MessageType.ERROR);
         return default(T);
       }
     }
@@ -48,8 +48,8 @@ namespace AiEnabled.Utilities
       }
       catch (Exception e)
       {
-        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.ReadFileFromWorldStorage: {e.Message}\n{e.StackTrace}");
-        log?.LogAll($"Error reading the file '{filename}' from world storage\n{e.Message}\n\n{e.StackTrace}", MessageType.ERROR);
+        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.ReadFileFromWorldStorage: {e}");
+        log?.LogAll($"Error reading the file '{filename}' from world storage\n{e}", MessageType.ERROR);
         return default(T);
       }
     }
@@ -70,8 +70,8 @@ namespace AiEnabled.Utilities
       }
       catch (Exception e)
       {
-        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.WriteFileToWorldStorage: {e.Message}\n{e.StackTrace}");
-        log?.LogAll($"Error writing the file '{filename}' in world storage\n{e.Message}\n\n{e.StackTrace}", MessageType.ERROR);
+        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.WriteFileToWorldStorage: {e}");
+        log?.LogAll($"Error writing the file '{filename}' in world storage\n{e}", MessageType.ERROR);
       }
     }
 
@@ -90,8 +90,8 @@ namespace AiEnabled.Utilities
       }
       catch (Exception e)
       {
-        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.WriteFileToLocalStorage: {e.Message}\n{e.StackTrace}");
-        log?.LogAll($"Error writing the file '{filename}' in local storage\n{e.Message}\n\n{e.StackTrace}", MessageType.ERROR);
+        MyLog.Default.WriteLineAndConsole($"Error in AiEnabled.Config.WriteFileToLocalStorage: {e}");
+        log?.LogAll($"Error writing the file '{filename}' in local storage\n{e}", MessageType.ERROR);
       }
     }
 

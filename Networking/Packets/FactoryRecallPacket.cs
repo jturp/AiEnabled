@@ -160,7 +160,7 @@ namespace AiEnabled.Networking
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in FactoryRecallPacket.Received: {ex.Message}\n{ex.StackTrace}", Utilities.MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in FactoryRecallPacket.Received: {ex}");
         return false;
       }
     }

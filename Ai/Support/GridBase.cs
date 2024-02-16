@@ -1027,7 +1027,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotFactory.GetLargestGridForMap: {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance.Logger.Log($"Exception in BotFactory.GetLargestGridForMap: {ex}");
         return null;
       }
     }
@@ -1401,7 +1401,7 @@ namespace AiEnabled.Ai.Support
       }
       catch(Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception during GridBase.Close(): {ex.Message}\n{ex.StackTrace}");
+        AiSession.Instance?.Logger?.Log($"Exception during GridBase.Close(): {ex}");
       }
     }
 

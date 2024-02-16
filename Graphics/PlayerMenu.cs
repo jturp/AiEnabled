@@ -749,7 +749,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception e)
       {
-        AiSession.Instance.Logger.Log($"Exception in ResumeBotsKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in ResumeBotsKeyBind_Submitted:\n{e}");
       }
     }
 
@@ -764,7 +764,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception e)
       {
-        AiSession.Instance.Logger.Log($"Exception in RadioRecallKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in RadioRecallKeyBind_Submitted:\n{e}");
       }
     }
 
@@ -779,7 +779,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception e)
       {
-        AiSession.Instance.Logger.Log($"Exception in ComeCloserKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in ComeCloserKeyBind_Submitted:\n{e}");
       }
     }
 
@@ -794,7 +794,7 @@ namespace AiEnabled.Graphics
       }
       catch (Exception e)
       {
-        AiSession.Instance.Logger.Log($"Exception in SpreadOutKeyBind_Submitted:\n{e.ToString()}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in SpreadOutKeyBind_Submitted:\n{e}");
       }
     }
 

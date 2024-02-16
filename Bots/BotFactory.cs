@@ -377,7 +377,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.GetInterioNodes: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.GetInterioNodes: {ex}");
       }
     }
 
@@ -671,7 +671,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.TrySeatBotOnGrid: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.TrySeatBotOnGrid: {ex}");
         return false;
       }
     }
@@ -751,7 +751,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.TrySeatBot: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.TrySeatBot: {ex}");
         return false;
       }
     }
@@ -768,7 +768,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotFactory.SeatBotDeferred: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotFactory.SeatBotDeferred: {ex}");
       }
     }
 
@@ -958,7 +958,7 @@ namespace AiEnabled.Bots
       }
       catch(Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.RemoveBotFromSeat: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.RemoveBotFromSeat: {ex}");
         return false;
       }
     }
@@ -1113,7 +1113,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.SpawnBotAPI-1: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.SpawnBotAPI-1: {ex}");
         return null;
       }
     }
@@ -1178,7 +1178,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.SpawnBotAPI-2: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.SpawnBotAPI-2: {ex}");
         return null;
       }
     }
@@ -1788,7 +1788,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in BotFactory.CreateBot: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in BotFactory.CreateBot: {ex}");
       }
 
       return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
@@ -1937,7 +1937,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in BotFactory.EnsureNuetrality: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in BotFactory.EnsureNuetrality: {ex}");
       }
     }
   }

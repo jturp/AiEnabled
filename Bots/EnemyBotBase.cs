@@ -156,7 +156,7 @@ namespace AiEnabled.Bots
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in EnemyBotBase.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in EnemyBotBase.Close: {ex}");
       }
       finally
       {

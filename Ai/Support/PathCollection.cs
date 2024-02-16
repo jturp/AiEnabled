@@ -1133,7 +1133,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in {GetType().FullName}: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in {GetType().FullName}: {ex}");
       }
     }
 

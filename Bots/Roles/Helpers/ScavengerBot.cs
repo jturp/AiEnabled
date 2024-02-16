@@ -332,6 +332,27 @@ namespace AiEnabled.Bots.Roles.Helpers
       var isGridGraph = graph?.MainGrid?.MarkedForClose == false;
       var botPosition = BotInfo.CurrentBotPositionActual;
 
+      bool isFriendlyMap = true;
+      if (isGridGraph)
+      {
+        var grid = graph.MainGrid;
+
+        long owner;
+        try
+        {
+          // because sometimes even though you check that there are owners, there are not (when used in a thread)
+
+          owner = grid.BigOwners?.Count > 0 ? grid.BigOwners[0] : grid.SmallOwners?.Count > 0 ? grid.SmallOwners[0] : 0L;
+        }
+        catch
+        {
+          owner = 0L;
+        }
+
+        var relation = MyIDModule.GetRelationPlayerPlayer(Owner.IdentityId, owner);
+        isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
+      }
+
       var inv = Character.GetInventory() as MyInventory;
       if (inv != null)
       {
@@ -487,17 +508,20 @@ namespace AiEnabled.Bots.Roles.Helpers
                 {
                   var firstItem = loot.GetItemAt(0);
 
-                  if (!inv.CanItemsBeAdded(1, firstItem.Value.Type))
+                  if ( !inv.CanItemsBeAdded(1, firstItem.Value.Type))
                   {
-                    // inv too full, send bot to drop off current stock
-
-                    var botLocal = _currentGraph.WorldToLocal(botPosition);
-                    var invBlock = graph?.InventoryCache.GetClosestInventory(botLocal, this);
-                    if (invBlock != null)
+                    if (isGridGraph && isFriendlyMap && graph.InventoryCache.ShouldSendToUnload(this))
                     {
-                      tgt = invBlock;
-                      Target.SetInventory(invBlock);
-                      isInventory = true;
+                      // inv too full, send bot to drop off current stock
+
+                      var botLocal = _currentGraph.WorldToLocal(botPosition);
+                      var invBlock = graph?.InventoryCache.GetClosestInventory(botLocal, this);
+                      if (invBlock != null)
+                      {
+                        tgt = invBlock;
+                        Target.SetInventory(invBlock);
+                        isInventory = true;
+                      }
                     }
 
                     break;
@@ -523,7 +547,7 @@ namespace AiEnabled.Bots.Roles.Helpers
         }
       }
 
-      if (tgt == null && isGridGraph && inv.ItemCount > 0)
+      if (tgt == null && isGridGraph && isFriendlyMap && inv.ItemCount > 0 && graph.InventoryCache.ShouldSendToUnload(this))
       {
         // send bot to drop off current stock
 

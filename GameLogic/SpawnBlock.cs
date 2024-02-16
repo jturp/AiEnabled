@@ -123,7 +123,7 @@ namespace AiEnabled.GameLogic
       }
       catch(Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in SpawnBlock.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in SpawnBlock.Close: {ex}");
       }
       finally
       {
@@ -186,7 +186,7 @@ namespace AiEnabled.GameLogic
       }
       catch (Exception e)
       {
-        MyAPIGateway.Utilities.ShowMissionScreen("Exception Occurred", null, null,$"In UpdateOnceBeforeFrame:\n{e.Message}\n{e.StackTrace}");
+        MyAPIGateway.Utilities.ShowMissionScreen("Exception Occurred", null, null,$"In UpdateOnceBeforeFrame:\n{e}");
         AiSession.Instance?.Logger?.Log(e.ToString());
       }
 
@@ -1119,7 +1119,7 @@ namespace AiEnabled.GameLogic
       catch (Exception e)
       {
         AiSession.Instance.Logger.ClearCached();
-        AiSession.Instance.Logger.Log($"Exception in UpdateAfterSimulation100:\n{e.Message}\n{e.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in UpdateAfterSimulation100:\n{e}");
 
         if (MyAPIGateway.Session?.Player != null)
           MyAPIGateway.Utilities.ShowNotification($"Exception in SpawnBlock.UpdateAfterSimulation100:\n{e.Message}");

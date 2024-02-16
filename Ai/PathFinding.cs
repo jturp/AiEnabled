@@ -64,7 +64,7 @@ namespace AiEnabled.Ai
         if (collection.Dirty || currentMS > maxTimeMS)
         {
           if (currentMS > maxTimeMS && bot?.Character?.Name != null)
-            AiSession.Instance.Logger.Log($"{bot.Character.Name} - PathTimer exceeded {maxTime} s pathing to {goal}", MessageType.WARNING);
+            AiSession.Instance.Logger.Warning($"{bot.Character.Name} - PathTimer exceeded {maxTime} s pathing to {goal}");
           pathFound = false;
         }
 
@@ -172,7 +172,7 @@ namespace AiEnabled.Ai
             if (MyAPIGateway.Session?.Player != null)
               MyAPIGateway.Utilities.ShowNotification($"Exception in AiEnabled.FindPath: {ex.Message}", 10000);
 
-            AiSession.Instance.Logger.Log($"Exception in AiEnabled.Pathfinder.FindPath: {ex.ToString()}\n", MessageType.ERROR);
+            AiSession.Instance.Logger.Error($"Exception in AiEnabled.Pathfinder.FindPath: {ex.ToString()}\n");
           }
 
           collection.Locked = false;
@@ -1496,8 +1496,14 @@ namespace AiEnabled.Ai
                 {
                   offset = null;
                 }
+                else if (blockBelowThis.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Base"))
+                {
+                  offset = downTravelDir * gridSize * 0.25f;
+                }
                 else
+                {
                   offset = downTravelDir * gridSize * 0.5f;
+                }
 
                 Node node;
                 gridGraph.TryGetNodeForPosition(localVec, out node);

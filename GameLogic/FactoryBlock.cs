@@ -537,8 +537,10 @@ namespace AiEnabled.GameLogic
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
-        MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim: {ex.Message}");
+        AiSession.Instance.Logger.Error($"Exception in AiSession.FactoryBlock.UpdateAfterSim: {ex}");
+
+        if (MyAPIGateway.Session?.Player != null)
+          MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim: {ex.Message}");
       }
     }
 
@@ -621,7 +623,7 @@ namespace AiEnabled.GameLogic
             }
             catch (Exception ex)
             {
-              AiSession.Instance.Logger.Log($"Error trying to spawn bot: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+              AiSession.Instance.Logger.Error($"Error trying to spawn bot: {ex}");
 
               if (MyAPIGateway.Session?.Player != null)
                 MyAPIGateway.Utilities.ShowNotification($"Error trying to spawn bot: {ex.Message}");
@@ -643,7 +645,7 @@ namespace AiEnabled.GameLogic
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim10: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in AiSession.FactoryBlock.UpdateAfterSim10: {ex}");
 
         if (MyAPIGateway.Session?.Player != null)
           MyAPIGateway.Utilities.ShowNotification($"Exception in FactoryBlock.UpdateAfterSim10: {ex.Message}");
@@ -674,7 +676,7 @@ namespace AiEnabled.GameLogic
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in AiSession.FactoryBlock.UpdateAfterSim100: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in AiSession.FactoryBlock.UpdateAfterSim100: {ex}");
       }
     }
 
@@ -724,7 +726,7 @@ namespace AiEnabled.GameLogic
       }
       catch (Exception ex)
       {
-        AiSession.Instance?.Logger?.Log($"Exception in FactoryBlock.Close: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance?.Logger?.Error($"Exception in FactoryBlock.Close: {ex}");
       }
     }
 
@@ -801,7 +803,7 @@ namespace AiEnabled.GameLogic
       {
         ++_errorCount;
         if (_errorCount == 1 || _errorCount % 1000 == 0) 
-          AiSession.Instance.Logger.Log($"Exception in FactoryBlock.AppendingCustomInfo: {ex.ToString()}", MessageType.ERROR);
+          AiSession.Instance.Logger.Error($"Exception in FactoryBlock.AppendingCustomInfo: {ex}");
       }
     }
   }

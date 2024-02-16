@@ -820,7 +820,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in InventoryCache.RemoveItemsComplete: {ex.ToString()}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in InventoryCache.RemoveItemsComplete: {ex}");
       }
     }
 
@@ -1034,7 +1034,7 @@ namespace AiEnabled.Ai.Support
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Error in {GetType().FullName}: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in {GetType().FullName}: {ex}");
       }
     }
   }

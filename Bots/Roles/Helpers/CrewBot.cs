@@ -494,7 +494,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
       catch (Exception ex)
       {
-        AiSession.Instance.Logger.Log($"Exception in CrewBot.SimulateIdleMovement: {ex.Message}\n{ex.StackTrace}", MessageType.ERROR);
+        AiSession.Instance.Logger.Error($"Exception in CrewBot.SimulateIdleMovement: {ex}");
       }
     }
   }
