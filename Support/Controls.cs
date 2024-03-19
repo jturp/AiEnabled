@@ -1558,7 +1558,6 @@ namespace AiEnabled.Support
       var helpers = AiSession.Instance.MyHelperInfo;
       if (helpers == null || helpers.Count == 0)
       {
-        //SetContextMessage(block, "You have no helpers...");
         return;
       }
 
@@ -1625,11 +1624,7 @@ namespace AiEnabled.Support
 
       var helpers = AiSession.Instance.MyHelperInfo;
       if (helpers == null || helpers.Count == 0)
-      {
-        //gameLogic.ButtonPressed = true;
-        //SetContextMessage(block, "You have no helpers...");
         return 0L;
-      }
 
       var helperInfo = gameLogic.SelectedHelper;
       if (helperInfo == null)
@@ -1718,10 +1713,14 @@ namespace AiEnabled.Support
       for (int i = 0; i < helpers.Count; i++)
       {
         var bot = helpers[i];
+        if (bot == null)
+          continue;
+
+        var prefix = bot.IsActiveHelper ? "[A]" : "[S]";
         var item = new MyTerminalControlComboBoxItem()
         {
           Key = key,
-          Value = MyStringId.GetOrCompute(bot.DisplayName)
+          Value = MyStringId.GetOrCompute($"{prefix} {bot.DisplayName}")
         };
 
         list.Add(item);

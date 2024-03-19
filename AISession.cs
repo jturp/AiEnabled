@@ -2679,7 +2679,6 @@ namespace AiEnabled
         }
 
         Scheduler.Schedule(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName), 10);
-        //MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerEnteredCockpitDelayed(entityName, playerId, gridName), "AiEnabled", MyAPIGateway.Session.GameplayFrameCounter + 1);
       }
       catch (Exception ex)
       {

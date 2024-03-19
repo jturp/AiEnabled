@@ -254,27 +254,24 @@ namespace AiEnabled.Ai.Support
         var connector = kvp.Value as IMyShipConnector;
         if (connector != null)
         {
-          if (connector.ThrowOut)
+          if (connector.ThrowOut || connector.IsConnected || gridGraph == null || !gridGraph.IsValid || !gridGraph.Ready)
             continue;
 
-          if (connector.IsConnected && gridGraph?.IsValid == true && gridGraph.Ready)
-          {
-            MatrixI m = new MatrixI(connector.Orientation);
+          MatrixI m = new MatrixI(connector.Orientation);
 
-            var left = connector.Position + m.LeftVector;
-            var right = connector.Position + m.RightVector;
-            var fwd = connector.Position + m.ForwardVector;
-            var bwd = connector.Position + m.BackwardVector;
+          var left = connector.Position + m.LeftVector;
+          var right = connector.Position + m.RightVector;
+          var fwd = connector.Position + m.ForwardVector;
+          var bwd = connector.Position + m.BackwardVector;
+          var up = connector.Position + m.UpVector;
 
-            bool isValid = (gridGraph.IsOpenTile(left) && !gridGraph.IsObstacle(left, bot, false))
-              || (gridGraph.IsOpenTile(right) && !gridGraph.IsObstacle(right, bot, false))
-              || (gridGraph.IsOpenTile(fwd) && !gridGraph.IsObstacle(fwd, bot, false))
-              || (gridGraph.IsOpenTile(bwd) && !gridGraph.IsObstacle(bwd, bot, false));
+          bool isValid = (gridGraph.IsOpenTile(left) && !gridGraph.IsObstacle(left, bot, false))
+            || (gridGraph.IsOpenTile(right) && !gridGraph.IsObstacle(right, bot, false))
+            || (gridGraph.IsOpenTile(fwd) && !gridGraph.IsObstacle(fwd, bot, false))
+            || (gridGraph.IsOpenTile(bwd) && !gridGraph.IsObstacle(bwd, bot, false))
+            || (gridGraph.IsOpenTile(up) && !gridGraph.IsObstacle(up, bot, false));
 
-            if (!isValid)
-              continue;
-          }
-          else
+          if (!isValid)
             continue;
         }
 

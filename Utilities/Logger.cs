@@ -57,7 +57,7 @@ namespace AiEnabled.Utilities
         .Append('\n');
     }
 
-    public void LogAll(MessageType msgType = MessageType.DEBUG)
+    public void LogAll(MessageType msgType = MessageType.INFO)
     {
       if (_isClosed || _builder.Length == 0)
       {
@@ -68,7 +68,7 @@ namespace AiEnabled.Utilities
       LogAll("", msgType);
     }
 
-    public void LogAll(string text, MessageType msgType = MessageType.DEBUG)
+    public void LogAll(string text, MessageType msgType = MessageType.INFO)
     {
       if (_isClosed || _writer == null)
         return;
@@ -99,7 +99,7 @@ namespace AiEnabled.Utilities
       }
     }
 
-    public void Log(string text, MessageType msgType = MessageType.DEBUG)
+    public void Log(string text, MessageType msgType = MessageType.INFO)
     {
       if (_isClosed || _writer == null || string.IsNullOrWhiteSpace(text))
         return;
