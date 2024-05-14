@@ -30,18 +30,33 @@ namespace AiEnabled.Graphics.Support
       ItemName = name.Length > 50 ? name.Substring(0, 50) : name;
 
       if (tmDef != null)
-        IconName = tmDef.Id.SubtypeName;
-      else if (itemDef == null)
-        IconName = "AiEnabled_GenericUnknown";
-      else if (itemDef.DisplayNameText.EndsWith("Bot Material"))
       {
-        if (itemDef.DisplayNameText.StartsWith("Combat"))
+        IconName = tmDef.Id.SubtypeName;
+      }
+      else if (itemDef == null)
+      {
+        if (AiSession.Instance.TransparentMaterialDefinitions.Contains(item.Content.SubtypeId))
+          IconName = item.Content.SubtypeName;
+        else
+          IconName = "AiEnabled_GenericUnknown";
+      }
+      else if (AiSession.Instance.TransparentMaterialDefinitions.Contains(itemDef.Id.SubtypeId))
+      {
+        IconName = itemDef.Id.SubtypeName;
+      }
+      else if (itemDef.Id.SubtypeName.EndsWith("BotMaterial"))
+      {
+        if (itemDef.Id.SubtypeName.IndexOf("Combat") >= 0)
         {
           IconName = "AiEnabled_CombatBotMaterial";
         }
-        else if (itemDef.DisplayNameText.StartsWith("Repair"))
+        else if (itemDef.Id.SubtypeName.IndexOf("Repair") >= 0)
         {
           IconName = "AiEnabled_RepairBotMaterial";
+        }
+        else if (itemDef.Id.SubtypeName.IndexOf("Crew") >= 0)
+        {
+          IconName = "AiEnabled_CrewBotMaterial";
         }
         else // Scavenger
         {

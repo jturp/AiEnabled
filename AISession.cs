@@ -74,7 +74,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.19";
+    public const string VERSION = "v1.8.22";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -623,6 +623,7 @@ namespace AiEnabled
       LineListPool?.Clean();
       IgnoreTypeDictionary?.Clear();
       MESBlockIds?.Clear();
+      TransparentMaterialDefinitions.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -778,6 +779,7 @@ namespace AiEnabled
       AnalyzeHash = null;
       LocalVectorQueuePool = null;
       IgnoreListComparer = null;
+      TransparentMaterialDefinitions = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -842,6 +844,12 @@ namespace AiEnabled
         _controllerCacheNum = Math.Max(20, Math.Min(50, MyAPIGateway.Session.MaxPlayers * 2));
 
         Scheduler.Schedule(() => _firstFrameTime = MyAPIGateway.Session.ElapsedPlayTime);
+
+        foreach (var tpd in MyDefinitionManager.Static.GetTransparentMaterialDefinitions())
+        {
+          if (!TransparentMaterialDefinitions.Add(tpd.Id.SubtypeId))
+            Logger.Log($"Tried to add duplicate Transparent Material for {tpd.Id.SubtypeName}");
+        }
 
         foreach (var def in MyDefinitionManager.Static.GetInventoryItemDefinitions())
         {
@@ -1303,7 +1311,7 @@ namespace AiEnabled
 
           if (ModSaveData.AllowedBotSubtypes == null || ModSaveData.AllowedBotSubtypes.Count == 0)
           {
-            if (ModSaveData.AllowedBotSubtypes == null) 
+            if (ModSaveData.AllowedBotSubtypes == null)
               ModSaveData.AllowedBotSubtypes = new List<string>();
 
             foreach (var charDef in MyDefinitionManager.Static.Characters)
@@ -2607,7 +2615,7 @@ namespace AiEnabled
                 }
               }
 
-              var relativePosition = Vector3D.Rotate(botPosition - seatPosition, MatrixD.Transpose(seat.WorldMatrix));
+              var relativePosition = Vector3D.Rotate(botPosition - seatPosition, MatrixD.Transpose(seat.PositionComp.WorldMatrixRef));
               BotToSeatRelativePosition[bot.Character.EntityId] = relativePosition;
 
               var cpit = seat as MyCockpit;

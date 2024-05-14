@@ -753,6 +753,7 @@ namespace AiEnabled
 
     public readonly MyStringId MODEL_DEFAULT = MyStringId.GetOrCompute("Default");
     public List<MyStringId> BotModelList = new List<MyStringId>();
+    public HashSet<MyStringHash> TransparentMaterialDefinitions = new HashSet<MyStringHash>();
 
     public HashSet<long> EconomyGrids { get; protected set; } = new HashSet<long>();
     public HashSet<string> KnownLootContainerIds { get; protected set; } = new HashSet<string>();

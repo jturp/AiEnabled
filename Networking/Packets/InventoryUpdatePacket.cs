@@ -67,7 +67,10 @@ namespace AiEnabled.Networking
         amount = MyFixedPoint.Min(amount, toInv.ComputeAmountThatFits(item.Value.Content.GetId()));
         amount = MyFixedPoint.Min(amount, item.Value.Amount);
 
-        if (fromInv.RemoveItemsInternal(_itemId, amount))
+        //if (fromInv.RemoveItemsInternal(_itemId, amount)) // Changed in 1.204 Signal, no longer allowed
+        fromInv.RemoveItems(_itemId, amount);
+        var itemCheck = fromInv.GetItemByID(_itemId);
+        if (itemCheck == null || itemCheck.Value.Amount < item.Value.Amount)
         {
           if (!toInv.Add(item.Value, amount))
           {
