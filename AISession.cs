@@ -16,6 +16,7 @@ using Sandbox;
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.Game;
+using Sandbox.Game.AI.Pathfinding.Obsolete;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
@@ -30,7 +31,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Remoting.Messaging;
 using System.Text;
 
 using VRage;
@@ -42,6 +42,7 @@ using VRage.Game.ModAPI.Ingame.Utilities;
 using VRage.Input;
 using VRage.ModAPI;
 using VRage.ObjectBuilders;
+using VRage.Scripting;
 using VRage.Utils;
 
 using VRageMath;
@@ -71,10 +72,11 @@ namespace AiEnabled
     public readonly MyStringHash PlushieSubtype = MyStringHash.GetOrCompute("Plushie_Astronaut");
     public readonly MyStringHash RoboPlushieSubtype = MyStringHash.GetOrCompute("Robo_Plushie");
     public readonly MyDefinitionId HandGrenade_ConsumableId = new MyDefinitionId(typeof(MyObjectBuilder_ConsumableItem), "JT_HandGrenade");
+    // TODO: Add other grenades to this and let bots use them (randomly or targeted??)
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.8.22";
+    public const string VERSION = "v1.9.2";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -136,6 +138,7 @@ namespace AiEnabled
     public ProjectileInfo Projectiles = new ProjectileInfo();
     public RepairDelay BlockRepairDelays = new RepairDelay();
     public MyCubeGrid.MyCubeGridHitInfo CubeGridHitInfo = new MyCubeGrid.MyCubeGridHitInfo();
+    public BlockInfo BlockInfo;
 
     // APIs
     public HudAPIv2 HudAPI;
@@ -172,7 +175,7 @@ namespace AiEnabled
 
       if (grid.GridSizeEnum == MyCubeSize.Small)
       {
-        Logger.Log($"GetGridGraph: Attempted to get a graph for a small grid ({grid.DisplayName})!", MessageType.WARNING);
+        Logger.Warning($"GetGridGraph: Attempted to get a graph for a small grid ({grid.DisplayName})!");
         return null;
       }
 
@@ -337,7 +340,7 @@ namespace AiEnabled
       {
         if (Environment.CurrentManagedThreadId != MainThreadId)
         {
-          Logger.Log($"Calling MyEntities.CloseAll from a parallel thread! ThreadId = {Environment.CurrentManagedThreadId}", MessageType.WARNING);
+          Logger.Warning($"Calling MyEntities.CloseAll from a parallel thread! ThreadId = {Environment.CurrentManagedThreadId}");
           MyAPIGateway.Utilities.InvokeOnGameThread(MyEntities_OnCloseAll);
         }
 
@@ -534,6 +537,7 @@ namespace AiEnabled
       HudAPI?.Close();
       Projectiles?.Close();
       MovementCostData?.Close();
+      BlockInfo?.Close();
       Network?.Unregister();
       ProjectileConstants.Close();
 
@@ -546,9 +550,9 @@ namespace AiEnabled
       SoundListPool?.Clean();
       EntListPool?.Clean();
       HitListPool?.Clean();
+      NodeQueuePool?.Clean();
       Players?.Clear();
       Bots?.Clear();
-      CatwalkRailDirections?.Clear();
       CatwalkBlockDefinitions?.Clear();
       SlopeBlockDefinitions?.Clear();
       SlopedHalfBlockDefinitions?.Clear();
@@ -621,9 +625,10 @@ namespace AiEnabled
       GridGroupListPool?.Clean();
       VoxelMapListPool?.Clean();
       LineListPool?.Clean();
+      PositionListPool?.Clean();
       IgnoreTypeDictionary?.Clear();
       MESBlockIds?.Clear();
-      TransparentMaterialDefinitions.Clear();
+      TransparentMaterialDefinitions?.Clear();
 
       _nameSB?.Clear();
       _gpsAddIDs?.Clear();
@@ -679,6 +684,8 @@ namespace AiEnabled
       EntListPool = null;
       HitListPool = null;
       LineListPool = null;
+      PositionListPool = null;
+      NodeQueuePool = null;
       GridGroupListPool = null;
       Players = null;
       Bots = null;
@@ -686,7 +693,6 @@ namespace AiEnabled
       CardinalDirections = null;
       ButtonPanelDefinitions = null;
       VoxelMovementDirections = null;
-      CatwalkRailDirections = null;
       CatwalkBlockDefinitions = null;
       SlopeBlockDefinitions = null;
       SlopedHalfBlockDefinitions = null;
@@ -780,6 +786,7 @@ namespace AiEnabled
       LocalVectorQueuePool = null;
       IgnoreListComparer = null;
       TransparentMaterialDefinitions = null;
+      BlockInfo = null;
 
       _nameArray = null;
       _nameSB = null;
@@ -834,6 +841,7 @@ namespace AiEnabled
       {
         Instance = this;
         Logger = new Logger("AiEnabled.log");
+        BlockInfo = new BlockInfo(Logger);
 
         Network = new NetworkHandler(55387, this);
         Network.Register();
@@ -896,7 +904,7 @@ namespace AiEnabled
               {
                 try
                 {
-                  if (WcAPI._isRegistered)
+                  if (WcAPI.IsRegistered)
                     WcAPI.Unload();
 
                   WcAPI.Load(WeaponCoreRegistered);
@@ -923,12 +931,12 @@ namespace AiEnabled
           }
           else
           {
-            Logger.Log($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}", MessageType.WARNING);
+            Logger.Warning($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}");
           }
         }
         else
         {
-          Logger.Log($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}", MessageType.WARNING);
+          Logger.Warning($"Unable to check for mods in BeforeStart. Session OK = {sessionOK}");
         }
 
         foreach (var botDef in MyDefinitionManager.Static.GetBotDefinitions())
@@ -1048,10 +1056,10 @@ namespace AiEnabled
               MyAPIGateway.Session.SessionSettings.MaxFactionsCount = Math.Max(MyAPIGateway.Session.SessionSettings.MaxFactionsCount, 100);
             }
             else
-              Logger.Log($"AiSession.BeforeStart: Unable to disable wolves and spiders, or adjust max factions - SessionSettings was null!", MessageType.WARNING);
+              Logger.Warning($"AiSession.BeforeStart: Unable to disable wolves and spiders, or adjust max factions - SessionSettings was null!");
           }
           else
-            Logger.Log($"APIGateway.Session was null in BeforeStart", MessageType.WARNING);
+            Logger.Warning($"APIGateway.Session was null in BeforeStart");
 
           VoxelGraphDict = new ConcurrentDictionary<ulong, VoxelGridMap>();
 
@@ -1083,7 +1091,7 @@ namespace AiEnabled
               List<SerialId> comps;
               if (!BotComponents.TryGetValue(bType, out comps))
               {
-                Logger.Log($"BeforeStart: BotComponents did not contain an entry for {bType}, initializing to empty list", MessageType.WARNING);
+                Logger.Warning($"BeforeStart: BotComponents did not contain an entry for {bType}, initializing to empty list");
                 comps = new List<SerialId>()
                 {
                   new SerialId()
@@ -1091,7 +1099,7 @@ namespace AiEnabled
               }
               else if (comps == null)
               {
-                Logger.Log($"BeforeStart: Component list for {bType} was null, initializing to empty list", MessageType.WARNING);
+                Logger.Warning($"BeforeStart: Component list for {bType} was null, initializing to empty list");
                 comps = new List<SerialId>()
                 {
                   new SerialId()
@@ -1132,7 +1140,7 @@ namespace AiEnabled
                 List<SerialId> comps;
                 if (!BotComponents.TryGetValue(bType, out comps))
                 {
-                  Logger.Log($"BeforeStart: BotComponents did not contain an entry for {bType}, initializing to empty list", MessageType.WARNING);
+                  Logger.Warning($"BeforeStart: BotComponents did not contain an entry for {bType}, initializing to empty list");
                   comps = new List<SerialId>()
                   {
                     new SerialId()
@@ -1140,7 +1148,7 @@ namespace AiEnabled
                 }
                 else if (comps == null)
                 {
-                  Logger.Log($"BeforeStart: Component list for {bType} was null, initializing to empty list", MessageType.WARNING);
+                  Logger.Warning($"BeforeStart: Component list for {bType} was null, initializing to empty list");
                   comps = new List<SerialId>()
                   {
                     new SerialId()
@@ -1488,10 +1496,10 @@ namespace AiEnabled
           }
 
           if (ModSaveData.EnforceGroundPathingFirst)
-            Logger.Log($"EnforceGroundNodesFirst is enabled. This is a use-at-your-own-risk option that may result in lag.", MessageType.WARNING);
+            Logger.Warning($"EnforceGroundNodesFirst is enabled. This is a use-at-your-own-risk option that may result in lag.");
 
           if (ModSaveData.IncreaseNodeWeightsNearWeapons)
-            Logger.Log($"IncreaseNodeWeightsNearWeapons is enabled. This increases the time required to find a path - increase Pathfinding Timeout accordingly! This is a use-at-your-own-risk option that may result in lag.", MessageType.WARNING);
+            Logger.Warning($"IncreaseNodeWeightsNearWeapons is enabled. This increases the time required to find a path - increase Pathfinding Timeout accordingly! This is a use-at-your-own-risk option that may result in lag.");
 
           ModSaveData.MaxBotHuntingDistanceEnemy = Math.Max(50, Math.Min(1000, ModSaveData.MaxBotHuntingDistanceEnemy));
           ModSaveData.MaxBotHuntingDistanceFriendly = Math.Max(50, Math.Min(1000, ModSaveData.MaxBotHuntingDistanceFriendly));
@@ -1564,67 +1572,78 @@ namespace AiEnabled
             }
           }
 
-          HashSet<long> factionMembers = new HashSet<long>();
-
-          foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
+          try
           {
-            var faction = kvp.Value;
-            var factionId = kvp.Key;
+            Logger.Log($"Attempting faction member cleanup for AiE Bots...");
+            HashSet<long> factionMembers = new HashSet<long>();
 
-            if (!faction.AcceptHumans)
+            foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
             {
-              if (!faction.AutoAcceptMember)
-                MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, faction.FounderId, true, faction.AutoAcceptPeace);
+              var faction = kvp.Value;
+              var factionId = kvp.Key;
 
-              var joinRequests = faction.JoinRequests;
-              if (joinRequests.Count > 0)
+              if (!faction.AcceptHumans)
               {
-                factionMembers.Clear();
-                factionMembers.UnionWith(joinRequests.Keys);
+                if (!faction.AutoAcceptMember)
+                  MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, faction.FounderId, true, faction.AutoAcceptPeace);
 
-                foreach (var member in factionMembers)
+                var joinRequests = faction.JoinRequests;
+                if (joinRequests.Count > 0)
                 {
-                  MyFactionMember fm;
-                  if (faction.Members.TryGetValue(member, out fm) && (fm.IsFounder || fm.IsLeader))
-                    continue;
+                  factionMembers.Clear();
+                  factionMembers.UnionWith(joinRequests.Keys);
 
-                  MyAPIGateway.Session.Factions.CancelJoinRequest(faction.FactionId, member);
-                }
-              }
-
-              if (faction.Members.Count > 2)
-              {
-                factionMembers.Clear();
-                bool leaderOK = false;
-                foreach (var kvpMember in faction.Members)
-                {
-                  if (kvpMember.Value.IsFounder)
-                    continue;
-
-                  if (!leaderOK && kvpMember.Value.IsLeader && !faction.Name.StartsWith("[AiE]"))
+                  foreach (var member in factionMembers)
                   {
-                    leaderOK = true;
-                    continue;
+                    MyFactionMember fm;
+                    if (faction.Members.TryGetValue(member, out fm) && (fm.IsFounder || fm.IsLeader))
+                      continue;
+
+                    MyAPIGateway.Session.Factions.CancelJoinRequest(faction.FactionId, member);
+                  }
+                }
+
+                if (faction.Members.Count > 2)
+                {
+                  factionMembers.Clear();
+                  bool leaderOK = false;
+                  foreach (var kvpMember in faction.Members)
+                  {
+                    if (kvpMember.Value.IsFounder)
+                      continue;
+
+                    if (!leaderOK && kvpMember.Value.IsLeader && !faction.Name.StartsWith("[AiE]"))
+                    {
+                      leaderOK = true;
+                      continue;
+                    }
+
+                    factionMembers.Add(kvpMember.Key);
                   }
 
-                  factionMembers.Add(kvpMember.Key);
-                }
+                  if (factionMembers.Count > 0)
+                    Logger.Log($"Faction cleanup: Removing {factionMembers.Count}/{faction.Members.Count} members from {faction.Name}");
 
-                if (factionMembers.Count > 0)
-                  Logger.Log($"Faction cleanup: Removing {factionMembers.Count}/{faction.Members.Count} members from {faction.Name}");
+                  var tooMany = factionMembers.Count == faction.Members.Count;
+                  int count = 0;
+                  foreach (var memberId in factionMembers)
+                  {
+                    count++;
+                    if (tooMany && count < 3)
+                      continue;
 
-                var tooMany = factionMembers.Count == faction.Members.Count;
-                int count = 0;
-                foreach (var memberId in factionMembers)
-                {
-                  count++;
-                  if (tooMany && count < 3)
-                    continue;
-
-                  MyAPIGateway.Session.Factions.KickMember(factionId, memberId);
+                    MyAPIGateway.Session.Factions.KickMember(factionId, memberId);
+                  }
                 }
               }
             }
+
+            factionMembers.Clear();
+            factionMembers = null;
+          }
+          catch (NullReferenceException nre)
+          {
+            Logger.Log($"Unable to clean up faction members at this time...");
           }
 
           var player = MyAPIGateway.Session.Player;
@@ -1652,19 +1671,19 @@ namespace AiEnabled
             }
           }
 
-          factionMembers.Clear();
-          factionMembers = null;
-
           MyAPIGateway.Session.Factions.FactionCreated += Factions_FactionCreated;
           MyAPIGateway.Session.Factions.FactionEdited += Factions_FactionEdited;
           MyAPIGateway.Session.Factions.FactionStateChanged += Factions_FactionStateChanged;
           MyAPIGateway.Session.Factions.FactionAutoAcceptChanged += Factions_FactionAutoAcceptChanged;
 
+          //Logger.AddLine($"Block Definitions:");
           foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
           {
             var cubeDef = def as MyCubeBlockDefinition;
             if (cubeDef == null || cubeDef.CubeSize != MyCubeSize.Large || _ignoreTypes.ContainsItem(cubeDef.Id.TypeId))
               continue;
+
+            //Logger.AddLine($"{cubeDef.Id}, Airtight: {cubeDef.IsAirTight ?? false}, Base: {cubeDef.Context.IsBaseGame}");
 
             var blockDef = cubeDef.Id;
             var blockSubtype = blockDef.SubtypeName;
@@ -1728,7 +1747,9 @@ namespace AiEnabled
               if (isGratedModBlock && blockDef.TypeId == typeof(MyObjectBuilder_Ladder2))
                 LadderBlockDefinitions.Add(blockDef);
             }
-            else if (blockDef.TypeId == typeof(MyObjectBuilder_Passage) || blockDef.SubtypeName.IndexOf("passage", StringComparison.OrdinalIgnoreCase) >= 0)
+            else if (blockDef.TypeId == typeof(MyObjectBuilder_Passage)
+              || blockDef.SubtypeName.IndexOf("passage", StringComparison.OrdinalIgnoreCase) >= 0
+              || blockDef.SubtypeName.IndexOf("corridor", StringComparison.OrdinalIgnoreCase) >= 0)
             {
               bool isPassageIntersection = def.Context.ModName?.IndexOf("PassageIntersections", StringComparison.OrdinalIgnoreCase) >= 0;
 
@@ -1762,6 +1783,8 @@ namespace AiEnabled
               }
             }
           }
+
+          //Logger.LogAll();
 
           bool planetFound = false;
           var hash = new HashSet<VRage.ModAPI.IMyEntity>();
@@ -1872,12 +1895,40 @@ namespace AiEnabled
               Network.SendToServer(pkt);
             }
             else
-              Logger.Log($"Player was null in BeforeStart!", MessageType.WARNING);
+              Logger.Warning($"Player was null in BeforeStart!");
           }
 
           CommandMenu = new CommandMenu();
           PlayerMenu = new PlayerMenu(PlayerData);
           HudAPI = new HudAPIv2(HudAPICallback);
+        }
+
+        // This should be set to FALSE for production
+        bool assign = false;
+        if (assign)
+        {
+          // These are only used when generating the files to be added to the mod
+          BlockInfo.InitBlockInfo();
+          BlockInfo.GenerateMissingBlockList(this);
+          BlockInfo.SerializeToDisk();
+          BlockInfo.Deserialize_Debug();
+
+          Logger.Debug("Finished configuring Block Info");
+        }
+        else
+        {
+          // This is what the mod needs to ingest the block pathing data
+          BlockInfo.DeserializeFromDisk(ModContext.ModItem);
+        }
+
+        BlockInfo.UpdateKnownBlocks();
+
+        var blockInfo = BlockInfo.BlockDirInfo;
+        var alwaysBlocked = BlockInfo.NoPathBlocks;
+
+        if (blockInfo == null || blockInfo.Count == 0 || alwaysBlocked == null || alwaysBlocked.Count == 0)
+        {
+          Logger.Error("Block Info or Path collection found null or empty!");
         }
 
         MyEntities.OnEntityAdd += MyEntities_OnEntityAdd;
@@ -1906,10 +1957,14 @@ namespace AiEnabled
     void WeaponCoreRegistered()
     {
       WcAPILoaded = WcAPI.IsReady;
+      Logger.Log($"WeaponCore Mod found. API loaded successfully = {WcAPILoaded}");
+
       WcAPI.GetAllCoreWeapons(AllCoreWeaponDefinitions);
       WcAPI.GetNpcSafeWeapons(NpcSafeCoreWeaponDefinitions);
-
-      Logger.Log($"WeaponCore Mod found. API loaded successfully = {WcAPILoaded}");
+      if (NpcSafeCoreWeaponDefinitions.Count == 0)
+      {
+        Logger.Log($" -> No NPC-Safe WeaponCore Weapons found.");
+      }
 
       WcAPI.GetAllNpcSafeWeaponMagazines(NpcSafeCoreWeaponMagazines);
       if (NpcSafeCoreWeaponMagazines.Count == 0)
@@ -2100,7 +2155,7 @@ namespace AiEnabled
             if (BotFactionTags.Count == 0)
             {
               good = false;
-              Logger.Log($"AiSession.FactionEdited: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
+              Logger.Warning($"AiSession.FactionEdited: BotFactionTags found empty during faction pairing!");
               break;
             }
 
@@ -2115,7 +2170,7 @@ namespace AiEnabled
             return;
 
           if (!BotFactions.TryAdd(factionId, botFaction))
-            Logger.Log($"Aisession.FactionEdited: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}", MessageType.WARNING);
+            Logger.Warning($"Aisession.FactionEdited: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}");
           else
             Logger.Log($"AiSession.FactionEdited: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
         }
@@ -2140,7 +2195,7 @@ namespace AiEnabled
             if (BotFactionTags.Count == 0)
             {
               good = false;
-              Logger.Log($"AiSession.FactionCreated: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
+              Logger.Warning($"AiSession.FactionCreated: BotFactionTags found empty during faction pairing!");
               break;
             }
 
@@ -2155,7 +2210,7 @@ namespace AiEnabled
             return;
 
           if (!BotFactions.TryAdd(factionId, botFaction))
-            Logger.Log($"Aisession.FactionCreated: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}", MessageType.WARNING);
+            Logger.Warning($"Aisession.FactionCreated: Failed to add faction pair - ID: {factionId}, BotFactionTag: {botFaction.Tag}");
           else
             Logger.Log($"AiSession.FactionCreated: Human faction '{faction.Tag}' paired with bot faction '{botFaction.Tag}' successfully!");
         }
@@ -2294,7 +2349,19 @@ namespace AiEnabled
           return;
         }
 
-        bool recallBots = gridName == "AiEnabled_RecallBots";
+        bool recallBots = gridName.StartsWith("AiEnabled_RecallBots");
+        int recallDistance = 0;
+
+        if (recallBots)
+        {
+          var split = gridName.Split('.');
+          if (split.Length > 1)
+          {
+            int num;
+            if (int.TryParse(split[1], out num) && num >= 0)
+              recallDistance = num;
+          }
+        }
 
         for (int i = playerHelpers.Count - 1; i >= 0; i--)
         {
@@ -2308,6 +2375,15 @@ namespace AiEnabled
 
           if (recallBots)
           {
+            if (recallDistance > 0 && bot.Owner?.Character != null)
+            {
+              var ownerPos = bot.Owner.Character.WorldAABB.Center;
+              var botPos = bot.GetPosition();
+
+              if (Vector3D.DistanceSquared(ownerPos, botPos) > recallDistance * recallDistance)
+                continue;
+            }
+
             bot.PatrolMode = false;
             bot.FollowMode = false;
             bot.UseAPITargets = false;
@@ -2456,7 +2532,7 @@ namespace AiEnabled
               }
               else
               {
-                Logger.Log($"{GetType().FullName}: Unable to find valid position upon exit from seat! Grid = {gridGraph.MainGrid?.DisplayName ?? "NULL"}", MessageType.WARNING);
+                Logger.Warning($"{GetType().FullName}: Unable to find valid position upon exit from seat! Grid = {gridGraph.MainGrid?.DisplayName ?? "NULL"}");
               }
             }
             else if (relPosition.LengthSquared() < 2)
@@ -2498,7 +2574,6 @@ namespace AiEnabled
         }
 
         Scheduler.Schedule(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName), 10);
-        //MyAPIGateway.Utilities.InvokeOnGameThread(() => PlayerLeftCockpitDelayed(entityName, playerId, gridName), "AiEnabled", MyAPIGateway.Session.GameplayFrameCounter + 1);
       }
       catch (Exception ex)
       {
@@ -2737,7 +2812,20 @@ namespace AiEnabled
         bool targetisWildLife = false;
         if (Bots.TryGetValue(character.EntityId, out bot))
         {
-          if (bot != null && !bot.IsDead)
+          // bots may not affected by water or space 
+          if ((info.Type == MyDamageType.Asphyxia && ModSaveData.DisableAsphyxiaDamageForBots)
+            || (info.Type == MyDamageType.Temperature && ModSaveData.DisableTemperatureDamageForBots)
+            || (info.Type == MyDamageType.LowPressure && ModSaveData.DisableLowPressureDamageForBots))
+          {
+            info.Amount = 0;
+            return;
+          }
+
+          if (bot == null || bot.IsDead)
+          {
+            return;
+          }
+          else
           {
             targetIsBot = true;
 
@@ -2755,10 +2843,7 @@ namespace AiEnabled
         {
           targetIsPlayer = true;
         }
-        else if (string.IsNullOrWhiteSpace(character.DisplayName) 
-          || character.Definition.Id.SubtypeName.IndexOf("spider", StringComparison.OrdinalIgnoreCase) >= 0
-          || character.Definition.Id.SubtypeName.IndexOf("wolf", StringComparison.OrdinalIgnoreCase) >= 0
-          || character.Definition.Id.SubtypeName.IndexOf("hound", StringComparison.OrdinalIgnoreCase) >= 0)
+        else // not a bot, not a player, must be wildlife
         {
           targetisWildLife = true;
         }
@@ -2766,7 +2851,7 @@ namespace AiEnabled
         long ownerId = -1, ownerIdentityId = 0;
         float damageAmount;
 
-        if (targetIsBot && checkFriendlyFire )
+        if (targetIsBot && checkFriendlyFire)
         {
           var ent = MyEntities.GetEntityById(info.AttackerId, true);
           var grid = ent as MyCubeGrid;
@@ -2789,6 +2874,60 @@ namespace AiEnabled
 
         switch (info.Type.String)
         {
+          case "Asphyxia":
+            if (targetIsBot || targetisWildLife)
+            {
+              if (ModSaveData.DisableAsphyxiaDamageForBots)
+              {
+                info.Amount = 0;
+                return;
+              }
+              else
+              {
+                damageAmount = Math.Min(info.Amount, 10);
+              }
+            }
+            else
+            {
+              return;
+            }
+            break;
+          case "Temperature":
+            if (targetIsBot || targetisWildLife)
+            {
+              if (ModSaveData.DisableTemperatureDamageForBots)
+              {
+                info.Amount = 0;
+                return;
+              }
+              else
+              {
+                damageAmount = Math.Min(info.Amount, 10);
+              }
+            }
+            else
+            {
+              return;
+            }
+            break;
+          case "LowPressure":
+            if (targetIsBot || targetisWildLife)
+            {
+              if (ModSaveData.DisableLowPressureDamageForBots)
+              {
+                info.Amount = 0;
+                return;
+              }
+              else
+              {
+                damageAmount = Math.Min(info.Amount, 10);
+              }
+            }
+            else
+            {
+              return;
+            }
+            break;
           case "Environment":
             ownerId = info.AttackerId;
 
@@ -2903,6 +3042,10 @@ namespace AiEnabled
               info.Amount = 0;
               return;
             }
+            else if (targetisWildLife)
+            {
+              damageAmount = info.Amount;
+            }
 
             break;
           default:
@@ -2970,6 +3113,10 @@ namespace AiEnabled
               {
                 damageAmount = 10f;
               }
+            }
+            else if (targetisWildLife)
+            {
+              damageAmount = info.Amount;
             }
             else
             {
@@ -3458,7 +3605,7 @@ namespace AiEnabled
 
             if (!found)
             {
-              Logger.Log($"AiSession.OnEntityRemove: Control bot removed, but did not find its control info in the dictionary!", MessageType.WARNING);
+              Logger.Warning($"AiSession.OnEntityRemove: Control bot removed, but did not find its control info in the dictionary!");
             }
           }
 
@@ -3602,7 +3749,7 @@ namespace AiEnabled
             var jetpack = character.Components?.Get<MyCharacterJetpackComponent>();
             if (jetpack == null)
             {
-              Logger.Log($"AiSession.OnEntityAdded: Drone_Bot was added with null jetpack component!", MessageType.WARNING);
+              Logger.Warning($"AiSession.OnEntityAdded: Drone_Bot was added with null jetpack component!");
             }
             else if (!jetpack.TurnedOn)
             {
@@ -3853,6 +4000,194 @@ namespace AiEnabled
 
           var pkt = new AdminPacket(includeFriendly);
           Network.SendToServer(pkt);
+        }
+        else if (cmd.Equals("builddict", StringComparison.OrdinalIgnoreCase))
+        {
+          var matrix = character.WorldMatrix;
+          matrix.Translation += character.WorldMatrix.Forward * 10;
+
+          var grid = new MyObjectBuilder_CubeGrid()
+          {
+            CubeBlocks = new List<MyObjectBuilder_CubeBlock>(),
+            GridPresenceTier = MyUpdateTiersGridPresence.Normal,
+            IsRespawnGrid = false,
+            DampenersEnabled = false,
+            GridGeneralDamageModifier = 1,
+            GridSizeEnum = MyCubeSize.Large,
+            IsStatic = true,
+            IsPowered = true,
+            PersistentFlags = MyPersistentEntityFlags2.Enabled | MyPersistentEntityFlags2.InScene,
+            PlayerPresenceTier = MyUpdateTiersPlayerPresence.Normal,
+            CreatePhysics = true,
+            DestructibleBlocks = true,
+          };
+
+          Dictionary<Vector3I, string> directionChecks = new Dictionary<Vector3I, string>(Vector3I.Comparer);
+          var result = new StringBuilder(1024);
+          foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
+          {
+            var cubeDef = def as MyCubeBlockDefinition;
+            if (cubeDef == null || !cubeDef.Public || cubeDef.CubeSize != MyCubeSize.Large || _ignoreTypes.ContainsItem(cubeDef.Id.TypeId)) // || BlockInfo.IsKnown(cubeDef.Id))
+              continue;
+
+            if (cubeDef.DLCs == null)
+              continue;
+
+            if (!cubeDef.DLCs.Contains("MyObjectBuilder_DlcDefinition/Contact") && !cubeDef.DLCs.Contains("Contact"))
+              continue;
+
+            if (!cubeDef.HasPhysics)
+            {
+              Logger.Log($"{cubeDef.Id} has no physics");
+
+              result.Append($"{{\n  new MyDefinitionId(typeof({cubeDef.Id.TypeId}), \"{cubeDef.Id.SubtypeName}\"), new Dictionary<Vector3I, MyTuple<Direction[], Vector3, float, bool, bool>>(Vector3I.Comparer)\n  {{\n    ");
+
+              foreach (var kvp in cubeDef.IsCubePressurized)
+              {
+                var cell = kvp.Key;
+                result.Append($"{{ new Vector3I({cell.X},{cell.Y},{cell.Z}), MyTuple.Create(new Direction[] {{  }}, Vector3.Zero, 0f, false, false) }},\n");
+              }
+
+              result.Append($"}}\n}},\n");
+              continue;
+            }
+
+            var cube = (MyObjectBuilder_CubeBlock)MyObjectBuilderSerializer.CreateNewObject(cubeDef.Id);
+            grid.CubeBlocks.Clear();
+            grid.CubeBlocks.Add(cube);
+            grid.DisplayName = $"AIE_{cube.Name}";
+            grid.PositionAndOrientation = new MyPositionAndOrientation(ref matrix);
+
+            var ent = MyEntities.CreateFromObjectBuilderAndAdd(grid, true) as MyCubeGrid;
+            matrix.Translation += ent.WorldMatrix.Right * ent.PositionComp.WorldAABB.HalfExtents.AbsMax() * 2 + 5;
+
+            var block = ent.GetCubeBlock(ent.Min) as IMySlimBlock;
+            if (block == null)
+            {
+              ShowMessage($"Block is null for {ent.DisplayName}");
+              Logger.Log($"Block is null for {ent.DisplayName}");
+              continue;
+            }
+
+            result.Append($"{{\n  new MyDefinitionId(typeof({cubeDef.Id.TypeId}), \"{cubeDef.Id.SubtypeName}\"), new Dictionary<Vector3I, MyTuple<Direction[], Vector3, float, bool, bool>>(Vector3I.Comparer)\n  {{\n    ");
+
+            var min = block.Min;
+            var max = block.Max;
+            var blockMatrix = new MatrixI(block.Orientation);
+            MatrixI invMatrix;
+            MatrixI.Invert(ref blockMatrix, out invMatrix);
+
+            directionChecks.Clear();
+            directionChecks[blockMatrix.UpVector] = " Direction.Up,";
+            directionChecks[blockMatrix.DownVector] = " Direction.Down,";
+            directionChecks[blockMatrix.LeftVector] = " Direction.Left,";
+            directionChecks[blockMatrix.RightVector] = " Direction.Right,";
+            directionChecks[blockMatrix.ForwardVector] = " Direction.Forward,";
+            directionChecks[blockMatrix.BackwardVector] = " Direction.Backward,";
+
+            Vector3I_RangeIterator iter = new Vector3I_RangeIterator(ref min, ref max);
+            while (iter.IsValid())
+            {
+              var cell = iter.Current;
+              iter.MoveNext();
+
+              result.Append($"{{ new Vector3I({cell.X},{cell.Y},{cell.Z}), MyTuple.Create(new Direction[] {{ ");
+
+              var local = Vector3I.TransformNormal(cell, ref invMatrix);
+              var world = ent.GridIntegerToWorld(local);
+
+              // Run checks
+              foreach (var kvp in directionChecks)
+              {
+                var dirVec = kvp.Key;
+
+                var testLocal = local + dirVec;
+                var testWorld = ent.GridIntegerToWorld(testLocal);
+                var dir = Vector3D.Normalize(world - testWorld);
+
+                for (int i = 0; i < 4; i++)
+                {
+                  var spherePos = testWorld + dir * i * 0.5;
+                  var sphere = new BoundingSphereD(spherePos, 0.6);
+
+                  if (ent.GetIntersectionWithSphere(ref sphere))
+                  {
+                    result.Append(kvp.Value);
+                    break;
+                  }
+                }
+              }
+
+              if (result[result.Length - 1] == ',')
+                result.Length--;
+
+              result.Append($" }}, Vector3.Zero, 0f, false, false) }},\n  ");
+
+              if (iter.IsValid())
+                result.Append("  ");
+            }
+
+            result.Append($"}}\n}},\n");
+          }
+
+          directionChecks.Clear();
+          Logger.Log($"\n\n{result.ToString()}\n\n");
+        }
+        else if (cmd.Equals("GetName", StringComparison.OrdinalIgnoreCase) && _cli.ArgumentCount > 2)
+        {
+          var blockSubtype = _cli.Argument(2);
+
+          foreach (var def in MyDefinitionManager.Static.GetAllDefinitions())
+          {
+            var cubeDef = def as MyCubeBlockDefinition;
+            if (cubeDef == null)
+              continue;
+
+            if (cubeDef.Id.SubtypeName == blockSubtype)
+            {
+              MyAPIGateway.Utilities.ShowNotification(cubeDef.DisplayNameText, 5000);
+              break;
+            }
+          }
+        }
+        else if (cmd.Equals("GetSpecials", StringComparison.OrdinalIgnoreCase))
+        {
+          var grid = MyCubeBuilder.Static.FindClosestGrid();
+          if (grid == null)
+          {
+            MyAPIGateway.Utilities.ShowNotification($"No grid found for comparison...");
+          }
+          else
+          {
+            var defs = BlockInfo.GetSpecialsOnly();
+
+            if (defs.Count > 0)
+            {
+              var list = new List<string>(defs.Count);
+              var blocks = grid.GetBlocks().ToHashSet<IMySlimBlock>();
+              var blockHash = new HashSet<MyDefinitionId>(blocks.Count);
+
+              foreach (var b in blocks)
+                blockHash.Add(b.BlockDefinition.Id);
+
+              foreach (var def in defs)
+              {
+                if (!blockHash.Contains(def))
+                {
+                  var cubeDef = MyDefinitionManager.Static.GetCubeBlockDefinition(def);
+                  if (cubeDef != null)
+                    list.Add(cubeDef.DisplayNameText);
+                }
+              }
+
+              var text = string.Join(Environment.NewLine, list);
+              MyAPIGateway.Utilities.ShowMissionScreen("Specials Info", "", "", text, null, "Close");
+            }
+            else
+            {
+              MyAPIGateway.Utilities.ShowNotification($"No specials found!");
+            }
+          }
         }
       }
       catch (Exception ex)
@@ -4908,7 +5243,7 @@ namespace AiEnabled
                 {
                   if (kvp.Key != spawnFaction?.FactionId && kvp.Value.IsMember(spawnIdentityId))
                   {
-                    Logger.Log($"Found duplicate identity in faction {kvp.Value.Name} (discarding identity)", MessageType.WARNING);
+                    Logger.Warning($"Found duplicate identity in faction {kvp.Value.Name} (discarding identity)");
                     useBot = false;
                     bot.Delete();
                     break;
@@ -4918,14 +5253,26 @@ namespace AiEnabled
                 IMyPlayer p;
                 if (Players.TryGetValue(spawnIdentityId, out p) && p != null && p.Character?.EntityId != bot.EntityId)
                 {
-                  Logger.Log($"Found duplicate identity for player {p.DisplayName} (discarding identity)", MessageType.WARNING);
+                  Logger.Warning($"Found duplicate identity for player {p.DisplayName} (discarding identity)");
                   useBot = false;
                   bot.Delete();
+                }
+
+                if (spawnFaction != null)
+                {
+                  try
+                  {
+                    MyAPIGateway.Session.Factions.KickMember(spawnFaction.FactionId, spawnIdentityId);
+                  }
+                  catch
+                  {
+                    Logger.Warning($"Attempt to kick dummy bot {spawnIdentityId} from faction {spawnFaction.Tag} failed!");
+                  }
                 }
               }
               else
               {
-                Logger.Log($"Spawned a dummy bot, but it did not have an IdentityId > 0!", MessageType.WARNING);
+                Logger.Warning($"Spawned a dummy bot, but it did not have an IdentityId > 0!");
               }
 
               if (useBot)
@@ -4937,7 +5284,7 @@ namespace AiEnabled
             }
             else
             {
-              Logger.Log($"Attempted to spawn a dummy bot, but found it to be null!", MessageType.WARNING);
+              Logger.Warning($"Attempted to spawn a dummy bot, but found it to be null!");
             }
           }
           catch
@@ -4946,7 +5293,7 @@ namespace AiEnabled
               throw;
             else
             {
-              Logger.Log($"Spawn issue detected. Waiting to try again...", MessageType.WARNING);
+              Logger.Warning($"Spawn issue detected. Waiting to try again...");
               _controlSpawnTimeCheck = 600;
               _controllerSet = false;
               _isControlBot = false;
@@ -5508,7 +5855,7 @@ namespace AiEnabled
               var bot = BotFactory.SpawnHelper(info.CharacterDefinitionName, info.DisplayName ?? "", future.OwnerId, posOr, grid, ((BotType)info.Role).ToString(), info.ToolPhysicalItem?.SubtypeName, info.BotColor, crewType, info.AdminSpawned);
               if (bot == null)
               {
-                Logger.Log($"{GetType().FullName}: FutureBot returned null from spawn event", MessageType.WARNING);
+                Logger.Warning($"{GetType().FullName}: FutureBot returned null from spawn event");
               }
               else
               {
@@ -5562,7 +5909,7 @@ namespace AiEnabled
                   }
                   catch (Exception ex)
                   {
-                    Logger.Log($"Error trying to add items to future bot ({future.HelperInfo.DisplayName}) inventory: {ex.ToString()}", MessageType.WARNING);
+                    Logger.Warning($"Error trying to add items to future bot ({future.HelperInfo.DisplayName}) inventory: {ex.ToString()}");
                   }
                 }
 
@@ -5803,6 +6150,17 @@ namespace AiEnabled
         {
           _controllerInfo.Add(new ControlInfo(player, entityId));
           _controllerInfo.ApplyChanges();
+
+          var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(player.IdentityId);
+          if (faction != null)
+          {
+            try
+            {
+              Logger?.Debug($"GetBotControllerClient: Kicking bot id {player.IdentityId} from faction {faction.Tag}");
+              MyAPIGateway.Session.Factions.KickMember(faction.FactionId, player.IdentityId);
+            }
+            catch { }
+          }
 
           break;
         }
@@ -6372,7 +6730,7 @@ namespace AiEnabled
       {
         if (BotFactionTags.Count == 0)
         {
-          Logger.Log($"AiSession.BeforeStart: BotFactionTags found empty during faction pairing!", MessageType.WARNING);
+          Logger.Warning($"AiSession.BeforeStart: BotFactionTags found empty during faction pairing!");
           break;
         }
 
@@ -6385,7 +6743,7 @@ namespace AiEnabled
 
       if (helperFaction == null || !BotFactions.TryAdd(factionToPairWith.FactionId, helperFaction))
       {
-        Logger.Log($"Aisession.BeforeStart: Failed to add faction pair - ID: {factionToPairWith.FactionId}, BotFactionTag: {helperFaction?.Tag ?? "NULL"}", MessageType.WARNING);
+        Logger.Warning($"Aisession.BeforeStart: Failed to add faction pair - ID: {factionToPairWith.FactionId}, BotFactionTag: {helperFaction?.Tag ?? "NULL"}");
       }
       else
       {

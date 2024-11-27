@@ -26,6 +26,22 @@ namespace AiEnabled.Utilities
 
     public static T CastHax<T>(T typeRef, object castObj) => (T)castObj;
 
+    public static bool AreStairsOnLeftSide(IMySlimBlock stairBlock)
+    {
+      if (stairBlock != null && !stairBlock.IsDestroyed)
+      {
+        // Mirrored has stairs on Left side
+        if (AiSession.Instance.HalfStairMirroredDefinitions.Contains(stairBlock.BlockDefinition.Id))
+          return true;
+
+        // Grated Catwalk Expansion
+        return AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(stairBlock.BlockDefinition.Id)
+          && stairBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right");
+      }
+
+      return false;
+    }
+
     public static Vector3I GetCellForPosition(IMySlimBlock block, Vector3I localPosition)
     {
       if (block == null)
@@ -71,7 +87,7 @@ namespace AiEnabled.Utilities
 
       bool? flag = IsAirtightFromDefinition(cubeDef, block.BuildLevelRatio);
 
-      if (flag.HasValue)
+      if (flag.HasValue && flag.Value)
       {
         return flag.Value;
       }

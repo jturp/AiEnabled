@@ -35,6 +35,7 @@ using VRage.Game.Entity.UseObject;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
 using VRage.ObjectBuilders;
+using VRage.Scripting;
 using VRage.Utils;
 
 using VRageMath;
@@ -1397,7 +1398,8 @@ namespace AiEnabled.Bots
               if (!faction.AutoAcceptMember)
                 MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
 
-              MyVisualScriptLogicProvider.SetPlayersFaction(botId, faction.Tag);
+              //MyVisualScriptLogicProvider.SetPlayersFaction(botId, faction.Tag);
+              TrySetBotFaction(botId, faction.FactionId);
             }
             else if (MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId)?.Tag != "SPRT")
             {
@@ -1407,7 +1409,8 @@ namespace AiEnabled.Bots
                 if (!faction.AutoAcceptMember)
                   MyAPIGateway.Session.Factions.ChangeAutoAccept(faction.FactionId, botId, true, faction.AutoAcceptPeace);
 
-                MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
+                //MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
+                TrySetBotFaction(botId, faction.FactionId);
               }
             }
           }
@@ -1428,7 +1431,8 @@ namespace AiEnabled.Bots
             if (!botFaction.AutoAcceptMember)
               MyAPIGateway.Session.Factions.ChangeAutoAccept(botFaction.FactionId, botId, true, botFaction.AutoAcceptPeace);
 
-            MyVisualScriptLogicProvider.SetPlayersFaction(botId, "NOMAD");
+            //MyVisualScriptLogicProvider.SetPlayersFaction(botId, "NOMAD");
+            TrySetBotFaction(botId, botFaction.FactionId);
             
             botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
             if (botFaction == null)
@@ -1459,7 +1463,8 @@ namespace AiEnabled.Bots
               if (!botFaction.AutoAcceptMember)
                 MyAPIGateway.Session.Factions.ChangeAutoAccept(botFaction.FactionId, botId, true, botFaction.AutoAcceptPeace);
 
-              MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
+              //MyVisualScriptLogicProvider.SetPlayersFaction(botId, "SPRT");
+              TrySetBotFaction(botId, botFaction.FactionId);
             }
 
             botFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(botId);
@@ -1650,7 +1655,13 @@ namespace AiEnabled.Bots
             MyAPIGateway.Session.Factions.AcceptPeace(ownerFaction.FactionId, botFaction.FactionId);
           }
 
-          MyVisualScriptLogicProvider.SetPlayersFaction(botPlayerId, botFaction.Tag);
+          { // hack due to the issue with kicking members that don't have a valid MyIdentity (v1.205 Contact update)
+            // Now I remove the dummy bot from its faction at initial spawn, which keeps from needing to do it here
+
+            //MyVisualScriptLogicProvider.SetPlayersFaction(botPlayerId, botFaction.Tag);
+            TrySetBotFaction(botPlayerId, botFaction.FactionId);
+          }
+
           MyAPIGateway.Session.Factions.SetReputation(botFaction.FactionId, ownerFaction.FactionId, int.MaxValue);
           MyAPIGateway.Session.Factions.SetReputation(ownerFaction.FactionId, botFaction.FactionId, int.MaxValue);
           MyAPIGateway.Session.Factions.SetReputationBetweenPlayerAndFaction(botPlayerId, ownerFaction.FactionId, int.MaxValue);
@@ -1792,6 +1803,35 @@ namespace AiEnabled.Bots
       }
 
       return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
+    }
+
+    public static bool TrySetBotFaction(long botPlayerId, string tag)
+    {
+      var faction = MyAPIGateway.Session.Factions.TryGetFactionByTag(tag);
+      if (faction == null)
+      {
+        AiSession.Instance.Logger.Warning($"Faction returned null for tag {tag} in TrySetBotFaction!");
+        return false;
+      }
+
+      return TrySetBotFaction(faction.FactionId, botPlayerId);
+    }
+
+    public static bool TrySetBotFaction(long botPlayerId, long factionId)
+    {
+      try
+      { // hack due to the issue with kicking members that don't have a valid MyIdentity (v1.205 Contact update)
+        // Now I remove the dummy bot from its faction at initial spawn, which keeps from needing to do it here
+
+        //MyVisualScriptLogicProvider.SetPlayersFaction(botPlayerId, botFaction.Tag);
+        MyAPIGateway.Session.Factions.SendJoinRequest(factionId, botPlayerId);
+        return true;
+      }
+      catch(Exception ex)
+      {
+        AiSession.Instance.Logger.Error($"Exception in TrySetBotFaction: {ex}");
+        return false;
+      }
     }
 
     public static BotRoleEnemy ParseEnemyBotRole(string role)

@@ -14,6 +14,8 @@ namespace AiEnabled.Ai.Support
 {
   public class TempNode : Node
   {
+    public bool CanBeSkipped = true;
+
     public TempNode() { }
   }
 }

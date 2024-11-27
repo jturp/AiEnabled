@@ -24,6 +24,7 @@ using Sandbox.Definitions;
 using Sandbox.Common.ObjectBuilders;
 using MyItemType = VRage.Game.ModAPI.Ingame.MyItemType;
 using MyItemInfo = VRage.Game.ModAPI.Ingame.MyItemInfo;
+using Direction = VRageMath.Base6Directions.Direction;
 using VRage.Voxels;
 using AiEnabled.API;
 using AiEnabled.Parallel;
@@ -33,6 +34,8 @@ using VRage.Utils;
 using VRage;
 using System.Runtime.ConstrainedExecution;
 using AiEnabled.Utilities;
+using ObjectBuilders.SafeZone;
+using SpaceEngineers.ObjectBuilders.ObjectBuilders;
 
 namespace AiEnabled
 {
@@ -121,10 +124,165 @@ namespace AiEnabled
       new Vector3I(-1, -1, -1)
     };
 
+    //public Dictionary<MyDefinitionId, Direction[]> InvalidBlockDirectionInfo = new Dictionary<MyDefinitionId, Direction[]>(MyDefinitionId.Comparer)
+    //{
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfRailing"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfCenterRailing"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfOuterRailing"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkWall"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkStraight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkCorner"), new [] { Direction.Forward, Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkRailingHalfLeft"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkRailingHalfRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkRailingEnd"), new [] { Direction.Left, Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeSteelCatwalk2Sides"), new [] { Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeSteelCatwalkCorner"), new [] { Direction.Forward, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeSteelCatwalk"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "RailingStraight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "RailingDouble"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "RailingCorner"), new [] { Direction.Left, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_Cockpit), "PassengerSeatLarge"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "DeadBody01"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "DeadBody03"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "DeadBody06"), new [] { Direction.Backward } },
+
+    //  // Grated Catwalks Exapnsion
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWall"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEnd"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkCorner"), new [] { Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfLeft"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthCrossoverLeft"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthCrossoverRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfTJunction"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthTJunctionBalcony"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthBalcony"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkMixedTJunctionRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkMixedTJunctionLeft"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkDiagonalBaseRight"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkDiagonalBaseLeft"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeCatwalkDiagonalWall"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeCatwalkEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeCatwalkEndRight"), new [] { Direction.Left, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkEndRight"), new [] { Direction.Left, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkHalfWidthCornerA"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkHalfWidthCornerB"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkMixedCornerLeft"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkMixedCornerRight"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkCurvedWall"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkWall"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkWallOffset"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkStraight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkCornerBaseLeft"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkCornerBaseRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkLCornerLeft"), new [] { Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkLCornerRight"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkMixedCornerLeft"), new [] { Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkMixedCornerRight"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkEndRight"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkSquareEnd"), new [] { Direction.Left, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkTJunctionBaseLeft"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkTJunctionBaseRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkCorner"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkCrossoverLeft"), new [] { Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkCrossoverRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkTJunction"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkLeft"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWallLeft"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWallRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkDiagonalWallLeft"), new [] { Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkDiagonalWallRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkStraightLeft"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkStraightRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWideEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWideEndRight"), new [] { Direction.Left, Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkNarrowEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkNarrowEndRight"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAngledEndLeft"), new [] { Direction.Right, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAngledEndRight"), new [] { Direction.Left, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkObtuseCornerLeft"), new [] { Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkObtuseCornerRight"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAcuteCornerLeft"), new [] { Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAcuteCornerRight"), new [] { Direction.Left, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkCorner"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkHalfCornerA"), new [] { Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkHalfCornerB"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedCornerLeft"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedCornerRight"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkDiagonalTJunction"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkEndRight"), new [] { Direction.Left, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedTJunctionLeft"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedTJunctionRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkCorner"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkHalfCornerA"), new [] { Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkHalfCornerB"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedCornerLeft"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedCornerRight"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkDiagonalTJunction"), new [] { Direction.Left, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkEndLeft"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkEndRight"), new [] { Direction.Left, Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedTJunctionLeft"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedTJunctionRight"), new [] { Direction.Left } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkHalfWidthBalcony"), new [] { Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkFullCurvedWall"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkStraightWall"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkStraight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkDiagonalCornerLeft"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkDiagonalCornerRight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkEnd"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageSupported"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageSupportedStraight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageBaseless"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageBaselessStraight"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMLadderCapCaged"), new [] { Direction.Left, Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkLadderMiddle"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkLadderBottom"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEndLadderTop"), new [] { Direction.Left, Direction.Right, Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEndLadderMiddle"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEndLadderBottom"), new [] { Direction.Left, Direction.Right, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraightLadderTop"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraightLadderMiddle"), new [] { Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraightLadderBottom"), new [] { Direction.Forward, Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderTop"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderMiddle"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderBottom"), new [] { Direction.Backward } },
+
+    //  // Signal Update
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "ExtendedWindow"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "ExtendedWindowRailing"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "ExtendedWindowCorner"), new Direction[] { } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "ExtendedWindowEnd"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "ExtendedWindowDome"), new [] { Direction.Forward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "Corridor"), new [] { Direction.Left, Direction.Right, Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_InteriorLight), "CorridorLight"), new [] { Direction.Left, Direction.Right, Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CorridorWindow"), new [] { Direction.Left, Direction.Right, Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CorridorDoubleWindow"), new [] { Direction.Left, Direction.Right, Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CorridorCorner"), new [] { Direction.Forward, Direction.Right, Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CorridorT"), new [] { Direction.Right, Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CorridorX"), new [] { Direction.Up, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussPillarOffset"), new [] { Direction.Backward } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussSloped"), new [] { Direction.Left, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussAngled"), new [] { Direction.Backward, Direction.Right } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussHalf"), new Direction[] {  } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloor"), new [] { Direction.Left, Direction.Right, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorT"), new [] { Direction.Right, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorX"), new [] { Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorAngled"), new [] { Direction.Backward, Direction.Right, Direction.Down } },
+    //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorAngledInverted"), new [] { Direction.Backward, Direction.Right, Direction.Down } },
+
+    //};
+
     public MyDefinitionId[] VanillaTurretDefinitions = new MyDefinitionId[]
     {
       new MyDefinitionId(typeof(MyObjectBuilder_LargeGatlingTurret)),
       new MyDefinitionId(typeof(MyObjectBuilder_LargeMissileTurret)),
+      new MyDefinitionId(typeof(MyObjectBuilder_LargeGatlingTurret), "LargeGatlingTurretReskin"),
+      new MyDefinitionId(typeof(MyObjectBuilder_LargeMissileTurret), "LargeMissileTurretReskin"),
     };
 
     public MyDefinitionId[] ButtonPanelDefinitions = new MyDefinitionId[]
@@ -298,6 +456,9 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussSloped"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussAngled"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloor"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorT"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorX"),
+      new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloor"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorHalf"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorAngled"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "TrussFloorAngledInverted"),
@@ -377,135 +538,6 @@ namespace AiEnabled
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster11"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeWarningSignEaster13"),
       new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "AirDuctGrate"),
-    };
-
-    public Dictionary<MyDefinitionId, Base6Directions.Direction[]> CatwalkRailDirections { get; protected set; } = new Dictionary<MyDefinitionId, Base6Directions.Direction[]>(MyDefinitionId.Comparer)
-    {
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfCenterRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfOuterRailing"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkRailingHalfLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkRailingHalfRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkRailingEnd"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeSteelCatwalk2Sides"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeSteelCatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "LargeSteelCatwalk"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "RailingStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "RailingDouble"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "RailingCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_Cockpit), "PassengerSeatLarge"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "DeadBody01"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "DeadBody03"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "DeadBody06"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-
-      // Grated Catwalks Exapnsion
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEnd"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthCrossoverLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthCrossoverRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfTJunction"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthTJunctionBalcony"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkHalfWidthBalcony"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkMixedTJunctionRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkMixedTJunctionLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkDiagonalBaseRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkDiagonalBaseLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeCatwalkDiagonalWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeCatwalkEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeCatwalkEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkHalfWidthCornerA"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkHalfWidthCornerB"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkMixedCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkMixedCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMRoundCatwalkCurvedWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkWallOffset"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkCornerBaseLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkCornerBaseRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkLCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkLCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkMixedCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkMixedCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkSquareEnd"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkTJunctionBaseLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthCatwalkTJunctionBaseRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkCrossoverLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkCrossoverRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfWidthDiagonalCatwalkTJunction"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWallLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWallRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkDiagonalWallLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkDiagonalWallRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkStraightLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkStraightRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWideEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkWideEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkNarrowEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkNarrowEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAngledEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAngledEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkObtuseCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkObtuseCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAcuteCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSlopeBaseCatwalkAcuteCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkHalfCornerA"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkHalfCornerB"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkDiagonalTJunction"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedTJunctionLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedCatwalkMixedTJunctionRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkCorner"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkHalfCornerA"), new Base6Directions.Direction[] { Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkHalfCornerB"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkDiagonalTJunction"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkEndLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkEndRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedTJunctionLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfSlopeInvertedRoundedCatwalkMixedTJunctionRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkHalfWidthBalcony"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkFullCurvedWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkStraightWall"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkDiagonalCornerLeft"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkDiagonalCornerRight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMHalfStadiumCatwalkEnd"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageSupported"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageSupportedStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageBaseless"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMGratedCatwalkPassageBaselessStraight"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMLadderCapCaged"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkLadderMiddle"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkLadderBottom"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEndLadderTop"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEndLadderMiddle"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkEndLadderBottom"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraightLadderTop"), new Base6Directions.Direction[] { Base6Directions.Direction.Left, Base6Directions.Direction.Right } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraightLadderMiddle"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkStraightLadderBottom"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward, Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderTop"), new Base6Directions.Direction[] { Base6Directions.Direction.Forward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderMiddle"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
-      { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "GCMSquareCatwalkWallLadderBottom"), new Base6Directions.Direction[] { Base6Directions.Direction.Backward } },
     };
 
     Dictionary<string, int> _activeHelpersToUpkeep = new Dictionary<string, int>();
@@ -807,6 +839,14 @@ namespace AiEnabled
     public ConcurrentStack<MyEntity3DSoundEmitter> SoundEmitters = new ConcurrentStack<MyEntity3DSoundEmitter>();
     public ConcurrentStack<Vector3D[]> CornerArrayStack = new ConcurrentStack<Vector3D[]>();
 
+    public AiEPool<MyQueue<Node>> NodeQueuePool = new AiEPool<MyQueue<Node>>
+    (
+      defaultCapacity: 250,
+      clear: (x) => x.Clear(),
+      activator: () => new MyQueue<Node>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
     public AiEPool<List<IMyCharacter>> CharacterListPool = new AiEPool<List<IMyCharacter>>
     (
       defaultCapacity: 250,
@@ -955,6 +995,14 @@ namespace AiEnabled
       deactivator: (x) => { x.Clear(); x = null; }
     );
 
+    public AiEPool<List<Vector3D>> PositionListPool = new AiEPool<List<Vector3D>>
+    (
+      defaultCapacity: 250,
+      clear: (x) => x.Clear(),
+      activator: () => new List<Vector3D>(),
+      deactivator: (x) => { x.Clear(); x = null; }
+    );
+
     public AiEPool<List<MyVoxelBase>> VoxelMapListPool = new AiEPool<List<MyVoxelBase>>
     (
       defaultCapacity: 250,
@@ -1086,7 +1134,7 @@ namespace AiEnabled
     HashSet<long> _botsToClose = new HashSet<long>();
     MyQueue<MyTuple<long, string, int>> _prefabsToCheck = new MyQueue<MyTuple<long, string, int>>();
 
-    MyObjectBuilderType[] _ignoreTypes = new MyObjectBuilderType[]
+    internal MyObjectBuilderType[] _ignoreTypes = new MyObjectBuilderType[]
     {
       typeof(MyObjectBuilder_DebugSphere1),
       typeof(MyObjectBuilder_DebugSphere2),

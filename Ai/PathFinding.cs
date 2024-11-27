@@ -76,7 +76,7 @@ namespace AiEnabled.Ai
             bot._noPathCounter++;
 
           if (graph.IsGridGraph)
-            ConstructPathForGrid(start, goal, collection);
+            ConstructPathForGridV2(start, goal, collection);
           else
             ConstructPathForVoxel(start, goal, collection);
         }
@@ -211,7 +211,7 @@ namespace AiEnabled.Ai
       collection.CheckDoors(out relation);
 
 
-      //AiSession.Instance.Logger.AddLine($"RunAlgorithm: Start = {start}, Goal = {goal}");
+     // AiSession.Instance.Logger.AddLine($"RunAlgorithm: Start = {start}, Goal = {goal}");
 
       bool pathFound = false;
       while (queue.Count > 0)
@@ -219,24 +219,24 @@ namespace AiEnabled.Ai
         var currentMS = collection.PathTimer.Elapsed.TotalMilliseconds;
         if (collection.Dirty || currentMS > maxTimeMS)
         {
-          //AiSession.Instance.Logger.AddLine($" -> Collection Dirty or Timeout");
+         // AiSession.Instance.Logger.AddLine($" -> Collection Dirty or Timeout");
           break;
         }
 
         if (pathFound)
         {
-          //AiSession.Instance.Logger.AddLine($" -> Path found!");
+         // AiSession.Instance.Logger.AddLine($" -> Path found!");
           break;
         }
 
         Vector3I current;
         if (!queue.TryDequeue(out current))
         {
-          //AiSession.Instance.Logger.AddLine($" -> Failed to dequeue from Queue");
+         // AiSession.Instance.Logger.AddLine($" -> Failed to dequeue from Queue");
           break;
         }
 
-        //AiSession.Instance.Logger.AddLine($" -> Current = {current}");
+       // AiSession.Instance.Logger.AddLine($" -> Current = {current}");
 
         if (current == goal)
         {
@@ -244,7 +244,7 @@ namespace AiEnabled.Ai
 
           if (!isGridGraph)
           {
-            //AiSession.Instance.Logger.AddLine($" -> Path found!");
+           // AiSession.Instance.Logger.AddLine($" -> Path found!");
             break;
           }
         }
@@ -252,14 +252,14 @@ namespace AiEnabled.Ai
         Vector3I previous;
         if (!cameFrom.TryGetValue(current, out previous))
         {
-          //AiSession.Instance.Logger.AddLine($" -> Failed to find previous in CameFrom for {current}");
+         // AiSession.Instance.Logger.AddLine($" -> Failed to find previous in CameFrom for {current}");
           break;
         }
 
         Node currentNode;
         if (!graph.TryGetNodeForPosition(current, out currentNode))
         {
-          //AiSession.Instance.Logger.AddLine($" -> Failed to find node for current, {current}");
+         // AiSession.Instance.Logger.AddLine($" -> Failed to find node for current, {current}");
           break;
         }
 
@@ -318,21 +318,21 @@ namespace AiEnabled.Ai
 
         currentCost = Math.Max(1, currentCost);
 
-        //AiSession.Instance.Logger.AddLine($" -> Checking Neighbors: Prev = {previous}, Cur = {current}");
+       // AiSession.Instance.Logger.AddLine($" -> Checking Neighbors: Prev = {previous}, Cur = {current}");
         foreach (var next in graph.Neighbors(bot, previous, current, botPosition, checkDoors))
         {
-          //AiSession.Instance.Logger.AddLine($"  -> Next = {next}");
+         // AiSession.Instance.Logger.AddLine($"  -> Next = {next}");
 
           if (next == previous)
           {
-            //AiSession.Instance.Logger.AddLine($"  -> Next == Previous");
+           // AiSession.Instance.Logger.AddLine($"  -> Next == Previous");
             continue;
           }
 
           Node node;
           if (!graph.TryGetNodeForPosition(next, out node))
           {
-            //AiSession.Instance.Logger.AddLine($"   -> No node found for next");
+           // AiSession.Instance.Logger.AddLine($"   -> No node found for next");
             continue;
           }
 
@@ -388,7 +388,7 @@ namespace AiEnabled.Ai
               continue;
           }
 
-          //AiSession.Instance.Logger.AddLine($"   -> Able to use this node");
+         // AiSession.Instance.Logger.AddLine($"   -> Able to use this node");
 
           int nextCost;
           bool stackFound = false;
@@ -402,7 +402,7 @@ namespace AiEnabled.Ai
                 intermediatePoints.Add(tuple);
             }
 
-            //stackFound = true; // TODO: not sure why I removed this xD
+            // stackFound = true; // TODO: not sure why I removed this xD
           }
 
           if (!stackFound && (!costSoFar.TryGetValue(next, out nextCost) || newCost < nextCost))
@@ -410,7 +410,7 @@ namespace AiEnabled.Ai
             var isGoal = next == goal;
             int priority = isGoal ? -1 : newCost + Vector3I.DistanceManhattan(next, goal);
 
-            //AiSession.Instance.Logger.AddLine($"   -> Adding {next} to queue with pri {priority}");
+           // AiSession.Instance.Logger.AddLine($"   -> Adding {next} to queue with pri {priority}");
 
             queue.Enqueue(next, priority);
             costSoFar[next] = newCost;
@@ -481,7 +481,7 @@ namespace AiEnabled.Ai
       cache.Clear();
     }
 
-    static void ConstructPathForGrid(Vector3I start, Vector3I end, PathCollection collection)
+    static void ConstructPathForGridV2(Vector3I start, Vector3I end, PathCollection collection)
     {
       var cameFrom = collection.CameFrom;
       var path = collection.TempPath;
@@ -583,147 +583,119 @@ namespace AiEnabled.Ai
             break;
           }
 
-          var localVec = cache[i];
+          Vector3I localVec = cache[i];
+          Vector3I gridLocalVector = localVec;
           MyCubeGrid grid = mainGrid;
-          var gridLocalVector = localVec;
+
+          bool addOffsetStart = cache.Count <= i + 1;
+          bool prevIsCatwalkExpansion = false, thisIsCatwalkExpansion = false, nextIsCatwalkExpansion = false;
+          bool canSkip = false;
 
           Node n;
-          if (gridGraph.TryGetNodeForPosition(localVec, out n) && n != null)
+          IMySlimBlock block = null;
+          UsableEntry thisEntry = null, nextEntry = null, prevEntry = null;
+
+          if (gridGraph.TryGetNodeForPosition(gridLocalVector, out n))
           {
-            if (n.IsGridNodePlanetTile)
-            {
-              AddNodeToPath(path, n);
-              continue;
-            }
-
-            if (n.IsGridNodeUnderGround)
-              continue;
-
-            var block = n.Block;
+            block = n.Block ?? grid.GetCubeBlock(gridLocalVector);
             if (block != null)
             {
-              grid = block.CubeGrid as MyCubeGrid;
+              var blockDef = (MyCubeBlockDefinition)block.BlockDefinition;
+              var cell = blockDef.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(block, gridLocalVector) : Vector3I.Zero;
+              var key = MyTuple.Create(blockDef.Id, cell);
 
-              if (grid.EntityId != mainGrid.EntityId)
-              {
-                var worldVec = mainGrid.GridIntegerToWorld(localVec);
-                gridLocalVector = grid.WorldToGridInteger(worldVec);
-              }
+              thisIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(key.Item1)
+                && key.Item1.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
 
-              if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(block.BlockDefinition.Id))
-              {
-                var positionBelow = localVec + intVecDown;
-
-                Node nBelow;
-                if (gridGraph.TryGetNodeForPosition(positionBelow, out nBelow) && nBelow?.Block != null)
-                {
-                  var blockBelowDef = nBelow.Block.BlockDefinition.Id;
-                  if (AiSession.Instance.SlopeBlockDefinitions.Contains(blockBelowDef)
-                    && !(nBelow.Block.FatBlock is IMyTextPanel)
-                    && !AiSession.Instance.HalfStairBlockDefinitions.Contains(blockBelowDef)
-                    && !AiSession.Instance.SlopedHalfBlockDefinitions.Contains(blockBelowDef))
-                  {
-                    // railing over stair / slope, can skip
-                    // can't skip over half stair / slope bc of how alignment is adjusted
-                    continue;
-                  }
-                }
-              }
+              AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out thisEntry);
             }
+
+            canSkip = n.CanSkip;
           }
 
-          bool thisIsHalfStair = false, thisisHalfPanelSlope = false, thisIsRailing = false, thisIsCatwalkExpansion = false;
-          bool prevIsHalfStair = false, prevIsHalfPanelSlope = false, prevIsRailing = false, prevIsCatwalkExpansion = false;
-          bool nextIsHalfStair = false, afterNextIsHalfStair = false, nextIsCatwalkExpansion = false;
-          bool nextIsHalfPanelSlope = false, afterNextIsHalfPanelSlope = false;
-          bool nextIsHalfBlock = false, nextIsRailing = false, afterNextIsRailing = false;
-          bool addOffsetStart = cache.Count <= i + 1;
-
-          Vector3D? offset = null;
+          Vector3D? offset = thisEntry?.GetOffset(block) ?? n?.Offset;
           Vector3I fromVec = addOffsetStart ? start : cache[i + 1]; // If no previous in list, then previous is start position
           Vector3I fromToLocal = localVec - fromVec;
           Vector3D fwdTravelDir = fromToLocal == Vector3I.Zero ? Vector3D.Zero : gridMatrix.GetDirectionVector(Base6Directions.GetDirection(fromToLocal));
           Vector3I toVec;
 
-          IMySlimBlock prevBlock = gridGraph.GetBlockAtPosition(fromVec);
-          IMySlimBlock thisBlock = grid.GetCubeBlock(gridLocalVector);
+          IMySlimBlock thisBlock = block;
+          IMySlimBlock prevBlock = (fromVec == start) ? thisBlock : gridGraph.GetBlockAtPosition(fromVec);
           IMySlimBlock nextBlock = null, afterNextBlock = null;
 
-          if (prevBlock == null && gridGraph.TryGetNodeForPosition(fromVec, out n) && n?.Block != null)
+          if (prevBlock == null && gridGraph.TryGetNodeForPosition(fromVec, out n))
           {
-            prevBlock = n.Block;
+            prevBlock = n?.Block;
           }
 
           if (prevBlock != null)
           {
-            var prevDef = prevBlock.BlockDefinition.Id;
-            prevIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(prevDef);
-            prevIsHalfPanelSlope = !prevIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(prevDef);
-            prevIsRailing = !prevIsHalfPanelSlope && AiSession.Instance.RailingBlockDefinitions.ContainsItem(prevDef);
-            prevIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(prevDef)
-              && prevDef.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
-          }
-
-          if (thisBlock == null && gridGraph.TryGetNodeForPosition(gridLocalVector, out n) && n?.Block != null)
-          {
-            thisBlock = n.Block;
-          }
-
-          bool thisBlockNull = thisBlock == null || !((MyCubeBlockDefinition)thisBlock.BlockDefinition).HasPhysics;
-          bool thisBlockValid = thisBlock != null && ((MyCubeBlockDefinition)thisBlock.BlockDefinition).HasPhysics;
-
-          Node thisNode;
-          if (thisBlockValid && gridGraph.TryGetNodeForPosition(gridLocalVector, out thisNode) && thisNode?.IsGroundNode == true)
-          {
-            var positionBelow = localVec + intVecDown;
-            if (gridGraph.TryGetNodeForPosition(positionBelow, out n) && n?.Block != null && AiSession.Instance.SlopeBlockDefinitions.Contains(n.Block.BlockDefinition.Id))
+            if (fromVec == start)
             {
-              if (CanIgnoreBlock(thisBlock, gridGraph))
-              {
-                thisBlockNull = true;
-                thisBlockValid = false;
-              }
+              prevEntry = thisEntry;
+              prevIsCatwalkExpansion = thisIsCatwalkExpansion;
+            }
+            else
+            {
+              var prevDef = (MyCubeBlockDefinition)prevBlock.BlockDefinition;
+              var cell = prevDef.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(prevBlock, fromVec) : Vector3I.Zero;
+              var key = MyTuple.Create(prevDef.Id, cell);
+
+              prevIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(key.Item1)
+                && prevDef.Id.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+
+              AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out prevEntry);
+            }
+
+            if (canSkip && prevEntry?.SpecialConsideration == true)
+            {
+              // Assumed to be the air space above a half stair or something, and the extra waypoint is not necessary
+              continue;
             }
           }
 
-          bool nextBlockNull = true;
-          bool afterNextBlockNull = true;
-          bool nextBlockValid = false;
-          bool afterNextBlockValid = false;
-
-          if (thisBlockValid)
-          {
-            var thisDef = thisBlock.BlockDefinition.Id;
-            thisIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(thisDef);
-            thisisHalfPanelSlope = !thisIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(thisDef);
-            thisIsRailing = !thisisHalfPanelSlope && !thisIsHalfStair && AiSession.Instance.RailingBlockDefinitions.ContainsItem(thisDef);
-            thisIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(thisDef)
-              && thisDef.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
-          }
+          bool addOffsetForNextStair = false;
+          IMySlimBlock nextStairBlock = null;
 
           if (i > 0)
           {
             next = cache[i - 1];
             nextBlock = gridGraph.GetBlockAtPosition(next);
 
-            if (nextBlock == null && gridGraph.TryGetNodeForPosition(next, out n) && n?.Block != null)
+            if (nextBlock == null && gridGraph.TryGetNodeForPosition(next, out n))
             {
-              nextBlock = n.Block;
+              nextBlock = n?.Block;
             }
 
-            nextBlockNull = nextBlock == null || !((MyCubeBlockDefinition)nextBlock.BlockDefinition).HasPhysics;
-            nextBlockValid = nextBlock != null && ((MyCubeBlockDefinition)nextBlock.BlockDefinition).HasPhysics;
-
-            if (nextBlockValid)
+            if (nextBlock != null)
             {
-              var nextDef = nextBlock.BlockDefinition.Id;
-              nextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(nextDef);
-              nextIsHalfPanelSlope = !nextIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(nextDef);
-              nextIsRailing = !nextIsHalfPanelSlope && AiSession.Instance.RailingBlockDefinitions.ContainsItem(nextDef);
-              nextIsHalfBlock = !nextIsRailing && (nextDef.SubtypeName.EndsWith("HalfArmorBlock")
-                || (nextDef.SubtypeName.StartsWith("AQD_LG") && nextDef.SubtypeName.EndsWith($"Concrete_Half_Block")));
-              nextIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(nextDef)
-                && nextDef.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+              var nextDef =  (MyCubeBlockDefinition)nextBlock.BlockDefinition;
+              var cell = nextDef.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(nextBlock, next) : Vector3I.Zero;
+              var key = MyTuple.Create(nextDef.Id, cell);
+
+              nextIsCatwalkExpansion = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(key.Item1)
+                && nextDef.Id.SubtypeName.IndexOf("catwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+
+              AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out nextEntry);
+
+              bool thisNotSpecial = thisEntry == null || !thisEntry.SpecialConsideration;
+              var nextIsSpecial = nextEntry?.SpecialConsideration == true;
+
+              if (nextIsSpecial)
+              {
+                if (canSkip)
+                {
+                  // Assumed to be the air space above a half stair or something, and the extra waypoint is not necessary
+                  continue;
+                }
+                else if (thisNotSpecial && nextDef.Id.SubtypeName.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  // going up stairs, add offset
+
+                  nextStairBlock = nextBlock;
+                  addOffsetForNextStair = true;
+                }
+              }
             }
 
             if (i > 1)
@@ -733,1522 +705,117 @@ namespace AiEnabled.Ai
 
               afterNextBlock = gridGraph.GetBlockAtPosition(afterNext);
 
-              if (afterNextBlock == null && gridGraph.TryGetNodeForPosition(afterNext, out n) && n?.Block != null)
+              if (afterNextBlock == null && gridGraph.TryGetNodeForPosition(afterNext, out n))
               {
-                afterNextBlock = n.Block;
+                afterNextBlock = n?.Block;
               }
 
-              afterNextBlockNull = afterNextBlock == null || !((MyCubeBlockDefinition)afterNextBlock.BlockDefinition).HasPhysics;
-              afterNextBlockValid = afterNextBlock != null && ((MyCubeBlockDefinition)afterNextBlock.BlockDefinition).HasPhysics;
-
-              if (afterNextBlockValid)
+              if (afterNextBlock != null)
               {
-                var afterNextDef = afterNextBlock.BlockDefinition.Id;
-                afterNextIsHalfStair = AiSession.Instance.HalfStairBlockDefinitions.Contains(afterNextDef);
-                afterNextIsHalfPanelSlope = !afterNextIsHalfStair && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(afterNextDef);
-                afterNextIsRailing = !afterNextIsHalfPanelSlope && AiSession.Instance.RailingBlockDefinitions.ContainsItem(afterNextDef);
+                var afterNextDef = (MyCubeBlockDefinition)afterNextBlock.BlockDefinition;
+                var cell = afterNextDef.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(afterNextBlock, afterNext) : Vector3I.Zero;
+                var key = MyTuple.Create(afterNextDef.Id, cell);
+
+                var afterNextEntry = AiSession.Instance.BlockInfo.BlockDirInfo.GetValueOrDefault(key);
+                bool thisNotSpecial = thisEntry == null || !thisEntry.SpecialConsideration;
+
+                var vectorToAfterNext = afterNext - next;
+                var dotAfterNext = Base6Directions.GetIntVector(afterNextBlock.Orientation.Up).Dot(ref vectorToAfterNext);
+
+                if (!addOffsetForNextStair && thisNotSpecial && nextEntry == null && afterNextEntry != null && afterNextEntry.SpecialConsideration && dotAfterNext != 0
+                  && afterNextDef.Id.SubtypeName.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                  // going down stairs, add an offset
+
+                  addOffsetForNextStair = true;
+                  nextStairBlock = afterNextBlock;
+                }
               }
             }
             else
               toVec = next;
+
+            if (addOffsetForNextStair && nextStairBlock != null)
+            {
+              AddOffsetForStairComingUp(nextStairBlock, ref fromVec, ref localVec, ref toVec, path, gridGraph);
+              continue;
+            }
           }
           else
             toVec = localVec;
 
-          bool halfStairCheck = prevIsHalfStair || thisIsHalfStair || nextIsHalfStair || afterNextIsHalfStair;
-          bool halfSlopeCheck = prevIsHalfPanelSlope || thisisHalfPanelSlope || nextIsHalfPanelSlope || afterNextIsHalfPanelSlope;
           bool isCatwalkExpansion = prevIsCatwalkExpansion || thisIsCatwalkExpansion || nextIsCatwalkExpansion;
+          bool goingUpOrDownStair = false;
 
-          if (addOffsetStart && cache.Count > 1)
+          if (nextIsCatwalkExpansion && nextBlock.BlockDefinition.Id.SubtypeName.IndexOf("stair", StringComparison.OrdinalIgnoreCase) >= 0)
           {
-            if (prevIsCatwalkExpansion)
+            var travelVec = toVec - fromVec;
+            if (Base6Directions.GetIntVector(nextBlock.Orientation.Up).Dot(ref travelVec) != 0)
             {
-              AddOffsetForThisCatwalk(prevBlock, gridGraph, path, ref start, ref localVec, ref gridMatrix, ref gridSize, false);
-            }
-
-            if (thisIsCatwalkExpansion)
-            {
-              AddOffsetForNextCatwalk(thisBlock, gridGraph, path, ref start, ref localVec, ref gridMatrix, ref gridSize);
+              goingUpOrDownStair = true;
             }
           }
 
-          if (!thisIsHalfStair && !thisisHalfPanelSlope && thisBlockValid)
+          if (isCatwalkExpansion)
           {
-            var cubeBlockDef = thisBlock.BlockDefinition as MyCubeBlockDefinition;
-            var cubeDef = cubeBlockDef.Id;
-            bool isDeadBody = !thisIsCatwalkExpansion && cubeDef.SubtypeName.StartsWith("DeadBody");
-            bool isHalfCatwalk = !isDeadBody && cubeDef.SubtypeName.StartsWith("CatwalkHalf");
-            bool isDeco = !isHalfCatwalk && AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(cubeDef);
-            bool isHalfWall = !isDeco && AiSession.Instance.HalfWallDefinitions.ContainsItem(cubeDef);
-            bool isHalfBlock = !isHalfWall && (cubeDef.SubtypeName.EndsWith("HalfArmorBlock")
-              || (cubeDef.SubtypeName.StartsWith("AQD_LG") && cubeDef.SubtypeName.EndsWith($"Concrete_Half_Block")));
-            bool isFreight = !isHalfBlock && AiSession.Instance.FreightBlockDefinitions.ContainsItem(cubeDef);
-            bool isRamp = !isFreight && AiSession.Instance.RampBlockDefinitions.Contains(cubeDef);
-            bool isBeam = !isRamp && AiSession.Instance.BeamBlockDefinitions.ContainsItem(cubeDef);
-            bool isHalfPanel = !isBeam && AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(cubeDef);
-            bool isPanelSlope = !isHalfPanel && AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(cubeDef);
-            bool isHalfSlope = !isPanelSlope && AiSession.Instance.SlopedHalfBlockDefinitions.Contains(cubeDef);
-            bool isSlope = !isHalfSlope
-              && AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef)
-              && !AiSession.Instance.HalfStairBlockDefinitions.Contains(cubeDef);
-
-            if (thisIsCatwalkExpansion && cache.Count > 1)
+            if (addOffsetStart && cache.Count > 1)
             {
-              AddOffsetForThisCatwalk(thisBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              if (!halfSlopeCheck && !halfStairCheck)
-                continue;
-            }
-
-            if (isDeadBody)
-            {
-              offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3;
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-
-            if (isHalfCatwalk)
-            {
-              offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-
-            if (cubeDef.SubtypeName == "LargeBlockOffsetDoor")
-            {
-              offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-
-            if (isDeco)
-            {
-              var subtype = cubeDef.SubtypeName;
-              if (subtype.StartsWith("LargeBlockDesk"))
+              if (prevIsCatwalkExpansion)
               {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
-
-                if (subtype.EndsWith("Corner"))
-                {
-                  offset = offset.Value + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.3;
-                }
-              }
-              else if (subtype.EndsWith("Planter") || subtype.EndsWith("Kitchen") || subtype.EndsWith("Counter"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.1;
-              }
-              else if (subtype.EndsWith("CounterCorner"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.1
-                  + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.1;
-              }
-              else if (subtype.StartsWith("LargeBlockCouch"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.1;
-
-                if (subtype.EndsWith("Corner"))
-                {
-                  offset = offset.Value - gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.3;
-                }
-              }
-              else if (subtype == "Shower")
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.3
-                  + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.3;
-              }
-              else if (subtype.EndsWith("Toilet"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.3;
-              }
-              else if (subtype == "Jukebox" || subtype == "AtmBlock" || subtype == "FoodDispenser" || subtype == "VendingMachine")
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.2;
-              }
-              else if (subtype == "TrussFloorHalf")
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.25;
-              }
-              else if (subtype == "LargeCrate")
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.3;
-              }
-              else if (subtype.EndsWith("Barrel"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * -0.25
-                  + gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
-              }
-              else if (subtype.EndsWith("HalfBed"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * -0.25;
-              }
-              else if (subtype.EndsWith("HalfBedOffset"))
-              {
-                offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left) * gridSize * 0.25;
+                //AddOffsetForThisCatwalk(prevBlock, gridGraph, path, ref start, ref localVec, ref gridMatrix, ref gridSize, false);
+                AddOffsetForThisCatwalk(prevBlock, gridGraph, path, fromVec, fromVec, start, ref gridMatrix, ref gridSize, false);
               }
 
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-
-            if (isHalfBlock)
-            {
-              if (thisBlock.Orientation.Forward == botDownDir)
+              if (thisIsCatwalkExpansion && thisBlock != prevBlock)
               {
-                offset = -downTravelDir * gridSize * 0.25;
-              }
-              else if (Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown) == 0)
-              {
-                offset = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward) * gridSize * 0.25;
-              }
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-
-            if (isHalfSlope)
-            {
-              var upIsDown = thisBlock.Orientation.Up == botDownDir;
-              if (upIsDown ||
-                ((thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("HalfSlopeArmorBlock") || thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Concrete_Half_Block_Slope"))
-                && Base6Directions.GetOppositeDirection(botDownDir) == thisBlock.Orientation.Forward))
-              {
-                if (upIsDown && gridGraph.ExemptNodesUpper.Contains(localVec))
-                  continue;
-
-                var positionBelow = localVec + intVecDown;
-                var blockBelow = gridGraph.GetBlockAtPosition(positionBelow);
-
-                if (blockBelow == null && gridGraph.TryGetNodeForPosition(positionBelow, out n) && n?.Block != null)
-                {
-                  var blockGrid = n.Block.CubeGrid;
-                  var worldFrom = mainGrid.GridIntegerToWorld(positionBelow);
-                  var localFrom = blockGrid.WorldToGridInteger(worldFrom);
-                  blockBelow = blockGrid.GetCubeBlock(localFrom);
-                }
-
-                if (blockBelow != null && AiSession.Instance.RampBlockDefinitions.Contains(blockBelow.BlockDefinition.Id))
-                {
-                  offset = downTravelDir * gridSize * 0.25f;
-
-                  Node node;
-                  gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                  TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                  tempNode.Update(node, offset ?? Vector3D.Zero);
-                  AddNodeToPath(path, tempNode);
-
-                  if (nextIsCatwalkExpansion)
-                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                  continue;
-                }
-              }
-              else if (gridGraph.ExemptNodesUpper.Contains(localVec))
-              {
-                var blockUp = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up);
-                if (Base6Directions.GetIntVector(thisBlock.Orientation.Forward) == intVecDown)
-                {
-                  offset = -downTravelDir * gridSize * 0.25 - blockUp * gridSize * 0.25;
-                }
-                else
-                {
-                  offset = downTravelDir * gridSize * 0.25 + blockUp * gridSize * 0.5;
-                }
-
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                tempNode.Update(node, offset ?? Vector3D.Zero);
-                AddNodeToPath(path, tempNode);
+                AddOffsetForNextCatwalk(thisBlock, gridGraph, path, start, localVec, ref gridMatrix, ref gridSize);
 
                 if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+                {
+                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, localVec, next, ref gridMatrix, ref gridSize, goingUpOrDownStair);
+                }
 
                 continue;
               }
-              else if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Tip"))
-              {
-                if (botDownDir == thisBlock.Orientation.Forward)
-                {
-                  offset = -downTravelDir * gridSize * 0.5 - gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
-
-                  Node node;
-                  gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                  TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                  tempNode.Update(node, offset ?? Vector3D.Zero);
-                  AddNodeToPath(path, tempNode);
-
-                  if (nextIsCatwalkExpansion)
-                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                  continue;
-                }
-                else if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Tip"))
-                {
-                  if (botDownDir == thisBlock.Orientation.Left || Base6Directions.GetOppositeDirection(botDownDir) == thisBlock.Orientation.Left)
-                  {
-                    offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.25;
-
-                    Node node;
-                    gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                    TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-                    tempNode.Update(node, offset ?? Vector3D.Zero);
-                    AddNodeToPath(path, tempNode);
-
-                    if (nextIsCatwalkExpansion)
-                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                    continue;
-                  }
-                }
-              }
             }
-            else if (isBeam)
+            else if (thisIsCatwalkExpansion && cache.Count > 1)
             {
-              var blockSubtype = cubeDef.SubtypeName;
-              if (blockSubtype.EndsWith("End") || blockSubtype.EndsWith("Block") || blockSubtype.EndsWith("Junction"))
-              {
-                offset = -downTravelDir * gridSize * 0.5;
-              }
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
+              AddOffsetForThisCatwalk(thisBlock, gridGraph, path, fromVec, localVec, next, ref gridMatrix, ref gridSize);
 
               if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+              {
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, localVec, next, ref gridMatrix, ref gridSize, goingUpOrDownStair);
+              }
 
               continue;
-            }
-            else if (isHalfPanel)
-            {
-              var blockFwd = thisBlock.Orientation.Forward;
-              var blockUp = thisBlock.Orientation.Up;
-              var blockLeft = thisBlock.Orientation.Left;
-
-              if (cubeDef.SubtypeName.StartsWith("LargeArmorHalf"))
-              {
-                if (Base6Directions.GetIntVector(blockFwd).Dot(ref intVecDown) != 0)
-                {
-                  offset = gridMatrix.GetDirectionVector(blockUp) * gridSize * 0.4 - gridMatrix.GetDirectionVector(blockLeft) * gridSize * 0.5;
-                }
-              }
-              else if (Base6Directions.GetIntVector(blockUp).Dot(ref intVecDown) != 0)
-              {
-                offset = gridMatrix.GetDirectionVector(blockLeft) * gridSize * 0.4 - gridMatrix.GetDirectionVector(blockFwd) * gridSize * 0.5;
-              }
-              else if (Base6Directions.GetIntVector(blockFwd).Dot(ref intVecDown) == 0)
-              {
-                offset = gridMatrix.GetDirectionVector(blockUp) * gridSize * 0.4 - gridMatrix.GetDirectionVector(blockFwd) * gridSize * 0.5;
-              }
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-            else if (isPanelSlope)
-            {
-              var blockSubtype = cubeDef.SubtypeName;
-              if (blockSubtype.StartsWith("LargeArmor2x1SlopedPanel"))
-              {
-                var worldPrev = grid.GridIntegerToWorld(fromVec);
-                var vecToNext = grid.GridIntegerToWorld(localVec) - worldPrev;
-
-                Vector3D.Rotate(ref vecToNext, ref botMatrixTransposed, out vecToNext);
-                var yCheck = Math.Abs(vecToNext.Y) < allowedDiff ? 0 : Math.Sign(vecToNext.Y);
-                var blockFwdVec = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-                var upIsUp = Base6Directions.GetOppositeDirection(thisBlock.Orientation.Up) == botDownDir;
-
-                if (blockSubtype.StartsWith("LargeArmor2x1SlopedPanelTip"))
-                {
-                  if (yCheck < 0) // going down
-                  {
-                    offset = -downTravelDir * gridSize * 0.5;
-                  }
-                  else // going up
-                  {
-                    if (upIsUp)
-                      offset = -downTravelDir * gridSize * 0.25 - blockFwdVec * gridSize * 0.25;
-                    else
-                      offset = -downTravelDir * gridSize * 0.25;
-                  }
-                }
-                else if (yCheck < 0) // going down
-                {
-                  if (upIsUp)
-                    offset = blockFwdVec * gridSize * 0.5;
-                  else
-                    offset = -downTravelDir * gridSize * 0.5;
-                }
-                else // going up
-                {
-                  offset = -downTravelDir * gridSize * 0.5;
-                }
-              }
-              else
-              {
-                offset = -downTravelDir * gridSize * 0.5f;
-              }
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-
-              if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-              {
-                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                {
-                  if (offset.HasValue)
-                    offset = offset.Value - downTravelDir * 0.5f;
-                  else
-                    offset = -downTravelDir * 0.5f;
-                }
-              }
-
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-            else if (isFreight)
-            {
-              var blockFwd = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-
-              if (cubeDef.SubtypeName.EndsWith("1"))
-              {
-                var leftVec = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                offset = (blockFwd + leftVec) * gridSize * 0.4;
-              }
-              else
-                offset = blockFwd * gridSize * 0.4;
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-            else if (isHalfWall)
-            {
-              var dotUp = Base6Directions.GetIntVector(thisBlock.Orientation.Up).Dot(ref intVecDown);
-
-              if (dotUp != 0)
-              {
-                if (cubeDef.SubtypeName == "LargeCoverWallHalf")
-                {
-                  var leftVec = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                  offset = -leftVec * gridSize * 0.5f;
-                }
-                else
-                {
-                  var fwdVec = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-
-                  if (cubeDef.SubtypeName.EndsWith("Right")) // half rail right if true
-                    fwdVec = -fwdVec;
-
-                  offset = fwdVec * gridSize * 0.5f;
-                }
-              }
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-            else if (isRamp || isSlope)
-            {
-              if (isRamp)
-              {
-                bool isBlockTip = thisBlock.Position == localVec;
-                var dotUp = Base6Directions.GetIntVector(thisBlock.Orientation.Up).Dot(ref intVecDown);
-                var dotFwd = Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown);
-
-                if (dotUp < 0)
-                {
-                  if (!isBlockTip)
-                    continue;
-
-                  offset = -downTravelDir * gridSize * 0.25f;
-                }
-                else if (dotFwd < 0)
-                {
-                  if (isBlockTip)
-                  {
-                    if (localVec != end)
-                      continue;
-
-                    var blockUp = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up);
-                    var addVec = downTravelDir * gridSize * 0.25f + blockUp * 0.25f;
-                    if (fwdTravelDir.Dot(downTravelDir) > 0) // going down the ramp
-                      offset = addVec;
-                    else // going up the ramp
-                      offset = -addVec;
-                  }
-                  else
-                    offset = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up) * gridSize * 0.75f;
-                }
-                else if (dotUp > 0 && isBlockTip) // block is upside down
-                {
-                  var positionBelow = localVec + intVecDown;
-                  var blockBelow = gridGraph.GetBlockAtPosition(positionBelow);
-
-                  if (blockBelow == null && gridGraph.TryGetNodeForPosition(positionBelow, out n) && n?.Block != null)
-                  {
-                    var blockGrid = n.Block.CubeGrid;
-                    var worldFrom = mainGrid.GridIntegerToWorld(positionBelow);
-                    var localFrom = blockGrid.WorldToGridInteger(worldFrom);
-                    blockBelow = blockGrid.GetCubeBlock(localFrom);
-                  }
-
-                  if (blockBelow != null && AiSession.Instance.RampBlockDefinitions.Contains(blockBelow.BlockDefinition.Id))
-                  {
-                    offset = downTravelDir * gridSize * 0.25f;
-
-                    Node node2;
-                    gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                    TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                    tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                    AddNodeToPath(path, tempNode2);
-
-                    if (nextIsCatwalkExpansion)
-                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                    continue;
-                  }
-                }
-              }
-              else if (thisBlock.FatBlock is IMyTextPanel)
-              {
-                var botUpDir = Base6Directions.GetOppositeDirection(botDownDir);
-                Vector3D blockFwd;
-
-                if (botUpDir == thisBlock.Orientation.Forward)
-                  blockFwd = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-                else if (botUpDir == thisBlock.Orientation.Left)
-                  blockFwd = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                else
-                  continue; // upside down or sideways
-
-                offset = blockFwd * gridSize * 0.5f;
-              }
-              else if (thisBlock.BlockDefinition.Context.ModName == "PassageIntersections" && thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large"))
-              {
-                // offset already 
-                Node node2;
-                gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                tempNode2.Update(node2, node2.Offset);
-                AddNodeToPath(path, tempNode2);
-
-                if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                continue;
-              }
-              else if (Base6Directions.GetIntVector(thisBlock.Orientation.Up).Dot(ref intVecDown) > 0
-                || Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown) < 0)
-              {
-                // upside down slope
-                continue;
-              }
-              else if (Base6Directions.GetIntVector(thisBlock.Orientation.Left).Dot(ref intVecDown) != 0)
-              {
-                var blockFwd = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-                var blockDwn = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Up);
-
-                offset = blockFwd * gridSize * 0.5f + blockDwn * gridSize * 0.5f;
-              }
-              else if (Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown) != 0)
-              {
-                var blockUp = gridMatrix.GetDirectionVector(thisBlock.Orientation.Up);
-                if (cubeDef.SubtypeName.EndsWith("Tip"))
-                  offset = -blockUp * gridSize * 0.25;
-                else
-                  offset = blockUp * gridSize * 0.5;
-              }
-              else
-              {
-                offset = -downTravelDir * gridSize * 0.5f;
-              }
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-              {
-                var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                {
-                  if (offset.HasValue)
-                    offset = offset.Value - downTravelDir * 0.5f;
-                  else
-                    offset = -downTravelDir * 0.5f;
-                }
-              }
-
-              tempNode.Update(node, offset ?? Vector3D.Zero);
-              AddNodeToPath(path, tempNode);
-
-              if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-              continue;
-            }
-            else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(cubeDef))
-            {
-              bool isWindow1 = cubeDef.SubtypeName == "Window1x1Slope" || cubeDef.SubtypeName == "LargeWindowEdge";
-              bool isWindow2 = !isWindow1 && cubeDef.SubtypeName == "Window1x2Slope";
-
-              if (isWindow1 || isWindow2)
-              {
-                if (isWindow1)
-                {
-                  offset = -downTravelDir * gridSize * 0.5f;
-                }
-                else
-                {
-                  bool isBlockTip = thisBlock.Position == localVec;
-                  var dotUp = Base6Directions.GetIntVector(thisBlock.Orientation.Up).Dot(ref intVecDown);
-                  var dotFwd = Base6Directions.GetIntVector(thisBlock.Orientation.Forward).Dot(ref intVecDown);
-
-                  if (dotUp != 0)
-                  {
-                    if (dotUp > 0)
-                    {
-                      if (isBlockTip)
-                        offset = -downTravelDir * gridSize * 0.75f;
-                    }
-                    else if (!isBlockTip)
-                      offset = -downTravelDir * gridSize * 0.75f;
-                  }
-                  else if (dotFwd != 0)
-                  {
-                    if (dotFwd > 0)
-                    {
-                      if (isBlockTip)
-                        continue;
-                    }
-                    else if (!isBlockTip)
-                      continue;
-                  }
-                }
-
-                Node node2;
-                gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                AddNodeToPath(path, tempNode2);
-
-                if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                continue;
-              }
-            }
-          }
-          else if (thisBlockNull)
-          {
-            var positionBelow = localVec + intVecDown;
-            var blockBelowThis = gridGraph.GetBlockAtPosition(positionBelow); // grid.GetCubeBlock(positionBelow) as IMySlimBlock;
-
-            if (blockBelowThis == null && gridGraph.TryGetNodeForPosition(positionBelow, out n) && n?.Block != null)
-            {
-              blockBelowThis = n.Block;
-            }
-
-            if (blockBelowThis != null)
-            {
-              var belowDef = blockBelowThis.BlockDefinition.Id;
-              bool isRamp = AiSession.Instance.RampBlockDefinitions.Contains(belowDef);
-              bool isPanelSlope = !isRamp && AiSession.Instance.ArmorPanelSlopeDefinitions.ContainsItem(belowDef);
-              bool isPanelHalfSlope = !isPanelSlope && AiSession.Instance.ArmorPanelHalfSlopeDefinitions.ContainsItem(belowDef);
-              bool isHalfSlope = !isPanelHalfSlope && AiSession.Instance.SlopedHalfBlockDefinitions.Contains(belowDef);
-              bool isSlope = !isHalfSlope && !isPanelHalfSlope
-                && AiSession.Instance.SlopeBlockDefinitions.Contains(belowDef)
-                && !AiSession.Instance.HalfStairBlockDefinitions.Contains(belowDef);
-
-              if (isRamp || isSlope)
-              {
-                if (isSlope && blockBelowThis.FatBlock is IMyTextPanel)
-                {
-                  var botUpDir = Base6Directions.GetOppositeDirection(botDownDir);
-                  if (botUpDir == blockBelowThis.Orientation.Forward || botUpDir == blockBelowThis.Orientation.Left)
-                    offset = downTravelDir * gridSize * 0.5f;
-                  else
-                    offset = null;
-                }
-                else if (blockBelowThis.Orientation.Up == botDownDir)
-                {
-                  offset = null;
-                }
-                else if (isRamp)
-                {
-                  bool isBlockTip = blockBelowThis.Position == localVec;
-                  var dotUp = Base6Directions.GetIntVector(blockBelowThis.Orientation.Up).Dot(ref intVecDown);
-                  var dotFwd = Base6Directions.GetIntVector(blockBelowThis.Orientation.Forward).Dot(ref intVecDown);
-
-                  if (dotUp < 0)
-                  {
-                    var multi = isBlockTip ? 0.5f : 0.25f;
-                    offset = downTravelDir * gridSize * multi;
-                  }
-                  else if (dotFwd < 0)
-                  {
-                    var blockDownDir = gridMatrix.GetDirectionVector(blockBelowThis.Orientation.Up);
-                    offset = downTravelDir * gridSize * 0.25f - blockDownDir * gridSize * 0.5f;
-                  }
-                }
-                else if (Base6Directions.GetIntVector(blockBelowThis.Orientation.Left).Dot(ref intVecDown) != 0)
-                {
-                  var blockFwd = gridMatrix.GetDirectionVector(blockBelowThis.Orientation.Forward);
-                  var blockDwn = -gridMatrix.GetDirectionVector(blockBelowThis.Orientation.Up);
-
-                  offset = (blockFwd * gridSize * 0.25f) + (blockDwn * gridSize * 0.25f);
-                }
-                else if (blockBelowThis.Orientation.Forward == Base6Directions.GetOppositeDirection(botDownDir) || blockBelowThis.Orientation.Up == botDownDir)
-                {
-                  offset = null;
-                }
-                else if (blockBelowThis.BlockDefinition.Id.SubtypeName.EndsWith("Slope2Base"))
-                {
-                  offset = downTravelDir * gridSize * 0.25f;
-                }
-                else
-                {
-                  offset = downTravelDir * gridSize * 0.5f;
-                }
-
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, offset ?? Vector3D.Zero);
-                AddNodeToPath(path, tempNode);
-
-                if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                continue;
-              }
-              else if (isHalfSlope)
-              {
-                // think we can skip this one
-                continue;
-              }
-              else if (isPanelSlope)
-              {
-                if (Base6Directions.GetIntVector(blockBelowThis.Orientation.Left).Dot(ref intVecDown) == 0)
-                {
-                  // moving this down would be redundant, so skip it
-                  continue;
-                }
-
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, offset ?? Vector3D.Zero);
-                AddNodeToPath(path, tempNode);
-
-                if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                continue;
-              }
-              else if (isPanelHalfSlope)
-              {
-                if (Base6Directions.GetIntVector(blockBelowThis.Orientation.Left).Dot(ref intVecDown) == 0)
-                {
-                  // moving this down would be redundant, so skip it
-                  continue;
-                }
-
-                Node node;
-                gridGraph.TryGetNodeForPosition(localVec, out node);
-
-                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, offset ?? Vector3D.Zero);
-                AddNodeToPath(path, tempNode);
-
-                if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                continue;
-              }
-              else if (AiSession.Instance.AngledWindowDefinitions.ContainsItem(belowDef))
-              {
-                bool isWindow1 = belowDef.SubtypeName == "Window1x1Slope" || belowDef.SubtypeName == "LargeWindowEdge";
-                bool isWindow2 = !isWindow1 && belowDef.SubtypeName == "Window1x2Slope";
-
-                if (isWindow1 || isWindow2)
-                {
-                  if (isWindow1)
-                  {
-                    offset = downTravelDir * gridSize * 0.5f;
-                  }
-                  else
-                  {
-                    bool isBlockTip = blockBelowThis.Position == localVec + intVecDown;
-                    var dotUp = Base6Directions.GetIntVector(blockBelowThis.Orientation.Up).Dot(ref intVecDown);
-                    var dotFwd = Base6Directions.GetIntVector(blockBelowThis.Orientation.Forward).Dot(ref intVecDown);
-
-                    if (dotUp != 0)
-                    {
-                      if (dotUp > 0)
-                      {
-                        if (!isBlockTip)
-                          continue;
-                        else
-                          offset = downTravelDir * gridSize * 0.25f;
-                      }
-                      else if (isBlockTip)
-                        continue;
-                      else
-                        offset = downTravelDir * gridSize * 0.25f;
-                    }
-                    else if (dotFwd != 0)
-                    {
-                      var blockDownDir = gridMatrix.GetDirectionVector(blockBelowThis.Orientation.Up);
-                      var addVec = blockDownDir * gridSize * 0.25f * Math.Sign(dotFwd);
-                      offset = downTravelDir * gridSize * 0.25f + addVec;
-                    }
-                  }
-
-                  Node node2;
-                  gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                  TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                  tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                  AddNodeToPath(path, tempNode2);
-
-                  if (nextIsCatwalkExpansion)
-                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                  continue;
-                }
-              }
             }
           }
 
-          if (nextBlockValid)
+          if (thisEntry != null)
           {
-            var nextDef = nextBlock.BlockDefinition.Id;
-
-            if (thisBlock == null && nextIsHalfBlock && Base6Directions.GetIntVector(nextBlock.Orientation.Forward).Dot(ref intVecDown) == 0)
+            if (thisEntry.SpecialConsideration)
             {
-              offset = -gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * 0.25;
-
-              Node node;
-              gridGraph.TryGetNodeForPosition(localVec, out node);
-
-              TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-              tempNode.Update(node, offset.Value);
-              AddNodeToPath(path, tempNode);
+              HandleSpecialCase(fromVec, toVec, localVec, thisBlock, path, gridGraph);
 
               if (nextIsCatwalkExpansion)
-                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
+              {
+                AddOffsetForNextCatwalk(nextBlock, gridGraph, path, localVec, next, ref gridMatrix, ref gridSize, goingUpOrDownStair);
+              }
 
               continue;
             }
-            else if (!thisIsHalfStair && !thisisHalfPanelSlope && !nextIsHalfStair && !nextIsHalfPanelSlope)
+            else if (!offset.HasValue)
             {
-              var thisIsLadder = thisBlock != null && AiSession.Instance.LadderBlockDefinitions.Contains(thisBlock.BlockDefinition.Id);
-              if (thisIsLadder)
-              {
-                var blockBwd = -gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
-                offset = blockBwd * gridSize * 0.3;
-
-                Node node2;
-                gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                tempNode2.Update(node2, offset.Value);
-                AddNodeToPath(path, tempNode2);
-
-                if (nextIsCatwalkExpansion)
-                  AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                continue;
-              }
-              else if (AiSession.Instance.DecorativeBlockDefinitions.ContainsItem(nextDef))
-              {
-                var vecTo = next - current;
-                var subtype = nextDef.SubtypeName;
-                if (Base6Directions.GetIntVector(nextBlock.Orientation.Left).Dot(ref vecTo) != 0)
-                {
-                  bool add = true;
-                  if (subtype.StartsWith("LargeBlockDesk"))
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
-
-                    if (subtype.EndsWith("Corner"))
-                    {
-                      offset = offset.Value + gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
-                    }
-                  }
-                  else if (subtype.EndsWith("Planter") || subtype.EndsWith("Kitchen") || subtype.IndexOf("Counter") >= 0 || subtype == "LargeBlockLockers")
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
-                  }
-                  else if (subtype.StartsWith("LargeBlockCouch"))
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * 0.3;
-                  }
-                  else if (subtype == "TrussFloorHalf")
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.25;
-                  }
-                  else if (subtype == "LargeCrate")
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
-                  }
-                  else if (subtype.EndsWith("Barrel"))
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.25;
-                  }
-                  else
-                  {
-                    add = false;
-                  }
-
-                  if (add)
-                  {
-                    Node node2;
-                    gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                    TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                    tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                    AddNodeToPath(path, tempNode2);
-
-                    if (nextIsCatwalkExpansion)
-                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                    continue;
-                  }
-                }
-                else if (Base6Directions.GetIntVector(nextBlock.Orientation.Forward).Dot(ref vecTo) != 0)
-                {
-                  bool add = true;
-                  if (subtype.EndsWith("Toilet"))
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
-                  }
-                  else if (subtype == "LargeBlockCouchCorner" || subtype == "Jukebox" || subtype == "AtmBlock" || subtype == "VendingMachine" || subtype == "FoodDispenser")
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * -0.3;
-                  }
-                  else if (subtype.EndsWith("CounterCorner"))
-                  {
-                    offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left) * gridSize * 0.3;
-                  }
-                  else
-                  {
-                    add = false;
-                  }
-
-                  if (add)
-                  {
-                    Node node2;
-                    gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                    TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                    tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                    AddNodeToPath(path, tempNode2);
-
-                    if (nextIsCatwalkExpansion)
-                      AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                    continue;
-                  }
-                }
-              }
-              else if (nextDef.SubtypeName == "LargeBlockOffsetDoor")
-              {
-                var vecTo = next - current;
-                if (Base6Directions.GetIntVector(nextBlock.Orientation.Left).Dot(ref vecTo) != 0)
-                {
-                  offset = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward) * gridSize * -0.3;
-
-                  Node node2;
-                  gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-                  TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-                  tempNode2.Update(node2, offset ?? Vector3D.Zero);
-                  AddNodeToPath(path, tempNode2);
-
-                  if (nextIsCatwalkExpansion)
-                    AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-
-                  continue;
-                }
-              }
+              offset = thisEntry.GetOffset(thisBlock);
             }
           }
 
-          if (halfStairCheck)
+          Vector3 ofs = (Vector3)(offset ?? Vector3D.Zero);
+          AddTempNodeToPath(ref localVec, ref ofs, gridGraph, path);
+
+          if (nextIsCatwalkExpansion)
           {
-            // Adjust the position to be center of the actual stairs. Assumes the stairs are placed properly!
-
-            var worldPrev = grid.GridIntegerToWorld(fromVec);
-            var vecToNext = grid.GridIntegerToWorld(toVec) - worldPrev;
-
-            Vector3D.Rotate(ref vecToNext, ref botMatrixTransposed, out vecToNext);
-            var yCheck = Math.Abs(vecToNext.Y) < allowedDiff ? 0 : Math.Sign(vecToNext.Y);
-
-            if (yCheck < 0) // going down
-            {
-              if (addOffsetStart && (thisIsHalfStair || nextIsHalfStair))
-              {
-                // addOffsetStart is only true if the Start position is just before a stair
-                // add an extra point with offset to the current position so we are aligned before trying to move down the half stair
-
-                var useBlock = nextIsHalfStair ? nextBlock : thisBlock;
-                var dir = gridMatrix.GetDirectionVector(useBlock.Orientation.Left);
-
-                if (!AreStairsOnLeftSide(useBlock))
-                  dir = -dir;
-
-                Vector3D extra;
-                if (nextIsHalfStair)
-                  extra = dir * gridSize * 0.25 + fwdTravelDir * gridSize * 0.5;
-                else
-                  extra = fwdTravelDir * gridSize * 0.5;
-
-                Node node;
-                gridGraph.TryGetNodeForPosition(start, out node);
-
-                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, extra);
-                AddNodeToPath(path, tempNode);
-              }
-
-              if (!thisIsHalfStair && afterNextIsHalfStair)
-              {
-                // approaching the stairs
-                // set this point to align with entrance
-
-                var dir = gridMatrix.GetDirectionVector(afterNextBlock.Orientation.Left);
-                if (!AreStairsOnLeftSide(afterNextBlock))
-                  dir = -dir;
-
-                offset = dir * gridSize * 0.25;
-              }
-              else if ((thisIsHalfStair && nextIsHalfStair) || (!prevIsHalfStair && !thisIsHalfStair && nextIsHalfStair))
-              {
-                // standing at the top of the stairs (grid position is above the actual stair we're walking down)
-                // set this point to be down and forward one block so the bot has to move all the way down the stairs to proceed
-
-                var dir = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left);
-                if (!AreStairsOnLeftSide(nextBlock))
-                  dir = -dir;
-
-                offset = (dir * gridSize * 0.25) + (downTravelDir * gridSize) + (fwdTravelDir * gridSize);
-              }
-              else if ((prevIsHalfStair && thisIsHalfStair) || (!prevIsHalfStair && thisIsHalfStair && !nextIsHalfStair))
-              {
-                // we came down to the lower block position (actual stair position)
-                // we can skip this one because we've already pushed the previous point down and forward
-
-                continue;
-              }
-            }
-            else if (yCheck > 0) // going up
-            {
-              if (addOffsetStart && thisIsHalfStair)
-              {
-                // addOffsetStart is only true if the Start position is just before a stair
-                // add an extra point with offset to the current position so we are aligned before trying to move up the half stair
-
-                Vector3D dir, extra;
-                Node node;
-                TempNode tempNode;
-
-                if (prevIsHalfStair && prevBlock?.Position == start)
-                {
-                  // starting in the first block space
-                  // set this point to be forward of the stair so we move out from beside it where the bot tends to get stuck
-
-                  var cube = (MyCubeBlock)prevBlock.FatBlock;
-                  var localCenter = cube.PositionComp.LocalAABB.Center;
-                  var worldCenter = Vector3D.Transform(localCenter, cube.WorldMatrix);
-                  var botToBlockCenter = botMatrix.Translation - cube.PositionComp.WorldAABB.Center;
-                  var localToBlockCenter = worldCenter - cube.PositionComp.WorldAABB.Center;
-
-                  Vector3I insertStart, insertPos;
-                  if (botToBlockCenter.Dot(localToBlockCenter) < 0)
-                  {
-                    // bot is on other side of stair, move to front of stair first
-                    insertStart = start;
-                  }
-                  else
-                  {
-                    // bot on stair, move up stair instead
-                    insertStart = localVec;
-                  }
-
-                  if (gridGraph.GetValidPositionForStackedStairs(insertStart, out insertPos))
-                  {
-                    gridGraph.TryGetNodeForPosition(insertPos, out node);
-
-                    tempNode = AiSession.Instance.TempNodePool.Get();
-
-                    dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                    if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
-                      dir = -dir;
-
-                    extra = dir * gridSize * 0.25;
-
-                    tempNode.Update(node, extra);
-                    AddNodeToPath(path, tempNode);
-                  }
-                }
-
-                dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
-                  dir = -dir;
-
-                extra = dir * gridSize * 0.25;
-
-                gridGraph.TryGetNodeForPosition(start, out node);
-
-                tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, extra);
-                AddNodeToPath(path, tempNode);
-              }
-
-              if (!thisIsHalfStair && nextIsHalfStair)
-              {
-                // approaching the stairs
-                // set this point to align with entrance
-
-                var dir = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left);
-                if (!AreStairsOnLeftSide(nextBlock))
-                  dir = -dir;
-
-                offset = dir * gridSize * 0.25;
-              }
-              else if ((thisIsHalfStair && nextIsHalfStair) || (!prevIsHalfStair && thisIsHalfStair && !nextIsHalfStair))
-              {
-                // standing at the bottom of the stairs (actual block position)
-                // set this point to be up and forward one block so the bot has to move all the way up the stairs to proceed
-
-                var botUpDir = gridMatrix.GetClosestDirection(botMatrix.Up);
-                var UpTravelDir = gridMatrix.GetDirectionVector(botUpDir);
-
-                var dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                if (!AreStairsOnLeftSide(thisBlock))
-                  dir = -dir;
-
-                offset = (dir * gridSize * 0.25) + (UpTravelDir * gridSize) + (fwdTravelDir * gridSize);
-              }
-              else if ((prevIsHalfStair && thisIsHalfStair) || (prevIsHalfStair && !thisIsHalfStair && !nextIsHalfStair))
-              {
-                // stairs are stacked on top of one another
-                // we can skip this one because we've already pushed the previous point up and forward
-
-                continue;
-              }
-            }
-
-            Node node2;
-            gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-            TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-
-            if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-            {
-              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-              {
-                if (offset.HasValue)
-                  offset = offset.Value - downTravelDir * 0.5f;
-                else
-                  offset = -downTravelDir * 0.5f;
-              }
-            }
-
-            tempNode2.Update(node2, offset ?? Vector3D.Zero);
-            AddNodeToPath(path, tempNode2);
-          }
-          else if (halfSlopeCheck)
-          {
-            // Adjust the position to be center of the actual slope. Assumes the slope is placed properly!
-
-            var worldPrev = grid.GridIntegerToWorld(fromVec);
-            var vecToNext = grid.GridIntegerToWorld(toVec) - worldPrev;
-
-            Vector3D.Rotate(ref vecToNext, ref botMatrixTransposed, out vecToNext);
-            var yCheck = Math.Abs(vecToNext.Y) < allowedDiff ? 0 : Math.Sign(vecToNext.Y);
-
-            if (yCheck < 0) // going down
-            {
-              if (addOffsetStart && (thisisHalfPanelSlope || nextIsHalfPanelSlope))
-              {
-                // addOffsetStart is only true if the Start position is just before a slope
-                // add an extra point with offset to the current position so we are aligned before trying to move down the half slope
-
-                var useBlock = nextIsHalfPanelSlope ? nextBlock : thisBlock;
-                var dir = gridMatrix.GetDirectionVector(useBlock.Orientation.Left);
-
-                if (!useBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-                  dir = -dir;
-
-                Vector3D extra;
-                if (nextIsHalfPanelSlope)
-                  extra = dir * gridSize * 0.25 + fwdTravelDir * gridSize * 0.5;
-                else
-                  extra = fwdTravelDir * gridSize * 0.5;
-
-                Node node;
-                gridGraph.TryGetNodeForPosition(start, out node);
-
-                TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? using offset here instead of extra
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, extra);
-                AddNodeToPath(path, tempNode);
-              }
-
-              if (!thisisHalfPanelSlope && afterNextIsHalfPanelSlope)
-              {
-                // approaching the slope
-                // set this point to align with entrance
-
-                var dir = gridMatrix.GetDirectionVector(afterNextBlock.Orientation.Left);
-                if (!afterNextBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-                  dir = -dir;
-
-                offset = dir * gridSize * 0.25;
-              }
-              else if ((thisisHalfPanelSlope && nextIsHalfPanelSlope) || (!prevIsHalfPanelSlope && !thisisHalfPanelSlope && nextIsHalfPanelSlope))
-              {
-                // standing at the top of the slope (grid position is above the actual slope we're walking down)
-                // set this point to be down and forward one block so the bot has to move all the way down the slope to proceed
-
-                var dir = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left);
-                if (!nextBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-                  dir = -dir;
-
-                offset = (dir * gridSize * 0.25) + (downTravelDir * gridSize) + (fwdTravelDir * gridSize);
-              }
-              else if ((prevIsHalfPanelSlope && thisisHalfPanelSlope) || (!prevIsHalfPanelSlope && thisisHalfPanelSlope && !nextIsHalfPanelSlope))
-              {
-                // we came down to the lower block position (actual slope position)
-                // we can skip this one because we've already pushed the previous point down and forward
-
-                continue;
-              }
-            }
-            else if (yCheck > 0) // going up
-            {
-              if (addOffsetStart && thisisHalfPanelSlope)
-              {
-                // addOffsetStart is only true if the Start position is just before a slope
-                // add an extra point with offset to the current position so we are aligned before trying to move up the half slope
-
-                Vector3D dir, extra;
-                Node node;
-                TempNode tempNode;
-
-                if (prevIsHalfPanelSlope && prevBlock?.Position == start)
-                {
-                  // starting in the first block space
-                  // set this point to be forward of the stair so we move out from beside it where the bot tends to get stuck
-
-                  var cube = (MyCubeBlock)prevBlock.FatBlock;
-                  var localCenter = cube.PositionComp.LocalAABB.Center;
-                  var worldCenter = Vector3D.Transform(localCenter, cube.WorldMatrix);
-                  var botToBlockCenter = botMatrix.Translation - cube.PositionComp.WorldAABB.Center;
-                  var localToBlockCenter = worldCenter - cube.PositionComp.WorldAABB.Center;
-
-                  Vector3I insertStart, insertPos;
-                  if (botToBlockCenter.Dot(localToBlockCenter) < 0)
-                  {
-                    // bot is on other side of stair, move to front of stair first
-                    insertStart = start;
-                  }
-                  else
-                  {
-                    // bot on stair, move up stair instead
-                    insertStart = localVec;
-                  }
-
-                  if (gridGraph.GetValidPositionForStackedStairs(insertStart, out insertPos))
-                  {
-                    gridGraph.TryGetNodeForPosition(insertPos, out node);
-
-                    tempNode = AiSession.Instance.TempNodePool.Get();
-
-                    dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                    if (thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Right"))
-                      dir = -dir;
-
-                    extra = dir * gridSize * 0.25;
-
-                    tempNode.Update(node, extra);
-                    AddNodeToPath(path, tempNode);
-                  }
-                }
-
-                dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                if (!thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-                  dir = -dir;
-
-                extra = dir * gridSize * 0.25; // + fwdTravelDir * gridSize * 0.5;
-
-                gridGraph.TryGetNodeForPosition(start, out node);
-
-                tempNode = AiSession.Instance.TempNodePool.Get();
-
-                if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose) // TODO: is this right? Using offset here instead of extra
-                {
-                  var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-                  if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-                  {
-                    if (offset.HasValue)
-                      offset = offset.Value - downTravelDir * 0.5f;
-                    else
-                      offset = -downTravelDir * 0.5f;
-                  }
-                }
-
-                tempNode.Update(node, extra);
-                AddNodeToPath(path, tempNode);
-              }
-
-              if (!thisisHalfPanelSlope && nextIsHalfPanelSlope)
-              {
-                // approaching the slope
-                // set this point to align with entrance
-
-                var dir = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left);
-                if (!nextBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-                  dir = -dir;
-
-                offset = dir * gridSize * 0.25;
-              }
-              else if ((thisisHalfPanelSlope && nextIsHalfPanelSlope) || (!prevIsHalfPanelSlope && thisisHalfPanelSlope && !nextIsHalfPanelSlope))
-              {
-                // standing at the bottom of the slope (actual block position)
-                // set this point to be up and forward one block so the bot has to move all the way up the slope to proceed
-
-                var botUpDir = gridMatrix.GetClosestDirection(botMatrix.Up);
-                var UpTravelDir = gridMatrix.GetDirectionVector(botUpDir);
-
-                var dir = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-                if (!thisBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-                  dir = -dir;
-
-                offset = (dir * gridSize * 0.25) + (UpTravelDir * gridSize) + (fwdTravelDir * gridSize);
-              }
-              else if ((prevIsHalfPanelSlope && thisisHalfPanelSlope) || (prevIsHalfPanelSlope && !thisisHalfPanelSlope && !nextIsHalfPanelSlope))
-              {
-                // stairs are stacked on top of one another
-                // we can skip this one because we've already pushed the previous point up and forward
-
-                continue;
-              }
-            }
-
-            Node node2;
-            gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-            TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-
-            if (gridGraph.RootVoxel != null && !gridGraph.RootVoxel.MarkedForClose)
-            {
-              var worldPosition = gridGraph.LocalToWorld(localVec) + (offset ?? Vector3D.Zero) + gridGraph.WorldMatrix.Down * 0.5;
-              if (GridBase.PointInsideVoxel(worldPosition, gridGraph.RootVoxel))
-              {
-                if (offset.HasValue)
-                  offset = offset.Value - downTravelDir * 0.5f;
-                else
-                  offset = -downTravelDir * 0.5f;
-              }
-            }
-
-            tempNode2.Update(node2, offset ?? Vector3D.Zero);
-            AddNodeToPath(path, tempNode2);
-
-            if (nextIsCatwalkExpansion)
-              AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-          }
-          else
-          {
-            Node node2;
-            gridGraph.TryGetNodeForPosition(localVec, out node2);
-
-            TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-            tempNode2.Update(node2, offset ?? Vector3D.Zero);
-            AddNodeToPath(path, tempNode2);
-
-            if (nextIsCatwalkExpansion)
-            {
-              AddOffsetForNextCatwalk(nextBlock, gridGraph, path, ref localVec, ref next, ref gridMatrix, ref gridSize);
-            }
+            AddOffsetForNextCatwalk(nextBlock, gridGraph, path, localVec, next, ref gridMatrix, ref gridSize, goingUpOrDownStair);
           }
         }
 
@@ -2259,74 +826,595 @@ namespace AiEnabled.Ai
       cache.Clear();
     }
 
-    static bool CanIgnoreBlock(IMySlimBlock block, CubeGridMap gridGraph)
+    static void AddOffsetForStairComingUp(IMySlimBlock blockToConsider, ref Vector3I fromPosition, ref Vector3I thisPosition, ref Vector3I toPosition, MyQueue<Node> path, CubeGridMap gridGraph)
     {
-      if (gridGraph?.MainGrid == null || block == null || !((MyCubeBlockDefinition)block.BlockDefinition).HasPhysics)
-        return true;
+      Matrix mWorld;
+      if (blockToConsider.FatBlock != null)
+        mWorld = blockToConsider.FatBlock.WorldMatrix;
+      else
+        blockToConsider.Orientation.GetMatrix(out mWorld);
 
-      var cubeDef = block.BlockDefinition;
-      var upDir = gridGraph.MainGrid.WorldMatrix.GetClosestDirection(gridGraph.WorldMatrix.Up);
-      var upVec = Base6Directions.GetIntVector(upDir);
+      var toFromVec = toPosition - fromPosition;
+      var upVec = Base6Directions.GetIntVector(blockToConsider.Orientation.Up);
+      var dotUp = upVec.Dot(ref toFromVec);
 
-      if (AiSession.Instance.CatwalkBlockDefinitions.Contains(cubeDef.Id))
+      bool goingUpDown = dotUp != 0;
+      bool stairsOnLeft = AiUtils.AreStairsOnLeftSide(blockToConsider);
+
+      Vector3 leftRight = stairsOnLeft ? mWorld.Left : mWorld.Right;
+
+      if (!goingUpDown)
+        leftRight *= -1;
+
+      Vector3 offset = leftRight * 0.25f * gridGraph.MainGrid.GridSize;
+
+      AddTempNodeToPath(ref thisPosition, ref offset, gridGraph, path, false);
+    }
+
+    static void HandleSpecialCase(Vector3I from, Vector3I to, Vector3I current, IMySlimBlock block, MyQueue<Node> path, CubeGridMap gridGraph)
+    {
+
+      Matrix mWorld;
+      if (block.FatBlock != null)
+        mWorld = block.FatBlock.WorldMatrix;
+      else
+        block.Orientation.GetMatrix(out mWorld);
+
+      MatrixI m = new MatrixI(block.Orientation);
+      Vector3I travelVecTotal = to - from;
+      var upDot = m.UpVector.Dot(ref travelVecTotal);
+
+      var gridSize = block.CubeGrid.GridSize;
+      var def = block.BlockDefinition.Id;
+      var subtype = def.SubtypeName;
+
+      bool isGCWE = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(def);
+      bool isLadder = isGCWE && subtype.IndexOf("Ladder", StringComparison.OrdinalIgnoreCase) >= 0;
+
+      if (isLadder && upDot != 0)
       {
-        return Base6Directions.GetIntVector(block.Orientation.Up).Dot(ref upVec) <= 0;
+        // going up / down is the same regardless
+        var offset = mWorld.Backward * 0.2f * gridSize;
+        AddTempNodeToPath(ref current, ref offset, gridGraph, path);
       }
-      else if (AiSession.Instance.FlatWindowDefinitions.ContainsItem(cubeDef.Id))
+      else if (upDot > 0)
       {
-        Base6Directions.Direction sideWithPane;
-        if (cubeDef.Id.SubtypeName == "LargeWindowSquare")
-          sideWithPane = block.Orientation.Forward;
+        var dirVec = current - from;
+        var dir = dirVec.RectangularLength() > 1 ? block.Orientation.Up : Base6Directions.GetDirection(dirVec); // make sure we don't try to get a direction with a weird vector (errors)
+        var next = current + dirVec;
+
+        if (isGCWE && from != current && dir == block.Orientation.Forward && gridGraph.IsOpenTile(next))
+        {
+          // needs to go around first
+          HandleSpecialCase(from, next, current, block, path, gridGraph);
+
+          var ofs = Vector3.Zero;
+          var nextBlock = gridGraph.GetBlockAtPosition(next);
+
+          if (nextBlock != null)
+          {
+            var nextDef = nextBlock.BlockDefinition as MyCubeBlockDefinition;
+            var nextCell = nextDef?.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(nextBlock, next) : Vector3I.Zero;
+            var key = MyTuple.Create(nextDef.Id, nextCell);
+
+            UsableEntry usableEntry;
+            if (AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out usableEntry) && !usableEntry.SpecialConsideration)
+            {
+              ofs = usableEntry.GetOffset(nextBlock);
+            }
+          }
+
+          AddTempNodeToPath(ref next, ref ofs, gridGraph, path, false);
+          HandleSpecialGoingUp(ref current, ref next, block, path, gridGraph, ref isGCWE, ref def, ref mWorld);
+        }
         else
-          sideWithPane = Base6Directions.GetOppositeDirection(block.Orientation.Left);
+        {
+          // going up
+          HandleSpecialGoingUp(ref current, ref from, block, path, gridGraph, ref isGCWE, ref def, ref mWorld);
+        }
+      }
+      else if (upDot < 0)
+      {
+        // going down
+        HandleSpecialGoingDown(ref current, ref from, block, path, gridGraph, ref isGCWE, ref def, ref mWorld);
 
-        return Base6Directions.GetIntVector(sideWithPane).Dot(ref upVec) >= 0;
-      }
-      else if (AiSession.Instance.ArmorPanelFullDefinitions.ContainsItem(cubeDef.Id)
-        || AiSession.Instance.ArmorPanelHalfDefinitions.ContainsItem(cubeDef.Id))
-      {
-        return Base6Directions.GetIntVector(block.Orientation.Left).Dot(ref upVec) <= 0;
-      }
-      else if ((block.FatBlock is IMyTextPanel && !AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id))
-        || (block.FatBlock is IMyLightingBlock && cubeDef.Id.SubtypeName == "LargeLightPanel"))
-      {
-        return Base6Directions.GetIntVector(block.Orientation.Forward).Dot(ref upVec) >= 0;
-      }
-      else if (AiSession.Instance.RailingBlockDefinitions.ContainsItem(cubeDef.Id))
-      {
-        return !gridGraph.CheckCatwalkForRails(block, -upVec);
-      }
+        if (isGCWE && to != current)
+        {
+          var dirVec = to - current;
+          var dir = dirVec.RectangularLength() > 1 ? block.Orientation.Up : Base6Directions.GetDirection(dirVec); // make sure we don't try to get a direction with a weird vector (errors)
+          var next = current - dirVec;
 
-      return false;
+          if (Base6Directions.GetOppositeDirection(dir) == block.Orientation.Forward && gridGraph.IsOpenTile(next))
+          {
+            // needs to go down and around
+            var ofs = Vector3.Zero;
+            var nextBlock = gridGraph.GetBlockAtPosition(next);
+
+            if (nextBlock != null)
+            {
+              var nextDef = nextBlock.BlockDefinition as MyCubeBlockDefinition;
+              var nextCell = nextDef?.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(nextBlock, next) : Vector3I.Zero;
+              var key = MyTuple.Create(nextDef.Id, nextCell);
+
+              UsableEntry usableEntry;
+              if (AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out usableEntry) && !usableEntry.SpecialConsideration)
+              {
+                ofs = usableEntry.GetOffset(nextBlock);
+              }
+            }
+
+            AddTempNodeToPath(ref next, ref ofs, gridGraph, path, false);
+            HandleSpecialCase(next, to, current, block, path, gridGraph);
+          }
+        }
+      }
+      else if (isGCWE)
+      {
+        if (isLadder)
+        {
+          var offset = mWorld.Forward * 0.2f * gridSize;
+          AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+        }
+        else if (subtype.IndexOf("Stair", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          Vector3I travelVec = to - current;
+
+          if (travelVec.RectangularLength() > 1)
+          {
+            var max = Vector3I.One;
+            var min = -max;
+
+            Vector3I.Clamp(ref travelVec, ref min, ref max, out travelVec);
+
+            if (travelVec.RectangularLength() > 1)
+            {
+              var worldNext = gridGraph.LocalToWorld(to);
+              var worldLocal = gridGraph.LocalToWorld(current);
+              var worldTravel = (Vector3)(worldNext - worldLocal);
+
+              var intVec = Base6Directions.GetIntVector(mWorld.GetClosestDirection(ref worldTravel));
+              var newVec = to - intVec;
+              travelVec = to - newVec;
+            }
+          }
+
+          var travelDir = Base6Directions.GetDirection(travelVec);
+
+          bool isLeft = subtype.EndsWith("Left"); // Left = walkway is on left
+
+          var lftRgt = isLeft ? mWorld.Left : mWorld.Right;
+          var fwdBwd = (travelDir == block.Orientation.Forward) ? mWorld.Backward : mWorld.Forward;
+
+          var offset = (fwdBwd + lftRgt) * 0.25f * gridSize;
+          AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+
+          offset = (-fwdBwd + lftRgt) * 0.25f * gridSize;
+          AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+        }
+        else
+        {
+          AiSession.Instance.Logger.Error($"No pathing logic written for {def}");
+        }
+      }
+      else if (subtype == "LargeRefineryIndustrial")
+      {
+        var blockCell = AiUtils.GetCellForPosition(block, current);
+        if (blockCell == new Vector3I(1, 2, 0)) // bot is stopping at the top of the stairs, coming from a parallel point
+        {
+          var offset = (mWorld.Forward + mWorld.Right) * 0.25f * gridSize;
+          AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+        }
+        else if (upDot > 0)
+        {
+          if (blockCell == new Vector3I(1, 0, 0))
+          {
+            var offset = (mWorld.Forward + mWorld.Right) * 0.25f * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+
+            offset = (mWorld.Backward + mWorld.Up + mWorld.Right * 0.25f) * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+          }
+          else if (blockCell == new Vector3I(1, 1, 0))
+          {
+            var offset = (mWorld.Backward * 0.75f + mWorld.Left * 0.25f) * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+
+            offset = ((mWorld.Forward + mWorld.Left) * 0.25f + mWorld.Up) * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+          }
+          else // cell = 1, 2, 0
+          {
+            var offset = (mWorld.Forward + mWorld.Right) * 0.25f * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+          }
+        }
+        else if (upDot < 0)
+        {
+          if (blockCell == new Vector3I(1, 0, 0))
+          {
+            var offset = (mWorld.Backward + mWorld.Up + mWorld.Right * 0.25f) * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+
+            offset = (mWorld.Forward + mWorld.Right) * 0.25f * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+          }
+          else if (blockCell == new Vector3I(1, 1, 0))
+          {
+            var offset = ((mWorld.Forward + mWorld.Left) * 0.25f + mWorld.Up) * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+
+            offset = (mWorld.Backward * 0.75f + mWorld.Left * 0.25f) * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+          }
+          else // cell = 1, 2, 0
+          {
+            var offset = (mWorld.Forward + mWorld.Right) * 0.25f * gridSize;
+            AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+          }
+        }
+        else if (blockCell == new Vector3I(1, 0, 0)) // bot is stopping at the base of the stairs, coming from outside the block
+        {
+          var offset = (mWorld.Forward + mWorld.Right) * 0.25f * gridSize;
+          AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+        }
+        else // rest are just narrow walkways
+        {
+          var offset = mWorld.Forward * 0.25f * gridSize;
+          AddTempNodeToPath(ref current, ref offset, gridGraph, path);
+        }
+      }
+      else 
+      {
+        // TODO: NOT FINISHED
+        AiSession.Instance.Logger.Error($"No pathing logic written for {def}");
+      }
     }
 
-    static bool AreStairsOnLeftSide(IMySlimBlock stairBlock)
+    static void HandleSpecialGoingUp(ref Vector3I position, ref Vector3I prevPosition, IMySlimBlock block, MyQueue<Node> path, CubeGridMap gridGraph, 
+      ref bool isGCWE, ref MyDefinitionId blockDef, ref Matrix m)
     {
-      if (stairBlock != null && !stairBlock.IsDestroyed)
-      {
-        // Mirrored has stairs on Left side
-        if (AiSession.Instance.HalfStairMirroredDefinitions.Contains(stairBlock.BlockDefinition.Id))
-          return true;
+      var queue = AiSession.Instance.NodeQueuePool.Get();
 
-        // Grated Catwalk Expansion
-        if (AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(stairBlock.BlockDefinition.Id)
-          && stairBlock.BlockDefinition.Id.SubtypeName.EndsWith("Left"))
-          return true;
+      HandleSpecialGoingDown(ref position, ref prevPosition, block, queue, gridGraph, ref isGCWE, ref blockDef, ref m, isGoingUp: true);
+
+      for (int i = queue.Count - 1; i >= 0; i--)
+      {
+        path.Enqueue(queue[i]);
       }
 
-      return false;
+      AiSession.Instance.NodeQueuePool.Return(ref queue);
     }
+
+    static void HandleSpecialGoingDown(ref Vector3I position, ref Vector3I prevPosition, IMySlimBlock block, MyQueue<Node> path, CubeGridMap gridGraph,
+      ref bool isGCWE, ref MyDefinitionId blockDef, ref Matrix m, bool isGoingUp = false)
+    {
+      var subtype = blockDef.SubtypeName;
+      var gridSize = block.CubeGrid.GridSize;
+
+      if (isGCWE) // catwalk expansion
+      {
+        bool isLeft = subtype.EndsWith("Left");
+
+        if (subtype.IndexOf("Stair", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          bool isUTurn = subtype.IndexOf("UTurn", StringComparison.OrdinalIgnoreCase) >= 0;
+          bool isCorner = subtype.IndexOf("Corner", StringComparison.OrdinalIgnoreCase) >= 0;
+          bool isSteep = subtype.IndexOf("Steep", StringComparison.OrdinalIgnoreCase) >= 0;
+          bool isTall = ((MyCubeBlockDefinition)block.BlockDefinition).Size.AbsMax() > 1;
+
+          if (isUTurn)
+          {
+            // left and right, tall and short
+
+            if (isTall) // double block
+            {
+              var cell = AiUtils.GetCellForPosition(block, position);
+
+              if (cell == Vector3.Zero)
+              {
+                return;
+              }
+              else if (isLeft)
+              {
+                var offset = (m.Up + m.Left * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down * 0.25f + m.Left * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down * 0.25f + m.Right * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down + m.Right * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+              else
+              {
+                var offset = (m.Up + m.Right * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down * 0.25f + m.Right * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down * 0.25f + m.Left * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down + m.Left * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+            }
+            else // single block
+            {
+              if (isLeft)
+              {
+                var offset = (m.Up * 0.75f + m.Left * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Up * 0.35f + m.Left * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Up * 0.35f + m.Right * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Right * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+              else
+              {
+                var offset = (m.Up * 0.75f + m.Right * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Up * 0.35f + m.Right * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Up * 0.35f + m.Left * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Left * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+            }
+          }
+          else if (isCorner)
+          {
+            // left and right, tall and short
+            if (isTall)
+            {
+              var cell = AiUtils.GetCellForPosition(block, position);
+
+              if (cell == Vector3.Zero)
+              {
+                return;
+              }
+              else if (isLeft)
+              {
+                var offset = (m.Up + m.Left * 0.75f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down * 0.25f + m.Right * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down + m.Right * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+              else // is right
+              {
+                var offset = (m.Up+ m.Right * 0.75f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down * 0.25f + m.Left * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Down + m.Left * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+            }
+            else // short
+            {
+              if (isLeft)
+              {
+                var offset = (m.Up * 0.75f + m.Left * 0.75f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Up * 0.35f + m.Right * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Right * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+              else
+              {
+                var offset = (m.Up * 0.75f + m.Right * 0.75f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Up * 0.35f + m.Left * 0.25f + m.Backward * 0.25f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+                offset = (m.Left * 0.25f + m.Forward * 0.75f) * gridSize;
+                AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+              }
+            }
+          }
+          else if (isSteep)
+          {
+            // base and tip
+
+            // TODO: Need to figure out if they are going up / down or just passing through, and adjust offsets accordingly!
+
+            if (subtype.IndexOf("Base", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+              var lftRgt = isLeft ? m.Right : m.Left;
+
+              var offset = (m.Up * 0.6f + lftRgt * 0.25f) * gridSize;
+              AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+              offset = (m.Down * 0.25f + lftRgt * 0.25f + m.Forward * 0.25f) * gridSize;
+              AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+            }
+            else // tip
+            {
+              var lftRgt = isLeft ? m.Right : m.Left;
+
+              var offset = (m.Up * 0.7f + lftRgt * 0.25f + m.Backward * 0.7f) * gridSize;
+              AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+              offset = (m.Down * 0.25f + lftRgt * 0.25f + m.Forward * 0.1f) * gridSize;
+              AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+            }
+          }
+          else // regular half types - left and right
+          {
+            // TODO: Need to figure out if they are going up / down or just passing through, and adjust offsets accordingly!
+            var lftRgt = isLeft ? m.Right : m.Left;
+
+            var offset = (m.Up + lftRgt * 0.25f + m.Backward * 0.75f) * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+            offset = (lftRgt * 0.25f + m.Forward * 0.75f) * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+          }
+        }
+        else
+        {
+          // TODO: NOT FINISHED!
+          AiSession.Instance.Logger.Error($"No pathing logic written for {blockDef}");
+        }
+      }
+      else // vanilla
+      {
+        if (subtype.IndexOf("Stair", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+          Vector3 leftRight = AiUtils.AreStairsOnLeftSide(block) ? m.Left : m.Right;
+          var offset = (m.Up * 0.85f + leftRight * 0.3f + m.Forward * 0.5f) * gridSize;
+          AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+          offset = (m.Down * 0.15f + leftRight * 0.3f + m.Backward * 0.5f) * gridSize;
+          AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+        }
+        else if (block.FatBlock is IMyRefinery && subtype == "LargeRefineryIndustrial")
+        {
+          var cell = AiUtils.GetCellForPosition(block, position);
+
+          if (cell == new Vector3I(1, 0, 0)) // Bottom of refinery stairs
+          {
+            var offset = (m.Backward * 0.8f + m.Up + m.Right * 0.325f) * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+            offset = (m.Forward * 0.5f + m.Right * 0.25f) * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+          }
+          else if (cell == new Vector3I(1, 1, 0)) // Middle of refinery stairs
+          {
+            var prevCell = AiUtils.GetCellForPosition(block, prevPosition);
+            var checkVector = isGoingUp ? new Vector3I(1, 1, 1) : new Vector3I(1, 2, 0); // 111 is landing between stairs, 120 is top of stairs
+
+            if (prevCell != checkVector)
+            {
+              // Keeps it from adding the middle points twice when walking up / down the stairs.
+              // Will only add the points when coming from the proper location.
+              return;
+            }
+
+            var offset = ((m.Forward + m.Left) * 0.25f + m.Up) * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+
+            offset = (m.Backward * 0.8f + m.Left * 0.325f) * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+          }
+          else if (cell == new Vector3I(1, 2, 0)) // Top of refinery stairs
+          {
+            var offset = (m.Forward + m.Right) * 0.25f * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+          }
+          else // rest are just narrow walkways
+          {
+            var offset = m.Forward * 0.25f * gridSize;
+            AddTempNodeToPath(ref position, ref offset, gridGraph, path, false);
+          }
+        }
+        else
+        {
+          // TODO: NOT FINISHED!
+          AiSession.Instance.Logger.Error($"No pathing logic written for {blockDef}");
+        }
+      }
+    }
+
+    static void AddTempNodeToPath(ref Vector3I position, ref Vector3 offset, CubeGridMap gridGraph, MyQueue<Node> path, bool canSkip = true)
+    {
+      Node node;
+      gridGraph.TryGetNodeForPosition(position, out node);
+
+      TempNode tempNode = AiSession.Instance.TempNodePool.Get();
+      tempNode.Update(node, offset);
+      tempNode.CanBeSkipped = canSkip;
+      AddNodeToPath(path, tempNode);
+    }
+
 
     static void AddOffsetForThisCatwalk(IMySlimBlock thisBlock, CubeGridMap gridGraph, MyQueue<Node> path,
-      ref Vector3I localVec, ref Vector3I next, ref MatrixD gridMatrix, ref float gridSize, bool addCenterPoint = true)
+      Vector3I fromVec, Vector3I currentVec, Vector3I nextVec, ref MatrixD gridMatrix, ref float gridSize, bool addCenterPoint = true)
     {
-      if (localVec == next)
+      if (currentVec == nextVec)
         return;
 
-      var subtype = thisBlock.BlockDefinition.Id.SubtypeName;
+      var blockDef = (MyCubeBlockDefinition)thisBlock.BlockDefinition;
+      var subtype = blockDef.Id.SubtypeName;
+
+      var cell = blockDef.Size.AbsMax() > 1 ? AiUtils.GetCellForPosition(thisBlock, currentVec) : Vector3I.Zero;
+      var key = MyTuple.Create(blockDef.Id, cell);
+      var ofs = Vector3.Zero;
+
+      UsableEntry usableEntry;
+      if (AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out usableEntry) && !usableEntry.SpecialConsideration)
+      {
+        ofs = usableEntry.GetOffset(thisBlock);
+        AddTempNodeToPath(ref currentVec, ref ofs, gridGraph, path, false);
+        return;
+      }
+      else if (subtype.StartsWith("GCMHalfWidthCatwalkBranchingWithStairs")
+        || subtype.StartsWith("GCMHalfWidthCatwalkStraightWithStairs")
+        || subtype.StartsWith("GCMHalfWidthCatwalkWallWithStairs"))
+      {
+        HandleSpecialCase(fromVec, nextVec, currentVec, thisBlock, path, gridGraph);
+        return;
+      }
+
+      var travelVec = nextVec - currentVec;
+      if (travelVec.RectangularLength() > 1)
+      {
+        var max = Vector3I.One;
+        var min = -max;
+
+        Vector3I.Clamp(ref travelVec, ref min, ref max, out travelVec);
+
+        if (travelVec.RectangularLength() > 1)
+        {
+          Matrix m;
+          if (thisBlock.FatBlock != null)
+          {
+            m = thisBlock.FatBlock.WorldMatrix;
+          }
+          else
+          {
+            thisBlock.Orientation.GetMatrix(out m);
+          }
+
+          var worldNext = gridGraph.LocalToWorld(nextVec);
+          var worldLocal = gridGraph.LocalToWorld(currentVec);
+          var worldTravel = (Vector3)(worldNext - worldLocal);
+
+          var intVec = Base6Directions.GetIntVector(m.GetClosestDirection(ref worldTravel));
+          nextVec = currentVec + intVec;
+          travelVec = nextVec - currentVec;
+        }
+      }
+
+      // add an offset to align with entrance of next block as needed
       var blockFwdVector = gridMatrix.GetDirectionVector(thisBlock.Orientation.Forward);
       var blockLeftVector = gridMatrix.GetDirectionVector(thisBlock.Orientation.Left);
-      var gridTravelDir = Base6Directions.GetDirection(next - localVec);
+      var gridTravelDir = Base6Directions.GetDirection(travelVec);
+
       Vector3D? offset = null;
 
       if (subtype.EndsWith("CatwalkHalfLeft"))
@@ -2621,35 +1709,86 @@ namespace AiEnabled.Ai
         }
       }
 
-      Node node;
-      gridGraph.TryGetNodeForPosition(localVec, out node);
-
       if (addCenterPoint)
       {
-        TempNode tempNode2 = AiSession.Instance.TempNodePool.Get();
-        tempNode2.Update(node, Vector3D.Zero);
-        AddNodeToPath(path, tempNode2);
+        AddTempNodeToPath(ref currentVec, ref Vector3.Zero, gridGraph, path, false);
       }
 
-      TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-      tempNode.Update(node, offset ?? Vector3D.Zero);
-      AddNodeToPath(path, tempNode);
+      ofs = (Vector3)(offset ?? Vector3D.Zero);
+      AddTempNodeToPath(ref currentVec, ref ofs, gridGraph, path, false);
     }
 
     static void AddOffsetForNextCatwalk(IMySlimBlock nextBlock, CubeGridMap gridGraph, MyQueue<Node> path,
-      ref Vector3I localVec, ref Vector3I next, ref MatrixD gridMatrix, ref float gridSize)
+      Vector3I localVec, Vector3I next, ref MatrixD gridMatrix, ref float gridSize, bool goingUpDown = false)
     {
       if (localVec == next)
         return;
+
+      var travelVec = next - localVec;
+      if (travelVec.RectangularLength() > 1)
+      {
+        var max = Vector3I.One;
+        var min = -max;
+
+        Vector3I.Clamp(ref travelVec, ref min, ref max, out travelVec);
+
+        if (travelVec.RectangularLength() > 1)
+        {
+          Matrix m;
+          if (nextBlock.FatBlock != null)
+          {
+            m = nextBlock.FatBlock.WorldMatrix;
+          }
+          else
+          {
+            nextBlock.Orientation.GetMatrix(out m);
+          }
+
+          var worldNext = gridGraph.LocalToWorld(next);
+          var worldLocal = gridGraph.LocalToWorld(localVec);
+          var worldTravel = (Vector3)(worldNext - worldLocal);
+
+          var intVec = Base6Directions.GetIntVector(m.GetClosestDirection(ref worldTravel));
+          localVec = next - intVec;
+          travelVec = next - localVec;
+        }
+      }
 
       // add an offset to align with entrance of next block as needed
       var subtype = nextBlock.BlockDefinition.Id.SubtypeName;
       var blockFwdVector = gridMatrix.GetDirectionVector(nextBlock.Orientation.Forward);
       var blockLeftVector = gridMatrix.GetDirectionVector(nextBlock.Orientation.Left);
-      var gridTravelDir = Base6Directions.GetDirection(next - localVec);
+      var gridTravelDir = Base6Directions.GetDirection(travelVec);
       Vector3D? offset = null;
 
-      if (subtype.EndsWith("CatwalkHalfLeft"))
+      if (subtype.StartsWith("GCMHalfWidthCatwalkBranchingWithStairs")
+        || subtype.StartsWith("GCMHalfWidthCatwalkStraightWithStairs")
+        || subtype.StartsWith("GCMHalfWidthCatwalkWallWithStairs"))
+      {
+        var isLeft = subtype.EndsWith("Left");
+        Vector3D lftRgt;
+
+        if (goingUpDown)
+        {
+          // align with stairs to travel up / down
+          lftRgt = isLeft ? -blockLeftVector : blockLeftVector;
+        }
+        else
+        {
+          // align with walkway beside stairs to go around
+          lftRgt = isLeft ? blockLeftVector : -blockLeftVector;
+        }
+
+        if (gridTravelDir == nextBlock.Orientation.Forward)
+        {
+          offset = (-blockFwdVector + lftRgt) * gridSize * 0.5;
+        }
+        else
+        {
+          offset = (blockFwdVector + lftRgt) * gridSize * 0.5;
+        }
+      }
+      else if (subtype.EndsWith("CatwalkHalfLeft"))
       {
         if (gridTravelDir == nextBlock.Orientation.Forward)
         {
@@ -2922,12 +2061,8 @@ namespace AiEnabled.Ai
 
       if (offset.HasValue)
       {
-        Node node;
-        gridGraph.TryGetNodeForPosition(next, out node);
-
-        TempNode tempNode = AiSession.Instance.TempNodePool.Get();
-        tempNode.Update(node, offset.Value);
-        AddNodeToPath(path, tempNode);
+        var ofs = (Vector3)offset.Value;
+        AddTempNodeToPath(ref next, ref ofs, gridGraph, path, canSkip: false);
       }
     }
 
@@ -2942,13 +2077,14 @@ namespace AiEnabled.Ai
       //}
 
       //Vector3I diff = Vector3I.Zero;
+      //Node prev = node;
       //if (path.Count > 1)
       //{
-      //  var prev = path[path.Count - 1];
+      //  prev = path[path.Count - 1];
       //  diff = node.Position - prev.Position;
       //}
 
-      //AiSession.Instance.Logger.Log($" {node.Position} | {node.NodeType} | Diff = {diff}");
+      //AiSession.Instance.Logger.Log($" Prev: {prev.Position} | Node: {node.Position} | {node.NodeType} | Diff = {diff}");
 
       path.Enqueue(node);
     }

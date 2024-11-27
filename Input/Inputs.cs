@@ -46,6 +46,7 @@ namespace AiEnabled.Input
         { "RadioRecall_Used", _instance.PlayerMenu.RadioRecall_Used},
         { "SpreadOut_Used", _instance.PlayerMenu.SpreadOut_Used},
         { "ComeCloser_Used", _instance.PlayerMenu.ComeCloser_Used},
+        { "GoTo_Used", _instance.PlayerMenu.GoTo_Used}
       };
 
       Configure();
@@ -85,6 +86,11 @@ namespace AiEnabled.Input
           {
             var text = $"Decrease Follow Distanec: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
             _instance.PlayerMenu.ComeCloserKeyBind.Text = text;
+          }
+          else if (name.StartsWith("GoTo"))
+          {
+            var text = $"GoTo All: <color=orange>{(bind.Ctrl ? "CTRL+" : "")}{(bind.Alt ? "ALT+" : "")}{(bind.Shift ? "SHIFT+" : "")}{bind.Key}";
+            _instance.PlayerMenu.GoToKeyBind.Text = text;
           }
 
           _keybinds.Add(new Keybind(bind.Key, bind.Shift, bind.Ctrl, bind.Alt, method));

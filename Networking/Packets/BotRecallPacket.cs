@@ -20,18 +20,20 @@ namespace AiEnabled.Networking
   [ProtoContract]
   public class BotResumePacket : PacketBase
   {
-    [ProtoMember(1)] long _playerId;
+    [ProtoMember(1)] readonly long _playerId;
+    [ProtoMember(2)] readonly int _commandDistance;
 
     public BotResumePacket() { }
 
-    public BotResumePacket(long playerId)
+    public BotResumePacket(long playerId, int cmdDistance)
     {
       _playerId = playerId;
+      _commandDistance = cmdDistance;
     }
 
     public override bool Received(NetworkHandler netHandler)
     {
-      AiSession.Instance.PlayerLeftCockpit("", _playerId, "AiEnabled_RecallBots");
+      AiSession.Instance.PlayerLeftCockpit("", _playerId, $"AiEnabled_RecallBots.{_commandDistance}");
       return false;
     }
   }

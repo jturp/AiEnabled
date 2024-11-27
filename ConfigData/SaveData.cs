@@ -19,6 +19,9 @@ namespace AiEnabled.ConfigData
     [ProtoMember(5)] public bool AllowScavengerBot = true;
     [ProtoMember(6)] public bool AllowCrewBot = true;
     [ProtoMember(34)] public bool DisableEnvironmentDamageForHelpers = true;
+    [ProtoMember(35)] public bool DisableAsphyxiaDamageForBots = true;
+    [ProtoMember(36)] public bool DisableTemperatureDamageForBots = true;
+    [ProtoMember(37)] public bool DisableLowPressureDamageForBots = true;
     [ProtoMember(7)] public bool ObeyProjectionIntegrityForRepairs = true;
     [ProtoMember(8)] public bool DisableCharacterCollisionOnBotDeath = true;
     [ProtoMember(9)] public int MaxBotProjectileDistance = 150;

@@ -49,6 +49,7 @@ namespace AiEnabled.Bots.Roles.Helpers
     List<MyPhysicalItemDefinition> _validToolDefinitions = new List<MyPhysicalItemDefinition>(2);
     bool _cleaned;
 
+    public IMySlimBlock CurrentlyConsideredTarget;
     public bool FirstMissingItemAssigned;
     public string FirstMissingItemForRepairs;
     public string FirstMissingItemBlock;
@@ -418,46 +419,64 @@ namespace AiEnabled.Bots.Roles.Helpers
         isFriendlyMap = relation == MyRelationsBetweenPlayers.Self || relation == MyRelationsBetweenPlayers.Allies;
       }
 
+      CurrentBuildMode = BuildMode.None;
+
       if ((AllowedBuildModes & BuildMode.Weld) > 0 && (AllowedBuildModes & BuildMode.Grind) > 0)
       {
         if (WeldBeforeGrind) // prioritize welding
         {
           tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
-          CurrentBuildMode = BuildMode.Weld;
 
-          if (tgt == null && !returnNow)
+          if (tgt != null)
+          {
+            CurrentBuildMode |= BuildMode.Weld;
+          }
+          else if (!returnNow)
           {
             tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
-            CurrentBuildMode = BuildMode.Grind;
+
+            if (tgt != null) 
+              CurrentBuildMode = BuildMode.Grind;
           }
         }
         else // prioritize grinding
         {
           tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
-          CurrentBuildMode = BuildMode.Grind;
 
-          if (tgt == null && !returnNow)
+          if (tgt != null)
+          {
+            CurrentBuildMode = BuildMode.Grind;
+          }
+          if (!returnNow)
           {
             tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
-            CurrentBuildMode = BuildMode.Weld;
+
+            if (tgt != null) 
+              CurrentBuildMode = BuildMode.Weld;
           }
         }
       }
       else if ((AllowedBuildModes & BuildMode.Weld) > 0)
       {
         tgt = GetRepairTarget(graph, ref isGridGraph, ref botPosition, out isInventory, out returnNow);
-        CurrentBuildMode = BuildMode.Weld;
+
+        if (tgt != null) 
+          CurrentBuildMode = BuildMode.Weld;
       }
       else if ((AllowedBuildModes & BuildMode.Grind) > 0)
       {
         tgt = GetGrindTarget(_currentGraph, ref botPosition, ref isFriendlyMap, out isInventory, out returnNow);
-        CurrentBuildMode = BuildMode.Grind;
+
+        if (tgt != null)
+          CurrentBuildMode = BuildMode.Grind;
       }
       else
       {
         // can't do anything
         return;
       }
+
+      CurrentlyConsideredTarget = null;
 
       if (returnNow)
         return;
@@ -493,9 +512,7 @@ namespace AiEnabled.Bots.Roles.Helpers
 
           _threadOnlyEntList.ShellSort(botPosition, true);
 
-          var gravity = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
-          if (gravity.LengthSquared() > 0)
-            gravity.Normalize();
+          var gravity = BotInfo.CurrentGravityAtBotPosition_Normalized;
 
           for (int i = _threadOnlyEntList.Count - 1; i >= 0; i--)
           {
@@ -695,10 +712,6 @@ namespace AiEnabled.Bots.Roles.Helpers
         _threadOnlyEntList.Clear();
         MyGamePruningStructure.GetAllEntitiesInOBB(ref graph.OBB, _threadOnlyEntList);
 
-        var gravityNormalized = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
-        if (gravityNormalized.LengthSquared() > 0)
-          gravityNormalized.Normalize();
-
         _cubes.Clear();
 
         for (int i = _threadOnlyEntList.Count - 1; i >= 0; i--)
@@ -739,26 +752,15 @@ namespace AiEnabled.Bots.Roles.Helpers
             continue;
           }
 
-          var slimPosition = slim.Position;
-          if (slim.CubeGrid.EntityId != gridGraph?.MainGrid?.EntityId)
-          {
-            if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
-            {
-              if (gravityNormalized.LengthSquared() > 0)
-                slimWorld -= gravityNormalized;
-              else
-                slimWorld += _currentGraph?.WorldMatrix.Up ?? WorldMatrix.Up;
-            }
-
-            slimPosition = graph.WorldToLocal(slimWorld);
-          }
-
+          var slimPosition = GetAdjustedLocalTargetPosition(slim);
           var slimGridId = slim.CubeGrid.EntityId;
 
           if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, slimPosition) || gridGraph?.IsTileBeingRepaired(slimGridId, slimPosition, botId) == true)
           {
             continue;
           }
+
+          CurrentlyConsideredTarget = slim;
 
           Vector3I _;
           if (_currentGraph.GetClosestValidNode(this, slimPosition, out _, isSlimBlock: true))
@@ -779,6 +781,7 @@ namespace AiEnabled.Bots.Roles.Helpers
       isInventory = false;
       returnNow = false;
       FirstMissingItemAssigned = false;
+      CurrentlyConsideredTarget = null;
 
       if (((byte)MySessionComponentSafeZones.AllowedActions & 8) != 0)
       {
@@ -862,10 +865,6 @@ namespace AiEnabled.Bots.Roles.Helpers
           var colorVec = new Vector3(360, 100, 100);
           var botId = Character.EntityId;
 
-          var gravityNormalized = BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() > 0 ? BotInfo.CurrentGravityAtBotPosition_Nat : BotInfo.CurrentGravityAtBotPosition_Art;
-          if (gravityNormalized.LengthSquared() > 0)
-            gravityNormalized.Normalize();
-
           //_cubes.ShellSort(botPosition);
           _taskPrioritiesTemp.AddRange(_cubes);
           _taskPrioritiesTemp.PrioritySort(_taskPriorities, RepairPriorities, botPosition, true);
@@ -902,24 +901,13 @@ namespace AiEnabled.Bots.Roles.Helpers
               if ((ignoreDeformation || !slim.HasDeformation) && (health < 0 || health >= 1))
                 continue;
 
-              var node = slim.Position;
-              if (slim.CubeGrid.EntityId != graph.MainGrid.EntityId)
-              {
-                if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
-                {
-                  if (gravityNormalized.LengthSquared() > 0)
-                    slimWorld -= gravityNormalized;
-                  else
-                    slimWorld += _currentGraph?.WorldMatrix.Up ?? WorldMatrix.Up;
-                }
-
-                node = mainGrid.WorldToGridInteger(slimWorld);
-              }
-
+              var node = GetAdjustedLocalTargetPosition(slim);
               var slimGridId = slim.CubeGrid.EntityId;
 
               if (AiSession.Instance.BlockRepairDelays.Contains(slimGridId, node) || graph.IsTileBeingRepaired(slimGridId, node, botId))
                 continue;
+
+              CurrentlyConsideredTarget = slim;
 
               Vector3I _;
               if (_currentGraph.GetClosestValidNode(this, node, out _, isSlimBlock: true))
@@ -1060,6 +1048,8 @@ namespace AiEnabled.Bots.Roles.Helpers
                       return null;
                     }
 
+                    CurrentlyConsideredTarget = slim;
+
                     Vector3I closestNode;
                     if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
                     {
@@ -1180,6 +1170,8 @@ namespace AiEnabled.Bots.Roles.Helpers
                       break;
                     }
 
+                    CurrentlyConsideredTarget = slim;
+
                     Vector3I closestNode;
                     if (_currentGraph.GetClosestValidNode(this, node, out closestNode, isSlimBlock: true))
                     {
@@ -1218,6 +1210,38 @@ namespace AiEnabled.Bots.Roles.Helpers
       }
 
       return tgt;
+    }
+
+    public Vector3I GetAdjustedLocalTargetPosition(IMySlimBlock slim)
+    {
+      var graph = _currentGraph as CubeGridMap;
+      if (graph == null)
+      {
+        if (_currentGraph != null && slim?.CubeGrid != null)
+          return _currentGraph.WorldToLocal(slim.CubeGrid.GridIntegerToWorld(slim.Position));
+        else
+          return slim?.Position ?? Vector3I.Zero;
+      }
+
+      var node = slim.Position;
+
+      if (slim.CubeGrid.EntityId != graph.MainGrid.EntityId)
+      {
+        var slimWorld = slim.CubeGrid.GridIntegerToWorld(node);
+        var gravityNormalized = BotInfo.CurrentGravityAtBotPosition_Normalized;
+
+        if (slim.CubeGrid.GridSizeEnum == MyCubeSize.Small)
+        {
+          if (gravityNormalized.LengthSquared() > 0)
+            slimWorld -= gravityNormalized;
+          else
+            slimWorld += graph.WorldMatrix.Up;
+        }
+
+        node = graph.MainGrid.WorldToGridInteger(slimWorld);
+      }
+
+      return node;
     }
 
     bool CheckBotInventoryForItems(IMySlimBlock block)

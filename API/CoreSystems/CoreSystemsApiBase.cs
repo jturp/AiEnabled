@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 
+using AiEnabled.API;
+
 using Sandbox.ModAPI;
 
 using VRage;
@@ -59,6 +61,7 @@ namespace AiEnabled.API
 
     private Func<MyEntity, long> _getPlayerController;
     private Func<MyEntity, MyTuple<bool, int, int>> _getProjectilesLockedOn;
+    private Action<MyEntity, ICollection<Vector3D>> _getProjectilesLockedOnPos;
     private Func<MyDefinitionId, float> _getMaxPower;
 
     private Func<MyEntity, float> _getOptimalDps;
@@ -166,8 +169,16 @@ namespace AiEnabled.API
     public void GetAllCoreRifles(ICollection<MyDefinitionId> collection) => _getCoreRifles?.Invoke(collection);
     public void GetAllCoreArmors(IList<byte[]> collection) => _getCoreArmors?.Invoke(collection);
 
+    /// <summary>
+    /// Gets count of all projectiles that are targeting the MyEntity
+    /// </summary>
     public MyTuple<bool, int, int> GetProjectilesLockedOn(MyEntity victim) =>
         _getProjectilesLockedOn?.Invoke(victim) ?? new MyTuple<bool, int, int>();
+    /// <summary>
+    /// Gets positional information on projectiles that are actively locked on to the MyEntity
+    /// </summary>
+    public void GetProjectilesLockedOnPos(MyEntity victim, ICollection<Vector3D> collection) =>
+        _getProjectilesLockedOnPos?.Invoke(victim, collection);
     public void GetSortedThreats(MyEntity shooter, ICollection<MyTuple<MyEntity, float>> collection) =>
         _getSortedThreats?.Invoke(shooter, collection);
     public void GetObstructions(MyEntity shooter, ICollection<MyEntity> collection) =>
@@ -393,12 +404,11 @@ namespace AiEnabled.API
 
     public enum ShootState
     {
-      EventStart, // active
-      EventEnd, // inactive
+      EventStart,
+      EventEnd,
       Preceding,
       Canceled,
     }
-
 
     public enum EventTriggers
     {
@@ -416,6 +426,13 @@ namespace AiEnabled.API
       StopTracking,
       LockDelay,
       Init,
+      Homing,
+      TargetAligned,
+      WhileOn,
+      TargetRanged100,
+      TargetRanged75,
+      TargetRanged50,
+      TargetRanged25,
     }
 
     /// <summary>
@@ -457,13 +474,15 @@ namespace AiEnabled.API
 
     private const long Channel = 67549756549;
     private bool _getWeaponDefinitions;
-    public bool _isRegistered;
+    private bool _isRegistered;
     private Action _readyCallback;
 
     /// <summary>
     /// True if CoreSystems replied when <see cref="Load"/> got called.
     /// </summary>
     public bool IsReady { get; private set; }
+
+    public bool IsRegistered { get { return _isRegistered; } }
 
     /// <summary>
     /// Only filled if giving true to <see cref="Load"/>.
@@ -501,8 +520,7 @@ namespace AiEnabled.API
 
     private void HandleMessage(object obj)
     {
-      if (_apiInit || obj is string
-      ) // the sent "ApiEndpointRequest" will also be received here, explicitly ignoring that
+      if (_apiInit || obj is string) // the sent "ApiEndpointRequest" will also be received here, explicitly ignoring that
         return;
 
       var dict = obj as IReadOnlyDictionary<string, Delegate>;
@@ -538,6 +556,7 @@ namespace AiEnabled.API
       AssignMethod(delegates, "GetObstructionsBase", ref _getObstructions);
       AssignMethod(delegates, "GetMaxPower", ref _getMaxPower);
       AssignMethod(delegates, "GetProjectilesLockedOnBase", ref _getProjectilesLockedOn);
+      AssignMethod(delegates, "GetProjectilesLockedOnPos", ref _getProjectilesLockedOnPos);
       AssignMethod(delegates, "GetAiFocusBase", ref _getAiFocus);
       AssignMethod(delegates, "SetAiFocusBase", ref _setAiFocus);
       AssignMethod(delegates, "ReleaseAiFocusBase", ref _releaseAiFocus);
@@ -722,5 +741,7 @@ namespace AiEnabled.API
         SystemWideDamageEvents,
       }
     }
+
   }
+
 }

@@ -47,7 +47,7 @@ namespace AiEnabled.Graphics
   {
     internal MenuRootCategory Menu, AdminMenu;
     internal MenuSliderInput MouseSensitivity;
-    internal MenuKeybindInput ResumeBotsKeyBind, RadioRecallKeyBind, SpreadOutKeyBind, ComeCloserKeyBind;
+    internal MenuKeybindInput ResumeBotsKeyBind, RadioRecallKeyBind, SpreadOutKeyBind, ComeCloserKeyBind, GoToKeyBind;
     internal MenuItem ShowHealthBars, ShowHelperGPS, ObeyProjectionIntegrity, DisableCollisionOnDeath;
     internal MenuItem AllowRepairBot, AllowCombatBot, AllowScavengerBot, AllowCrewBot, AllowBotMusic;
     internal MenuItem AllowFriendlyFlight, AllowEnemyFlight, AllowNeutralFlight, AllowNeutralTargets;
@@ -56,11 +56,12 @@ namespace AiEnabled.Graphics
     internal MenuItem HighLightHelpers, IncreaseNodeWeightsNearWeapons, ShowMapIconFriendly, ShowMapIconOther;
     internal MenuItem NotifyOnDeath, AllowScavengerDigging, AllowScavengerLooting, AllowRepairLooting;
     internal MenuItem AllowNeutralsToOpenDoors, ChargePlayersForBotUpkeep, DisableEnvironmentDamageForHelpers;
+    internal MenuItem DisableAsphyxiaDamageForBots, DisableTemperatureDamageForBots, DisableLowPressureDamageForBots;
     internal MenuTextInput RepairBotIgnoreColorInput, RepairBotGrindColorInput, MaxBots, MaxHelpers;
     internal MenuTextInput PlayerDamageModifier, BotDamageModifier, MaxPathfindingTimeInSeconds;
     internal MenuTextInput MaxEnemyHuntRadius, MaxFriendlyHuntRadius, MaxBotProjectileDistance;
     internal MenuTextInput RepairBotSearchRadius, HelperGpsColorInput, BotVolumeModifier;
-    internal MenuTextInput BotUpkeepTimeInMinutes;
+    internal MenuTextInput BotUpkeepTimeInMinutes, BotCommandDistance;
     PlayerData _playerData;
     float _lastSpreadKeyPressed, _lastCloserKeyPressed;
 
@@ -80,6 +81,7 @@ namespace AiEnabled.Graphics
       float mouseSensitivity = _playerData.MouseSensitivityModifier;
       float searchRadius = _playerData.RepairBotSearchRadius;
       float volumeModifier = _playerData.BotVolumeModifier;
+      int botCommandDistance = _playerData.BotCommandDistance;
 
       Menu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.PlayerMenu, "Settings");
       ShowHealthBars = CreateMenuItemToggle(Menu, showHealthBars, "Show health bars", ShowHealthBars_Clicked);
@@ -92,6 +94,7 @@ namespace AiEnabled.Graphics
       MouseSensitivity = new MenuSliderInput($"Mouse sensitivity: {mouseSensitivity}", Menu, mouseSensitivity * 0.5f, OnSubmitAction: MouseSensitivity_Submitted, SliderPercentToValue: PercentToValueFunc);
 
       BotVolumeModifier = new MenuTextInput($"Bot volume modifier: <color=orange>{volumeModifier}", Menu, "Set Bot volume modifier (1 = default volume)", BotVolumeMod_Submitted);
+      BotCommandDistance = new MenuTextInput($"Bot command distance: <color=orange>{botCommandDistance}", Menu, "Set the distance keybound commands will propagate in meters (0 = infinite)", BotCommandDistance_Submitted);
 
       var color = (searchRadius == 0) ? "<color=yellow>" : "<color=orange>";
       RepairBotSearchRadius = new MenuTextInput($"Repair bot search radius: {color}{searchRadius}", Menu, "Enter new radius value (meters), 0 to disable", RepairBotSearchRadius_Submitted);
@@ -126,6 +129,7 @@ namespace AiEnabled.Graphics
       RadioRecallKeyBind = new MenuKeybindInput($"Radio Recall: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", RadioRecallKeyBind_Submitted);
       SpreadOutKeyBind = new MenuKeybindInput($"Increase Follow Distance: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", SpreadOutKeyBind_Submitted);
       ComeCloserKeyBind = new MenuKeybindInput($"Decrease Follow Distance: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", ComeCloserKeyBind_Submitted);
+      GoToKeyBind = new MenuKeybindInput($"GoTo All: <color=yellow>None", keyBindMenu, "Press any key to bind\nCan be combined with alt/ctrl/shift", GoToKeyBind_Submitted);
 
       var data = AiSession.Instance.ModSaveData;
       AdminMenu = new MenuRootCategory("AiEnabled", MenuRootCategory.MenuFlag.AdminMenu, "Admin Settings");
@@ -152,7 +156,10 @@ namespace AiEnabled.Graphics
       AllowCombatBot = CreateMenuItemToggle(AdminMenu, data.AllowCombatBot, "Allow CombatBot helpers", AllowCombatBot_Clicked);
       AllowScavengerBot = CreateMenuItemToggle(AdminMenu, data.AllowScavengerBot, "Allow ScavengerBot helpers", AllowScavengerBot_Clicked);
       AllowCrewBot = CreateMenuItemToggle(AdminMenu, data.AllowCrewBot, "Allow CrewBot helpers", AllowCrewBot_Clicked);
-      DisableEnvironmentDamageForHelpers = CreateMenuItemToggle(AdminMenu, data.DisableEnvironmentDamageForHelpers, "Disable Environment Dmg for Helpers", DisableEnvDmg_Clicked);
+      DisableEnvironmentDamageForHelpers = CreateMenuItemToggle(AdminMenu, data.DisableEnvironmentDamageForHelpers, "Disable Environment damage for helpers", DisableEnvDamage_Clicked);
+      DisableAsphyxiaDamageForBots = CreateMenuItemToggle(AdminMenu, data.DisableAsphyxiaDamageForBots, "Disable Asphyxia damage for bots", DisableAsphyxiaDamage_Clicked);
+      DisableTemperatureDamageForBots = CreateMenuItemToggle(AdminMenu, data.DisableTemperatureDamageForBots, "Disable Temperature damage for bots", DisableTempDamage_Clicked);
+      DisableLowPressureDamageForBots = CreateMenuItemToggle(AdminMenu, data.DisableLowPressureDamageForBots, "Disable Low Pressure damage for bots", DisablePressureDamage_Clicked);
       AllowTokenProduction = CreateMenuItemToggle(AdminMenu, data.AllowHelperTokenBuilding, "Allow build token production (requires restart)", AllowTokenBuilding_Clicked);
       IncreaseNodeWeightsNearWeapons = CreateMenuItemToggle(AdminMenu, data.IncreaseNodeWeightsNearWeapons, "Increase path cost near weapons (requires restart)", IncreaseNodeCost_Clicked);
       AllowBotMusic = CreateMenuItemToggle(AdminMenu, data.AllowBotMusic, "Allow bot music", AllowBotMusic_Clicked);
@@ -188,430 +195,68 @@ namespace AiEnabled.Graphics
     {
       try
       {
-        if (Menu != null)
-        {
-          Menu.Text = null;
-          Menu.BackingObject = null;
-          Menu = null;
-        }
+        CloseGenericItem(Menu);
+        CloseGenericItem(AdminMenu);
+        CloseGenericItem(MouseSensitivity);
 
-        if (AdminMenu != null)
-        {
-          AdminMenu.Text = null;
-          AdminMenu.BackingObject = null;
-          AdminMenu = null;
-        }
+        CloseKeybindInput(ResumeBotsKeyBind);
+        CloseKeybindInput(RadioRecallKeyBind);
+        CloseKeybindInput(SpreadOutKeyBind);
+        CloseKeybindInput(ComeCloserKeyBind);
+        CloseKeybindInput(GoToKeyBind);
 
-        if (ShowHealthBars != null)
-        {
-          ShowHealthBars.OnClick = null;
-          ShowHealthBars.Text = null;
-          ShowHealthBars.BackingObject = null;
-          ShowHealthBars = null;
-        }
+        CloseMenuItem(ShowHealthBars);
+        CloseMenuItem(ObeyProjectionIntegrity);
+        CloseMenuItem(DisableCollisionOnDeath);
+        CloseMenuItem(DisableEnvironmentDamageForHelpers);
+        CloseMenuItem(DisableAsphyxiaDamageForBots);
+        CloseMenuItem(DisableTemperatureDamageForBots);
+        CloseMenuItem(DisableLowPressureDamageForBots);
+        CloseMenuItem(IncreaseNodeWeightsNearWeapons);
+        CloseMenuItem(AllowRepairBot);
+        CloseMenuItem(AllowCombatBot);
+        CloseMenuItem(AllowCrewBot);
+        CloseMenuItem(AllowScavengerBot);
+        CloseMenuItem(AllowBotMusic);
+        CloseMenuItem(AllowEnemyFlight);
+        CloseMenuItem(AllowNeutralFlight);
+        CloseMenuItem(AllowFriendlyFlight);
+        CloseMenuItem(AllowNeutralTargets);
+        CloseMenuItem(AllowIdleMovement);
+        CloseMenuItem(AllowIdleTransitions);
+        CloseMenuItem(EnforceGroundPathingFirst);
+        CloseMenuItem(EnforceWalkingOnPatrol);
+        CloseMenuItem(ShowHealthWhenFull);
+        CloseMenuItem(ShowHealthBars);
+        CloseMenuItem(ShowHelperGPS);
+        CloseMenuItem(IgnoreArmorDeformation);
+        CloseMenuItem(AllowHelmetVisorChanges);
+        CloseMenuItem(AllowTokenProduction);
+        CloseMenuItem(NotifyOnDeath);
+        CloseMenuItem(HighLightHelpers);
+        CloseMenuItem(ShowMapIconFriendly);
+        CloseMenuItem(ShowMapIconOther);
+        CloseMenuItem(AllowRepairLooting);
+        CloseMenuItem(AllowScavengerDigging);
+        CloseMenuItem(AllowScavengerLooting);
+        CloseMenuItem(AllowNeutralsToOpenDoors);
+        CloseMenuItem(ChargePlayersForBotUpkeep);
 
-        if (MouseSensitivity != null)
-        {
-          MouseSensitivity.Text = null;
-          MouseSensitivity.BackingObject = null;
-          MouseSensitivity = null;
-        }
-
-        if (ResumeBotsKeyBind != null)
-        {
-          ResumeBotsKeyBind.OnSubmitAction = null;
-          ResumeBotsKeyBind.InputDialogTitle = null;
-          ResumeBotsKeyBind.Text = null;
-          ResumeBotsKeyBind.BackingObject = null;
-          ResumeBotsKeyBind = null;
-        }
-
-        if (RadioRecallKeyBind != null)
-        {
-          RadioRecallKeyBind.OnSubmitAction = null;
-          RadioRecallKeyBind.InputDialogTitle = null;
-          RadioRecallKeyBind.Text = null;
-          RadioRecallKeyBind.BackingObject = null;
-          RadioRecallKeyBind = null;
-        }
-
-        if (SpreadOutKeyBind != null)
-        {
-          SpreadOutKeyBind.OnSubmitAction = null;
-          SpreadOutKeyBind.InputDialogTitle = null;
-          SpreadOutKeyBind.Text = null;
-          SpreadOutKeyBind.BackingObject = null;
-          SpreadOutKeyBind = null;
-        }
-
-        if (ComeCloserKeyBind != null)
-        {
-          ComeCloserKeyBind.OnSubmitAction = null;
-          ComeCloserKeyBind.InputDialogTitle = null;
-          ComeCloserKeyBind.Text = null;
-          ComeCloserKeyBind.BackingObject = null;
-          ComeCloserKeyBind = null;
-        }
-
-        if (RepairBotIgnoreColorInput != null)
-        {
-          RepairBotIgnoreColorInput.Text = null;
-          RepairBotIgnoreColorInput.OnSubmitAction = null;
-          RepairBotIgnoreColorInput.BackingObject = null;
-          RepairBotIgnoreColorInput = null;
-        }
-
-        if (RepairBotGrindColorInput != null)
-        {
-          RepairBotGrindColorInput.Text = null;
-          RepairBotGrindColorInput.OnSubmitAction = null;
-          RepairBotGrindColorInput.BackingObject = null;
-          RepairBotGrindColorInput = null;
-        }
-
-        if (HelperGpsColorInput != null)
-        {
-          HelperGpsColorInput.Text = null;
-          HelperGpsColorInput.OnSubmitAction = null;
-          HelperGpsColorInput.BackingObject = null;
-          HelperGpsColorInput = null;
-        }
-
-        if (MaxBots != null)
-        {
-          MaxBots.Text = null;
-          MaxBots.OnSubmitAction = null;
-          MaxBots.BackingObject = null;
-          MaxBots = null;
-        }
-
-        if (MaxHelpers != null)
-        {
-          MaxHelpers.Text = null;
-          MaxHelpers.OnSubmitAction = null;
-          MaxHelpers.BackingObject = null;
-          MaxHelpers = null;
-        }
-
-        if (ObeyProjectionIntegrity != null)
-        {
-          ObeyProjectionIntegrity.Text = null;
-          ObeyProjectionIntegrity.OnClick = null;
-          ObeyProjectionIntegrity.BackingObject = null;
-          ObeyProjectionIntegrity = null;
-        }
-
-        if (DisableCollisionOnDeath != null)
-        {
-          DisableCollisionOnDeath.Text = null;
-          DisableCollisionOnDeath.OnClick = null;
-          DisableCollisionOnDeath.BackingObject = null;
-          DisableCollisionOnDeath = null;
-        }
-
-        if (DisableEnvironmentDamageForHelpers != null)
-        {
-          DisableEnvironmentDamageForHelpers.Text = null;
-          DisableEnvironmentDamageForHelpers.OnClick = null;
-          DisableEnvironmentDamageForHelpers.BackingObject = null;
-          DisableEnvironmentDamageForHelpers = null;
-        }
-
-        if (IncreaseNodeWeightsNearWeapons != null)
-        {
-          IncreaseNodeWeightsNearWeapons.Text = null;
-          IncreaseNodeWeightsNearWeapons.OnClick = null;
-          IncreaseNodeWeightsNearWeapons.BackingObject = null;
-          IncreaseNodeWeightsNearWeapons = null;
-        }
-
-        if (AllowRepairBot != null)
-        {
-          AllowRepairBot.Text = null;
-          AllowRepairBot.OnClick = null;
-          AllowRepairBot.BackingObject = null;
-          AllowRepairBot = null;
-        }
-
-        if (AllowCombatBot != null)
-        {
-          AllowCombatBot.Text = null;
-          AllowCombatBot.OnClick = null;
-          AllowCombatBot.BackingObject = null;
-          AllowCombatBot = null;
-        }
-
-        if (AllowScavengerBot != null)
-        {
-          AllowScavengerBot.Text = null;
-          AllowScavengerBot.OnClick = null;
-          AllowScavengerBot.BackingObject = null;
-          AllowScavengerBot = null;
-        }
-
-        if (AllowCrewBot != null)
-        {
-          AllowCrewBot.Text = null;
-          AllowCrewBot.OnClick = null;
-          AllowCrewBot.BackingObject = null;
-          AllowCrewBot = null;
-        }
-
-        if (AllowBotMusic != null)
-        {
-          AllowBotMusic.Text = null;
-          AllowBotMusic.OnClick = null;
-          AllowBotMusic.BackingObject = null;
-          AllowBotMusic = null;
-        }
-
-        if (AllowEnemyFlight != null)
-        {
-          AllowEnemyFlight.Text = null;
-          AllowEnemyFlight.OnClick = null;
-          AllowEnemyFlight.BackingObject = null;
-          AllowEnemyFlight = null;
-        }
-
-        if (AllowNeutralFlight != null)
-        {
-          AllowNeutralFlight.Text = null;
-          AllowNeutralFlight.OnClick = null;
-          AllowNeutralFlight.BackingObject = null;
-          AllowNeutralFlight = null;
-        }
-
-        if (AllowNeutralTargets != null)
-        {
-          AllowNeutralTargets.Text = null;
-          AllowNeutralTargets.OnClick = null;
-          AllowNeutralTargets.BackingObject = null;
-          AllowNeutralTargets = null;
-        }
-
-        if (AllowIdleMovement != null)
-        {
-          AllowIdleMovement.Text = null;
-          AllowIdleMovement.OnClick = null;
-          AllowIdleMovement.BackingObject = null;
-          AllowIdleMovement = null;
-        }
-
-        if (AllowIdleTransitions != null)
-        {
-          AllowIdleTransitions.Text = null;
-          AllowIdleTransitions.OnClick = null;
-          AllowIdleTransitions.BackingObject = null;
-          AllowIdleTransitions = null;
-        }
-
-        if (EnforceGroundPathingFirst != null)
-        {
-          EnforceGroundPathingFirst.Text = null;
-          EnforceGroundPathingFirst.OnClick = null;
-          EnforceGroundPathingFirst.BackingObject = null;
-          EnforceGroundPathingFirst = null;
-        }
-
-        if (EnforceWalkingOnPatrol != null)
-        {
-          EnforceWalkingOnPatrol.Text = null;
-          EnforceWalkingOnPatrol.OnClick = null;
-          EnforceWalkingOnPatrol.BackingObject = null;
-          EnforceWalkingOnPatrol = null;
-        }
-
-        if (PlayerDamageModifier != null)
-        {
-          PlayerDamageModifier.Text = null;
-          PlayerDamageModifier.OnSubmitAction = null;
-          PlayerDamageModifier.BackingObject = null;
-          PlayerDamageModifier = null;
-        }
-
-        if (BotDamageModifier != null)
-        {
-          BotDamageModifier.Text = null;
-          BotDamageModifier.OnSubmitAction = null;
-          BotDamageModifier.BackingObject = null;
-          BotDamageModifier = null;
-        }
-
-        if (MaxPathfindingTimeInSeconds != null)
-        {
-          MaxPathfindingTimeInSeconds.Text = null;
-          MaxPathfindingTimeInSeconds.OnSubmitAction = null;
-          MaxPathfindingTimeInSeconds.BackingObject = null;
-          MaxPathfindingTimeInSeconds = null;
-        }
-
-        if (MaxEnemyHuntRadius != null)
-        {
-          MaxEnemyHuntRadius.Text = null;
-          MaxEnemyHuntRadius.OnSubmitAction = null;
-          MaxEnemyHuntRadius.BackingObject = null;
-          MaxEnemyHuntRadius = null;
-        }
-
-        if (MaxFriendlyHuntRadius != null)
-        {
-          MaxFriendlyHuntRadius.Text = null;
-          MaxFriendlyHuntRadius.OnSubmitAction = null;
-          MaxFriendlyHuntRadius.BackingObject = null;
-          MaxFriendlyHuntRadius = null;
-        }
-
-        if (MaxBotProjectileDistance != null)
-        {
-          MaxBotProjectileDistance.Text = null;
-          MaxBotProjectileDistance.OnSubmitAction = null;
-          MaxBotProjectileDistance.BackingObject = null;
-          MaxBotProjectileDistance = null;
-        }
-
-        if (ShowHealthWhenFull != null)
-        {
-          ShowHealthWhenFull.Text = null;
-          ShowHealthWhenFull.OnClick = null;
-          ShowHealthWhenFull.BackingObject = null;
-          ShowHealthWhenFull = null;
-        }
-
-        if (ShowHelperGPS != null)
-        {
-          ShowHelperGPS.Text = null;
-          ShowHelperGPS.OnClick = null;
-          ShowHelperGPS.BackingObject = null;
-          ShowHelperGPS = null;
-        }
-
-        if (IgnoreArmorDeformation != null)
-        {
-          IgnoreArmorDeformation.Text = null;
-          IgnoreArmorDeformation.OnClick = null;
-          IgnoreArmorDeformation.BackingObject = null;
-          IgnoreArmorDeformation = null;
-        }
-
-        if (AllowFriendlyFlight != null)
-        {
-          AllowFriendlyFlight.Text = null;
-          AllowFriendlyFlight.OnClick = null;
-          AllowFriendlyFlight.BackingObject = null;
-          AllowFriendlyFlight = null;
-        }
-
-        if (AllowHelmetVisorChanges != null)
-        {
-          AllowHelmetVisorChanges.Text = null;
-          AllowHelmetVisorChanges.OnClick = null;
-          AllowHelmetVisorChanges.BackingObject = null;
-          AllowHelmetVisorChanges = null;
-        }
-
-        if (RepairBotSearchRadius != null)
-        {
-          RepairBotSearchRadius.Text = null;
-          RepairBotSearchRadius.OnSubmitAction = null;
-          RepairBotSearchRadius.BackingObject = null;
-          RepairBotSearchRadius = null;
-        }
-
-        if (AllowTokenProduction != null)
-        {
-          AllowTokenProduction.Text = null;
-          AllowTokenProduction.OnClick = null;
-          AllowTokenProduction.BackingObject = null;
-          AllowTokenProduction = null;
-        }
-
-        if (NotifyOnDeath != null)
-        {
-          NotifyOnDeath.Text = null;
-          NotifyOnDeath.OnClick = null;
-          NotifyOnDeath.BackingObject = null;
-          NotifyOnDeath = null;
-        }
-
-        if (HighLightHelpers != null)
-        {
-          HighLightHelpers.Text = null;
-          HighLightHelpers.OnClick = null;
-          HighLightHelpers.BackingObject = null;
-          HighLightHelpers = null;
-        }
-
-        if (ShowMapIconFriendly != null)
-        {
-          ShowMapIconFriendly.Text = null;
-          ShowMapIconFriendly.OnClick = null;
-          ShowMapIconFriendly.BackingObject = null;
-          ShowMapIconFriendly = null;
-        }
-
-        if (ShowMapIconOther != null)
-        {
-          ShowMapIconOther.Text = null;
-          ShowMapIconOther.OnClick = null;
-          ShowMapIconOther.BackingObject = null;
-          ShowMapIconOther = null;
-        }
-
-        if (AllowRepairLooting != null)
-        {
-          AllowRepairLooting.Text = null;
-          AllowRepairLooting.OnClick = null;
-          AllowRepairLooting.BackingObject = null;
-          AllowRepairLooting = null;
-        }
-
-        if (AllowScavengerDigging != null)
-        {
-          AllowScavengerDigging.Text = null;
-          AllowScavengerDigging.OnClick = null;
-          AllowScavengerDigging.BackingObject = null;
-          AllowScavengerDigging = null;
-        }
-
-        if (AllowScavengerLooting != null)
-        {
-          AllowScavengerLooting.Text = null;
-          AllowScavengerLooting.OnClick = null;
-          AllowScavengerLooting.BackingObject = null;
-          AllowScavengerLooting = null;
-        }
-
-        if (AllowNeutralsToOpenDoors != null)
-        {
-          AllowNeutralsToOpenDoors.Text = null;
-          AllowNeutralsToOpenDoors.OnClick = null;
-          AllowNeutralsToOpenDoors.BackingObject = null;
-          AllowNeutralsToOpenDoors = null;
-        }
-
-        if (BotVolumeModifier != null)
-        {
-          BotVolumeModifier.Text = null;
-          BotVolumeModifier.BackingObject = null;
-          BotVolumeModifier.OnSubmitAction = null;
-          BotVolumeModifier = null;
-        }
-
-        if (BotUpkeepTimeInMinutes != null)
-        {
-          BotUpkeepTimeInMinutes.Text = null;
-          BotUpkeepTimeInMinutes.BackingObject = null;
-          BotUpkeepTimeInMinutes.OnSubmitAction = null;
-          BotUpkeepTimeInMinutes = null;
-        }
-
-        if (ChargePlayersForBotUpkeep != null)
-        {
-          ChargePlayersForBotUpkeep.Text = null;
-          ChargePlayersForBotUpkeep.OnClick = null;
-          ChargePlayersForBotUpkeep.BackingObject = null;
-          ChargePlayersForBotUpkeep = null;
-        }
+        CloseTextInput(RepairBotGrindColorInput);
+        CloseTextInput(RepairBotIgnoreColorInput);
+        CloseTextInput(HelperGpsColorInput);
+        CloseTextInput(MaxBots);
+        CloseTextInput(MaxHelpers);
+        CloseTextInput(PlayerDamageModifier);
+        CloseTextInput(BotDamageModifier);
+        CloseTextInput(MaxPathfindingTimeInSeconds);
+        CloseTextInput(MaxEnemyHuntRadius);
+        CloseTextInput(MaxFriendlyHuntRadius);
+        CloseTextInput(MaxBotProjectileDistance);
+        CloseTextInput(RepairBotSearchRadius);
+        CloseTextInput(BotVolumeModifier);
+        CloseTextInput(BotUpkeepTimeInMinutes);
+        CloseTextInput(BotCommandDistance);
 
         _playerData = null;
       }
@@ -622,6 +267,50 @@ namespace AiEnabled.Graphics
         else
           MyLog.Default.Error($"Exception in PlayerMenu.Close: {ex.ToString()}");
       }
+    }
+
+    void CloseMenuItem(MenuItem menuItem)
+    {
+      if (menuItem == null) 
+        return;
+      
+      menuItem.Text = null;
+      menuItem.OnClick = null;
+      menuItem.BackingObject = null;
+      menuItem = null;
+    }
+
+    void CloseTextInput(MenuTextInput textInput)
+    {
+      if (textInput == null)
+        return;
+
+      textInput.Text = null;
+      textInput.BackingObject = null;
+      textInput.OnSubmitAction = null;
+      textInput = null;
+    }
+
+    void CloseKeybindInput(MenuKeybindInput keybindInput)
+    {
+      if (keybindInput == null) 
+        return;
+
+      keybindInput.OnSubmitAction = null;
+      keybindInput.InputDialogTitle = null;
+      keybindInput.Text = null;
+      keybindInput.BackingObject = null;
+      keybindInput = null;
+    }
+
+    void CloseGenericItem(MenuItemBase itemBase)
+    {
+      if (itemBase == null) 
+        return;
+
+      itemBase.Text = null;
+      itemBase.BackingObject = null;
+      itemBase = null;
     }
 
     public void ResetKeyPresses()
@@ -735,6 +424,36 @@ namespace AiEnabled.Graphics
           _playerData.BotVolumeModifier = newValue;
           AiSession.Instance.StartUpdateCounter();
         }
+      }
+    }
+
+    private void BotCommandDistance_Submitted(string input)
+    {
+      int num;
+      if (int.TryParse(input, out num))
+      {
+        var newValue = Math.Max(0, num);
+        if (_playerData.BotCommandDistance != newValue)
+        {
+          BotCommandDistance.Text = $"Bot command distance: <color=orange>{newValue}";
+          _playerData.BotCommandDistance = newValue;
+          AiSession.Instance.StartUpdateCounter();
+        }
+      }
+    }
+
+    private void GoToKeyBind_Submitted(MyKeys key, bool shift, bool ctrl, bool alt)
+    {
+      try
+      {
+        var tuple = MyTuple.Create(key, shift, ctrl, alt);
+        var text = $"GoTo All: <color=orange>{(ctrl ? "CTRL+" : "")}{(alt ? "ALT+" : "")}{(shift ? "SHIFT+" : "")}{key}";
+        AiSession.Instance.Input.AddKeybind(tuple, GoTo_Used);
+        GoToKeyBind.Text = text;
+      }
+      catch (Exception e)
+      {
+        AiSession.Instance.Logger.Error($"Exception in GoToKeyBind_Submitted:\n{e}");
       }
     }
 
@@ -950,7 +669,19 @@ namespace AiEnabled.Graphics
       if (player == null)
         return;
 
-      var pkt = new RadioRecallPacket(player.IdentityId);
+      var cmdDistance = _playerData.BotCommandDistance;
+      var pkt = new RadioRecallPacket(player.IdentityId, cmdDistance);
+      AiSession.Instance.Network.SendToServer(pkt);
+    }
+
+    internal void GoTo_Used()
+    {
+      var player = MyAPIGateway.Session.Player;
+      if (player == null)
+        return;
+
+      var cmdDistance = _playerData.BotCommandDistance;
+      var pkt = new GoToAllPacket(player.IdentityId, cmdDistance);
       AiSession.Instance.Network.SendToServer(pkt);
     }
 
@@ -960,7 +691,8 @@ namespace AiEnabled.Graphics
       if (player == null)
         return;
 
-      var pkt = new BotResumePacket(player.IdentityId);
+      var cmdDistance = _playerData.BotCommandDistance;
+      var pkt = new BotResumePacket(player.IdentityId, cmdDistance);
       AiSession.Instance.Network.SendToServer(pkt);
     }
     #endregion
@@ -1224,13 +956,49 @@ namespace AiEnabled.Graphics
       AiSession.Instance.StartSettingSyncCounter();
     }
 
-    internal void DisableEnvDmg_Clicked()
+    internal void DisableEnvDamage_Clicked()
     {
       var newValue = !AiSession.Instance.ModSaveData.DisableEnvironmentDamageForHelpers;
       AiSession.Instance.ModSaveData.DisableEnvironmentDamageForHelpers = newValue;
 
       var color = newValue ? "<color=orange>" : "<color=yellow>";
-      DisableEnvironmentDamageForHelpers.Text = $"Disable environment damage for helpers: {color}{newValue}";
+      DisableEnvironmentDamageForHelpers.Text = $"Disable Environment damage for helpers: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void DisablePressureDamage_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.DisableLowPressureDamageForBots;
+      AiSession.Instance.ModSaveData.DisableLowPressureDamageForBots = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableLowPressureDamageForBots.Text = $"Disable Low Pressure damage for bots: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void DisableTempDamage_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.DisableTemperatureDamageForBots;
+      AiSession.Instance.ModSaveData.DisableTemperatureDamageForBots = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableTemperatureDamageForBots.Text = $"Disable Temperature damage for bots: {color}{newValue}";
+
+      AiSession.Instance.StartAdminUpdateCounter();
+      AiSession.Instance.StartSettingSyncCounter();
+    }
+
+    internal void DisableAsphyxiaDamage_Clicked()
+    {
+      var newValue = !AiSession.Instance.ModSaveData.DisableAsphyxiaDamageForBots;
+      AiSession.Instance.ModSaveData.DisableAsphyxiaDamageForBots = newValue;
+
+      var color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableAsphyxiaDamageForBots.Text = $"Disable Asphyxia damage for bots: {color}{newValue}";
 
       AiSession.Instance.StartAdminUpdateCounter();
       AiSession.Instance.StartSettingSyncCounter();
@@ -1507,7 +1275,19 @@ namespace AiEnabled.Graphics
 
       newValue = data.DisableEnvironmentDamageForHelpers;
       color = newValue ? "<color=orange>" : "<color=yellow>";
-      DisableEnvironmentDamageForHelpers.Text = $"Disable environment damage for helpers: {color}{newValue}";
+      DisableEnvironmentDamageForHelpers.Text = $"Disable Environment damage for helpers: {color}{newValue}";
+
+      newValue = data.DisableAsphyxiaDamageForBots;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableAsphyxiaDamageForBots.Text = $"Disable Asphyxia damage for bots: {color}{newValue}";
+
+      newValue = data.DisableTemperatureDamageForBots;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableTemperatureDamageForBots.Text = $"Disable Temperature damage for bots: {color}{newValue}";
+
+      newValue = data.DisableLowPressureDamageForBots;
+      color = newValue ? "<color=orange>" : "<color=yellow>";
+      DisableLowPressureDamageForBots.Text = $"Disable Low Pressure damage for bots: {color}{newValue}";
 
       newValue = data.IncreaseNodeWeightsNearWeapons;
       color = newValue ? "<color=orange>" : "<color=yellow>";

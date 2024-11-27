@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 
 using Sandbox.ModAPI;
 
+using VRage.Game;
+using VRage.Game.ModAPI;
 using VRage.Game.ModAPI.Ingame.Utilities;
 
 namespace AiEnabled.Utilities
@@ -34,6 +36,17 @@ namespace AiEnabled.Utilities
       _isClosed = false;
 
       Log($"Log Started ({AiSession.VERSION})");
+      Log($"Mod Info:\n  ID: {AiSession.Instance.ModContext.ModId}\n  Name: {AiSession.Instance.ModContext.ModName}\n  Path: {AiSession.Instance.ModContext.ModPath}");
+
+      //var dlcs = MyAPIGateway.DLC.GetDLCs();
+      //List<string> dlcList = new List<string>(dlcs.Count);
+      //foreach (var dlc in dlcs)
+      //{
+      //  dlcList.Add(dlc.Name);
+      //}
+
+      //Log($"Installed DLCs:\n  - {string.Join("\n  - ", dlcList)}");
+      //dlcList.Clear();
     }
 
     string DateTimeNow => DateTime.Now.ToString("[HH:mm:ss.fff]");

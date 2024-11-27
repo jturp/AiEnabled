@@ -22,13 +22,15 @@ namespace AiEnabled.Networking.Packets
   [ProtoContract]
   public class RadioRecallPacket : PacketBase
   {
-    [ProtoMember(1)] public long PlayerId;
+    [ProtoMember(1)] readonly long _playerId;
+    [ProtoMember(2)] readonly int _commandDistance;
 
     public RadioRecallPacket() { }
 
-    public RadioRecallPacket(long playerId)
+    public RadioRecallPacket(long playerId, int cmdDistance)
     {
-      PlayerId = playerId;
+      _playerId = playerId;
+      _commandDistance = cmdDistance;
     }
 
     public override bool Received(NetworkHandler netHandler)
@@ -36,13 +38,14 @@ namespace AiEnabled.Networking.Packets
       try
       {
         IMyPlayer player;
-        if (!AiSession.Instance.Players.TryGetValue(PlayerId, out player) || player?.Character == null)
+        if (!AiSession.Instance.Players.TryGetValue(_playerId, out player) || player?.Character == null)
           return false;
 
         var playerCharacter = player.Character;
         var headMatrix = playerCharacter.GetHeadMatrix(true);
+        var halfDistance = _commandDistance / 2;
 
-        var sphere = new BoundingSphereD(headMatrix.Translation + headMatrix.Forward * 125, 150);
+        var sphere = new BoundingSphereD(headMatrix.Translation + headMatrix.Forward * halfDistance, halfDistance);
 
         List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
         MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList, MyEntityQueryType.Dynamic);

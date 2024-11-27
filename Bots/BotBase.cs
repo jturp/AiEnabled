@@ -1579,13 +1579,22 @@ namespace AiEnabled.Bots
 
         for (int i = 0; i < waypoints.Count; i++)
         {
-          var waypoint = waypoints[i] + WorldMatrix.Down;
-          var checkPoint = waypoint;
+          var waypoint = waypoints[i] + WorldMatrix.Down; // why did I add the down vector?? seems to be messing up some stuff
+          var checkPoint = waypoint; 
 
           if (_currentGraph != null)
           {
             Node gridNode;
             var gridPoint = _currentGraph.WorldToLocal(waypoint);
+
+            if (!_currentGraph.IsOpenTile(gridPoint))
+            {
+              waypoint += WorldMatrix.Up;
+              checkPoint = waypoint;
+
+              gridPoint = _currentGraph.WorldToLocal(waypoint);
+            }
+
             if (_currentGraph.TryGetNodeForPosition(gridPoint, out gridNode))
               checkPoint = _currentGraph.LocalToWorld(gridNode.Position) + gridNode.Offset;
 
@@ -1872,9 +1881,7 @@ namespace AiEnabled.Bots
 
       Behavior?.Update();
       BotInfo?.UpdateBotState();
-
-      if (CanUseLadders)
-        DoorInPath = IsDoorInPath();
+      DoorInPath = CanUseLadders && IsDoorInPath();
 
       if (Target != null)
       {
@@ -2475,8 +2482,12 @@ namespace AiEnabled.Bots
       var weaponDefinition = ToolDefinition.PhysicalItemId;
       if (!inventory.ContainItems(1, weaponDefinition))
       {
+        var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+        gun?.OnControlReleased();
+
         var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
         controlEnt.SwitchToWeapon(null);
+
         return;
       }
 
@@ -2527,6 +2538,10 @@ namespace AiEnabled.Bots
       if (inventory == null || weaponDefinition == null || !inventory.ContainItems(1, weaponDefinition.Value))
       {
         ToolDefinition = null;
+
+        var gun = Character.EquippedTool as IMyHandheldGunObject<MyGunBase>;
+        gun?.OnControlReleased();
+
         var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
         controlEnt?.SwitchToWeapon(null);
       }
@@ -3082,9 +3097,7 @@ namespace AiEnabled.Bots
           else
           {
             var cube = tgt as IMyCubeBlock;
-            var slim = cube?.SlimBlock;
-            if (slim == null)
-              slim = tgt as IMySlimBlock;
+            var slim = (cube?.SlimBlock) ?? tgt as IMySlimBlock;
 
             if (slim != null)
             {
@@ -3720,6 +3733,10 @@ namespace AiEnabled.Bots
             result = true;
             break;
           }
+
+          var hitChar = hitEnt as IMyCharacter;
+          if (hitChar != null && (hitChar.MarkedForClose || hitChar.IsDead || hitChar.Integrity <= 0))
+            continue;
 
           var subpart = hitEnt as MyEntitySubpart;
           var door = subpart?.Parent as IMyDoor;
@@ -4864,7 +4881,29 @@ namespace AiEnabled.Bots
         var flattenedLengthSquared = flattenedVector.LengthSquared();
         //var check = 1.1 * distanceToCheck;
 
-        if (flattenedLengthSquared < distanceToCheck && Math.Abs(relVector.Y) < distanceToCheck)
+        var relativeY = relVector.Y;
+        var yCheck = Math.Abs(relativeY) < distanceToCheck;
+
+        if (!yCheck)
+        {
+          var botLocal = _currentGraph.WorldToLocal(BotInfo.CurrentBotPositionActual);
+          var botLocalAdj = _currentGraph.WorldToLocal(BotInfo.CurrentBotPositionAdjusted);
+          var tgtLocal = _currentGraph.WorldToLocal(worldNode);
+
+          var localDiff = (tgtLocal - botLocal).RectangularLength();
+          var localDiffAdj = (tgtLocal - botLocalAdj).RectangularLength();
+
+          if (localDiff <= 1 || localDiffAdj <= 1)
+          {
+            Node n;
+            if (localDiff == 0 || localDiffAdj == 0 || (_currentGraph.TryGetNodeForPosition(tgtLocal, out n) && n.IsGroundNode))
+            { 
+              yCheck = true;
+            }
+          }
+        }
+
+        if (yCheck && flattenedLengthSquared < distanceToCheck)
         {
           if (NextIsLadder && _pathCollection.PathToTarget.Count > 0)
           {
@@ -4916,7 +4955,7 @@ namespace AiEnabled.Bots
           {
             StartCheckGraph(ref botPosition, true);
           }
-          else if (!BotInfo.IsFalling || (BotInfo.CurrentGravityAtBotPosition_Nat.LengthSquared() <= 0 && BotInfo.CurrentGravityAtBotPosition_Art.LengthSquared() <= 0))
+          else if (!BotInfo.IsFalling || (BotInfo.CurrentGravityAtBotPosition_Normalized.LengthSquared() <= 0))
           {
             _currentGraph.TeleportNearby(this);
           }
@@ -4926,6 +4965,8 @@ namespace AiEnabled.Bots
       }
 
       _teleportCounter = 0;
+      bool isInventory = Target.IsInventory;
+      bool isFloater = Target.IsFloater;
       var isSlimTarget = Target.IsSlimBlock;
       var isSlimBlock = isSlimTarget;
 
@@ -4961,7 +5002,15 @@ namespace AiEnabled.Bots
           && !cube.BlockDefinition.Id.SubtypeName.EndsWith("PassageStairs_Large");
       }
 
+      var rBot = this as RepairBot;
+      if (rBot != null && isSlimTarget && !isInventory)
+      {
+        var slimTgt = Target.Entity as IMySlimBlock;
+        goal = rBot.GetAdjustedLocalTargetPosition(slimTgt);
+      }
+
       adjustedGoal = goal;
+
       Node goalNode;
       bool found = false;
       if (isCharacter && tgtCharacter.EntityId == Owner?.Character?.EntityId && _currentGraph.TryGetNodeForPosition(goal, out goalNode) && goalNode.IsAirNode)
@@ -4971,9 +5020,6 @@ namespace AiEnabled.Bots
 
         found = _currentGraph.GetClosestValidNode(this, goalNode.Position, out adjustedGoal, WorldMatrix.Up, currentIsDenied: isDenied);
       }
-
-      bool isInventory = Target.IsInventory;
-      bool isFloater = Target.IsFloater;
 
       if (!found && !_currentGraph.GetClosestValidNode(this, goal, out adjustedGoal, isSlimBlock: isSlimBlock))
       {
@@ -5108,6 +5154,10 @@ namespace AiEnabled.Bots
       _pathWorkData.IsIntendedGoal = true;
       _pathCollection.PathTimer.Restart();
 
+      _pathingTask = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
+
+      // testing only
+
       //AiSession.Instance.InPathFinder = true;
       //AiSession.Instance.Logger.ClearCached();
       //AiSession.Instance.Logger.Log($"Starting pathfinding check: Start = {start}, Goal = {goal}");
@@ -5122,12 +5172,9 @@ namespace AiEnabled.Bots
       //edges = startNode.GetBlockedEdges(_sb);
       //AiSession.Instance.Logger.Log($"Blocked Edges for {endNode.Position}: {edges}");
 
-      _pathingTask = MyAPIGateway.Parallel.StartBackground(_pathWorkAction, _pathWorkCallBack, _pathWorkData);
-
-      // testing only
       //_pathCollection.PathTimer.Stop();
       //FindPath(_pathWorkData);
-      //Reset();
+      //FindPathCallBack(_pathWorkData);
     }
 
     // debug only
@@ -5163,9 +5210,14 @@ namespace AiEnabled.Bots
       //{
       //  AiSession.Instance.Logger.Log($"Path to target:");
       //  foreach (var node in _pathCollection.PathToTarget)
-      //    AiSession.Instance.Logger.Log($" {node.Position} | {node.NodeType}");
+      //  {
+      //    var pos = _currentGraph.LocalToWorld(node.Position) + node.Offset;
+      //    var localPos = _currentGraph.WorldToLocal(pos);
+
+      //    AiSession.Instance.Logger.Log($" LP: {node.Position} | AP: {localPos} | NT: {node.NodeType}");
+      //  }
       //}
-      //AiSession.Instance.InPathFinder = false;
+      AiSession.Instance.InPathFinder = false;
       Reset();
     }
 
@@ -5309,7 +5361,8 @@ namespace AiEnabled.Bots
         return true;
       }
 
-      var rotation = new Vector2(0, Math.Sign(rotatedVector.X) * 75);
+      var rotMulti = BotInfo.IsRunning ? 125 : 75;
+      var rotation = new Vector2(0, Math.Sign(rotatedVector.X) * rotMulti);
       Character.MoveAndRotate(Vector3.Zero, rotation, 0);
       return false;
     }

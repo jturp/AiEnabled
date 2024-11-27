@@ -49,6 +49,7 @@ namespace AiEnabled.Networking
   [ProtoInclude(1034, typeof(RadioRecallPacket))]
   [ProtoInclude(1035, typeof(FollowDistancePacket))]
   [ProtoInclude(1036, typeof(ResetMapPacket))]
+  [ProtoInclude(1037, typeof(GoToAllPacket))]
   [ProtoContract]
   public abstract class PacketBase
   {

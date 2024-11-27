@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AiEnabled.Bots;
+
 using ProtoBuf;
 
 using Sandbox.Game;
@@ -56,7 +58,9 @@ namespace AiEnabled.Networking
           MyAPIGateway.Session.Factions.AcceptPeace(OwnerFactionId, BotFactionId);
         }
 
-        MyVisualScriptLogicProvider.SetPlayersFaction(BotIdentityId, botFaction.Tag);
+        //MyVisualScriptLogicProvider.SetPlayersFaction(BotIdentityId, botFaction.Tag);
+        BotFactory.TrySetBotFaction(BotIdentityId, BotFactionId);
+
         MyAPIGateway.Session.Factions.SetReputation(BotFactionId, OwnerFactionId, int.MaxValue);
         MyAPIGateway.Session.Factions.SetReputation(OwnerFactionId, BotFactionId, int.MaxValue);
         MyAPIGateway.Session.Factions.SetReputationBetweenPlayerAndFaction(BotIdentityId, OwnerFactionId, int.MaxValue);

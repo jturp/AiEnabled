@@ -1131,7 +1131,7 @@ namespace AiEnabled.Ai.Support
       return pointAbove;
     }
 
-    public static Vector3D? GetClosestSurfacePointAboveGround(ref Vector3D worldPosition, Vector3D? up = null, MyVoxelBase voxel = null)
+    public static Vector3D? GetClosestSurfacePointAboveGround(ref Vector3D worldPosition, Vector3D? up = null, MyVoxelBase voxel = null, bool checkGrids = false)
     {
       if (voxel == null)
       {
@@ -1162,9 +1162,11 @@ namespace AiEnabled.Ai.Support
           return null;
       }
 
+      Vector3D? result = worldPosition;
+
       var planet = voxel as MyPlanet;
       if (planet != null)
-        worldPosition = planet.GetClosestSurfacePointGlobal(ref worldPosition);
+        result = planet.GetClosestSurfacePointGlobal(ref worldPosition);
 
       if (up == null || up.Value == Vector3D.Zero)
       {
@@ -1179,10 +1181,61 @@ namespace AiEnabled.Ai.Support
           return null;
       }
 
-      while (PointInsideVoxel(worldPosition, voxel))
-        worldPosition += up.Value * 2;
+      while (PointInsideVoxel(result.Value, voxel))
+        result += (Vector3D?)(up.Value * 2);
 
-      return worldPosition;
+      if (checkGrids)
+      {
+        var entList = AiSession.Instance.EntListPool.Get();
+        var sphere = new BoundingSphereD(result.Value, 5);
+        var upVec = up.Value;
+
+        MyGamePruningStructure.GetAllTopMostEntitiesInSphere(ref sphere, entList);
+
+        for (int i = 0; i < entList.Count; i++)
+        {
+          var grid = entList[i] as MyCubeGrid;
+          if (grid != null)
+          {
+            var gridUp = grid.WorldMatrix.GetClosestDirection(upVec);
+            var gridUpInt = Base6Directions.GetIntVector(gridUp);
+
+            var localResult = grid.WorldToGridInteger(result.Value);
+            bool needsAdjust = false;
+
+            while (grid.CubeExists(localResult))
+            {
+              needsAdjust = true;
+              bool found = false;
+
+              foreach (var dirVec in AiSession.Instance.CardinalDirections)
+              {
+                var testVec = dirVec;
+                if (gridUpInt.Dot(ref testVec) >= 0)
+                {
+                  var nextResult = localResult + dirVec;
+                  if (!grid.CubeExists(nextResult))
+                  {
+                    found = true;
+                    localResult = nextResult;
+                    break;
+                  }
+                }
+              }
+
+              if (!found)
+                localResult = grid.WorldToGridInteger(result.Value + upVec * grid.GridSize);
+            }
+
+            if (needsAdjust)
+              result = grid.GridIntegerToWorld(localResult);
+          }
+        }
+
+        AiSession.Instance.EntListPool.Return(ref entList);
+      }
+
+      return result;
     }
 
     public static bool GetClosestPointAboveGround(ref Vector3D worldPosition, ref Vector3D up, out MyVoxelBase voxel, int testPoints = 20)

@@ -376,14 +376,14 @@ namespace AiEnabled.Ai.Support
         var worldResultNode = gridGraph.LocalToWorld(localResult); // use these for relative height check
         Vector3D worldCurrent, worldResult;
 
-        Node testNode;
-        if (gridGraph.TryGetNodeForPosition(localCurrent, out testNode))
-          worldCurrent = gridGraph.LocalToWorld(testNode.Position) + testNode.Offset;
+        Node curNode, resultNode;
+        if (gridGraph.TryGetNodeForPosition(localCurrent, out curNode))
+          worldCurrent = gridGraph.LocalToWorld(curNode.Position) + curNode.Offset;
         else
           worldCurrent = current;
 
-        if (gridGraph.TryGetNodeForPosition(localResult, out testNode))
-          worldResult = gridGraph.LocalToWorld(testNode.Position) + testNode.Offset;
+        if (gridGraph.TryGetNodeForPosition(localResult, out resultNode))
+          worldResult = gridGraph.LocalToWorld(resultNode.Position) + resultNode.Offset;
         else
           worldResult = worldResultNode;
 
@@ -518,257 +518,304 @@ namespace AiEnabled.Ai.Support
           return;
         }
 
-        // nextIsLadder = false;
-        var worldTarget = gridGraph.LocalToWorld(localTarget);
-        var transToTgt = Vector3D.Rotate(worldTarget - worldCurrentNode, botMatrixT);
-        var isFlying = Bot.BotInfo.IsFlying;
-
-        // Can we go straight to the target? Only attempted if the target is eye level with the bot and bot isn't flying
-        if (!isTransition && Bot.HasLineOfSight && !isFlying && Math.Abs(transToTgt.Y) < allowedDiff)
+        if (result?.Block == null)
         {
-          _temp.Clear();
-          gridGraph.MainGrid.RayCastCells(worldCurrent, worldTarget, _temp);
+          // nextIsLadder = false;
+          var worldTarget = gridGraph.LocalToWorld(localTarget);
+          var transToTgt = Vector3D.Rotate(worldTarget - worldCurrentNode, botMatrixT);
+          var isFlying = Bot.BotInfo.IsFlying;
 
-          bool goDirect = true;
-          bool currentIsAir = result.IsAirNode;
-          for (int i = 0; i < _temp.Count; i++)
+          // Can we go straight to the target? Only attempted if the target is eye level with the bot and bot isn't flying
+          if (!isTransition && Bot.HasLineOfSight && !isFlying && Math.Abs(transToTgt.Y) < allowedDiff)
           {
-            var point = _temp[i];
-            Node n;
+            _temp.Clear();
+            gridGraph.MainGrid.RayCastCells(worldCurrent, worldTarget, _temp);
 
-            if (gridGraph.ObstacleNodes.ContainsKey(point))
+            bool goDirect = true;
+            bool currentIsAir = result.IsAirNode;
+            for (int i = 0; i < _temp.Count; i++)
             {
-              NextNode = result;
-              nextIsAirNode = result.IsAirNode;
-              return;
-            }
+              var point = _temp[i];
+              Node n;
 
-            var worldPoint = gridGraph.LocalToWorld(point);
-            if (gridGraph.MainGrid.CubeExists(point) || !gridGraph.IsPositionUsable(Bot, worldPoint, out n) || (!currentIsAir && n.IsAirNode))
-            {
-              goDirect = false;
-              break;
-            }
-
-            var tgtPos = (_temp.Count > i + 1) ? _temp[i + 1] : localTarget;
-            var vectorTo = tgtPos - point;
-
-            if (n.IsBlocked(vectorTo))
-            {
-              goDirect = false;
-              break;
-            }
-
-            Node nNext;
-            if (gridGraph.TryGetNodeForPosition(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
-            {
-              goDirect = false;
-              break;
-            }
-          }
-
-          if (goDirect)
-          {
-            Vector3D? hit = null;
-
-            //if (gridGraph.RootVoxel != null)
-            //{
-            //  var line = new LineD(worldCurrent, gotoPosition);
-
-            //  using (gridGraph.RootVoxel.Pin())
-            //  {
-            //    gridGraph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
-            //  }
-            //}
-
-            if (!hit.HasValue)
-            {
-              CleanUp(true);
-              Node next;
-              gridGraph.TryGetNodeForPosition(localTarget, out next);
-              nextIsAirNode = next?.IsAirNode ?? false;
-              NextNode = next;
-              return;
-            }
-          }
-        }
-
-        Vector3D? curPoint = worldCurrent;
-        Vector3D? prevPoint = worldCurrent;
-        var tgtIsOwner = Bot.Owner?.Character != null && Bot.Target.Entity == Bot.Owner.Character;
-        var stopShort = tgtIsOwner && isFlying;
-
-        // Nope, but can we skip ANY?
-        for (int i = 0; i < 3; i++)
-        {
-          var maxCount = stopShort ? PathToTarget.Count - 1 : PathToTarget.Count;
-          if (i >= maxCount)
-            break;
-
-          var next = PathToTarget.Peek();
-          if (gridGraph.ObstacleNodes.ContainsKey(next.Position) || (!result.IsAirNode && next.IsAirNode))
-            break;
-
-          var worldNext = gridGraph.LocalToWorld(next.Position) + next.Offset;
-          var vector = worldNext - worldCurrentNode;
-          var localVector = Vector3D.Rotate(vector, botMatrixT);
-          var checkY = Math.Abs(localVector.Y) < allowedDiff ? 0 : Math.Sign(localVector.Y);
-
-          if (i < 2 && checkY < 0 && Bot.CanUseLadders)
-          {
-            IMySlimBlock slim = gridGraph.GetBlockAtPosition(next.Position);
-            if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
-            {
-              var cube = slim.FatBlock as MyCubeBlock;
-              ladderUseObj = GetBlockUseObject(cube);
-              afterNextIsLadder = ladderUseObj != null;
-              useNow = afterNextIsLadder && checkY < 0 && !doorInWay;
-
-              if (useNow)
-                nextIsLadder = false;
-
-              break;
-            }
-          }
-
-          //if (gridGraph.RootVoxel != null)
-          //{
-          //  if (!curPoint.HasValue)
-          //    curPoint = worldCurrent;
-
-          //  if (!prevPoint.HasValue)
-          //    prevPoint = worldCurrent;
-
-          //  using (gridGraph.RootVoxel.Pin())
-          //  {
-          //    Vector3D? hit = null;
-
-          //    if (!Vector3D.IsZero(curPoint.Value - worldNext))
-          //    {
-          //      var testLine = new LineD(curPoint.Value, worldNext);
-          //      if (gridGraph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
-          //      {
-          //        // having to do this here instead of during map init because GetIntersectionWithLine isn't thread safe :(
-
-          //        gridGraph.AddToObstacles(prevPoint.Value, curPoint.Value, worldNext);
-          //        findNewPath = true;
-
-          //        ReturnTempNodes(PathToTarget);
-          //        PathToTarget.Clear();
-          //        break;
-          //      }
-          //    }
-
-          //    if (!Vector3D.IsZero(worldCurrent - worldNext))
-          //    {
-          //      var line = new LineD(worldCurrent, worldNext);
-          //      if (gridGraph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
-          //      {
-          //        break;
-          //      }
-          //    }
-          //  }
-          //}
-
-          if (checkY != 0)
-            break;
-
-          if (PathToTarget.Count > 1 && Bot.CanUseLadders)
-          {
-            var afterNext = PathToTarget[1].Position;
-            IMySlimBlock slim = gridGraph.GetBlockAtPosition(afterNext);
-            if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
-            {
-              var worldAfter = gridGraph.LocalToWorld(afterNext);
-              vector = worldAfter - worldCurrentNode;
-              localVector = Vector3D.Rotate(vector, botMatrixT);
-              checkY = Math.Abs(localVector.Y) < allowedDiff ? 0 : Math.Sign(localVector.Y);
-
-              if (checkY < 0)
-                break;
-            }
-          }
-
-          var cellVector = next.Position - localCurrent;
-          if (cellVector.RectangularLength() > 1)
-          {
-            if (cellVector.X != 0)
-            {
-              var checkPoint = localCurrent + new Vector3I(cellVector.X, 0, 0);
-              if (gridGraph.DoesBlockExist(checkPoint))
+              if (gridGraph.ObstacleNodes.ContainsKey(point))
               {
+                NextNode = result;
+                nextIsAirNode = result.IsAirNode;
+                return;
+              }
+
+              var worldPoint = gridGraph.LocalToWorld(point);
+              if (gridGraph.MainGrid.CubeExists(point) || !gridGraph.IsPositionUsable(Bot, worldPoint, out n) || (!currentIsAir && n.IsAirNode))
+              {
+                goDirect = false;
+                break;
+              }
+
+              var tempNode = n as TempNode;
+              if (tempNode != null && !tempNode.CanBeSkipped)
+              {
+                goDirect = false;
+                break;
+              }
+
+              var tgtPos = (_temp.Count > i + 1) ? _temp[i + 1] : localTarget;
+              var vectorTo = tgtPos - point;
+
+              if (n.IsBlocked(vectorTo))
+              {
+                goDirect = false;
+                break;
+              }
+
+              Node nNext;
+              if (gridGraph.TryGetNodeForPosition(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
+              {
+                goDirect = false;
                 break;
               }
             }
 
-            if (cellVector.Y != 0)
+            if (goDirect)
             {
-              var checkPoint = localCurrent + new Vector3I(0, cellVector.Y, 0);
-              if (gridGraph.DoesBlockExist(checkPoint))
-              {
-                break;
-              }
-            }
+              Vector3D? hit = null;
 
-            if (cellVector.Z != 0)
-            {
-              var checkPoint = localCurrent + new Vector3I(0, 0, cellVector.Z);
-              if (gridGraph.DoesBlockExist(checkPoint))
+              //if (gridGraph.RootVoxel != null)
+              //{
+              //  var line = new LineD(worldCurrent, gotoPosition);
+
+              //  using (gridGraph.RootVoxel.Pin())
+              //  {
+              //    gridGraph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit);
+              //  }
+              //}
+
+              if (!hit.HasValue)
               {
-                break;
+                CleanUp(true);
+                Node next;
+                gridGraph.TryGetNodeForPosition(localTarget, out next);
+                nextIsAirNode = next?.IsAirNode ?? false;
+                NextNode = next;
+                return;
               }
             }
           }
 
-          _temp.Clear();
-          gridGraph.MainGrid.RayCastCells(worldCurrent, worldNext, _temp);
+          Vector3D? curPoint = worldCurrent;
+          Vector3D? prevPoint = worldCurrent;
+          var tgtIsOwner = Bot.Owner?.Character != null && Bot.Target.Entity == Bot.Owner.Character;
+          var stopShort = tgtIsOwner && isFlying;
+          bool skipCheck = false;
 
-          bool goDirect = true;
-          for (int j = 0; j < _temp.Count; j++)
+          var curBlock = curNode?.Block;
+          if (curBlock != null)
           {
-            var point = _temp[j];
-            if (gridGraph.ObstacleNodes.ContainsKey(point))
-            {
-              goDirect = false;
-              break;
-            }
+            var cell = AiUtils.GetCellForPosition(curBlock, curNode.Position);
+            var key = MyTuple.Create(curBlock.BlockDefinition.Id, cell);
 
-            Node n;
-            IMySlimBlock slim = gridGraph.GetBlockAtPosition(point);
-            if (slim != null || !gridGraph.IsPositionUsable(Bot, gridGraph.LocalToWorld(point), out n) || (!result.IsAirNode && n.IsAirNode))
+            UsableEntry usableEntry;
+            skipCheck = AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out usableEntry) && usableEntry.SpecialConsideration;
+          }
+          else
+          {
+            var posBelow = Bot.BotInfo.CurrentBotPositionAtFeet + Bot.WorldMatrix.Down;
+            var localBelow = curGraph.WorldToLocal(posBelow);
+
+            Node nodeBelow;
+            if (curGraph.TryGetNodeForPosition(localBelow, out nodeBelow))
             {
-              if (slim != null && Bot.BotInfo.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
+              var blockBelow = nodeBelow.Block;
+              if (blockBelow != null)
               {
-                Bot.Character.SwitchWalk();
+                var cell = AiUtils.GetCellForPosition(blockBelow, nodeBelow.Position);
+                var key = MyTuple.Create(blockBelow.BlockDefinition.Id, cell);
+
+                UsableEntry usableEntry;
+                skipCheck = AiSession.Instance.BlockInfo.BlockDirInfo.TryGetValue(key, out usableEntry) && usableEntry.SpecialConsideration;
               }
-
-              goDirect = false;
-              break;
-            }
-
-            var tgtPos = (_temp.Count > j + 1) ? _temp[j + 1] : next.Position;
-            var vectorTo = tgtPos - point;
-
-            if (n.IsBlocked(vectorTo))
-            {
-              goDirect = false;
-              break;
-            }
-
-            Node nNext;
-            if (gridGraph.TryGetNodeForPosition(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
-            {
-              goDirect = false;
-              break;
             }
           }
 
-          if (!goDirect)
-            break;
+          if (!skipCheck)
+          {
+            // Nope, but can we skip ANY?
+            for (int i = 0; i < 3; i++)
+            {
+              var maxCount = stopShort ? PathToTarget.Count - 1 : PathToTarget.Count;
+              if (i >= maxCount)
+                break;
 
-          prevPoint = curPoint;
-          curPoint = worldNext;
-          result = PathToTarget.Dequeue();
+              var next = PathToTarget.Peek();
+              if (gridGraph.ObstacleNodes.ContainsKey(next.Position) || (!result.IsAirNode && next.IsAirNode))
+                break;
+
+              var tempNode = next as TempNode;
+              if (tempNode != null && !tempNode.CanBeSkipped)
+                break;
+
+              var worldNext = gridGraph.LocalToWorld(next.Position) + next.Offset;
+              var vector = worldNext - worldCurrentNode;
+              var localVector = Vector3D.Rotate(vector, botMatrixT);
+              var checkY = Math.Abs(localVector.Y) < allowedDiff ? 0 : Math.Sign(localVector.Y);
+
+              if (i < 2 && checkY < 0 && Bot.CanUseLadders)
+              {
+                IMySlimBlock slim = gridGraph.GetBlockAtPosition(next.Position);
+                if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
+                {
+                  var cube = slim.FatBlock as MyCubeBlock;
+                  ladderUseObj = GetBlockUseObject(cube);
+                  afterNextIsLadder = ladderUseObj != null;
+                  useNow = afterNextIsLadder && checkY < 0 && !doorInWay;
+
+                  if (useNow)
+                    nextIsLadder = false;
+
+                  break;
+                }
+              }
+
+              //if (gridGraph.RootVoxel != null)
+              //{
+              //  if (!curPoint.HasValue)
+              //    curPoint = worldCurrent;
+
+              //  if (!prevPoint.HasValue)
+              //    prevPoint = worldCurrent;
+
+              //  using (gridGraph.RootVoxel.Pin())
+              //  {
+              //    Vector3D? hit = null;
+
+              //    if (!Vector3D.IsZero(curPoint.Value - worldNext))
+              //    {
+              //      var testLine = new LineD(curPoint.Value, worldNext);
+              //      if (gridGraph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref testLine, out hit))
+              //      {
+              //        // having to do this here instead of during map init because GetIntersectionWithLine isn't thread safe :(
+
+              //        gridGraph.AddToObstacles(prevPoint.Value, curPoint.Value, worldNext);
+              //        findNewPath = true;
+
+              //        ReturnTempNodes(PathToTarget);
+              //        PathToTarget.Clear();
+              //        break;
+              //      }
+              //    }
+
+              //    if (!Vector3D.IsZero(worldCurrent - worldNext))
+              //    {
+              //      var line = new LineD(worldCurrent, worldNext);
+              //      if (gridGraph.RootVoxel.RootVoxel.GetIntersectionWithLine(ref line, out hit))
+              //      {
+              //        break;
+              //      }
+              //    }
+              //  }
+              //}
+
+              if (checkY != 0)
+                break;
+
+              if (PathToTarget.Count > 1 && Bot.CanUseLadders)
+              {
+                var afterNext = PathToTarget[1].Position;
+                IMySlimBlock slim = gridGraph.GetBlockAtPosition(afterNext);
+                if (slim != null && AiSession.Instance.LadderBlockDefinitions.Contains(slim.BlockDefinition.Id))
+                {
+                  var worldAfter = gridGraph.LocalToWorld(afterNext);
+                  vector = worldAfter - worldCurrentNode;
+                  localVector = Vector3D.Rotate(vector, botMatrixT);
+                  checkY = Math.Abs(localVector.Y) < allowedDiff ? 0 : Math.Sign(localVector.Y);
+
+                  if (checkY < 0)
+                    break;
+                }
+              }
+
+              var cellVector = next.Position - localCurrent;
+              if (cellVector.RectangularLength() > 1)
+              {
+                if (cellVector.X != 0)
+                {
+                  var checkPoint = localCurrent + new Vector3I(cellVector.X, 0, 0);
+                  if (gridGraph.DoesBlockExist(checkPoint))
+                  {
+                    break;
+                  }
+                }
+
+                if (cellVector.Y != 0)
+                {
+                  var checkPoint = localCurrent + new Vector3I(0, cellVector.Y, 0);
+                  if (gridGraph.DoesBlockExist(checkPoint))
+                  {
+                    break;
+                  }
+                }
+
+                if (cellVector.Z != 0)
+                {
+                  var checkPoint = localCurrent + new Vector3I(0, 0, cellVector.Z);
+                  if (gridGraph.DoesBlockExist(checkPoint))
+                  {
+                    break;
+                  }
+                }
+              }
+
+              _temp.Clear();
+              gridGraph.MainGrid.RayCastCells(worldCurrent, worldNext, _temp);
+
+              bool goDirect = true;
+              for (int j = 0; j < _temp.Count; j++)
+              {
+                var point = _temp[j];
+                if (gridGraph.ObstacleNodes.ContainsKey(point))
+                {
+                  goDirect = false;
+                  break;
+                }
+
+                Node n;
+                IMySlimBlock slim = gridGraph.GetBlockAtPosition(point);
+                if (slim != null || !gridGraph.IsPositionUsable(Bot, gridGraph.LocalToWorld(point), out n) || (!result.IsAirNode && n.IsAirNode))
+                {
+                  if (slim != null && Bot.BotInfo.IsRunning && AiSession.Instance.HalfStairBlockDefinitions.Contains(slim.BlockDefinition.Id))
+                  {
+                    Bot.Character.SwitchWalk();
+                  }
+
+                  goDirect = false;
+                  break;
+                }
+
+                var tgtPos = (_temp.Count > j + 1) ? _temp[j + 1] : next.Position;
+                var vectorTo = tgtPos - point;
+
+                if (n.IsBlocked(vectorTo))
+                {
+                  goDirect = false;
+                  break;
+                }
+
+                Node nNext;
+                if (gridGraph.TryGetNodeForPosition(tgtPos, out nNext) && nNext.IsBlocked(-vectorTo))
+                {
+                  goDirect = false;
+                  break;
+                }
+              }
+
+              if (!goDirect)
+                break;
+
+              prevPoint = curPoint;
+              curPoint = worldNext;
+              result = PathToTarget.Dequeue();
+            }
+          }
         }
 
         NextNode = result;

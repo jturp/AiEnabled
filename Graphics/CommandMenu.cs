@@ -1561,12 +1561,35 @@ namespace AiEnabled.Graphics
         else
         {
           var grid = hit.HitEntity as MyCubeGrid;
-          if (grid != null) // && grid.GridSize > 1)
+          if (grid != null)
           {
             var upDir = grid.WorldMatrix.GetClosestDirection(ActiveBot.WorldMatrix.Up);
             var pos = hit.Position + hit.Normal * grid.GridSize * 0.2f;
             var localPos = grid.WorldToGridInteger(pos);
             var cube = grid.GetCubeBlock(localPos) as IMySlimBlock;
+
+            if (AiSession.Instance.DrawDebug)
+            {
+              //MyAPIGateway.Utilities.ShowNotification($"Hit Position: {Vector3D.Round(pos, 3)}", 16);
+              MyAPIGateway.Utilities.ShowNotification($"Block: {cube?.BlockDefinition.Id.ToString() ?? "NULL"}", 16);
+              MyAPIGateway.Utilities.ShowNotification($"Local Position: {localPos}", 16);
+
+              if (cube != null)
+              {
+                var cell = AiUtils.GetCellForPosition(cube, localPos);
+                MyAPIGateway.Utilities.ShowNotification($"Cell: {cell}", 16);
+              }
+
+              if (MyAPIGateway.Multiplayer.IsServer)
+              {
+                var gridGraph = AiSession.Instance.GetGridGraph(grid, ActiveBot.WorldMatrix);
+                if (gridGraph != null)
+                {
+                  var isValidCell = gridGraph.IsOpenTile(localPos);
+                  MyAPIGateway.Utilities.ShowNotification($"Valid for pathing? {isValidCell}", 16);
+                }
+              }
+            }
 
             var seat = cube?.FatBlock as IMyCockpit;
             if (grid.GridSize < 1 && seat == null)

@@ -809,20 +809,63 @@ namespace AiEnabled.Bots
         if (gun != null)
         {
           var ammoCount = _wcWeaponMagsLeft ?? gun.CurrentMagazineAmount;
-          if (ammoCount <= 0 && !MyAPIGateway.Session.CreativeMode && !MyAPIGateway.Session.SessionSettings.InfiniteAmmo)
+          var infiniteAmmo = MyAPIGateway.Session.CreativeMode || MyAPIGateway.Session.SessionSettings.InfiniteAmmo;
+          var inventory = Character.GetInventory();
+
+          if (ammoCount <= 0 && !infiniteAmmo)
           {
+            var weaponDefinition = ToolDefinition.PhysicalItemId;
+            string ammoSubtype = null;
+
+            List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList;
+            if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(weaponDefinition, out magList))
+            {
+              for (int i = 0; i < magList.Count; i++)
+              {
+                var mag = magList[i];
+                var ammo = mag.Item2.Item1;
+                var amount = inventory.GetItemAmount(ammo);
+
+                if (amount > 0)
+                {
+                  ammoSubtype = ammo.SubtypeName;
+                  ammoCount = 1;
+
+                  gun.CurrentAmmunition = 1;
+
+                  if (gun.GunBase.CurrentAmmoDefinition.Id != ammo)
+                    gun.GunBase.SwitchAmmoMagazine(ammo);
+  
+                  gun.Reload();
+                  AiSession.Instance.WcAPI.SetMagazine((MyEntity)gun, mag.Item1, ammo, true);
+                  break;
+                }
+              }
+            }
+            else if (gun.GunBase.SwitchAmmoMagazineToFirstAvailable())
+            {
+              ammoCount = gun.CurrentAmmunition;
+              ammoSubtype = gun.GunBase.CurrentAmmoDefinition.Id.SubtypeName;
+              gun.Reload();
+            }
+
+            _wcShotFired = false;
+          }
+
+          if (ammoCount <= 0 && !infiniteAmmo)
+          {
+            var weaponDefinition = ToolDefinition.PhysicalItemId;
+            string ammoSubtype = null;
+
+            List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList = null;
+            if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(weaponDefinition, out magList))
+            {
+              ammoSubtype = magList[0].Item2.Item1.SubtypeName;
+            }
+
             if (Owner == null)
             {
-              var inventory = Character.GetInventory();
-              string ammoSubtype = null;
-              var weaponDefinition = ToolDefinition.PhysicalItemId;
-
-              List<MyTuple<int, MyTuple<MyDefinitionId, string, string, bool>>> magList;
-              if (AiSession.Instance.WcAPILoaded && AiSession.Instance.NpcSafeCoreWeaponMagazines.TryGetValue(weaponDefinition, out magList))
-              {
-                ammoSubtype = magList[0].Item2.Item1.SubtypeName;
-              }
-              else
+              if (ammoSubtype == null)
               {
                 var weaponItemDef = MyDefinitionManager.Static.GetPhysicalItemDefinition(weaponDefinition) as MyWeaponItemDefinition;
                 if (weaponItemDef != null)
@@ -860,7 +903,18 @@ namespace AiEnabled.Bots
             }
             else
             {
-              var ammoType = gun.GunBase.CurrentAmmoMagazineDefinition;
+              MyAmmoMagazineDefinition ammoType;
+
+              if (magList != null)
+              {
+                var ammoDef = magList[0].Item2.Item1;
+                ammoType = MyDefinitionManager.Static.GetAmmoMagazineDefinition(ammoDef);
+              }
+              else
+              {
+                ammoType = gun.GunBase.CurrentAmmoMagazineDefinition;
+              }
+
               var controlEnt = Character as Sandbox.Game.Entities.IMyControllableEntity;
 
               gun?.OnControlReleased();
@@ -875,10 +929,13 @@ namespace AiEnabled.Bots
             }
           }
           else if (Target.HasTarget && !(Character.Parent is IMyCockpit))
-            AiSession.Instance.Scheduler.Schedule(CheckLineOfSight); 
-            //MyAPIGateway.Utilities.InvokeOnGameThread(CheckLineOfSight, "AiEnabled");
+          {
+            AiSession.Instance.Scheduler.Schedule(CheckLineOfSight);
+          }
           else
+          {
             HasLineOfSight = false;
+          }
         }
         else
         {

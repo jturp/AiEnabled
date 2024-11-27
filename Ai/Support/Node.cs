@@ -29,7 +29,8 @@ namespace AiEnabled.Ai.Support
     Tunnel = 0x80,
     Door = 0x100,
     Hangar = 0x200,
-    Catwalk = 0x400
+    Catwalk = 0x400,
+    Skip = 0x800
   }
 
   public class Node : IEqualityComparer<Node>, IComparer<Node>
@@ -59,6 +60,7 @@ namespace AiEnabled.Ai.Support
     public bool IsHangarDoor => (NodeType & NodeType.Hangar) > 0;
     public bool IsVoxelNode => IsGridNodePlanetTile || (NodeType & NodeType.Grid) == 0;
     public bool IsCatwalk => (NodeType & NodeType.Catwalk) > 0;
+    public bool CanSkip => (NodeType & NodeType.Skip) > 0;
     public bool IsSpaceNode(GridBase gBase) => _isSpaceNode ?? IsNodeInSpace(gBase);
     public void ResetTempBlocked() => TempBlockedMask = 0;
 
@@ -157,6 +159,8 @@ namespace AiEnabled.Ai.Support
 
     public void Update(Vector3I position, Vector3D surfaceOffset, GridBase gBase, NodeType nType, int blockMask, MyCubeGrid grid = null, IMySlimBlock block = null)
     {
+      Reset();
+
       Position = position;
       Offset = surfaceOffset;
       BlockedMask = blockMask;
@@ -235,6 +239,17 @@ namespace AiEnabled.Ai.Support
 
     public bool IsBlocked(Vector3I dir)
     {
+      //var b = Block;
+      //if (b != null)
+      //{
+      //  Matrix m;
+      //  b.Orientation.GetMatrix(out m);
+      //  m.TransposeRotationInPlace();
+
+      //  Vector3I.TransformNormal(ref dir, ref m, out dir);
+      //}
+      // TODO: Not sure if this is correct or not...
+
       var mask = GetBlockedMask(dir);
 
       return (BlockedMask & mask) > 0 || (TempBlockedMask & mask) > 0;
