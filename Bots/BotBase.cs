@@ -4940,9 +4940,9 @@ namespace AiEnabled.Bots
       _stuckTimer = 0;
       _stuckCounter = 0;
       BotMoved = false;
-      var botPosition = Character.WorldAABB.Center;
+      Vector3D botPosition = BotInfo.CurrentBotPositionActual;
+      Vector3I start = BotInfo.CurrentBotPositionLocal;
 
-      Vector3I start = _currentGraph.WorldToLocal(botPosition);
       if (!_currentGraph.GetClosestValidNode(this, start, out start))
       {
         CleanPath();
@@ -6186,6 +6186,29 @@ namespace AiEnabled.Bots
           else if (swerve)
           {
             WaitForSwerveTimer = true;
+
+            if (_pathCollection.HasNode)
+            {
+              var nextNode = _pathCollection.NextNode.Position;
+              var afterNextNode = _pathCollection.AfterNexNode?.Position;
+              var botNode = _currentGraph.WorldToLocal(Character.WorldAABB.Center);
+              var nodeDiff = nextNode - botNode;
+
+              bool allowSkip = !afterNextNode.HasValue;
+              if (!allowSkip)
+              {
+                // Only allow the skip if the bot is between the current and next position (ie they have already passed the current waypoint during the swerve)
+
+                var afterNodeDiff = afterNextNode.Value - botNode;
+
+                allowSkip = afterNodeDiff.Dot(ref nodeDiff) < 0;
+              }
+
+              if (allowSkip && nodeDiff.RectangularLength() < 2)
+              {
+                _pathCollection.ClearNode();
+              }
+            }
           }
         }
       }

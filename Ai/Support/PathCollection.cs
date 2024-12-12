@@ -83,6 +83,17 @@ namespace AiEnabled.Ai.Support
     /// </summary>
     public bool HasNode => NextNode != null;
 
+    public Node AfterNexNode
+    {
+      get
+      {
+        if (PathToTarget.Count > 0)
+          return PathToTarget[0];
+
+        return null;
+      }
+    }
+
     /// <summary>
     /// The next waypoint, if there is one
     /// </summary>
@@ -134,7 +145,7 @@ namespace AiEnabled.Ai.Support
     /// <summary>
     /// The priority queue is used to sort and return the cell with the highest priority (lowest number)
     /// </summary>
-    public SimplePriorityQueue<Vector3I> Queue = new SimplePriorityQueue<Vector3I>(Vector3I.Comparer);
+    public SimplePriorityQueue<Vector3I, int> Queue = new SimplePriorityQueue<Vector3I, int>(Vector3I.Comparer);
 
     /// <summary>
     /// Whenever the algorithm detects that two Half Stair blocks are stacked on top of one another,

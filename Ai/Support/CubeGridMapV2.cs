@@ -2341,6 +2341,11 @@ namespace AiEnabled.Ai.Support
             var offset = usableEntry.GetOffset(block);
             NodeType nType = usableEntry.IsGroundNode ? NodeType.Ground : NodeType.None;
 
+            if (nType == NodeType.None && ShouldBeGroundNode(block, cell, ref upVec, ref upDir))
+            {
+              nType |= NodeType.Ground;
+            }
+
             Node node;
             if (!OpenTileDict.TryGetValue(mainGridPosition, out node))
             {
@@ -2364,6 +2369,30 @@ namespace AiEnabled.Ai.Support
           }
         }
       }
+    }
+
+    bool ShouldBeGroundNode(IMySlimBlock block, Vector3I cell, ref Vector3I upVec, ref Direction upDir)
+    {
+      if (block != null)
+      {
+        var blockDef = block.BlockDefinition.Id;
+        var subtype = blockDef.SubtypeName;
+
+        var isGCMCatwalk = AiSession.Instance.GratedCatwalkExpansionBlocks.Contains(blockDef);
+
+        if (isGCMCatwalk || AiSession.Instance.CatwalkBlockDefinitions.Contains(blockDef))
+        {
+          // catwalks should be ground nodes as long as they are oriented properly
+
+          var multiplier = (isGCMCatwalk && subtype.EndsWith("Raised")) ? -1 : 1;
+          var testVec = multiplier * Base6Directions.GetIntVector(block.Orientation.Up);
+
+          if (upVec == testVec)
+            return true;
+        }
+      }
+
+      return false;
     }
 
     List<BoundingBoxI> _blockBoxList = new List<BoundingBoxI>();

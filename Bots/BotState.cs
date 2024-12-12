@@ -32,11 +32,39 @@ namespace AiEnabled.Bots
       IsJumping = 128
     }
 
+    /// <summary>
+    /// Local position relative to the bot's current map. Zero vector if map is null.
+    /// </summary>
+    public Vector3I CurrentBotPositionLocal { get; private set; }
+
+    /// <summary>
+    /// The position at the character's feet
+    /// </summary>
     public Vector3D CurrentBotPositionAtFeet { get;private set; }
+    
+    /// <summary>
+    /// Position adjusted for use with pathfinding (ie for short / tall characters where actual position may cause issues with distance checks)
+    /// </summary>
     public Vector3D CurrentBotPositionAdjusted { get; private set; }
+
+    /// <summary>
+    /// Character.WorldAABB.Center
+    /// </summary>
     public Vector3D CurrentBotPositionActual { get; private set; }
+
+    /// <summary>
+    /// Natural gravity at bot's position
+    /// </summary>
     public Vector3D CurrentGravityAtBotPosition_Nat { get; private set; }
+
+    /// <summary>
+    /// Artificial gravity at bot's position
+    /// </summary>
     public Vector3D CurrentGravityAtBotPosition_Art { get; private set; }
+
+    /// <summary>
+    /// Normalized gravity at bot's position
+    /// </summary>
     public Vector3D CurrentGravityAtBotPosition_Normalized { get; private set; }
 
     public bool IsOnLadder => (_state & State.IsOnLadder) > 0;
@@ -64,6 +92,7 @@ namespace AiEnabled.Bots
       CurrentBotPositionActual = Bot.Character.WorldAABB.Center;
       CurrentBotPositionAtFeet = Bot.Character.GetPosition();
       CurrentBotPositionAdjusted = Bot.GetPosition();
+      CurrentBotPositionLocal = Bot._currentGraph?.WorldToLocal(CurrentBotPositionActual) ?? Vector3I.Zero;
 
       float interference;
       CurrentGravityAtBotPosition_Nat = MyAPIGateway.Physics.CalculateNaturalGravityAt(CurrentBotPositionActual, out interference);

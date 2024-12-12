@@ -76,7 +76,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.9.2";
+    public const string VERSION = "v1.9.3";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -2625,10 +2625,12 @@ namespace AiEnabled
           grid.GetBlocks(gridSeats, b =>
           {
             var seat = b.FatBlock as IMyCockpit;
+            var seatDef = seat?.BlockDefinition.SubtypeName;
+
             if (seat == null || seat.Pilot != null || !seat.IsFunctional
-              || seat.BlockDefinition.SubtypeId.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
-              || seat.BlockDefinition.SubtypeId.IndexOf("toilet", StringComparison.OrdinalIgnoreCase) >= 0
-              || seat.BlockDefinition.SubtypeId.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
+              || seatDef.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
+              || seatDef.IndexOf("toilet", StringComparison.OrdinalIgnoreCase) >= 0
+              || seatDef.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
             {
               return false;
             }
@@ -2660,7 +2662,7 @@ namespace AiEnabled
             if (gridSeats.Count == 0)
               break;
 
-            if (bot.UseAPITargets || bot.PatrolMode || bot.Character.Parent is IMyCockpit)
+            if (bot.UseAPITargets || bot.PatrolMode || bot.Character.Parent is IMyCockpit || (bot is CrewBot && !bot.FollowMode))
               continue;
 
             if (bot.BotInfo.IsOnLadder)
