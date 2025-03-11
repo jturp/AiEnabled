@@ -186,6 +186,7 @@ namespace AiEnabled.Ai
       var queue = collection.Queue;
       var cameFrom = collection.CameFrom;
       var costSoFar = collection.CostSoFar;
+      var evaluated = collection.Evaluated;
       var intermediatePoints = collection.IntermediatePoints;
 
       var bot = collection.Bot;
@@ -199,6 +200,7 @@ namespace AiEnabled.Ai
 
       cameFrom.Clear();
       costSoFar.Clear();
+      evaluated.Clear();
       stackedStairs?.Clear();
 
       queue.Clear();
@@ -209,7 +211,6 @@ namespace AiEnabled.Ai
 
       MyRelationsBetweenPlayers relation;
       collection.CheckDoors(out relation);
-
 
      // AiSession.Instance.Logger.AddLine($"RunAlgorithm: Start = {start}, Goal = {goal}");
 
@@ -235,6 +236,8 @@ namespace AiEnabled.Ai
          // AiSession.Instance.Logger.AddLine($" -> Failed to dequeue from Queue");
           break;
         }
+
+        evaluated.Add(current);
 
        // AiSession.Instance.Logger.AddLine($" -> Current = {current}");
 
@@ -323,7 +326,7 @@ namespace AiEnabled.Ai
         {
          // AiSession.Instance.Logger.AddLine($"  -> Next = {next}");
 
-          if (next == previous)
+          if (next == previous || evaluated.Contains(next))
           {
            // AiSession.Instance.Logger.AddLine($"  -> Next == Previous");
             continue;
@@ -410,9 +413,18 @@ namespace AiEnabled.Ai
             var isGoal = next == goal;
             int priority = isGoal ? -1 : newCost + Vector3I.DistanceManhattan(next, goal);
 
-           // AiSession.Instance.Logger.AddLine($"   -> Adding {next} to queue with pri {priority}");
+            //AiSession.Instance.Logger.AddLine($"   -> Adding [{next} : {current}] to queue with pri {priority}");
 
-            queue.Enqueue(next, priority);
+            if (queue.Contains(next))
+            {
+              //if (queue.GetPriority(next) > priority)
+                queue.UpdatePriority(next, priority);
+            }
+            else
+            {
+              queue.Enqueue(next, priority);
+            }
+
             costSoFar[next] = newCost;
             cameFrom[next] = current;
 

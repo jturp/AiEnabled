@@ -3742,12 +3742,6 @@ namespace AiEnabled.Bots
           var door = subpart?.Parent as IMyDoor;
           if (door != null)
           {
-            var doorPos = door.WorldAABB.Center;
-            if (door is IMyAirtightHangarDoor)
-              doorPos += door.WorldMatrix.Down * door.CubeGrid.GridSize;
-            else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
-              doorPos += door.WorldMatrix.Down * door.CubeGrid.GridSize * 0.5;
-
             var tgtDoor = Target.Entity as IMyDoor;
             if (tgtDoor == null)
             {
@@ -3755,10 +3749,24 @@ namespace AiEnabled.Bots
               tgtDoor = tgtSlim?.FatBlock as IMyDoor;
             }
 
-            if (tgtDoor != null && Vector3D.IsZero(doorPos - tgtDoor.WorldAABB.Center))
+            if (tgtDoor != null && tgtDoor.Position == door.Position)
             {
+              //var tgtDoorPos = tgtDoor.WorldAABB.Center;
+              //if (tgtDoor is IMyAirtightHangarDoor)
+              //  tgtDoorPos += tgtDoor.WorldMatrix.Down * tgtDoor.CubeGrid.GridSize;
+              //else if (tgtDoor.BlockDefinition.SubtypeName == "LargeBlockGate")
+              //  tgtDoorPos += tgtDoor.WorldMatrix.Down * tgtDoor.CubeGrid.GridSize * 0.5;
+
+              //bool isSamePos = Vector3D.IsZero(doorPos - tgtDoorPos);
+
               if (ToolDefinition != null && ToolDefinition.WeaponType != MyItemWeaponType.None)
               {
+                var doorPos = door.WorldAABB.Center;
+                if (door is IMyAirtightHangarDoor)
+                  doorPos += door.WorldMatrix.Down * door.CubeGrid.GridSize;
+                else if (door.BlockDefinition.SubtypeName == "LargeBlockGate")
+                  doorPos += door.WorldMatrix.Down * door.CubeGrid.GridSize * 0.5;
+
                 var vecToDoor = doorPos - botPos;
                 Vector3D newPos;
                 if (vecToDoor.Dot(door.WorldMatrix.Forward) > 0)
@@ -5160,25 +5168,12 @@ namespace AiEnabled.Bots
 
       //AiSession.Instance.InPathFinder = true;
       //AiSession.Instance.Logger.ClearCached();
-      //AiSession.Instance.Logger.Log($"Starting pathfinding check: Start = {start}, Goal = {goal}");
-
-      //Node startNode;
-      //_currentGraph.TryGetNodeForPosition(start, out startNode);
-      //var edges = startNode.GetBlockedEdges(_sb);
-      //AiSession.Instance.Logger.Log($"Blocked Edges for {startNode.Position}: {edges}");
-
-      //Node endNode;
-      //_currentGraph.TryGetNodeForPosition(goal, out endNode);
-      //edges = startNode.GetBlockedEdges(_sb);
-      //AiSession.Instance.Logger.Log($"Blocked Edges for {endNode.Position}: {edges}");
+      //AiSession.Instance.Logger.Log($"Starting pathfinding check: Start = {start}, Goal = {adjustedGoal}");
 
       //_pathCollection.PathTimer.Stop();
       //FindPath(_pathWorkData);
       //FindPathCallBack(_pathWorkData);
     }
-
-    // debug only
-    //StringBuilder _sb = new StringBuilder(1024);
 
     bool BlockIsOnSameGrid()
     {
@@ -5217,6 +5212,11 @@ namespace AiEnabled.Bots
       //    AiSession.Instance.Logger.Log($" LP: {node.Position} | AP: {localPos} | NT: {node.NodeType}");
       //  }
       //}
+      //else
+      //{
+      //  AiSession.Instance.Logger.Log($"No path found!");
+      //}
+
       AiSession.Instance.InPathFinder = false;
       Reset();
     }

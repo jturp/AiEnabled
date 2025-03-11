@@ -105,6 +105,7 @@ namespace AiEnabled.Support
       controls.Add(labelPriorities);
 
       var PriBtnVisSwitch = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnVisSwitch");
+      PriBtnVisSwitch.Enabled = CombineFunc.Create(PriBtnVisSwitch.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       PriBtnVisSwitch.Visible = CombineFunc.Create(PriBtnVisSwitch.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       PriBtnVisSwitch.SupportsMultipleBlocks = false;
       PriBtnVisSwitch.Title = MyStringId.GetOrCompute(""); // Switch Priority List
@@ -117,6 +118,8 @@ namespace AiEnabled.Support
       controls.Add(PriBtnVisSwitch);
 
       var weldPriCheckBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyConveyorSorter>("CheckBoxWeldPriority");
+      weldPriCheckBox.Enabled = CombineFunc.Create(weldPriCheckBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       weldPriCheckBox.Visible = CombineFunc.Create(weldPriCheckBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                       && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       weldPriCheckBox.Title = MyStringId.GetOrCompute("Weld before grind");
@@ -129,6 +132,8 @@ namespace AiEnabled.Support
       controls.Add(weldPriCheckBox);
 
       var repairPriorityBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("ListBoxRepairPri");
+      repairPriorityBox.Enabled = CombineFunc.Create(repairPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       repairPriorityBox.Visible = CombineFunc.Create(repairPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                       && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       repairPriorityBox.SupportsMultipleBlocks = false;
@@ -142,6 +147,8 @@ namespace AiEnabled.Support
       controls.Add(repairPriorityBox);
 
       var rprPriBtnOnOff = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnOnOffRprPri");
+      rprPriBtnOnOff.Enabled = CombineFunc.Create(rprPriBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       rprPriBtnOnOff.Visible = CombineFunc.Create(rprPriBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                       && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       rprPriBtnOnOff.SupportsMultipleBlocks = false;
@@ -155,6 +162,8 @@ namespace AiEnabled.Support
       controls.Add(rprPriBtnOnOff);
 
       var rprPriBtnUp = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnUpRprPri");
+      rprPriBtnUp.Enabled = CombineFunc.Create(rprPriBtnUp.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       rprPriBtnUp.Visible = CombineFunc.Create(rprPriBtnUp.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                 && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       rprPriBtnUp.SupportsMultipleBlocks = false;
@@ -165,6 +174,8 @@ namespace AiEnabled.Support
       controls.Add(rprPriBtnUp);
 
       var rprPriBtnDown = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnDwnRprPri");
+      rprPriBtnDown.Enabled = CombineFunc.Create(rprPriBtnDown.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       rprPriBtnDown.Visible = CombineFunc.Create(rprPriBtnDown.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                 && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == true);
       rprPriBtnDown.SupportsMultipleBlocks = false;
@@ -175,6 +186,8 @@ namespace AiEnabled.Support
       controls.Add(rprPriBtnDown);
 
       var tgtDmgCheckBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyConveyorSorter>("CheckBoxDmgToDisable");
+      tgtDmgCheckBox.Enabled = CombineFunc.Create(tgtDmgCheckBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtDmgCheckBox.Visible = CombineFunc.Create(tgtDmgCheckBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                       && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtDmgCheckBox.Title = MyStringId.GetOrCompute("Damage to Disable");
@@ -187,6 +200,8 @@ namespace AiEnabled.Support
       controls.Add(tgtDmgCheckBox);
 
       var targetPriorityBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("ListBoxTargetPri");
+      targetPriorityBox.Enabled = CombineFunc.Create(targetPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                      && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       targetPriorityBox.Visible = CombineFunc.Create(targetPriorityBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                       && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       targetPriorityBox.SupportsMultipleBlocks = false;
@@ -200,6 +215,8 @@ namespace AiEnabled.Support
       controls.Add(targetPriorityBox);
 
       var tgtPriBtnOnOff = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnOnOffTgtPri");
+      tgtPriBtnOnOff.Enabled = CombineFunc.Create(tgtPriBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                    && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtPriBtnOnOff.Visible = CombineFunc.Create(tgtPriBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                     && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtPriBtnOnOff.SupportsMultipleBlocks = false;
@@ -213,6 +230,8 @@ namespace AiEnabled.Support
       controls.Add(tgtPriBtnOnOff);
 
       var tgtPriBtnUp = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnUpTgtPri");
+      tgtPriBtnUp.Enabled = CombineFunc.Create(tgtPriBtnUp.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtPriBtnUp.Visible = CombineFunc.Create(tgtPriBtnUp.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                 && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtPriBtnUp.SupportsMultipleBlocks = false;
@@ -223,6 +242,8 @@ namespace AiEnabled.Support
       controls.Add(tgtPriBtnUp);
 
       var tgtPriBtnDown = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnDwnTgtPri");
+      tgtPriBtnDown.Enabled = CombineFunc.Create(tgtPriBtnDown.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
+                                                  && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtPriBtnDown.Visible = CombineFunc.Create(tgtPriBtnDown.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory"
                                                   && Block.GameLogic.GetAs<Factory>()?.ShowRepairPriorities == false);
       tgtPriBtnDown.SupportsMultipleBlocks = false;
@@ -233,6 +254,7 @@ namespace AiEnabled.Support
       controls.Add(tgtPriBtnDown);
 
       var updatePriBtn = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyConveyorSorter>("BtnUpdatePri");
+      updatePriBtn.Enabled = CombineFunc.Create(updatePriBtn.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       updatePriBtn.Visible = CombineFunc.Create(updatePriBtn.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       updatePriBtn.SupportsMultipleBlocks = false;
       updatePriBtn.Title = MyStringId.GetOrCompute("Update Helper Priorities");
@@ -242,6 +264,7 @@ namespace AiEnabled.Support
       controls.Add(updatePriBtn);
 
       var ignoreListBox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlListbox, IMyConveyorSorter>("IgnoreListBox");
+      ignoreListBox.Enabled = CombineFunc.Create(ignoreListBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       ignoreListBox.Visible = CombineFunc.Create(ignoreListBox.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       ignoreListBox.SupportsMultipleBlocks = false;
       ignoreListBox.VisibleRowsCount = 10;
@@ -254,6 +277,7 @@ namespace AiEnabled.Support
       controls.Add(ignoreListBox);
 
       var ignoreBtnOnOff = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlOnOffSwitch, IMyConveyorSorter>("BtnOnOffTgtPri");
+      ignoreBtnOnOff.Enabled = CombineFunc.Create(ignoreBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       ignoreBtnOnOff.Visible = CombineFunc.Create(ignoreBtnOnOff.Enabled, Block => Block.BlockDefinition.SubtypeId == "RoboFactory");
       ignoreBtnOnOff.SupportsMultipleBlocks = false;
       ignoreBtnOnOff.Title = MyStringId.GetOrCompute("Toggle Ignore Type");

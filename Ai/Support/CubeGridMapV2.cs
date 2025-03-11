@@ -1502,10 +1502,10 @@ namespace AiEnabled.Ai.Support
         }
 
         var next = currentNode + dir;
-        if (TestCondition(next))
-        {
-          MyAPIGateway.Utilities.ShowNotification($"Hi", 1);
-        }
+        //if (TestCondition(next))
+        //{
+        //  MyAPIGateway.Utilities.ShowNotification($"Hi", 1);
+        //}
 
         if (InBounds(next) && Passable(bot, previousNode, currentNode, next, worldPosition, checkDoors, 
           currentIsObstacle: currentIsObstacle, isSlimBlock: isSlimBlock, checkRepairInfo: checkRepairInfo))
@@ -1636,10 +1636,10 @@ namespace AiEnabled.Ai.Support
     public override bool Passable(BotBase bot, Vector3I previousNode, Vector3I currentNode, Vector3I nextNode, Vector3D worldPosition, bool checkDoors, bool currentIsObstacle = false, bool isSlimBlock = false, bool checkRepairInfo = false)
     {
 
-      if (TestCondition(currentNode))
-      {
-        MyAPIGateway.Utilities.ShowNotification($"Hi", 1);
-      }
+      //if (TestCondition(currentNode))
+      //{
+      //  MyAPIGateway.Utilities.ShowNotification($"Hi", 1);
+      //}
 
       IMyDoor door;
       if (checkDoors && BlockedDoors.TryGetValue(nextNode, out door) && door != null)
@@ -2170,9 +2170,11 @@ namespace AiEnabled.Ai.Support
         door.OnMarkForClose -= Door_OnMarkForClose;
         door.OnMarkForClose += Door_OnMarkForClose;
       }
-      else if (AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id)
+      
+      if (door == null &&
+        (  AiSession.Instance.SlopeBlockDefinitions.Contains(cubeDef.Id)
         || AiSession.Instance.RampBlockDefinitions.Contains(cubeDef.Id)
-        || AiSession.Instance.LadderBlockDefinitions.Contains(cubeDef.Id))
+        || AiSession.Instance.LadderBlockDefinitions.Contains(cubeDef.Id)))
       {
         MatrixI blockMatrixInv;
         MatrixI.Invert(ref blockMatrix, out blockMatrixInv);
@@ -4083,7 +4085,11 @@ namespace AiEnabled.Ai.Support
 
                 if (door is IMyAirtightHangarDoor)
                 {
-                  if (positionAbove != doorPosition)
+                  var doorUp = MainGrid.WorldMatrix.GetClosestDirection(door.WorldMatrix.Up);
+                  var doorIntUp = Base6Directions.GetIntVector(doorUp);
+                  var distanceToDoorPosition = (positionAbove - doorPosition).RectangularLength();
+
+                  if (positionAbove != doorPosition && distanceToDoorPosition == 1 && -doorIntUp == normal)
                   {
                     Node node;
                     if (!OpenTileDict.TryGetValue(mainGridPosition, out node))

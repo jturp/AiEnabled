@@ -480,7 +480,7 @@ namespace AiEnabled.Ai.Support
         for (int i = 0; i < AiSession.Instance.ModSaveData.InventoryItemsToKeep.Count; i++)
         {
           var keeper = AiSession.Instance.ModSaveData.InventoryItemsToKeep[i];
-          if (keeper.StartsWith(def.SubtypeId, StringComparison.OrdinalIgnoreCase))
+          if (def.SubtypeId.StartsWith(keeper, StringComparison.OrdinalIgnoreCase) || keeper.StartsWith(def.SubtypeId, StringComparison.OrdinalIgnoreCase))
             return true;
         }
       }

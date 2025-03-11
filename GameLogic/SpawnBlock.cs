@@ -82,7 +82,6 @@ namespace AiEnabled.GameLogic
     int _maxTravelDistance = 0;
 
     Sandbox.ModAPI.IMyUpgradeModule _block;
-    MyShipController _fakeBlock = new MyShipController();
     MyIni _ini = new MyIni();
     CubeGridMap _gridMap;
     TargetPriorities _targetPriorities;
@@ -107,7 +106,6 @@ namespace AiEnabled.GameLogic
         _botTypeToLootContainerId?.Clear();
         _targetPriorities?.PriorityTypes?.Clear();
 
-        _fakeBlock = null;
         _allSubtypes = null;
         _block = null;
         _ini = null;
@@ -135,7 +133,6 @@ namespace AiEnabled.GameLogic
     public override void Init(MyObjectBuilder_EntityBase objectBuilder)
     {
       _block = (Sandbox.ModAPI.IMyUpgradeModule)Entity;
-      _fakeBlock.SlimBlock = ((MyCubeBlock)_block).SlimBlock;
       NeedsUpdate = MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
       base.Init(objectBuilder);
     }
@@ -781,7 +778,7 @@ namespace AiEnabled.GameLogic
         if (data != _lastConfig)
           Block_CustomDataChanged(data);
 
-        if (!_block.Enabled || !_block.IsFunctional || !_block.IsWorking || _fakeBlock.GridResourceDistributor.ResourceState == MyResourceStateEnum.NoPower)
+        if (!_block.Enabled || !_block.IsFunctional || !_block.IsWorking || _block.CubeGrid.ResourceDistributor.ResourceState == MyResourceStateEnum.NoPower)
           return;
 
         if (AiSession.Instance.Players.Count == 0 || !AiSession.Instance.CanSpawn)

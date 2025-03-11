@@ -126,6 +126,11 @@ namespace AiEnabled.Ai.Support
     public Dictionary<Vector3I, int> CostSoFar = new Dictionary<Vector3I, int>(Vector3I.Comparer);
 
     /// <summary>
+    /// Used to make sure we only evaluate each node once
+    /// </summary>
+    public HashSet<Vector3I> Evaluated = new HashSet<Vector3I>(Vector3I.Comparer);
+
+    /// <summary>
     /// Used for permanently blocked nodes
     /// </summary>
     internal ConcurrentDictionary<Vector3I, byte> Obstacles = new ConcurrentDictionary<Vector3I, byte>(Vector3I.Comparer);
@@ -1147,6 +1152,7 @@ namespace AiEnabled.Ai.Support
         IntermediatePoints.Clear();
         CameFrom.Clear();
         CostSoFar.Clear();
+        Evaluated.Clear();
         Queue.Clear();
         Cache.Clear();
 
@@ -1210,6 +1216,7 @@ namespace AiEnabled.Ai.Support
       IntermediatePoints = null;
       CameFrom = null;
       CostSoFar = null;
+      Evaluated = null;
       Queue = null;
       Cache = null;
       Obstacles = null;
