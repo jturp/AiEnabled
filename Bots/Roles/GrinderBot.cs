@@ -12,6 +12,7 @@ using AiEnabled.Utilities;
 
 using Sandbox.Definitions;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character;
 using Sandbox.Game.EntityComponents;
 using Sandbox.Game.Weapons;
 using Sandbox.ModAPI;
@@ -109,6 +110,7 @@ namespace AiEnabled.Bots.Roles
             }
           }
 
+          AiSession.Instance.LocalBotAPI.TriggerOnDamageDealt(this.Character.EntityId, tgtEnt.EntityId, damage);
           tgtEnt.DoDamage(damage, MyDamageType.Grind, true);
         }
         else if (seat != null)

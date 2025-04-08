@@ -29,6 +29,8 @@ using VRage.Utils;
 
 using VRageMath;
 
+using static AiEnabled.API.WcApiDef.WeaponDefinition.AmmoDef.DamageScaleDef.DamageTypes;
+
 using CollisionLayers = Sandbox.Engine.Physics.MyPhysics.CollisionLayers;
 
 namespace AiEnabled.Bots.Roles.Helpers
@@ -248,6 +250,8 @@ namespace AiEnabled.Bots.Roles.Helpers
 
       if (isCharacter)
       {
+        AiSession.Instance.LocalBotAPI.TriggerOnDamageDealt(this.Character.EntityId, character.EntityId, rand);
+
         BotBase botTarget;
         if (AiSession.Instance.Bots.TryGetValue(character.EntityId, out botTarget) && botTarget != null)
         {

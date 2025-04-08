@@ -7149,6 +7149,18 @@ namespace AiEnabled
             { new Vector3I(0,0,0), MyTuple.Create(new Direction[] {  Direction.Up, Direction.Down, Direction.Left, Direction.Right, Direction.Forward, Direction.Backward }, Vector3.Zero, 0f, false, false) },
           }
         },
+        {
+          new MyDefinitionId(typeof(MyObjectBuilder_AdvancedDoor), "LargeBlockSlideDoorDouble"), new Dictionary<Vector3I, MyTuple<Direction[], Vector3, float, bool, bool>>(Vector3I.Comparer)
+          {
+            { new Vector3I(0,0,0), MyTuple.Create(new Direction[] {  Direction.Up, Direction.Down, Direction.Left, Direction.Right }, Vector3.Zero, 0f, false, false) },
+          }
+        },
+        {
+          new MyDefinitionId(typeof(MyObjectBuilder_AdvancedDoor), "HatchDoorDouble"), new Dictionary<Vector3I, MyTuple<Direction[], Vector3, float, bool, bool>>(Vector3I.Comparer)
+          {
+            { new Vector3I(1,0,0), MyTuple.Create(new Direction[] {  Direction.Left, Direction.Right, Direction.Forward, Direction.Backward }, Vector3.Zero, 0f, false, false) },
+          }
+        },
       };
 
       _logger.Info("Init Block Info: End");

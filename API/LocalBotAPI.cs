@@ -109,6 +109,19 @@ namespace AiEnabled.API
     }
 
     /// <summary>
+    /// Event to trigger whenever bots deal damage.
+    /// </summary>
+    public event Action<long, long, float> OnDamageDealt;
+
+    /// <summary>
+    /// Triggers the event.
+    /// </summary>
+    /// <param name="attackerId">Bot Entity Id</param>
+    /// <param name="targetId">Target Entity Id</param>
+    /// <param name="damage">Damage amount</param>
+    public void TriggerOnDamageDealt(long attackerId, long targetId, float damage) => OnDamageDealt?.Invoke(attackerId, targetId, damage);
+
+    /// <summary>
     /// Check this BEFORE attempting to spawn a bot to ensure the mod is ready
     /// </summary>
     public bool CanSpawn() => AiSession.Instance?.CanSpawn ?? false;
@@ -283,6 +296,48 @@ namespace AiEnabled.API
       }
 
       return player == null ? curOwner != null : curOwner == null;
+    }
+
+    /// <summary>
+    /// Adds a callback method whenever bots deal damage. AiEnabled will unregister all delegates when it unloads. 
+    /// This will fire *after* all SE Damage Handlers are finished, and only if the damage amount > 0.
+    /// </summary>
+    /// <param name="methodToCall">The method the event will invoke. Param 1 = Bot Entity Id (attacker), Param 2 = Target Entity Id, Param 3 = damage amount</param>
+    /// <returns>true if the event registration succeeds, otherwise false</returns>
+    public bool RegisterDamageHandler(Action<long, long, float> methodToCall)
+    {
+      OnDamageDealt += methodToCall;
+      return true;
+    }
+
+    /// <summary>
+    /// Unregister all damage handlers.
+    /// </summary>
+    public void UnregisterDamageHandlers()
+    {
+      try
+      {
+        if (OnDamageDealt != null)
+        {
+          List<Action<long, long, float>> actions = new List<Action<long, long, float>>();
+
+          foreach (var action in OnDamageDealt.GetInvocationList())
+          {
+            actions.Add((Action<long, long, float>)action);
+          }
+
+          foreach (var action in actions)
+          {
+            OnDamageDealt -= action;
+          }
+
+          actions = null;
+        }
+      }
+      catch (Exception ex)
+      {
+        AiSession.Instance?.Logger?.Log(ex.ToString());
+      }
     }
 
     /// <summary>

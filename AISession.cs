@@ -76,7 +76,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.9.5";
+    public const string VERSION = "v1.9.6";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -529,6 +529,7 @@ namespace AiEnabled
         WcAPI.Unload();
       }
 
+      LocalBotAPI?.UnregisterDamageHandlers();
       Scheduler?.Close();
       BlockRepairDelays?.Close();
       CommandMenu?.Close();
@@ -3240,6 +3241,8 @@ namespace AiEnabled
             infoStat.BotEntityIds.Add(target.EntityId);
           }
         }
+
+        LocalBotAPI?.TriggerOnDamageDealt(shooterEntityId, target.EntityId, damageAmount);
       }
 
       target.DoDamage(damageAmount, damageType, true);

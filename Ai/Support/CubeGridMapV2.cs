@@ -942,6 +942,7 @@ namespace AiEnabled.Ai.Support
           if (tuple.Item1 > 0 || tuple.Item2 > 0)
           {
             Dirty = true;
+            Remake = true;
           }
         }
       }

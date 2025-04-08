@@ -41,7 +41,7 @@ namespace AiEnabled.Bots
         else if (bot.Character.Parent is IMyCockpit)
         {
           var cpit = bot.Character.Parent as IMyCockpit;
-          Action = $"Seated in {cpit.DisplayName}";
+          Action = $"Seated in {cpit.DisplayNameText}";
         }
         else if (bot.BotType == AiSession.BotType.Repair)
         {

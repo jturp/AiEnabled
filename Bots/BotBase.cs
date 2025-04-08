@@ -2301,26 +2301,31 @@ namespace AiEnabled.Bots
 
       destroyable.DoDamage(rand, MyStringHash.GetOrCompute("Punch"), true);
 
-      if (isCharacter && botTarget != null)
+      if (isCharacter)
       {
-        botTarget._ticksSinceFoundTarget = 0;
+        AiSession.Instance.LocalBotAPI.TriggerOnDamageDealt(this.Character.EntityId, character.EntityId, rand);
 
-        if (Owner != null)
+        if (botTarget != null)
         {
-          HealthInfoStat infoStat;
-          if (!AiSession.Instance.PlayerToHealthBars.TryGetValue(Owner.IdentityId, out infoStat))
+          botTarget._ticksSinceFoundTarget = 0;
+
+          if (Owner != null)
           {
-            infoStat = new HealthInfoStat();
-            AiSession.Instance.PlayerToHealthBars[Owner.IdentityId] = infoStat;
+            HealthInfoStat infoStat;
+            if (!AiSession.Instance.PlayerToHealthBars.TryGetValue(Owner.IdentityId, out infoStat))
+            {
+              infoStat = new HealthInfoStat();
+              AiSession.Instance.PlayerToHealthBars[Owner.IdentityId] = infoStat;
+            }
+
+            infoStat.BotEntityIds.Add(character.EntityId);
           }
 
-          infoStat.BotEntityIds.Add(character.EntityId);
-        }
-
-        var neutralBot = botTarget as NeutralBotBase;
-        if (neutralBot != null && neutralBot.Target.Entity == null)
-        {
-          neutralBot.SetHostile(Character);
+          var neutralBot = botTarget as NeutralBotBase;
+          if (neutralBot != null && neutralBot.Target.Entity == null)
+          {
+            neutralBot.SetHostile(Character);
+          }
         }
       }
 
@@ -5799,9 +5804,10 @@ namespace AiEnabled.Bots
         }
 
         bool isRotaryAirlock = door.BlockDefinition.SubtypeName.StartsWith("RotaryAirlock");
-        bool isPassageAirlock = !isRotaryAirlock && door.BlockDefinition.SubtypeName.StartsWith("PassageAirlock");
+        bool isSlidingAirlock = !isRotaryAirlock && door.BlockDefinition.SubtypeName.EndsWith("DoorDouble");
+        bool isPassageAirlock = !isRotaryAirlock && !isSlidingAirlock && door.BlockDefinition.SubtypeName.StartsWith("PassageAirlock");
 
-        if (!isRotaryAirlock && !isPassageAirlock && door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
+        if (!isRotaryAirlock && !isPassageAirlock && !isSlidingAirlock && door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
         {
           //if (door.IsWorking)
           //  AiSession.Instance.DoorsToClose[door.EntityId] = MyAPIGateway.Session.ElapsedPlayTime;
@@ -5902,9 +5908,16 @@ namespace AiEnabled.Bots
         }
         else if (door.IsWorking)
         {
-          if (isRotaryAirlock || isPassageAirlock)
+          if (isRotaryAirlock || isPassageAirlock || isSlidingAirlock)
           {
             var doorPos = door.Position;
+
+            if (isSlidingAirlock && door.BlockDefinition.SubtypeName.StartsWith("Hatch"))
+            {
+              var doorLeft = Base6Directions.GetIntVector(door.Orientation.Left);
+              doorPos -= doorLeft;
+            }
+
             var doorWorldPos = door.CubeGrid.GridIntegerToWorld(doorPos);
 
             if (door.CubeGrid.EntityId != gridGraph.MainGrid.EntityId)
@@ -5914,7 +5927,6 @@ namespace AiEnabled.Bots
 
             if (localBot != doorPos)
             {
-
               List<MyEntity> entList = AiSession.Instance.EntListPool.Get();
 
               var sphere = new BoundingSphereD(doorWorldPos, 1);
@@ -5943,11 +5955,23 @@ namespace AiEnabled.Bots
             }
 
             bool botInAirlock = localBot == doorPos;
-            var matchDotFwd = door.WorldMatrix.Forward.Dot(botMatrix.Forward) > 0;
+            bool matchDotFwd = door.WorldMatrix.Forward.Dot(botMatrix.Forward) > 0;
+
+            if (isSlidingAirlock)
+            {
+              if (door.BlockDefinition.SubtypeName.StartsWith("Hatch"))
+              {
+                matchDotFwd = door.WorldMatrix.Up.Dot(botMatrix.Forward) > 0;
+              }
+              else
+              {
+                matchDotFwd = door.WorldMatrix.Forward.Dot(botMatrix.Forward) > 0;
+              }
+            }
 
             if (door.BlockDefinition.SubtypeName.EndsWith("Corner"))
             {
-              var matchDotLeft = door.WorldMatrix.Left.Dot(botMatrix.Forward) > 0;
+              bool matchDotLeft = door.WorldMatrix.Left.Dot(botMatrix.Forward) > 0;
 
               if (botInAirlock)
               {
@@ -5992,13 +6016,44 @@ namespace AiEnabled.Bots
             {
               if (botInAirlock)
               {
-                if (matchDotFwd)
+                if (isSlidingAirlock)
+                {
+                  if (matchDotFwd)
+                  {
+                    if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open || ((MyAdvancedDoor)door).FullyOpen)
+                    {
+                      return false;
+                    }
+
+                    if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Opening)
+                    {
+                      door.OpenDoor();
+                    }
+                  }
+                  else
+                  {
+                    if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed || door.IsFullyClosed)
+                    {
+                      return false;
+                    }
+
+                    if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Closing)
+                    {
+                      door.CloseDoor();
+                    }
+                  }
+                }
+                else if (matchDotFwd)
                 {
                   if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed || door.IsFullyClosed)
+                  {
                     return false;
+                  }
 
                   if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Closing)
+                  {
                     door.CloseDoor();
+                  }
                 }
                 else if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
                 {
@@ -6011,6 +6066,25 @@ namespace AiEnabled.Bots
                 else if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Opening)
                 {
                   door.OpenDoor();
+                }
+              }
+              else if (isSlidingAirlock)
+              {
+                if (matchDotFwd)
+                {
+                  if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Closed)
+                    return false;
+
+                  if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Closing)
+                    door.CloseDoor();
+                }
+                else
+                {
+                  if (door.Status == Sandbox.ModAPI.Ingame.DoorStatus.Open)
+                    return false;
+
+                  if (door.Status != Sandbox.ModAPI.Ingame.DoorStatus.Opening)
+                    door.OpenDoor();
                 }
               }
               else if (matchDotFwd)

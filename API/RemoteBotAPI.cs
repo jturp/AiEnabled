@@ -715,6 +715,14 @@ namespace AiEnabled.API
     public bool SetToolsEnabled(long botEntityId, bool enable) => _setToolsEnabled?.Invoke(botEntityId, enable) ?? false;
 
     /// <summary>
+    /// Adds a callback method whenever bots deal damage. AiEnabled will unregister all delegates when it unloads. 
+    /// This will fire *after* all SE Damage Handlers are finished, and only if the damage amount > 0.
+    /// </summary>
+    /// <param name="methodToCall">The method the event will invoke. Param 1 = Bot Entity Id (attacker), Param 2 = Target Entity Id, Param 3 = damage amount</param>
+    /// <returns>true if the event registration succeeds, otherwise false</returns>
+    public bool RegisterDamageHandler(Action<long, long, float> methodToCall) => _registerDamageHandler?.Invoke(methodToCall) ?? false;
+
+    /// <summary>
     /// Provides the default list of repair priorities. Allocates a new list when called!
     /// </summary>
     /// <returns>a list of strings representing priority types</returns>
@@ -814,6 +822,7 @@ namespace AiEnabled.API
     private Func<MyCubeGrid, bool, MatrixD?> _getGridMapMatrix;
     private Func<long, long, bool> _assignToPlayer;
     private Func<long, long, bool> _followPlayer;
+    private Func<Action<long, long, float>, bool> _registerDamageHandler;
 
     private void ReceiveModMessage(object payload)
     {
