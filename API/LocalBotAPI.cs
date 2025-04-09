@@ -54,7 +54,6 @@ namespace AiEnabled.API
         { "SpawnBotCustom", new Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, IMyCharacter>(SpawnBot)},
         { "SpawnBotQueued", new Action<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter>>(SpawnBotQueued)},
         { "SpawnBotCustomQueued", new Action<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter>>(SpawnBotQueued)},
-
         { "SpawnBotQueuedWithId", new Func<string, string, MyPositionAndOrientation, MyCubeGrid, string, long?, Color?, Action<IMyCharacter, long>, long>(SpawnBotQueuedWithId)},
         { "SpawnBotCustomQueuedWithId", new Func<MyPositionAndOrientation, byte[], MyCubeGrid, long?, Action<IMyCharacter, long>, long>(SpawnBotQueuedWithId)},
         { "GetFriendlyRoles", new Func<string[]>(GetFriendlyBotRoles) },
@@ -102,6 +101,7 @@ namespace AiEnabled.API
         { "GetGridMapMatrix", new Func<MyCubeGrid, bool, MatrixD?>(GetGridMapMatrix) },
         { "AssignToPlayer", new Func<long, long, bool>(AssignToPlayer) },
         { "FollowPlayer", new Func<long, long, bool>(FollowPlayer) },
+        { "RegisterDamageHandler", new Func<Action<long, long, float>, bool>(RegisterDamageHandler) },
 
       };
 

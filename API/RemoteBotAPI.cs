@@ -888,6 +888,7 @@ namespace AiEnabled.API
         _getGridMapMatrix = dict["GetGridMapMatrix"] as Func<MyCubeGrid, bool, MatrixD?>;
         _assignToPlayer = dict["AssignToPlayer"] as Func<long, long, bool>;
         _followPlayer = dict["FollowPlayer"] as Func<long, long, bool>;
+        _registerDamageHandler = dict["RegisterDamageHandler"] as Func<Action<long, long, float>, bool>;
 
       }
       catch
