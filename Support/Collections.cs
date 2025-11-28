@@ -124,6 +124,43 @@ namespace AiEnabled
       new Vector3I(-1, -1, -1)
     };
 
+    public Dictionary<string, string> BotFactionTagToName = new Dictionary<string, string>()
+    {
+      { "NOMAD", "[AiE] Nomads" },
+      { "BINC", "[AiE] Bots, Inc." },
+      { "SCDS", "[AiE] Suicide Squad" },
+      { "OTFI", "[AiE] Outfitters, Inc" },
+      { "UNIT", "[AiE] The Unit" },
+      { "BLBT", "[AiE] Black Bots" },
+      { "LEGN", "[AiE] Legion" },
+      { "OBSD", "[AiE] Obsidian" },
+      { "FLWR", "[AiE] Flames of Wrath" },
+      { "AZRE", "[AiE] Azure" },
+      { "RSBC", "[AiE] Rust Bucket" },
+      { "ENGR", "[AiE] Engineers, Inc" },
+      { "MDFR", "[AiE] Assimilators" },
+      { "ALPB", "[AiE] Alpha Bots" },
+      { "DMGD", "[AiE] The Damaged" },
+      { "BTTL", "[AiE] Battle Bots" },
+      { "MCHB", "[AiE] Mech Bots" },
+      { "PRME", "[AiE] The Prime" },
+      { "PREN", "[AiE] Perceptive Encoding" },
+      { "SENT", "[AiE] The Sentient" },
+      { "JKHP", "[AiE] Junk Heap" },
+      { "RCDR", "[AiE] Recon Droids" },
+      { "OPER", "[AiE] The Operators" },
+      { "MTLM", "[AiE] Metal Mates" },
+      { "CRTG", "[AiE] Cartographers" },
+      { "FIBR", "[AiE] Fiber Optics" },
+      { "PCKP", "[AiE] The Peacekeepers" },
+      { "FGHT", "[AiE] Fighters Incorporated" },
+      { "FUTR", "[AiE] Future Bots" },
+      { "CLBT", "[AiE] Clang Bots" },
+      { "BLDR", "[AiE] Builders Inc" },
+      { "CLTR", "[AiE] The Collectors" },
+      { "OBSR", "[AiE] The Observers" },
+    };
+
     //public Dictionary<MyDefinitionId, Direction[]> InvalidBlockDirectionInfo = new Dictionary<MyDefinitionId, Direction[]>(MyDefinitionId.Comparer)
     //{
     //  { new MyDefinitionId(typeof(MyObjectBuilder_CubeBlock), "CatwalkHalfRailing"), new [] { Direction.Left, Direction.Right } },

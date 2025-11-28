@@ -76,7 +76,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.9.7";
+    public const string VERSION = "v1.9.8";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -844,6 +844,9 @@ namespace AiEnabled
         Logger = new Logger("AiEnabled.log");
         BlockInfo = new BlockInfo(Logger);
 
+        // TODO: Testing only, remove before production
+        //PacketBase.TestPackets();
+
         Network = new NetworkHandler(55387, this);
         Network.Register();
 
@@ -1576,7 +1579,38 @@ namespace AiEnabled
           try
           {
             Logger.Log($"Attempting faction member cleanup for AiE Bots...");
-            HashSet<long> factionMembers = new HashSet<long>();
+            HashSet<long> factionIds = new HashSet<long>();
+            List<IMyFaction> factions = new List<IMyFaction>();
+
+            foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
+            {
+              var faction = kvp.Value;
+              var factionId = kvp.Key;
+
+              if (faction.Name.StartsWith("[AiE]"))
+              {
+                factions.Add(faction);
+                factionIds.Add(factionId);
+              }
+            }
+
+            for (int i = 0; i < factions.Count; i++)
+            {
+              var faction = factions[i];
+              var members = faction.Members.ToList();
+
+              Logger.Log($" -> Cleaning {faction.Name}");
+              for (int j = 0; j < members.Count; j++)
+              {
+                var fm = members[j];
+                MyAPIGateway.Session.Factions.KickMember(faction.FactionId, fm.Value.PlayerId);
+              }
+            }
+
+            foreach (var id in factionIds)
+            {
+              MyAPIGateway.Session.Factions.Factions.Remove(id);
+            }
 
             foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
             {
@@ -1591,10 +1625,10 @@ namespace AiEnabled
                 var joinRequests = faction.JoinRequests;
                 if (joinRequests.Count > 0)
                 {
-                  factionMembers.Clear();
-                  factionMembers.UnionWith(joinRequests.Keys);
+                  factionIds.Clear();
+                  factionIds.UnionWith(joinRequests.Keys);
 
-                  foreach (var member in factionMembers)
+                  foreach (var member in factionIds)
                   {
                     MyFactionMember fm;
                     if (faction.Members.TryGetValue(member, out fm) && (fm.IsFounder || fm.IsLeader))
@@ -1606,7 +1640,7 @@ namespace AiEnabled
 
                 if (faction.Members.Count > 2)
                 {
-                  factionMembers.Clear();
+                  factionIds.Clear();
                   bool leaderOK = false;
                   foreach (var kvpMember in faction.Members)
                   {
@@ -1619,15 +1653,15 @@ namespace AiEnabled
                       continue;
                     }
 
-                    factionMembers.Add(kvpMember.Key);
+                    factionIds.Add(kvpMember.Key);
                   }
 
-                  if (factionMembers.Count > 0)
-                    Logger.Log($"Faction cleanup: Removing {factionMembers.Count}/{faction.Members.Count} members from {faction.Name}");
+                  if (factionIds.Count > 0)
+                    Logger.Log($"Faction cleanup: Removing {factionIds.Count}/{faction.Members.Count} members from {faction.Name}");
 
-                  var tooMany = factionMembers.Count == faction.Members.Count;
+                  var tooMany = factionIds.Count == faction.Members.Count;
                   int count = 0;
-                  foreach (var memberId in factionMembers)
+                  foreach (var memberId in factionIds)
                   {
                     count++;
                     if (tooMany && count < 3)
@@ -1639,8 +1673,11 @@ namespace AiEnabled
               }
             }
 
-            factionMembers.Clear();
-            factionMembers = null;
+            factions.Clear();
+            factionIds.Clear();
+
+            factions = null;
+            factionIds = null;
           }
           catch (NullReferenceException nre)
           {
@@ -2187,7 +2224,7 @@ namespace AiEnabled
       try
       {
         IMyFaction faction = MyAPIGateway.Session.Factions.TryGetFactionById(factionId);
-        if (faction != null && faction.AcceptHumans && !BotFactions.ContainsKey(factionId))
+        if (faction != null && !faction.Name.StartsWith("[AiE]") && faction.AcceptHumans && !BotFactions.ContainsKey(factionId))
         {
           bool good = true;
           IMyFaction botFaction = null;
@@ -3282,6 +3319,7 @@ namespace AiEnabled
 
             if (!atLeastOne)
             {
+              // Set rep back to neutral
               foreach (var kvp in MyAPIGateway.Session.Factions.Factions)
               {
                 var rep = MyAPIGateway.Session.Factions.GetReputationBetweenFactions(kvp.Key, botFaction.FactionId);
@@ -3293,6 +3331,26 @@ namespace AiEnabled
               {
                 MyAPIGateway.Session.Factions.SetReputationBetweenPlayerAndFaction(p.Key, botFaction.FactionId, 0);
               }
+
+              // kick all members from bot faction
+              foreach (var fm in botFaction.Members)
+              {
+                try
+                {
+                  MyAPIGateway.Session.Factions.KickMember(botFaction.FactionId, fm.Value.PlayerId);
+                }
+                catch { }
+              }
+
+              // try deleting faction
+              try
+              {
+                MyAPIGateway.Session.Factions.Factions.Remove(botFaction.FactionId);
+              }
+              catch { }
+
+              // add the tag back to the pool to use from
+              BotFactionTags.Add(botFaction.Tag);
             }
           }
 
@@ -6718,6 +6776,40 @@ namespace AiEnabled
       }
     }
 
+    public IMyFaction GetBotFactionAssignmentV2(IMyFaction factionToPairWith)
+    {
+      if (factionToPairWith == null)
+        return null;
+
+      IMyFaction botFaction;
+      if (BotFactions.TryGetValue(factionToPairWith.FactionId, out botFaction))
+        return botFaction;
+
+      if (BotFactionTags.Count <= 0)
+        return null;
+
+      var fTag = MyUtils.GetRandomItemFromList(BotFactionTags);
+      var fName = BotFactionTagToName[fTag];
+      MyAPIGateway.Session.Factions.CreateNPCFaction(fTag, fName, "AiEnabled NPC Faction", "AIEnabled NPC Faction");
+
+      botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(fTag);
+      if (botFaction == null)
+      {
+        Logger.Log($"BotFactory.CreateBotObject: Unable to create bot faction!", MessageType.WARNING);
+        return null;
+      }
+
+      botFaction.AcceptHumans = false; // Thanks, Keen <3
+      BotFactions[factionToPairWith.FactionId] = botFaction;
+      BotFactionTags.Remove(fTag);
+
+      Logger.Log($"Created bot faction '{botFaction.Name}', AcceptsHumans = {botFaction.AcceptHumans}");
+      Logger.Log($" -> Paired {factionToPairWith.Name} with {botFaction.Name}");
+
+      UpdateSafeZoneForFaction(factionToPairWith, botFaction);
+      return botFaction;
+    }
+
     public IMyFaction GetBotFactionAssignment(IMyFaction factionToPairWith)
     {
       if (factionToPairWith == null)
@@ -6753,60 +6845,64 @@ namespace AiEnabled
       else
       {
         Logger.Log($" -> Paired {factionToPairWith.Name} with {helperFaction.Name}");
-
-        try
-        {
-          foreach (var zone in MySessionComponentSafeZones.SafeZones)
-          {
-            var blockId = zone.SafeZoneBlockId;
-            if (blockId == 0)
-              continue;
-
-            var block = MyEntities.GetEntityById(blockId) as IMySafeZoneBlock;
-            if (block == null)
-              continue;
-
-            var zoneFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(block.OwnerId);
-            if (zoneFaction == null || zoneFaction.FactionId != factionToPairWith.FactionId)
-              continue;
-
-            if (zone.AccessTypeFactions == MySafeZoneAccess.Whitelist)
-            {
-              var ob = zone.GetObjectBuilder() as MyObjectBuilder_SafeZone;
-              if (ob.Factions == null)
-              {
-                ob.Factions = new long[0];
-              }
-
-              var factionArray = new long[ob.Factions.Length + 1];
-              int idx = 0;
-              foreach (var id in ob.Factions)
-              {
-                if (id != factionToPairWith.FactionId && BotFactions.ContainsKey(id))
-                  continue;
-
-                var faction = MyAPIGateway.Session.Factions.TryGetFactionById(id);
-                if (faction == null || BotFactionTags.Contains(faction.Tag))
-                  continue;
-
-                factionArray[idx] = id;
-                idx++;
-              }
-
-              factionArray[idx] = helperFaction.FactionId;
-              ob.Factions = factionArray;
-
-              MySessionComponentSafeZones.UpdateSafeZone(ob, true);
-            }
-          }
-        }
-        catch (Exception ex)
-        {
-          Logger.Error($"Error trying to update faction safezones: {ex}");
-        }
+        UpdateSafeZoneForFaction(factionToPairWith, helperFaction);
       }
 
       return helperFaction;
+    }
+
+    void UpdateSafeZoneForFaction(IMyFaction factionToPairWith, IMyFaction helperFaction)
+    {
+      try
+      {
+        foreach (var zone in MySessionComponentSafeZones.SafeZones)
+        {
+          var blockId = zone.SafeZoneBlockId;
+          if (blockId == 0)
+            continue;
+
+          var block = MyEntities.GetEntityById(blockId) as IMySafeZoneBlock;
+          if (block == null)
+            continue;
+
+          var zoneFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(block.OwnerId);
+          if (zoneFaction == null || zoneFaction.FactionId != factionToPairWith.FactionId)
+            continue;
+
+          if (zone.AccessTypeFactions == MySafeZoneAccess.Whitelist)
+          {
+            var ob = zone.GetObjectBuilder() as MyObjectBuilder_SafeZone;
+            if (ob.Factions == null)
+            {
+              ob.Factions = new long[0];
+            }
+
+            var factionArray = new long[ob.Factions.Length + 1];
+            int idx = 0;
+            foreach (var id in ob.Factions)
+            {
+              if (id != factionToPairWith.FactionId && BotFactions.ContainsKey(id))
+                continue;
+
+              var faction = MyAPIGateway.Session.Factions.TryGetFactionById(id);
+              if (faction == null || BotFactionTags.Contains(faction.Tag))
+                continue;
+
+              factionArray[idx] = id;
+              idx++;
+            }
+
+            factionArray[idx] = helperFaction.FactionId;
+            ob.Factions = factionArray;
+
+            MySessionComponentSafeZones.UpdateSafeZone(ob, true);
+          }
+        }
+      }
+      catch (Exception ex)
+      {
+        Logger.Error($"Error trying to update faction safezones: {ex}");
+      }
     }
 
     public void ShowMessage(string text, string font = MyFontEnum.Red, int timeToLive = 2000)

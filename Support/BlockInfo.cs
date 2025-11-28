@@ -237,8 +237,9 @@ namespace AiEnabled
         for (int i = 0; i < entries.Count;  i++)
         {
           var entry = entries[i];
-          var cubedef = MyDefinitionManager.Static.GetCubeBlockDefinition(entry.Id);
-          if (cubedef != null)
+
+          MyCubeBlockDefinition cubedef;
+          if (MyDefinitionManager.Static.TryGetCubeBlockDefinition(entry.Id, out cubedef))
           {
             if (!cubedef.Context.IsBaseGame && cubedef.Context.ModName.StartsWith("MorePassages")) // TODO: Remove this once the mod is fixed (several blocks have collision on all sides)
             {
@@ -288,8 +289,9 @@ namespace AiEnabled
         for (int i = 0; i < entries.Count; i++)
         {
           var entry = entries[i];
-          var cubedef = MyDefinitionManager.Static.GetCubeBlockDefinition(entry.Id);
-          if (cubedef != null)
+
+          MyCubeBlockDefinition cubedef;
+          if (MyDefinitionManager.Static.TryGetCubeBlockDefinition(entry.Id, out cubedef))
           {
             if (!cubedef.Context.IsBaseGame && cubedef.Context.ModName.StartsWith("MorePassages")) // TODO: Remove this once the mod is fixed (several blocks have collision on all sides)
             {

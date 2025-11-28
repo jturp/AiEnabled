@@ -1,15 +1,19 @@
-﻿using System;
+﻿ using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
 using AiEnabled.ConfigData;
 using AiEnabled.Networking.Packets;
+using AiEnabled.Utilities;
 
 using ProtoBuf;
 
 using Sandbox.ModAPI;
+
+using VRage.Utils;
 
 namespace AiEnabled.Networking
 {
@@ -40,7 +44,6 @@ namespace AiEnabled.Networking
   [ProtoInclude(1025, typeof(BotStatusPacket))]
   [ProtoInclude(1026, typeof(BotStatusRequestPacket))]
   [ProtoInclude(1027, typeof(CharacterSwapPacket))]
-  [ProtoInclude(1028, typeof(SerializableBotPrice))]
   [ProtoInclude(1029, typeof(SettingSyncPacket))]
   [ProtoInclude(1030, typeof(SettingProvidePacket))]
   [ProtoInclude(1031, typeof(HelmetChangePacket))]
@@ -61,5 +64,73 @@ namespace AiEnabled.Networking
     }
 
     public abstract bool Received(NetworkHandler netHandler);
+
+    public static void TestPackets()
+    {
+      AiSession.Instance.Logger.Log($"TestPackets: Begin");
+      TestPacket<SoundPacket>();
+      TestPacket<WeaponFirePacket>();
+      TestPacket<SpawnPacket>();
+      TestPacket<AdminPacket>();
+      TestPacket<FactorySpawnPacket>();
+      TestPacket<ParticlePacket>();
+      TestPacket<MessagePacket>();
+      TestPacket<SpawnPacketClient>();
+      TestPacket<GpsUpdatePacket>();
+      TestPacket<RepChangePacket>();
+      TestPacket<CommandPacket>();
+      TestPacket<InventoryUpdatePacket>();
+      TestPacket<EquipWeaponPacket>();
+      TestPacket<OverHeadIconPacket>();
+      TestPacket<HealthBarPacket>();
+      TestPacket<BotResumePacket>();
+      TestPacket<ColorUpdatePacket>();
+      TestPacket<FixBotPacket>();
+      TestPacket<FactoryDismissPacket>();
+      TestPacket<FactoryRecallPacket>();
+      TestPacket<StoreBotPacket>();
+      TestPacket<ClientHelperPacket>();
+      TestPacket<SettingRequestPacket>();
+      TestPacket<ShieldHitPacket>();
+      TestPacket<BotStatusPacket>();
+      TestPacket<BotStatusRequestPacket>();
+      TestPacket<CharacterSwapPacket>();
+      TestPacket<SettingSyncPacket>();
+      TestPacket<SettingProvidePacket>();
+      TestPacket<HelmetChangePacket>();
+      TestPacket<PriorityUpdatePacket>();
+      TestPacket<FactorySyncPacket>();
+      TestPacket<RadioRecallPacket>();
+      TestPacket<FollowDistancePacket>();
+      TestPacket<ResetMapPacket>();
+      TestPacket<GoToAllPacket>();
+      AiSession.Instance.Logger.Log($"TestPackets: End");
+    }
+
+    static void TestPacket<T>() where T : new()
+    {
+      try
+      {
+        MyLog.Default.WriteLine($"### AiEnabled :: Testing packet {typeof(T).Name}...");
+        AiSession.Instance.Logger.Log($"Testing packet {typeof(T).Name}...");
+
+        T packet = new T();
+
+        byte[] bytes = MyAPIGateway.Utilities.SerializeToBinary(packet);
+
+        MyAPIGateway.Utilities.SerializeFromBinary<PacketBase>(bytes);
+      }
+      catch (Exception e)
+      {
+        MyLog.Default.WriteLine($"### AiEnabled :: Error serializing or deserializing {typeof(T).Name}\n{e}");
+        AiSession.Instance.Logger.Log($"Error serializing or deserializing {typeof(T).Name}\n{e}");
+
+        try
+        {
+          throw new NullReferenceException(e.Message);
+        }
+        catch { }
+      }
+    }
   }
 }

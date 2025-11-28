@@ -79,11 +79,11 @@ namespace AiEnabled.Networking
     /// </summary>
     public void SendToServer(PacketBase packet)
     {
-      if (MyAPIGateway.Multiplayer.IsServer)
-      {
-        HandlePacket(packet);
-        return;
-      }
+      //if (MyAPIGateway.Multiplayer.IsServer)
+      //{
+      //  HandlePacket(packet);
+      //  return;
+      //}
 
       var bytes = MyAPIGateway.Utilities.SerializeToBinary(packet);
       MyAPIGateway.Multiplayer.SendMessageToServer(ChannelId, bytes);
@@ -95,11 +95,11 @@ namespace AiEnabled.Networking
     /// </summary>
     public void SendToPlayer(PacketBase packet, ulong steamId)
     {
-      if (packet.SenderId == steamId)
-      {
-        HandlePacket(packet);
-        return;
-      }
+      //if (packet.SenderId == steamId)
+      //{
+      //  HandlePacket(packet);
+      //  return;
+      //}
 
       if (!MyAPIGateway.Multiplayer.IsServer)
         return;

@@ -25,13 +25,13 @@ namespace AiEnabled.ConfigData
   public class SerialId
   {
     [XmlAttribute("TypeId")]
-    [ProtoMember(1)] public string TypeId;
+    [ProtoMember(10)] public string TypeId;
 
     [XmlAttribute("SubtypeId")]
-    [ProtoMember(2)] public string SubtypeId;
+    [ProtoMember(20)] public string SubtypeId;
 
     [XmlAttribute("Amount")]
-    [ProtoMember(3)] public int Amount;
+    [ProtoMember(30)] public int Amount;
 
     [XmlIgnore]
     [ProtoIgnore] MyDefinitionId _definitionId = new MyDefinitionId();

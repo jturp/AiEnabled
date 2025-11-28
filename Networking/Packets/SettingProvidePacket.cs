@@ -174,8 +174,15 @@ namespace AiEnabled.Networking.Packets
       else
       {
         var data = AiSession.Instance.ModSaveData;
+
         Settings.AllowedHelperSubtypes = data.AllowedHelperSubtypes;
         Settings.PlayerHelperData = data.PlayerHelperData;
+        Settings.AllHumanSubtypes = data.AllHumanSubtypes;
+        Settings.AllowedBotRoles = data.AllowedBotRoles;
+        Settings.AllowedBotSubtypes = data.AllowedBotSubtypes;
+        Settings.InventoryItemsToKeep = data.InventoryItemsToKeep;
+        Settings.PlayerHelperData = data.PlayerHelperData;
+
         AiSession.Instance.ModSaveData = Settings;
       }
 

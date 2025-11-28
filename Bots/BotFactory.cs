@@ -1624,28 +1624,12 @@ namespace AiEnabled.Bots
             }
           }
 
-          botFaction = AiSession.Instance.GetBotFactionAssignment(ownerFaction);
+          // botFaction = AiSession.Instance.GetBotFactionAssignment(ownerFaction); // Old way, uses built-in list of 32 factions
+          botFaction = AiSession.Instance.GetBotFactionAssignmentV2(ownerFaction); // Now creates them on the fly as needed <3
           if (botFaction == null)
           {
             AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: There was no bot faction associated with the owner!", MessageType.WARNING);
             return MyTuple.Create<IMyCharacter, AiSession.ControlInfo>(null, null);
-
-            /*
-              TODO: Switch to creating factions on the fly if Keen can default AcceptsHumans to false for NPC Factions
-
-              var fTag = MyUtils.GetRandomInt(100, 999).ToString();
-              var fName = MyUtils.GetRandomInt(1000, 9999).ToString();
-              MyAPIGateway.Session.Factions.CreateNPCFaction(fTag, fName, "", "");
-              botFaction = MyAPIGateway.Session.Factions.TryGetFactionByTag(fTag);
-              if (botFaction == null)
-              {
-                AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: Unable to create bot faction!", MessageType.WARNING);
-                return null;
-              }
-
-              AiSession.Instance.Logger.Log($"BotFactory.CreateBotObject: Created bot faction '{botFaction.Name}', AcceptsHumans = {botFaction.AcceptHumans}");
-              AiSession.Instance.BotFactions[ownerFaction.FactionId] = botFaction;
-            */
           }
 
           if (MyAPIGateway.Session.Factions.AreFactionsEnemies(botFaction.FactionId, ownerFaction.FactionId))

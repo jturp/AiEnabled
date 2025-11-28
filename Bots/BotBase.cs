@@ -2100,6 +2100,19 @@ namespace AiEnabled.Bots
             inv.ConsumeItem(_energyOB.GetId(), 1, Character.EntityId);
         }
 
+        var statComp = Character.Components?.Get<MyCharacterStatComponent>();
+        if (statComp != null)
+        {
+          if (statComp.Food != null)
+            statComp.Food.Value = statComp.Food.MaxValue;
+
+          if (statComp.Radiation != null)
+            statComp.Radiation.Value = statComp.Radiation.MinValue;
+
+          if (statComp.RadiationImmunity != null)
+            statComp.RadiationImmunity.Value = statComp.RadiationImmunity.MaxValue;
+        }
+
         var oxyComp = Character.Components?.Get<MyCharacterOxygenComponent>();
         if (oxyComp != null)
         {
