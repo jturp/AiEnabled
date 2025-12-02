@@ -170,6 +170,23 @@ namespace AiEnabled.ConfigData
       Helpers.Add(new HelperInfo(helper, botType, pris, ignoreList, damageOnly, weldFirst, grid, patrolRoute, crewRole, adminSpawn, patrolName));
     }
 
+    public bool RemoveHelper(string displayName)
+    {
+      if (Helpers != null)
+      {
+        for (int i = Helpers.Count - 1; i >= 0; i--)
+        {
+          if (Helpers[i].DisplayName == displayName)
+          {
+            Helpers.RemoveAtFast(i);
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
     public bool RemoveHelper(long id)
     {
       if (Helpers != null)

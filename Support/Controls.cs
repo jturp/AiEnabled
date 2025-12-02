@@ -1019,7 +1019,7 @@ namespace AiEnabled.Support
         for (int i = 0; i < AiSession.Instance.MyHelperInfo.Count; i++)
         {
           var helperInfo = AiSession.Instance.MyHelperInfo[i];
-          if (helperInfo.AdminSpawned && helperInfo.IsActiveHelper && helperIds.Contains(helperInfo.HelperId))
+          if (helperInfo != null && helperInfo.AdminSpawned && helperInfo.IsActiveHelper && helperIds.Contains(helperInfo.HelperId))
             num++;
         }
 
@@ -1265,6 +1265,13 @@ namespace AiEnabled.Support
       AiSession.Instance.Network.SendToServer(pkt);
 
       var helpers = AiSession.Instance.MyHelperInfo;
+
+      if (helpers == null)
+      { 
+        helpers = new List<ConfigData.HelperInfo>();
+        AiSession.Instance.MyHelperInfo = helpers;
+      }
+
       for (int i = 0; i < helpers.Count; i++)
       {
         var helper = helpers[i];
