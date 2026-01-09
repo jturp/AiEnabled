@@ -76,7 +76,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.9.9";
+    public const string VERSION = "v1.9.10";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -1236,6 +1236,19 @@ namespace AiEnabled
                     for (int j = 0; j < compReqs.Length; j++)
                     {
                       var compReq = compReqs[j];
+
+                      MyDefinitionBase baseDef;
+                      MyDefinitionManager.Static.TryGetDefinition(compReq.Id, out baseDef);
+                      var componentDef = baseDef as MyComponentDefinition;
+                      var phyiscalDef = baseDef as MyPhysicalItemDefinition;
+
+                      if (componentDef != null || (phyiscalDef != null && !phyiscalDef.IsIngot))
+                      {
+                        // for blueprints that use other components in the recipe
+                        // add it to the list to be processed
+                        items.Add(new SerialId(compReq.Id, (int)compReq.Amount));
+                        continue;
+                      }
 
                       float num;
                       componentReqs.TryGetValue(compReq.Id, out num);
