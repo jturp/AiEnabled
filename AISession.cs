@@ -76,7 +76,7 @@ namespace AiEnabled
 
     public static int MainThreadId = 1;
     public static AiSession Instance;
-    public const string VERSION = "v1.9.10";
+    public const string VERSION = "v1.9.11";
     const int MIN_SPAWN_COUNT = 3;
     public static KVPComparer IgnoreListComparer = new KVPComparer();
 
@@ -1203,91 +1203,7 @@ namespace AiEnabled
             }
           }
 
-          var efficiency = MyAPIGateway.Session.AssemblerEfficiencyMultiplier;
-          var fixedPoint = (MyFixedPoint)(1f / efficiency);
-          var remainder = 1 - (fixedPoint * efficiency);
-          var componentReqs = new Dictionary<MyDefinitionId, float>(MyDefinitionId.Comparer);
-
-          foreach (var kvp in BotPrices)
-          {
-            var bType = kvp.Key;
-            var subtype = $"AiEnabled_Comp_{bType}BotMaterial";
-            var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), subtype);
-            var bpDef = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(comp);
-
-            if (bpDef != null)
-            {
-              var items = BotComponents[bType];
-              if (items.Count == 0)
-                items.Add(new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 1));
-
-              componentReqs.Clear();
-              for (int i = 0; i < items.Count; i++)
-              {
-                var item = items[i];
-                var amount = item.Amount;
-
-                var compBp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(item.DefinitionId);
-                if (compBp != null)
-                {
-                  var compReqs = compBp.Prerequisites;
-                  if (compReqs?.Length > 0)
-                  {
-                    for (int j = 0; j < compReqs.Length; j++)
-                    {
-                      var compReq = compReqs[j];
-
-                      MyDefinitionBase baseDef;
-                      MyDefinitionManager.Static.TryGetDefinition(compReq.Id, out baseDef);
-                      var componentDef = baseDef as MyComponentDefinition;
-                      var phyiscalDef = baseDef as MyPhysicalItemDefinition;
-
-                      if (componentDef != null || (phyiscalDef != null && !phyiscalDef.IsIngot))
-                      {
-                        // for blueprints that use other components in the recipe
-                        // add it to the list to be processed
-                        items.Add(new SerialId(compReq.Id, (int)compReq.Amount));
-                        continue;
-                      }
-
-                      float num;
-                      componentReqs.TryGetValue(compReq.Id, out num);
-                      componentReqs[compReq.Id] = num + (float)compReq.Amount * amount;
-                    }
-                  }
-                }
-              }
-
-              if (componentReqs.Count == 0)
-                componentReqs[new MyDefinitionId(typeof(MyObjectBuilder_Ingot), "Iron")] = 100 * efficiency;
-
-              var reqs = new MyBlueprintDefinitionBase.Item[componentReqs.Count];
-              int k = 0;
-
-              foreach (var item in componentReqs)
-              {
-                var req = new MyBlueprintDefinitionBase.Item
-                {
-                  Amount = (MyFixedPoint)item.Value,
-                  Id = item.Key
-                };
-
-                req.Amount *= efficiency;
-
-                if (remainder > 0)
-                  req.Amount += req.Amount * remainder + remainder;
-
-                reqs[k] = req;
-                k++;
-              }
-
-              bpDef.Atomic = true;
-              bpDef.Prerequisites = reqs;
-            }
-          }
-
-          componentReqs.Clear();
-          componentReqs = null;
+          UpdateBotPrices();
 
           Config.WriteFileToWorldStorage("BotPricing.cfg", typeof(BotPricing), ModPriceData, Logger);
 
@@ -2003,6 +1919,116 @@ namespace AiEnabled
       {
         base.BeforeStart();
       }
+    }
+
+    public void UpdateBotPrices()
+    {
+      var efficiency = MyAPIGateway.Session.AssemblerEfficiencyMultiplier;
+      var fixedPoint = (MyFixedPoint)(1f / efficiency);
+      var remainder = 1 - (fixedPoint * efficiency);
+      var componentReqs = new Dictionary<MyDefinitionId, float>(MyDefinitionId.Comparer);
+
+      foreach (var kvp in BotPrices)
+      {
+        var bType = kvp.Key;
+        var subtype = $"AiEnabled_Comp_{bType}BotMaterial";
+        var comp = new MyDefinitionId(typeof(MyObjectBuilder_Component), subtype);
+        var bpDef = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(comp);
+
+        if (bpDef != null)
+        {
+          var items = BotComponents[bType];
+          if (items.Count == 0)
+            items.Add(new SerialId(new MyDefinitionId(typeof(MyObjectBuilder_Component), "SteelPlate"), 1));
+
+          componentReqs.Clear();
+          for (int i = 0; i < items.Count; i++)
+          {
+            var item = items[i];
+            var amount = item.Amount;
+
+            var compBp = MyDefinitionManager.Static.TryGetBlueprintDefinitionByResultId(item.DefinitionId);
+            if (compBp != null)
+            {
+              var compReqs = compBp.Prerequisites;
+              if (compReqs?.Length > 0)
+              {
+                for (int j = 0; j < compReqs.Length; j++)
+                {
+                  var compReq = compReqs[j];
+
+                  MyDefinitionBase baseDef;
+                  MyDefinitionManager.Static.TryGetDefinition(compReq.Id, out baseDef);
+                  var componentDef = baseDef as MyComponentDefinition;
+                  var phyiscalDef = baseDef as MyPhysicalItemDefinition;
+
+                  if (componentDef != null || (phyiscalDef != null && !phyiscalDef.IsIngot))
+                  {
+                    // for blueprints that use other components in the recipe
+                    // add it to the list to be processed
+                    items.Add(new SerialId(compReq.Id, (int)compReq.Amount));
+                    continue;
+                  }
+
+                  float num;
+                  componentReqs.TryGetValue(compReq.Id, out num);
+                  componentReqs[compReq.Id] = num + (float)compReq.Amount * amount;
+                }
+              }
+            }
+          }
+
+          if (componentReqs.Count == 0)
+            componentReqs[new MyDefinitionId(typeof(MyObjectBuilder_Ingot), "Iron")] = 100 * efficiency;
+
+          var reqs = new MyBlueprintDefinitionBase.Item[componentReqs.Count];
+          int k = 0;
+
+          foreach (var item in componentReqs)
+          {
+            var req = new MyBlueprintDefinitionBase.Item
+            {
+              Amount = (MyFixedPoint)item.Value,
+              Id = item.Key
+            };
+
+            req.Amount *= efficiency;
+
+            if (remainder > 0)
+              req.Amount += req.Amount * remainder + remainder;
+
+            reqs[k] = req;
+            k++;
+          }
+
+          Logger.AddLine($"Material: {subtype}");
+          Logger.IncreaseIndent();
+          Logger.AddLine($"Current reqs:");
+          Logger.IncreaseIndent();
+          foreach (var r in bpDef.Prerequisites)
+          {
+            Logger.AddLine(r.ToString());
+          }
+
+          Logger.DecreaseIndent();
+
+          bpDef.Atomic = true;
+          bpDef.Prerequisites = reqs;
+
+          Logger.AddLine($"Final reqs:");
+          Logger.IncreaseIndent();
+
+          foreach (var r in bpDef.Prerequisites)
+          {
+            Logger.AddLine(r.ToString());
+          }
+
+          Logger.LogAll();
+        }
+      }
+
+      componentReqs.Clear();
+      componentReqs = null;
     }
 
     void WeaponCoreRegistered()
